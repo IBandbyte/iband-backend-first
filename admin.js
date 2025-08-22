@@ -1,5 +1,4 @@
-// admin.js — secure only (no seed-open)
-
+// admin.js — secure only (with dedupe route)
 const express = require("express");
 const mongoose = require("mongoose");
 const router = express.Router();
@@ -20,8 +19,8 @@ const Artist =
     )
   );
 
-// SECURE SEED — requires header x-admin-key to match process.env.ADMIN_KEY
-router.post("/seed", (req, res, next) => {
+// Middleware: check admin key
+function checkAdminKey(req, res, next) {
   const key = req.header("x-admin-key");
   if (!process.env.ADMIN_KEY) {
     return res.status(500).json({ error: "ADMIN_KEY not set" });
@@ -30,20 +29,43 @@ router.post("/seed", (req, res, next) => {
     return res.status(401).json({ error: "Unauthorized" });
   }
   next();
-}, async (_req, res) => {
+}
+
+// SECURE SEED — requires header x-admin-key
+router.post("/seed", checkAdminKey, async (_req, res) => {
   const sample = [
-    { name: "Aria Nova", bio: "Indie pop vocal" },
-    { name: "Neon Harbor", bio: "Synthwave duo" },
-    { name: "Stone & Sparrow", bio: "Folk rock" },
+    { name: "Neon Harbor" },
+    { name: "Stone & Sparrow" },
+    { name: "Aria Nova" },
   ];
-  const out = await Artist.insertMany(sample);
-  res.json({ ok: true, inserted: out.length });
+  try {
+    await Artist.insertMany(sample);
+    res.json({ ok: true, inserted: sample.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// List artists (read-only)
-router.get("/artists", async (_req, res) => {
-  const items = await Artist.find().sort({ createdAt: -1 });
-  res.json(items);
+// ONE-TIME DEDUPE — remove duplicate artists by name
+router.post("/dedupe", checkAdminKey, async (_req, res) => {
+  try {
+    const all = await Artist.find();
+    const seen = new Set();
+    let removed = 0;
+
+    for (const artist of all) {
+      if (seen.has(artist.name)) {
+        await Artist.deleteOne({ _id: artist._id });
+        removed++;
+      } else {
+        seen.add(artist.name);
+      }
+    }
+
+    res.json({ ok: true, removedTotal: removed });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;
