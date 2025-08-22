@@ -1,16 +1,17 @@
-// admin.js — secure only (with dedupe route)
+// admin.js — secure only (no dedupe, no open seed)
+
 const express = require("express");
 const mongoose = require("mongoose");
 const router = express.Router();
 
-// Model (reuse if it already exists)
+// Reuse model if it already exists (avoids OverwriteModelError on hot reloads)
 const Artist =
   mongoose.models.Artist ||
   mongoose.model(
     "Artist",
     new mongoose.Schema(
       {
-        name: { type: String, required: true },
+        name: { type: String, required: true, trim: true },
         bio: { type: String, default: "" },
         imageUrl: { type: String, default: "" },
         votes: { type: Number, default: 0 },
@@ -19,11 +20,11 @@ const Artist =
     )
   );
 
-// Middleware: check admin key
+// --- middleware: require x-admin-key header ---
 function checkAdminKey(req, res, next) {
   const key = req.header("x-admin-key");
   if (!process.env.ADMIN_KEY) {
-    return res.status(500).json({ error: "ADMIN_KEY not set" });
+    return res.status(500).json({ error: "ADMIN_KEY not set on server" });
   }
   if (key !== process.env.ADMIN_KEY) {
     return res.status(401).json({ error: "Unauthorized" });
@@ -31,38 +32,17 @@ function checkAdminKey(req, res, next) {
   next();
 }
 
-// SECURE SEED — requires header x-admin-key
+// --- secure seed (optional – leave for admin use only) ---
 router.post("/seed", checkAdminKey, async (_req, res) => {
   const sample = [
-    { name: "Neon Harbor" },
-    { name: "Stone & Sparrow" },
-    { name: "Aria Nova" },
+    { name: "Aria Nova", bio: "Indie pop vocalist" },
+    { name: "Neon Harbor", bio: "Synthwave duo" },
+    { name: "Stone & Sparrow", bio: "Folk rock band" },
   ];
+
   try {
-    await Artist.insertMany(sample);
-    res.json({ ok: true, inserted: sample.length });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ONE-TIME DEDUPE — remove duplicate artists by name
-router.post("/dedupe", checkAdminKey, async (_req, res) => {
-  try {
-    const all = await Artist.find();
-    const seen = new Set();
-    let removed = 0;
-
-    for (const artist of all) {
-      if (seen.has(artist.name)) {
-        await Artist.deleteOne({ _id: artist._id });
-        removed++;
-      } else {
-        seen.add(artist.name);
-      }
-    }
-
-    res.json({ ok: true, removedTotal: removed });
+    const out = await Artist.insertMany(sample);
+    res.json({ ok: true, inserted: out ? out.length : 0 });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
