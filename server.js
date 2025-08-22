@@ -1,5 +1,4 @@
-// server.js — simple, working API with / and /artists
-require("dotenv").config();
+// server.js — clean, working version
 
 const express = require("express");
 const mongoose = require("mongoose");
@@ -7,21 +6,22 @@ const cors = require("cors");
 
 const app = express();
 
-// Use whichever you set on Render (we handle both just in case)
-const MONGO_URI = process.env.MONGO_URI || process.env.MONGODB_URI;
-const PORT = process.env.PORT || 10000;
-
+// ----- Middleware
 app.use(cors());
 app.use(express.json());
 
-// ----- Model -----
+// ----- Env
+const PORT = process.env.PORT || 10000;
+const MONGODB_URI = process.env.MONGODB_URI;
+
+// ----- Mongoose model (re-use if already compiled)
 const Artist =
   mongoose.models.Artist ||
   mongoose.model(
     "Artist",
     new mongoose.Schema(
       {
-        name: { type: String, required: true, trim: true },
+        name: { type: String, required: true },
         bio: { type: String, default: "" },
         imageUrl: { type: String, default: "" },
         votes: { type: Number, default: 0 },
@@ -30,34 +30,37 @@ const Artist =
     )
   );
 
-// ----- Routes -----
+// ----- Routes
 
-// Health check / homepage (so you don't see "Cannot GET /")
+// Health / landing route (prevents "Cannot GET /")
 app.get("/", (_req, res) => {
-  res.send("✅ iBand backend is running");
+  res.status(200).send("✅ Backend is running!");
 });
 
-// GET /artists — list artists from MongoDB
+// List artists
 app.get("/artists", async (_req, res) => {
   try {
-    const list = await Artist.find(
-      {},
-      { name: 1, bio: 1, imageUrl: 1, votes: 1, createdAt: 1 }
-    ).sort({ createdAt: -1 });
-    res.json(list);
+    const all = await Artist.find().sort({ createdAt: -1 });
+    res.json(all);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message || "Server error" });
   }
 });
 
-// ----- Start server after DB connects -----
+// (Optional) admin router if you keep it in routes/admin.js
+// const adminRouter = require("./routes/admin");
+// app.use("/admin", adminRouter);
+
+// ----- Start
 mongoose
-  .connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+  .connect(MONGODB_URI)
   .then(() => {
     console.log("✅ MongoDB connected");
-    app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running on port ${PORT}`);
+    });
   })
   .catch((err) => {
-    console.error("❌ Mongo connection error:", err.message);
+    console.error("MongoDB connection failed:", err);
     process.exit(1);
   });
