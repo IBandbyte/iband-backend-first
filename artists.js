@@ -1,44 +1,51 @@
-const express = require('express');
-const mongoose = require('mongoose');
+const express = require("express");
 const router = express.Router();
+const mongoose = require("mongoose");
 
-const ArtistSchema = new mongoose.Schema({
-  name: { type: String, required: true },
+// Artist Schema
+const artistSchema = new mongoose.Schema({
+  name: String,
   genre: String,
-  createdAt: { type: Date, default: Date.now }
+  image: String,
+  votes: { type: Number, default: 0 }
 });
-const Artist = mongoose.models.Artist || mongoose.model('Artist', ArtistSchema);
 
-// create
-router.post('/', async (req, res) => {
+// Artist Model
+const Artist = mongoose.model("Artist", artistSchema);
+
+// GET all artists
+router.get("/", async (req, res) => {
   try {
-    const artist = await Artist.create({ name: req.body.name, genre: req.body.genre });
+    const artists = await Artist.find();
+    res.json(artists);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST add new artist
+router.post("/", async (req, res) => {
+  try {
+    const artist = new Artist(req.body);
+    await artist.save();
     res.status(201).json(artist);
-  } catch (e) { res.status(400).json({ error: e.message }); }
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
-// list
-router.get('/', async (_req, res) => {
-  const artists = await Artist.find().sort({ createdAt: -1 });
-  res.json(artists);
-});
-
-// get one
-router.get('/:id', async (req, res) => {
+// POST vote for artist
+router.post("/:id/vote", async (req, res) => {
   try {
-    const item = await Artist.findById(req.params.id);
-    if (!item) return res.status(404).json({ error: 'Not found' });
-    res.json(item);
-  } catch { res.status(400).json({ error: 'Invalid id' }); }
-});
+    const artist = await Artist.findById(req.params.id);
+    if (!artist) return res.status(404).json({ error: "Artist not found" });
 
-// delete
-router.delete('/:id', async (req, res) => {
-  try {
-    const del = await Artist.findByIdAndDelete(req.params.id);
-    if (!del) return res.status(404).json({ error: 'Not found' });
-    res.json({ success: true });
-  } catch { res.status(400).json({ error: 'Invalid id' }); }
+    artist.votes += 1;
+    await artist.save();
+    res.json({ message: "Vote added", artist });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 module.exports = router;
