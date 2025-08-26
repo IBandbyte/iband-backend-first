@@ -1,66 +1,42 @@
-// server.js — clean, working version
+// server.js — iBand backend (clean, with root + artists + admin)
 
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 
 const app = express();
-
-// ----- Middleware
 app.use(cors());
 app.use(express.json());
 
-// ----- Env
-const PORT = process.env.PORT || 10000;
+// --- MongoDB ---
 const MONGODB_URI = process.env.MONGODB_URI;
+if (!MONGODB_URI) {
+  console.error("❌ MONGODB_URI is not set");
+  process.exit(1);
+}
 
-// ----- Mongoose model (re-use if already compiled)
-const Artist =
-  mongoose.models.Artist ||
-  mongoose.model(
-    "Artist",
-    new mongoose.Schema(
-      {
-        name: { type: String, required: true },
-        bio: { type: String, default: "" },
-        imageUrl: { type: String, default: "" },
-        votes: { type: Number, default: 0 },
-      },
-      { timestamps: true }
-    )
-  );
-
-// ----- Routes
-
-// Health / landing route (prevents "Cannot GET /")
-app.get("/", (_req, res) => {
-  res.status(200).send("✅ Backend is running!");
-});
-
-// List artists
-app.get("/artists", async (_req, res) => {
-  try {
-    const all = await Artist.find().sort({ createdAt: -1 });
-    res.json(all);
-  } catch (err) {
-    res.status(500).json({ error: err.message || "Server error" });
-  }
-});
-
-// (Optional) admin router if you keep it in routes/admin.js
-// const adminRouter = require("./routes/admin");
-// app.use("/admin", adminRouter);
-
-// ----- Start
 mongoose
-  .connect(MONGODB_URI)
-  .then(() => {
-    console.log("✅ MongoDB connected");
-    app.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-    });
+  .connect(MONGODB_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
   })
+  .then(() => console.log("✅ MongoDB connected"))
   .catch((err) => {
     console.error("MongoDB connection failed:", err);
     process.exit(1);
   });
+
+// --- Routes ---
+const artistsRouter = require("./artists");
+app.use("/artists", artistsRouter);
+
+const adminRouter = require("./admin");
+app.use("/admin", adminRouter);
+
+// Root (for sanity check)
+app.get("/", (_req, res) => {
+  res.type("text/plain").send("✅ iBand backend is running");
+});
+
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
