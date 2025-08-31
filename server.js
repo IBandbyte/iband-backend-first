@@ -1,4 +1,4 @@
-// server.js — iBand backend (clean, with root + artists + admin)
+// server.js — iBand backend (clean, with root + artists + admin + health)
 
 const express = require("express");
 const mongoose = require("mongoose");
@@ -36,6 +36,11 @@ app.use("/admin", adminRouter);
 // Root (for sanity check)
 app.get("/", (_req, res) => {
   res.type("text/plain").send("✅ iBand backend is running");
+});
+
+// Health check
+app.get("/health", (_req, res) => {
+  res.json({ status: "ok", message: "Backend is live!" });
 });
 
 const PORT = process.env.PORT || 10000;
