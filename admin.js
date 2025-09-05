@@ -1,9 +1,26 @@
-// admin.js — iBand backend admin routes
+// admin.js — guarded admin endpoints (cleanup, health) — model included here
 const express = require("express");
+const mongoose = require("mongoose");
 const router = express.Router();
-const Artist = require("./models/artist");
 
-// Guard: all admin endpoints require ADMIN_KEY
+// Reuse/define Artist model (same schema as artists.js)
+const Artist =
+  mongoose.models.Artist ||
+  mongoose.model(
+    "Artist",
+    new mongoose.Schema(
+      {
+        name: { type: String, required: true, trim: true },
+        genre: { type: String, default: "No genre set", trim: true },
+        bio: { type: String, default: "" },
+        imageUrl: { type: String, default: "" },
+        votes: { type: Number, default: 0 },
+      },
+      { timestamps: true }
+    )
+  );
+
+// Guard all admin routes with ADMIN_KEY
 router.use((req, res, next) => {
   const key = req.header("x-admin-key");
   if (!process.env.ADMIN_KEY) {
@@ -15,15 +32,13 @@ router.use((req, res, next) => {
   next();
 });
 
-// quick health for admin scope
-router.get("/health", (_req, res) => {
-  res.json({ ok: true, route: "admin/health" });
-});
+// GET /admin/health
+router.get("/health", (_req, res) => res.json({ ok: true, route: "admin/health" }));
 
-// ONE-TIME CLEANUP
-// 1) remove bad/blank names  2) dedupe by normalized name
+// POST /admin/cleanup — remove bad names & dedupe by name (keep first)
 router.post("/cleanup", async (_req, res) => {
   try {
+    // 1) remove invalid/blank names
     const bad = await Artist.deleteMany({
       $or: [
         { name: null },
@@ -33,6 +48,7 @@ router.post("/cleanup", async (_req, res) => {
       ],
     });
 
+    // 2) dedupe by normalized name
     const all = await Artist.find({}, { _id: 1, name: 1 }).lean();
     const seen = new Set();
     const toDelete = [];
@@ -44,20 +60,20 @@ router.post("/cleanup", async (_req, res) => {
       else seen.add(norm);
     }
 
-    let removedDuplicates = 0;
+    let removedDupes = 0;
     if (toDelete.length) {
-      const r = await Artist.deleteMany({ _id: { $in: toDelete } });
-      removedDuplicates = r.deletedCount || 0;
+      const result = await Artist.deleteMany({ _id: { $in: toDelete } });
+      removedDupes = result.deletedCount || 0;
     }
 
     res.json({
       ok: true,
       removedBadNames: bad.deletedCount || 0,
-      removedDuplicates,
+      removedDuplicates: removedDupes,
     });
   } catch (err) {
     console.error("Cleanup failed:", err);
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ error: "Server error" });
   }
 });
 
