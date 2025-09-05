@@ -1,27 +1,43 @@
-const express = require('express');
-const mongoose = require('mongoose');
+// comments.js — very small comments API (flat)
+const express = require("express");
+const mongoose = require("mongoose");
 const router = express.Router();
 
-const CommentSchema = new mongoose.Schema({
-  artistId: { type: mongoose.Schema.Types.ObjectId, ref: 'Artist', required: true },
-  text: { type: String, required: true },
-  createdAt: { type: Date, default: Date.now }
-});
-const Comment = mongoose.models.Comment || mongoose.model('Comment', CommentSchema);
+const Comment =
+  mongoose.models.Comment ||
+  mongoose.model(
+    "Comment",
+    new mongoose.Schema(
+      {
+        artistName: { type: String, required: true },
+        text: { type: String, required: true },
+      },
+      { timestamps: true }
+    )
+  );
 
-// add comment
-router.post('/', async (req, res) => {
+// GET /comments?artist=Aria%20Nova
+router.get("/", async (req, res) => {
   try {
-    const { artistId, text } = req.body;
-    const comment = await Comment.create({ artistId, text });
-    res.status(201).json(comment);
-  } catch (e) { res.status(400).json({ error: e.message }); }
+    const q = {};
+    if (req.query.artist) q.artistName = req.query.artist;
+    const list = await Comment.find(q).sort({ createdAt: -1 }).limit(100);
+    res.json(list);
+  } catch (e) {
+    res.status(500).json({ error: "Failed to fetch comments" });
+  }
 });
 
-// get comments for an artist
-router.get('/:artistId', async (req, res) => {
-  const items = await Comment.find({ artistId: req.params.artistId }).sort({ createdAt: -1 });
-  res.json(items);
+// POST /comments  { artistName, text }
+router.post("/", async (req, res) => {
+  try {
+    const { artistName, text } = req.body || {};
+    if (!artistName || !text) return res.status(400).json({ error: "artistName and text required" });
+    const c = await Comment.create({ artistName, text });
+    res.status(201).json(c);
+  } catch (e) {
+    res.status(500).json({ error: "Failed to add comment" });
+  }
 });
 
 module.exports = router;
