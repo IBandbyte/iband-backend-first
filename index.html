@@ -1,9 +1,18 @@
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>iBand Frontend Placeholder</title></head>
-<body><h1>iBand Frontend Placeholder</h1><button id="ping">Ping API</button><pre id="out"></pre>
-<script>
-document.getElementById('ping').onclick = async () => {
-  const base = localStorage.getItem('apiBase') || 'http://localhost:4000';
-  const res = await fetch(base + '/health'); const json = await res.json();
-  document.getElementById('out').textContent = JSON.stringify(json,null,2);
-};
-</script></body></html>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>iBand Backend</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      :root { color-scheme: dark; }
+      body { font-family: system-ui, sans-serif; margin: 3rem; }
+      code { background:#222;padding:.25rem .4rem;border-radius:.35rem }
+    </style>
+  </head>
+  <body>
+    <h1>✅ iBand backend is running</h1>
+    <p>Try the public endpoint: <a href="/artists"><code>/artists</code></a></p>
+    <p>Health: <a href="/health"><code>/health</code></a></p>
+  </body>
+</html>
