@@ -1,9 +1,9 @@
-// admin.js — iBand backend admin routes (cleanup included)
+// admin.js — iBand backend admin routes
 const express = require("express");
 const router = express.Router();
 const Artist = require("./models/artist");
 
-// ---- Guard all admin routes with ADMIN_KEY env var
+// Guard: all admin endpoints require ADMIN_KEY
 router.use((req, res, next) => {
   const key = req.header("x-admin-key");
   if (!process.env.ADMIN_KEY) {
@@ -15,27 +15,25 @@ router.use((req, res, next) => {
   next();
 });
 
-// Simple health check
+// quick health for admin scope
 router.get("/health", (_req, res) => {
   res.json({ ok: true, route: "admin/health" });
 });
 
-// ---- ONE-TIME CLEANUP ----
-// Deletes blank/invalid names and deduplicates by name (keeps the first)
+// ONE-TIME CLEANUP
+// 1) remove bad/blank names  2) dedupe by normalized name
 router.post("/cleanup", async (_req, res) => {
   try {
-    // 1) delete bad names
     const bad = await Artist.deleteMany({
       $or: [
         { name: null },
         { name: "" },
         { name: "undefined" },
-        { name: { $exists: false } }
+        { name: { $exists: false } },
       ],
     });
 
-    // 2) dedupe by normalized name
-    const all = await Artist.find({}, { _id: 1, name: 1, genre: 1 }).lean();
+    const all = await Artist.find({}, { _id: 1, name: 1 }).lean();
     const seen = new Set();
     const toDelete = [];
 
@@ -46,16 +44,16 @@ router.post("/cleanup", async (_req, res) => {
       else seen.add(norm);
     }
 
-    let dedup = { deletedCount: 0 };
+    let removedDuplicates = 0;
     if (toDelete.length) {
-      const result = await Artist.deleteMany({ _id: { $in: toDelete } });
-      dedup.deletedCount = result.deletedCount || 0;
+      const r = await Artist.deleteMany({ _id: { $in: toDelete } });
+      removedDuplicates = r.deletedCount || 0;
     }
 
     res.json({
       ok: true,
       removedBadNames: bad.deletedCount || 0,
-      removedDuplicates: dedup.deletedCount || 0,
+      removedDuplicates,
     });
   } catch (err) {
     console.error("Cleanup failed:", err);
