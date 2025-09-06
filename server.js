@@ -1,4 +1,4 @@
-// server.js — iBandbyte backend (single-file entry)
+// server.js
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
@@ -8,21 +8,33 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Health checks
-app.get("/", (_req, res) => res.send("✅ iBandbyte backend is running"));
-app.get("/health", (_req, res) => res.json({ ok: true, service: "iBandbyte" }));
+// --- tiny health check so /health works
+app.get("/health", (_req, res) => {
+  res.json({ ok: true, mongoUriPresent: !!process.env.MONGO_URI, env: "render" });
+});
 
-// --- MongoDB connection ---
-mongoose
-  .connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
-  .then(() => console.log("✅ MongoDB connected"))
-  .catch((err) => console.error("❌ MongoDB error:", err.message));
+// --- connect to MongoDB using MONGO_URI
+(async () => {
+  try {
+    if (!process.env.MONGO_URI) {
+      console.error("❌ MONGO_URI is missing!");
+    }
+    await mongoose.connect(process.env.MONGO_URI);
+    console.log("✅ MongoDB connected");
+  } catch (err) {
+    console.error("❌ MongoDB connection error:", err.message);
+  }
+})();
 
-// --- Routes (kept in your flat layout) ---
-app.use("/artists", require("./artists"));
-app.use("/admin", require("./admin"));
-// (comments.js and votes.js can stay as they are or be wired later)
+// --- routes
+const artistsRoute = require("./artists"); // lists artists
+const adminRoute = require("./admin");     // protected admin tools
 
-// --- Start server ---
-const PORT = process.env.PORT || 5000;
+app.use("/artists", artistsRoute);
+app.use("/admin", adminRoute);
+
+// --- fallback
+app.get("/", (_req, res) => res.send("iBand backend is running"));
+
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`🚀 Server running on :${PORT}`));
