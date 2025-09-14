@@ -1,18 +1,203 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <title>iBand Backend</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <style>
-      :root { color-scheme: dark; }
-      body { font-family: system-ui, sans-serif; margin: 3rem; }
-      code { background:#222;padding:.25rem .4rem;border-radius:.35rem }
-    </style>
-  </head>
-  <body>
-    <h1>✅ iBand backend is running</h1>
-    <p>Try the public endpoint: <a href="/artists"><code>/artists</code></a></p>
-    <p>Health: <a href="/health"><code>/health</code></a></p>
-  </body>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>iBandbyte — Artists</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #111; /* dark stage vibe */
+      color: #fff;
+      margin: 0;
+      padding: 20px;
+    }
+
+    h1 {
+      text-align: center;
+      font-size: 2.5em;
+      margin-bottom: 20px;
+    }
+
+    /* Branding */
+    .brand {
+      font-weight: bold;
+    }
+    .brand .iband {
+      color: white; /* on dark background */
+    }
+    .brand .byte {
+      color: #FFB100; /* iBandbyte yellow */
+    }
+
+    .search-container {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    input[type="text"] {
+      padding: 10px;
+      width: 80%;
+      max-width: 400px;
+      border: none;
+      border-radius: 6px;
+      font-size: 1em;
+      outline: none;
+      background: #222;
+      color: #fff;
+    }
+
+    .refresh-btn {
+      margin-left: 10px;
+      padding: 10px 16px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      background: linear-gradient(90deg, #6a11cb, #ff6600);
+      color: white;
+      font-weight: bold;
+    }
+
+    .refresh-btn:hover {
+      opacity: 0.9;
+    }
+
+    .card {
+      background: linear-gradient(145deg, #6a11cb, #ff6600);
+      border-radius: 10px;
+      padding: 15px;
+      margin: 15px 0;
+      color: #fff;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+      transition: transform 0.2s ease;
+    }
+    .card:hover {
+      transform: translateY(-5px);
+    }
+    .card img {
+      width: 100%;
+      max-height: 200px;
+      object-fit: cover;
+      border-radius: 8px;
+      margin-bottom: 10px;
+    }
+    .card h2 {
+      margin: 0 0 10px;
+    }
+    .card p {
+      margin: 5px 0;
+    }
+
+    .pagination {
+      text-align: center;
+      margin-top: 20px;
+    }
+    .pagination button {
+      background: #222;
+      color: #fff;
+      border: none;
+      padding: 10px 15px;
+      margin: 0 5px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .pagination button.active {
+      background: #FFB100;
+      color: #111;
+    }
+
+    footer {
+      margin-top: 30px;
+      text-align: center;
+      font-size: 0.9em;
+      color: #aaa;
+    }
+  </style>
+</head>
+<body>
+  <h1 class="brand"><span class="iband">iBand</span><span class="byte">byte</span> — Artists</h1>
+
+  <div class="search-container">
+    <input type="text" id="searchBox" placeholder="Search artists..." />
+    <button class="refresh-btn" onclick="fetchArtists()">Refresh</button>
+  </div>
+
+  <div id="artists"></div>
+  <div class="pagination" id="pagination"></div>
+
+  <footer>© 2025 iBandbyte. All rights reserved.</footer>
+
+  <script>
+    const BASE_URL = "https://iband-backend-first-2.onrender.com";
+    const PAGE_SIZE = 24;
+
+    let allArtists = [];
+    let currentPage = 1;
+
+    async function fetchArtists() {
+      try {
+        const res = await fetch(BASE_URL + "/artists");
+        const data = await res.json();
+        allArtists = data;
+        currentPage = 1;
+        renderArtists();
+      } catch (err) {
+        console.error("Fetch failed", err);
+        document.getElementById("artists").innerHTML =
+          "<p style='color:red'>Failed to load artists.</p>";
+      }
+    }
+
+    function renderArtists() {
+      const container = document.getElementById("artists");
+      const search = document.getElementById("searchBox").value.toLowerCase();
+      const filtered = allArtists.filter(a =>
+        a.name.toLowerCase().includes(search)
+      );
+
+      const start = (currentPage - 1) * PAGE_SIZE;
+      const pageItems = filtered.slice(start, start + PAGE_SIZE);
+
+      container.innerHTML = pageItems
+        .map(
+          a => `
+          <div class="card">
+            ${a.imageUrl ? `<img src="${a.imageUrl}" alt="${a.name}"/>` : ""}
+            <h2>${a.name}</h2>
+            <p><b>Genre:</b> ${a.genre || "No genre set"}</p>
+            <p>${a.bio || ""}</p>
+            <p>Votes: ${a.votes || 0}</p>
+            <p>Comments: ${a.commentsCount || 0}</p>
+          </div>
+        `
+        )
+        .join("");
+
+      renderPagination(filtered.length);
+    }
+
+    function renderPagination(total) {
+      const totalPages = Math.ceil(total / PAGE_SIZE);
+      const pagDiv = document.getElementById("pagination");
+      pagDiv.innerHTML = "";
+      for (let i = 1; i <= totalPages; i++) {
+        const btn = document.createElement("button");
+        btn.textContent = i;
+        if (i === currentPage) btn.classList.add("active");
+        btn.onclick = () => {
+          currentPage = i;
+          renderArtists();
+        };
+        pagDiv.appendChild(btn);
+      }
+    }
+
+    document.getElementById("searchBox").addEventListener("input", () => {
+      currentPage = 1;
+      renderArtists();
+    });
+
+    fetchArtists();
+  </script>
+</body>
 </html>
