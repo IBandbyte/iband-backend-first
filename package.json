@@ -1,7 +1,7 @@
 {
   "name": "iband-backend-first",
   "version": "1.0.0",
-  "description": "iBandbyte backend (Express + MongoDB, flat layout)",
+  "description": "iBandbyte backend with Mongo + Express (latest build)", 
   "main": "server.js",
   "private": true,
   "engines": { "node": ">=18" },
