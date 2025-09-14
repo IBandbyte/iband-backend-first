@@ -1,35 +1,31 @@
-// artists.js — list artists with image, bio, votes
+// artists.js — artist schema + public list route
 const express = require("express");
 const mongoose = require("mongoose");
 const router = express.Router();
 
-const Artist =
-  mongoose.models.Artist ||
-  mongoose.model(
-    "Artist",
-    new mongoose.Schema(
-      {
-        name: { type: String, required: true },
-        genre: { type: String, default: "No genre set" },
-        bio: { type: String, default: "" },
-        imageUrl: { type: String, default: "" },
-        votes: { type: Number, default: 0 },
-        commentsCount: { type: Number, default: 0 },
-      },
-      { timestamps: true }
-    )
-  );
+// --- Schema (re-uses model if hot-reloaded) ---
+const artistSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true },
+    genre: { type: String, default: "No genre set" },
+    bio: { type: String, default: "" },
+    imageUrl: { type: String, default: "" },  // shown on frontend cards
+    votes: { type: Number, default: 0 },
+    commentsCount: { type: Number, default: 0 },
+  },
+  { timestamps: true }
+);
 
-// GET /artists — return all fields the UI needs
+const Artist =
+  mongoose.models.Artist || mongoose.model("Artist", artistSchema);
+
+// --- GET /artists — return all artists sorted by name ---
 router.get("/", async (_req, res) => {
   try {
-    const list = await Artist.find(
-      {},
-      { name: 1, genre: 1, bio: 1, imageUrl: 1, votes: 1 }
-    ).sort({ name: 1 });
-    res.json(list);
+    const artists = await Artist.find().sort({ name: 1 });
+    res.json(artists);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Failed to fetch artists" });
   }
 });
 
