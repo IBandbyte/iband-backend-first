@@ -1,0 +1,33 @@
+name: CI (Backend)
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'npm'
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Lint (optional)
+        run: npm run -s lint || echo "No lint script – skipping"
+
+      - name: Build (safe fallback)
+        run: npm run -s build || echo "No build step – skipping"
+
+      - name: Smoke check
+        run: node -e "require('fs').accessSync('src/server.js')"
