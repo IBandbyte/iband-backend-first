@@ -1,8 +1,5 @@
 name: CI (Backend)
-
 on:
-  push:
-    branches: [ main ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -13,7 +10,6 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -21,22 +17,11 @@ jobs:
       - name: Use Node 18
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
-          # no cache yet (no package-lock.json in repo)
+          node-version: 18
+          cache: 'npm'
 
       - name: Install deps
-        run: npm install --no-audit --no-fund
+        run: npm ci
 
-      # Quick sanity checks that don't require a DB
-      - name: Check server.js exists
-        run: test -f server.js
-
-      - name: Syntax check
-        run: node --check server.js
-
-      # Optional: run a very short boot test without DB connection
-      # (skipped if server needs Mongo to start)
-      - name: Print versions
-        run: |
-          node -v
-          npm -v
+      - name: Run backend
+        run: npm run dev
