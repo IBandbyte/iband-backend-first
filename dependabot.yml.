@@ -1,0 +1,29 @@
+# .github/dependabot.yml
+version: 2
+updates:
+  # ✅ Enable security-only updates (recommended)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 5
+    # Only create PRs for security vulnerabilities
+    allow:
+      - dependency-type: "all"
+    # Dependabot will only open PRs when a security advisory applies
+    security-updates-only: true
+
+# --- Optional presets (left commented for future use) ---
+
+# A) Disable Dependabot completely
+# version: 2
+# updates: []
+
+# C) Regular updates but ignore major versions
+# - package-ecosystem: "npm"
+#   directory: "/"
+#   schedule:
+#     interval: "weekly"
+#   ignore:
+#     - dependency-name: "*"
+#       update-types: ["version-update:semver-major"]
