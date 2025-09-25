@@ -1,4 +1,5 @@
 name: CI (Backend)
+
 on:
   pull_request:
     branches: [ main ]
@@ -23,5 +24,13 @@ jobs:
       - name: Install deps
         run: npm ci
 
-      - name: Run backend
-        run: npm run dev
+      - name: Check server.js exists
+        run: test -f server.js
+
+      - name: Syntax check
+        run: node --check server.js
+
+      - name: Print versions
+        run: |
+          node -v
+          npm -v
