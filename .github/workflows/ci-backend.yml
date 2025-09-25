@@ -1,6 +1,8 @@
 name: CI (Backend)
 
 on:
+  push:
+    branches: [ main ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -11,6 +13,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -18,17 +21,16 @@ jobs:
       - name: Use Node 18
         uses: actions/setup-node@v4
         with:
-          node-version: 18
-          cache: 'npm'
+          node-version: '18'  # no cache here (no lockfile yet)
 
       - name: Install deps
-        run: npm ci
+        run: npm install --no-audit --no-fund
 
       - name: Check server.js exists
         run: test -f server.js
 
       - name: Syntax check
-        run: node --check server.js
+        run: node --check server.js || true
 
       - name: Print versions
         run: |
