@@ -1,31 +1,23 @@
 {
-  "name": "iband-backend-first",
+  "name": "iband-backend",
   "version": "1.0.0",
-  "description": "iBandbyte backend with Mongo + Express (latest build)",
+  "description": "iBand backend server",
   "main": "server.js",
-  "private": true,
-  "engines": { "node": ">=18" },
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js",
-    "lint": "eslint .",
-    "lint:fix": "eslint . --fix",
-    "format": "prettier --check .",
-    "format:fix": "prettier --write .",
     "test": "jest --passWithNoTests"
   },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
   "dependencies": {
-    "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
-    "express": "^4.19.2",
-    "mongoose": "^8.5.1"
+    "express": "^4.18.2"
   },
   "devDependencies": {
-    "eslint": "^9.11.1",
-    "eslint-config-prettier": "^9.1.0",
-    "eslint-plugin-import": "^2.31.0",
+    "eslint": "^8.50.0",
+    "eslint-config-prettier": "^9.0.0",
+    "eslint-plugin-prettier": "^5.0.0",
     "jest": "^29.7.0",
-    "nodemon": "^3.1.4",
-    "prettier": "^3.3.3"
+    "prettier": "^3.0.3"
   }
 }
