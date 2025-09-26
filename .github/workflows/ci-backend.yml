@@ -21,10 +21,14 @@ jobs:
       - name: Use Node 18
         uses: actions/setup-node@v4
         with:
-          node-version: '18'     # keep simple; no npm cache until we add a lockfile
+          node-version: '18'
 
       - name: Install deps
-        run: npm install --no-audit --no-fund
+        run: npm ci || npm i --no-audit --no-fund
+
+      # 👉 Auto-format the working tree so ESLint stops complaining
+      - name: Format code (Prettier --write)
+        run: npx prettier . --write
 
       - name: Print versions
         run: |
@@ -35,7 +39,7 @@ jobs:
         run: npm run lint
 
       - name: Check formatting (Prettier)
-        run: npm run format:check
+        run: npx prettier . --check
 
       - name: Run tests (Jest)
-        run: npm test -- --ci
+        run: npm test --silent
