@@ -1,4 +1,4 @@
-// __tests__/safety.test.js — end-to-end tests for Safety API (routes shape aware)
+// __tests__/safety.test.js — end-to-end tests for Safety API (matches current service fields)
 const request = require('supertest');
 const express = require('express');
 
@@ -50,7 +50,7 @@ describe('Safety API', () => {
 
     expect(res.status).toBe(200);
     expect(res.body?.success).toBe(true);
-    expect(res.body?.case?.status).toBe('ack');
+    expect(res.body?.case?.status).toBe('acknowledged'); // <-- matches service
     expect(res.body.case.ackBy).toBe('mod1');
   });
 
@@ -62,7 +62,7 @@ describe('Safety API', () => {
     expect(res.status).toBe(200);
     expect(res.body?.success).toBe(true);
     expect(res.body?.case?.status).toBe('resolved');
-    expect(res.body.case.resolveBy).toBe('mod1');
+    expect(res.body.case.resolvedBy).toBe('mod1'); // <-- matches service
   });
 
   test('rate-limit: second panic within a minute for SAME user is blocked', async () => {
