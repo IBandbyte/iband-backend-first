@@ -1,121 +1,225 @@
-// artists.js — iBand backend router (list + vote + comments)
-
-const express = require("express");
-const mongoose = require("mongoose");
+// artists.js — Artists API (list, detail, vote, comments)
+const express = require('express');
+const mongoose = require('mongoose');
 
 const router = express.Router();
 
-/* ---------- Schema / Model ---------- */
-const commentSchema = new mongoose.Schema(
-  {
-    name: { type: String, default: "Anon" },
-    text: { type: String, required: true },
-  },
-  { _id: false, timestamps: true }
-);
+/** ----------------------------------------------------------------
+ *  Model (reuse if already registered; define if not)
+ *  ---------------------------------------------------------------- */
+const ArtistSchema =
+  mongoose.models.Artist?.schema ||
+  new mongoose.Schema(
+    {
+      name: { type: String, required: true, trim: true },
+      genre: { type: String, default: 'No genre set', trim: true },
+      bio: { type: String, default: '', trim: true },
+      avatarUrl: { type: String, default: '' },
+      votes: { type: Number, default: 0 },
+      commentsCount: { type: Number, default: 0 },
+      comments: [
+        {
+          name: { type: String, default: 'Anon', trim: true },
+          text: { type: String, required: true, trim: true },
+          createdAt: { type: Date, default: Date.now },
+        },
+      ],
+      createdAt: { type: Date, default: Date.now },
+      updatedAt: { type: Date, default: Date.now },
+    },
+    { timestamps: true }
+  );
 
-const artistSchema = new mongoose.Schema(
-  {
-    name: { type: String, required: true, trim: true },
-    genre: { type: String, default: "No genre set" },
-    bio: { type: String, default: "" },
-    imageUrl: { type: String, default: "" },
-    votes: { type: Number, default: 0 },
-    // Keep an array so we can show real comments later
-    comments: { type: [commentSchema], default: [] },
-    // Also keep a quick counter for fast list rendering
-    commentsCount: { type: Number, default: 0 },
-  },
-  { timestamps: true }
-);
-
-// keep model hot-reload safe
 const Artist =
-  mongoose.models.Artist || mongoose.model("Artist", artistSchema);
+  mongoose.models.Artist || mongoose.model('Artist', ArtistSchema);
 
-// maintain commentsCount automatically
-artistSchema.pre("save", function (next) {
-  this.commentsCount = Array.isArray(this.comments) ? this.comments.length : 0;
-  next();
+/** Small helpers */
+const safeStr = (v, fallback = '') =>
+  (v ?? fallback).toString().trim();
+
+const toLeanListItem = (a) => ({
+  id: a._id?.toString(),
+  name: a.name,
+  genre: a.genre || 'No genre set',
+  votes:
+    Array.isArray(a.comments) || typeof a.votes === 'number'
+      ? a.votes || 0
+      : 0,
+  commentsCount:
+    Array.isArray(a.comments) && a.comments.length
+      ? a.comments.length
+      : a.commentsCount || 0,
 });
 
-/* ---------- Helpers ---------- */
-const leanArtist = (doc) => {
-  const a = doc.toObject ? doc.toObject() : doc;
-  // ensure commentsCount is always present and numeric
-  a.commentsCount = Array.isArray(a.comments) ? a.comments.length : (a.commentsCount || 0);
-  return a;
-};
-
-/* ---------- Routes ---------- */
-
-// GET /artists -> list (sorted by name)
-router.get("/", async (_req, res) => {
+/** ----------------------------------------------------------------
+ *  GET /artists
+ *  Optional query: ?q=searchText
+ *  Returns a lean, deduped list (by name) sorted A→Z.
+ *  ---------------------------------------------------------------- */
+router.get('/', async (req, res) => {
   try {
-    const artists = await Artist.find({}).sort({ name: 1 }).lean();
-    const data = artists.map((a) => ({
-      ...a,
+    const q = safeStr(req.query.q || '');
+    const filter = q
+      ? { name: { $regex: q, $options: 'i' } }
+      : {};
+
+    const docs = await Artist.find(filter)
+      .select('name genre votes commentsCount')
+      .lean()
+      .exec();
+
+    // De-dupe by lowercased name (in case existing data has dupes)
+    const seen = new Set();
+    const list = [];
+    for (const a of docs) {
+      const nameKey = safeStr(a.name).toLowerCase();
+      if (!nameKey) continue;
+      if (seen.has(nameKey)) continue;
+      seen.add(nameKey);
+      list.push(toLeanListItem(a));
+    }
+
+    list.sort((a, b) => a.name.localeCompare(b.name));
+    res.json(list);
+  } catch (err) {
+    console.error('GET /artists error:', err);
+    res.status(500).json({ error: 'Failed to fetch artists' });
+  }
+});
+
+/** ----------------------------------------------------------------
+ *  GET /artists/:id  → artist detail
+ *  Returns full document (minus heavy fields if needed).
+ *  ---------------------------------------------------------------- */
+router.get('/:id', async (req, res) => {
+  try {
+    const id = safeStr(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Missing id' });
+
+    const doc = await Artist.findById(id).lean().exec();
+    if (!doc) return res.status(404).json({ error: 'Artist not found' });
+
+    // Normalize response shape a bit
+    const out = {
+      id: doc._id?.toString(),
+      name: doc.name,
+      genre: doc.genre || 'No genre set',
+      bio: doc.bio || '',
+      avatarUrl: doc.avatarUrl || '',
+      votes: typeof doc.votes === 'number' ? doc.votes : 0,
       commentsCount:
-        Array.isArray(a.comments) ? a.comments.length : (a.commentsCount || 0),
-    }));
-    res.json(data);
+        Array.isArray(doc.comments) && doc.comments.length
+          ? doc.comments.length
+          : doc.commentsCount || 0,
+      comments:
+        Array.isArray(doc.comments)
+          ? doc.comments.map((c) => ({
+              name: c.name || 'Anon',
+              text: c.text,
+              createdAt: c.createdAt,
+            }))
+          : [],
+      createdAt: doc.createdAt,
+      updatedAt: doc.updatedAt,
+    };
+
+    res.json(out);
   } catch (err) {
-    console.error("GET /artists error:", err);
-    res.status(500).json({ error: "Failed to fetch artists" });
+    console.error('GET /artists/:id error:', err);
+    res.status(500).json({ error: 'Failed to fetch artist' });
   }
 });
 
-// POST /artists/:id/vote -> increment votes
-router.post("/:id/vote", async (req, res) => {
+/** ----------------------------------------------------------------
+ *  POST /artists/:id/vote  → increments votes
+ *  Body: { delta?: number }  (default +1)
+ *  ---------------------------------------------------------------- */
+router.post('/:id/vote', async (req, res) => {
   try {
-    const { id } = req.params;
-    const doc = await Artist.findByIdAndUpdate(
-      id,
-      { $inc: { votes: 1 } },
-      { new: true }
-    ).lean();
-    if (!doc) return res.status(404).json({ error: "Artist not found" });
-    res.json({ ok: true, votes: doc.votes });
-  } catch (err) {
-    console.error("POST /artists/:id/vote error:", err);
-    res.status(500).json({ error: "Failed to vote" });
-  }
-});
+    const id = safeStr(req.params.id);
+    const deltaRaw = req.body?.delta;
+    const delta =
+      typeof deltaRaw === 'number' && Number.isFinite(deltaRaw)
+        ? Math.trunc(deltaRaw)
+        : 1;
 
-// GET /artists/:id/comments -> list comments (newest first)
-router.get("/:id/comments", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const doc = await Artist.findById(id).select("comments").lean();
-    if (!doc) return res.status(404).json({ error: "Artist not found" });
-    const comments = (doc.comments || []).slice().reverse();
-    res.json({ ok: true, comments, count: comments.length });
-  } catch (err) {
-    console.error("GET /artists/:id/comments error:", err);
-    res.status(500).json({ error: "Failed to fetch comments" });
-  }
-});
+    const doc = await Artist.findById(id).exec();
+    if (!doc) return res.status(404).json({ error: 'Artist not found' });
 
-// POST /artists/:id/comments -> add comment
-router.post("/:id/comments", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const name = (req.body?.name || "Anon").toString().trim().slice(0, 60) || "Anon";
-    const text = (req.body?.text || "").toString().trim();
-
-    if (!text) return res.status(400).json({ error: "Comment text required" });
-
-    const doc = await Artist.findById(id);
-    if (!doc) return res.status(404).json({ error: "Artist not found" });
-
-    doc.comments.push({ name, text });
-    doc.commentsCount = doc.comments.length; // keep in sync
+    doc.votes = Math.max(0, (doc.votes || 0) + delta);
     await doc.save();
 
-    res.json({ ok: true, count: doc.commentsCount });
+    res.json({ id: doc._id.toString(), votes: doc.votes });
   } catch (err) {
-    console.error("POST /artists/:id/comments error:", err);
-    res.status(500).json({ error: "Failed to add comment" });
+    console.error('POST /artists/:id/vote error:', err);
+    res.status(500).json({ error: 'Failed to vote' });
+  }
+});
+
+/** ----------------------------------------------------------------
+ *  GET /artists/:id/comments → list comments (newest first)
+ *  ---------------------------------------------------------------- */
+router.get('/:id/comments', async (req, res) => {
+  try {
+    const id = safeStr(req.params.id);
+    const doc = await Artist.findById(id)
+      .select('comments')
+      .lean()
+      .exec();
+
+    if (!doc) return res.status(404).json({ error: 'Artist not found' });
+
+    const comments = Array.isArray(doc.comments)
+      ? [...doc.comments].sort(
+          (a, b) =>
+            new Date(b.createdAt || 0) - new Date(a.createdAt || 0)
+        )
+      : [];
+
+    res.json({
+      count: comments.length,
+      comments: comments.map((c) => ({
+        name: c.name || 'Anon',
+        text: c.text,
+        createdAt: c.createdAt,
+      })),
+    });
+  } catch (err) {
+    console.error('GET /artists/:id/comments error:', err);
+    res.status(500).json({ error: 'Failed to fetch comments' });
+  }
+});
+
+/** ----------------------------------------------------------------
+ *  POST /artists/:id/comments → add a comment
+ *  Body: { name?: string, text: string }
+ *  ---------------------------------------------------------------- */
+router.post('/:id/comments', async (req, res) => {
+  try {
+    const id = safeStr(req.params.id);
+    const name = safeStr(req.body?.name || 'Anon').slice(0, 60) || 'Anon';
+    const text = safeStr(req.body?.text);
+
+    if (!text) {
+      return res.status(400).json({ error: 'Comment text required' });
+    }
+
+    const doc = await Artist.findById(id).exec();
+    if (!doc) return res.status(404).json({ error: 'Artist not found' });
+
+    doc.comments = Array.isArray(doc.comments) ? doc.comments : [];
+    doc.comments.push({ name, text, createdAt: new Date() });
+    doc.commentsCount = doc.comments.length;
+
+    await doc.save();
+
+    res.json({
+      id: doc._id.toString(),
+      commentsCount: doc.commentsCount,
+    });
+  } catch (err) {
+    console.error('POST /artists/:id/comments error:', err);
+    res.status(500).json({ error: 'Failed to add comment' });
   }
 });
 
