@@ -1,31 +1,53 @@
-// routes/votes.js — iBand backend: fan votes per artist
+// routes/votes.js — handles voting and comments for artists
+
 const express = require('express');
 const router = express.Router();
+const VotesService = require('../services/votesService');
 
-const {
-  addVote,
-  getVotesForArtist,
-} = require('../services/votesService');
-
-// GET /api/votes/:artistId  → { artistId, total }
-router.get('/:artistId', (req, res) => {
-  const artistId = String(req.params.artistId || '').trim();
-  if (!artistId) return res.status(400).json({ error: 'artistId required' });
-
-  const total = getVotesForArtist(artistId);
-  return res.json({ artistId, total });
+// POST /votes/:artistId → cast a vote
+router.post('/:artistId', async (req, res) => {
+  try {
+    const { artistId } = req.params;
+    const { user } = req.body; // optional: could be userId/email if logged in
+    const result = await VotesService.castVote(artistId, user);
+    res.json({ success: true, vote: result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
-// POST /api/votes/:artistId  { userId? } → { success, artistId, total }
-router.post('/:artistId', (req, res) => {
-  const artistId = String(req.params.artistId || '').trim();
-  if (!artistId) return res.status(400).json({ error: 'artistId required' });
+// GET /votes/:artistId → get all votes for an artist
+router.get('/:artistId', async (req, res) => {
+  try {
+    const { artistId } = req.params;
+    const votes = await VotesService.getVotes(artistId);
+    res.json({ success: true, votes });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 
-  // optional: userId for soft de-dupe per minute (handled in service)
-  const userId = req.body?.userId ? String(req.body.userId) : 'anon';
+// POST /votes/:artistId/comments → add a comment
+router.post('/:artistId/comments', async (req, res) => {
+  try {
+    const { artistId } = req.params;
+    const { user, text } = req.body;
+    const comment = await VotesService.addComment(artistId, user, text);
+    res.json({ success: true, comment });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 
-  const total = addVote({ artistId, userId });
-  return res.status(201).json({ success: true, artistId, total });
+// GET /votes/:artistId/comments → list comments
+router.get('/:artistId/comments', async (req, res) => {
+  try {
+    const { artistId } = req.params;
+    const comments = await VotesService.getComments(artistId);
+    res.json({ success: true, comments });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 module.exports = router;
