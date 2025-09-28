@@ -39,9 +39,13 @@ app.get('/health', (_req, res) => {
 app.use('/artists', require('./artists')); // public read API
 app.use('/admin', require('./admin'));     // secured admin API
 
-// 🔐 Safety / Panic API (new)
+// 🔐 Safety / Panic API
 const safetyRoutes = require('./routes/safety');
 app.use('/api/safety', safetyRoutes);
+
+// 🗳️ Votes API
+const votesRoutes = require('./routes/votes');
+app.use('/api/votes', votesRoutes);
 
 // Root
 app.get('/', (_req, res) => res.json({ ok: true, service: 'iband-backend' }));
