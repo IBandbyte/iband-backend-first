@@ -1,4 +1,4 @@
-// __tests__/safety.test.js — end-to-end tests for Safety API
+// __tests__/safety.test.js — end-to-end tests for Safety API (matches routes/safety.js)
 const request = require("supertest");
 const express = require("express");
 
@@ -8,7 +8,7 @@ const app = express();
 app.use(express.json());
 app.use("/api/safety", safetyRoutes);
 
-describe("Safety API", () => {
+describe("Safety API (routes/safety.js)", () => {
   let createdId;
 
   test("POST /panic → creates a panic case", async () => {
@@ -28,39 +28,44 @@ describe("Safety API", () => {
     createdId = res.body.case.id;
   });
 
-  test("GET /cases → lists cases and includes the created one", async () => {
+  test("GET /cases → returns {count, cases[]} and includes created case", async () => {
     const res = await request(app).get("/api/safety/cases");
     expect(res.status).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
-    const found = res.body.find((c) => c.id === createdId);
+    expect(typeof res.body?.count).toBe("number");
+    expect(Array.isArray(res.body?.cases)).toBe(true);
+
+    const found = res.body.cases.find((c) => c.id === createdId);
     expect(found).toBeDefined();
     expect(found.status).toBe("open");
   });
 
-  test("GET /cases/:id → fetches the specific case", async () => {
+  test("GET /cases/:id → fetches specific case", async () => {
     const res = await request(app).get(`/api/safety/cases/${createdId}`);
     expect(res.status).toBe(200);
     expect(res.body?.id).toBe(createdId);
+    expect(res.body?.status).toBeDefined();
   });
 
-  test("POST /ack → acknowledges a case", async () => {
+  test("POST /cases/:id/ack → acks case with moderator", async () => {
     const res = await request(app)
-      .post("/api/safety/ack")
-      .send({ id: createdId, by: "mod1" });
+      .post(`/api/safety/cases/${createdId}/ack`)
+      .send({ moderator: "mod1" });
+
     expect(res.status).toBe(200);
-    expect(res.body?.success).toBe(true);
-    expect(res.body?.case?.status).toBe("ack");
-    expect(res.body.case.ackBy).toBe("mod1");
+    expect(res.body?.id).toBe(createdId);
+    expect(res.body?.status).toBe("ack");
+    expect(res.body?.ackBy).toBe("mod1");
   });
 
-  test("POST /resolve → resolves a case", async () => {
+  test("POST /cases/:id/resolve → resolves case", async () => {
     const res = await request(app)
-      .post("/api/safety/resolve")
-      .send({ id: createdId, by: "mod1", note: "validated and closed" });
+      .post(`/api/safety/cases/${createdId}/resolve`)
+      .send({ outcome: "no_action", moderator: "mod1" });
+
     expect(res.status).toBe(200);
-    expect(res.body?.success).toBe(true);
-    expect(res.body?.case?.status).toBe("resolved");
-    expect(res.body.case.resolveBy).toBe("mod1");
+    expect(res.body?.id).toBe(createdId);
+    expect(res.body?.status).toBe("resolved");
+    expect(res.body?.resolveBy).toBe("mod1");
   });
 
   test("rate-limit: second panic within a minute for SAME user is blocked", async () => {
