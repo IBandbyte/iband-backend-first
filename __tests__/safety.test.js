@@ -1,4 +1,4 @@
-// __tests__/safety.test.js — end-to-end tests for Safety API (matches routes/safety.js)
+// __tests__/safety.test.js — end-to-end tests for Safety API
 const request = require("supertest");
 const express = require("express");
 
@@ -47,28 +47,28 @@ describe("Safety API", () => {
     const res = await request(app)
       .post(`/api/safety/cases/${createdId}/ack`)
       .send({ moderator: "mod1" });
-
     expect(res.status).toBe(200);
     expect(res.body?.status).toBe("ack");
-    expect(res.body?.ackBy).toBe("mod1");
+    expect(res.body.ackBy).toBe("mod1");
   });
 
   test("POST /cases/:id/resolve → resolves a case", async () => {
     const res = await request(app)
       .post(`/api/safety/cases/${createdId}/resolve`)
       .send({ outcome: "no_action", moderator: "mod1" });
-
     expect(res.status).toBe(200);
     expect(res.body?.status).toBe("resolved");
-    expect(res.body?.resolveBy).toBe("mod1");
+    expect(res.body.resolveBy).toBe("mod1");
   });
 
   test("rate-limit: second panic within a minute for SAME user is blocked", async () => {
+    // First call for this user should pass:
     const ok = await request(app)
       .post("/api/safety/panic")
       .send({ userId: "rateUser", category: "abuse", message: "first" });
     expect(ok.status).toBe(201);
 
+    // Immediate second call should 429:
     const blocked = await request(app)
       .post("/api/safety/panic")
       .send({ userId: "rateUser", category: "abuse", message: "second" });
