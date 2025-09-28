@@ -11,7 +11,7 @@ const {
   listCases
 } = require('../services/safetyService');
 
-// POST /api/safety/panic  (public: requires logged-in user in future; for now accepts userId)
+// POST /api/safety/panic
 router.post('/panic', (req, res) => {
   try {
     const userId = (req.body?.userId || 'anon').toString();
@@ -37,7 +37,7 @@ router.post('/panic', (req, res) => {
   }
 });
 
-// GET /api/safety/cases?status=open&limit=50  (admin/moderator view)
+// GET /api/safety/cases
 router.get('/cases', (req, res) => {
   const { status, limit } = req.query;
   const list = listCases({ status, limit: parseInt(limit || '50', 10) });
@@ -55,14 +55,14 @@ router.get('/cases/:id', (req, res) => {
 router.post('/cases/:id/ack', (req, res) => {
   const rec = ackCase(req.params.id, req.body?.moderator);
   if (!rec) return res.status(404).json({ error: 'Not found' });
-  res.json(rec);
+  res.json({ success: true, case: rec });
 });
 
-// POST /api/safety/cases/:id/resolve  { outcome: 'content_removed'|'ban'|'no_action' }
+// POST /api/safety/cases/:id/resolve
 router.post('/cases/:id/resolve', (req, res) => {
   const rec = resolveCase(req.params.id, req.body?.outcome, req.body?.moderator);
   if (!rec) return res.status(404).json({ error: 'Not found' });
-  res.json(rec);
+  res.json({ success: true, case: rec });
 });
 
 module.exports = router;
