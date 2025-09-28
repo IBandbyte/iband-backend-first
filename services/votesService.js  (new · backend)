@@ -1,0 +1,40 @@
+// services/votesService.js — minimal in-memory votes store with soft rate-limit
+const votes = new Map();            // artistId -> number
+const lastUserVoteAt = new Map();   // `${artistId}:${userId}` -> timestamp ms
+
+const ONE_MINUTE = 60_000;
+
+/**
+ * Return total votes for an artist (integer)
+ */
+function getVotesForArtist(artistId) {
+  return votes.get(artistId) ?? 0;
+}
+
+/**
+ * Add a vote, with a 1-minute soft per-(artist,user) throttle.
+ * Returns the new total.
+ */
+function addVote({ artistId, userId = 'anon' }) {
+  const key = `${artistId}:${userId}`;
+  const now = Date.now();
+  const last = lastUserVoteAt.get(key) || 0;
+
+  // throttle duplicate spam: one vote per minute per (artist,user)
+  if (now - last < ONE_MINUTE) {
+    // ignore but still return current total
+    return getVotesForArtist(artistId);
+  }
+
+  lastUserVoteAt.set(key, now);
+  const next = getVotesForArtist(artistId) + 1;
+  votes.set(artistId, next);
+  return next;
+}
+
+module.exports = {
+  getVotesForArtist,
+  addVote,
+  // exported for tests if needed
+  _internal: { votes, lastUserVoteAt, ONE_MINUTE },
+};
