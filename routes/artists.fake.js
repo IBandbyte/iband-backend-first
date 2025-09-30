@@ -1,39 +1,10 @@
-// routes/artists.fake.js — Fake artists for tests/seed
+// routes/artists.fake.js
+// Tiny adapter so tests can `require('../routes/artists.fake')` and hit the real artists router.
+
 const express = require('express');
 const router = express.Router();
 
-// Simple in-memory fake dataset
-let fakeArtists = [
-  {
-    _id: 'A',
-    name: 'Test Artist A',
-    genre: 'Pop',
-    bio: 'A sample test artist',
-    avatarUrl: '',
-    votes: 0,
-    comments: [],
-  },
-  {
-    _id: 'B',
-    name: 'Test Artist B',
-    genre: 'Rock',
-    bio: 'Another sample test artist',
-    avatarUrl: '',
-    votes: 0,
-    comments: [],
-  },
-];
-
-// GET all fake artists
-router.get('/', (_req, res) => {
-  res.json(fakeArtists);
-});
-
-// GET fake artist by id
-router.get('/:id', (req, res) => {
-  const a = fakeArtists.find((x) => x._id === req.params.id);
-  if (!a) return res.status(404).json({ error: 'Artist not found' });
-  res.json(a);
-});
+// Reuse the existing root-level artists.js handlers under this mounted router.
+router.use('/', require('../artists'));
 
 module.exports = router;
