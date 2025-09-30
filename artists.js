@@ -37,23 +37,24 @@ const Artist =
 const safeStr = (v, fallback = '') =>
   (v ?? fallback).toString().trim();
 
-/** 
- * IMPORTANT TEST-SHAPE NOTE:
- * Tests expect list items to expose **_id** (string), not "id".
- */
-const toLeanListItem = (a) => ({
-  _id: a._id?.toString(), // <-- changed from "id" to "_id"
-  name: a.name,
-  genre: a.genre || 'No genre set',
-  votes:
-    Array.isArray(a.comments) || typeof a.votes === 'number'
-      ? a.votes || 0
-      : 0,
-  commentsCount:
-    Array.isArray(a.comments) && a.comments.length
-      ? a.comments.length
-      : a.commentsCount || 0,
-});
+// 👉 expose BOTH id and _id so tests can read first._id
+const toLeanListItem = (a) => {
+  const id = a._id?.toString();
+  return {
+    _id: id,            // <-- for tests
+    id,                 // <-- for UI compatibility
+    name: a.name,
+    genre: a.genre || 'No genre set',
+    votes:
+      Array.isArray(a.comments) || typeof a.votes === 'number'
+        ? a.votes || 0
+        : 0,
+    commentsCount:
+      Array.isArray(a.comments) && a.comments.length
+        ? a.comments.length
+        : a.commentsCount || 0,
+  };
+};
 
 /** ----------------------------------------------------------------
  *  GET /artists
@@ -68,11 +69,11 @@ router.get('/', async (req, res) => {
       : {};
 
     const docs = await Artist.find(filter)
-      .select('name genre votes commentsCount') // _id is included by default
+      .select('name genre votes commentsCount')
       .lean()
       .exec();
 
-    // De-dupe by lowercased name (in case existing data has dupes)
+    // De-dupe by lowercased name
     const seen = new Set();
     const list = [];
     for (const a of docs) {
@@ -93,7 +94,6 @@ router.get('/', async (req, res) => {
 
 /** ----------------------------------------------------------------
  *  GET /artists/:id  → artist detail
- *  Returns full document (minus heavy fields if needed).
  *  ---------------------------------------------------------------- */
 router.get('/:id', async (req, res) => {
   try {
@@ -103,8 +103,8 @@ router.get('/:id', async (req, res) => {
     const doc = await Artist.findById(id).lean().exec();
     if (!doc) return res.status(404).json({ error: 'Artist not found' });
 
-    // Normalize response shape a bit
     const out = {
+      _id: doc._id?.toString(),  // expose _id for consistency
       id: doc._id?.toString(),
       name: doc.name,
       genre: doc.genre || 'No genre set',
@@ -137,6 +137,7 @@ router.get('/:id', async (req, res) => {
 /** ----------------------------------------------------------------
  *  POST /artists/:id/vote  → increments votes
  *  Body: { delta?: number }  (default +1)
+ *  Tests expect 200 with { ok:true, votes:number }
  *  ---------------------------------------------------------------- */
 router.post('/:id/vote', async (req, res) => {
   try {
@@ -153,7 +154,8 @@ router.post('/:id/vote', async (req, res) => {
     doc.votes = Math.max(0, (doc.votes || 0) + delta);
     await doc.save();
 
-    res.json({ id: doc._id.toString(), votes: doc.votes });
+    // 👇 match the test’s expected shape
+    res.json({ ok: true, votes: doc.votes });
   } catch (err) {
     console.error('POST /artists/:id/vote error:', err);
     res.status(500).json({ error: 'Failed to vote' });
@@ -161,7 +163,7 @@ router.post('/:id/vote', async (req, res) => {
 });
 
 /** ----------------------------------------------------------------
- *  GET /artists/:id/comments → list comments (newest first)
+ *  GET /artists/:id/comments → list comments
  *  ---------------------------------------------------------------- */
 router.get('/:id/comments', async (req, res) => {
   try {
@@ -196,7 +198,6 @@ router.get('/:id/comments', async (req, res) => {
 
 /** ----------------------------------------------------------------
  *  POST /artists/:id/comments → add a comment
- *  Body: { name?: string, text: string }
  *  ---------------------------------------------------------------- */
 router.post('/:id/comments', async (req, res) => {
   try {
