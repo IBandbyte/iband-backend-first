@@ -43,9 +43,9 @@ app.use('/admin', require('./admin'));     // secured admin API
 const safetyRoutes = require('./routes/safety');
 app.use('/api/safety', safetyRoutes);
 
-// 🗳 Votes API (new)
+// 🗳 Votes API (new) — NOTE: mount at /api/votes
 const votesRoutes = require('./routes/votes');
-app.use('/votes', votesRoutes);
+app.use('/api/votes', votesRoutes);
 
 // Root
 app.get('/', (_req, res) => res.json({ ok: true, service: 'iband-backend' }));
