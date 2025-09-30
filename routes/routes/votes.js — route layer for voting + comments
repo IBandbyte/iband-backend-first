@@ -1,0 +1,62 @@
+// routes/votes.js
+const express = require('express');
+const router = express.Router();
+
+const {
+  initVotes,
+  upvote,
+  getLeaderboard,
+  addComment,
+  listComments,
+} = require('../services/votesService');
+
+// make sure in-memory stores exist
+initVotes();
+
+/**
+ * GET /api/votes/leaderboard
+ * Optional query: limit (default 50)
+ */
+router.get('/leaderboard', (req, res) => {
+  const limit = Number.parseInt(req.query.limit || '50', 10);
+  const data = getLeaderboard(limit);
+  res.json({ count: data.length, items: data });
+});
+
+/**
+ * POST /api/votes/:id/vote
+ * Body: { userId?: string }
+ */
+router.post('/:id/vote', (req, res) => {
+  const id = req.params.id;
+  const userId = (req.body?.userId || 'anon').toString();
+
+  const result = upvote(id, userId);
+  if (!result) return res.status(400).json({ error: 'Invalid artist id' });
+
+  res.json({ success: true, id, votes: result.votes, lastVotedBy: userId });
+});
+
+/**
+ * POST /api/votes/:id/comments
+ * Body: { userId: string, text: string }
+ */
+router.post('/:id/comments', (req, res) => {
+  const id = req.params.id;
+  const { userId, text } = req.body || {};
+  if (!text) return res.status(400).json({ error: 'text is required' });
+
+  const c = addComment(id, { userId: userId || 'anon', text: String(text) });
+  res.status(201).json({ success: true, comment: c });
+});
+
+/**
+ * GET /api/votes/:id/comments
+ */
+router.get('/:id/comments', (req, res) => {
+  const id = req.params.id;
+  const items = listComments(id);
+  res.json({ count: items.length, items });
+});
+
+module.exports = router;
