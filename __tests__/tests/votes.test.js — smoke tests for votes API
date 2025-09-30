@@ -1,0 +1,37 @@
+// __tests__/votes.test.js
+const request = require('supertest');
+const express = require('express');
+const votesRoutes = require('../routes/votes');
+
+const app = express();
+app.use(express.json());
+app.use('/api/votes', votesRoutes);
+
+describe('Votes API', () => {
+  test('GET /leaderboard returns array payload', async () => {
+    const res = await request(app).get('/api/votes/leaderboard');
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body?.items)).toBe(true);
+  });
+
+  test('vote + comments lifecycle works', async () => {
+    // pick an id we know the service will accept (free-form for in-memory service)
+    const id = 'artist-1';
+
+    const v = await request(app).post(`/api/votes/${id}/vote`).send({ userId: 'u1' });
+    expect(v.status).toBe(200);
+    expect(v.body?.success).toBe(true);
+    expect(typeof v.body?.votes).toBe('number');
+
+    const c1 = await request(app)
+      .post(`/api/votes/${id}/comments`)
+      .send({ userId: 'u2', text: 'nice!' });
+    expect(c1.status).toBe(201);
+    expect(c1.body?.success).toBe(true);
+
+    const list = await request(app).get(`/api/votes/${id}/comments`);
+    expect(list.status).toBe(200);
+    expect(Array.isArray(list.body?.items)).toBe(true);
+    expect(list.body.items.length).toBeGreaterThanOrEqual(1);
+  });
+});
