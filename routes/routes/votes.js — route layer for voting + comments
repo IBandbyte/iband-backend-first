@@ -3,60 +3,84 @@ const express = require('express');
 const router = express.Router();
 
 const {
-  initVotes,
-  upvote,
+  upsertArtist,
+  voteFor,
+  unvoteFor,
   getLeaderboard,
   addComment,
   listComments,
 } = require('../services/votesService');
 
-// make sure in-memory stores exist
-initVotes();
-
-/**
- * GET /api/votes/leaderboard
- * Optional query: limit (default 50)
- */
-router.get('/leaderboard', (req, res) => {
-  const limit = Number.parseInt(req.query.limit || '50', 10);
-  const data = getLeaderboard(limit);
-  res.json({ count: data.length, items: data });
+// POST /api/votes/artists { id, name }
+router.post('/artists', (req, res) => {
+  try {
+    const { id, name } = req.body || {};
+    if (!id || !name) return res.status(400).json({ error: 'id and name required' });
+    const artist = upsertArtist({ id, name });
+    res.status(201).json(artist);
+  } catch (e) {
+    console.error('POST /api/votes/artists error', e);
+    res.status(500).json({ error: 'failed to upsert artist' });
+  }
 });
 
-/**
- * POST /api/votes/:id/vote
- * Body: { userId?: string }
- */
+// GET /api/votes/leaderboard
+router.get('/leaderboard', (_req, res) => {
+  const lb = getLeaderboard();
+  res.json(lb);
+});
+
+// POST /api/votes/:id/vote { userId }
 router.post('/:id/vote', (req, res) => {
-  const id = req.params.id;
-  const userId = (req.body?.userId || 'anon').toString();
-
-  const result = upvote(id, userId);
-  if (!result) return res.status(400).json({ error: 'Invalid artist id' });
-
-  res.json({ success: true, id, votes: result.votes, lastVotedBy: userId });
+  try {
+    const { id } = req.params;
+    const { userId } = req.body || {};
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    const rec = voteFor(id, userId);
+    if (!rec) return res.status(404).json({ error: 'artist not found' });
+    res.json(rec);
+  } catch (e) {
+    console.error('POST /api/votes/:id/vote error', e);
+    res.status(500).json({ error: 'failed to vote' });
+  }
 });
 
-/**
- * POST /api/votes/:id/comments
- * Body: { userId: string, text: string }
- */
+// POST /api/votes/:id/unvote { userId }
+router.post('/:id/unvote', (req, res) => {
+  try {
+    const { id } = req.params;
+    const { userId } = req.body || {};
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    const rec = unvoteFor(id, userId);
+    if (!rec) return res.status(404).json({ error: 'artist not found' });
+    res.json(rec);
+  } catch (e) {
+    console.error('POST /api/votes/:id/unvote error', e);
+    res.status(500).json({ error: 'failed to unvote' });
+  }
+});
+
+// POST /api/votes/:id/comments { userId, text }
 router.post('/:id/comments', (req, res) => {
-  const id = req.params.id;
-  const { userId, text } = req.body || {};
-  if (!text) return res.status(400).json({ error: 'text is required' });
-
-  const c = addComment(id, { userId: userId || 'anon', text: String(text) });
-  res.status(201).json({ success: true, comment: c });
+  try {
+    const { id } = req.params;
+    const { userId, text } = req.body || {};
+    if (!userId || !text) return res.status(400).json({ error: 'userId and text required' });
+    const rec = addComment(id, { userId, text });
+    if (!rec) return res.status(404).json({ error: 'artist not found' });
+    res.status(201).json(rec);
+  } catch (e) {
+    console.error('POST /api/votes/:id/comments error', e);
+    res.status(500).json({ error: 'failed to add comment' });
+  }
 });
 
-/**
- * GET /api/votes/:id/comments
- */
+// GET /api/votes/:id/comments
 router.get('/:id/comments', (req, res) => {
-  const id = req.params.id;
-  const items = listComments(id);
-  res.json({ count: items.length, items });
+  const { id } = req.params;
+  const list = listComments(id);
+  if (!list) return res.status(404).json({ error: 'artist not found' });
+  res.json(list);
 });
 
 module.exports = router;
