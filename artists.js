@@ -37,8 +37,12 @@ const Artist =
 const safeStr = (v, fallback = '') =>
   (v ?? fallback).toString().trim();
 
+/** 
+ * IMPORTANT TEST-SHAPE NOTE:
+ * Tests expect list items to expose **_id** (string), not "id".
+ */
 const toLeanListItem = (a) => ({
-  id: a._id?.toString(),
+  _id: a._id?.toString(), // <-- changed from "id" to "_id"
   name: a.name,
   genre: a.genre || 'No genre set',
   votes:
@@ -64,7 +68,7 @@ router.get('/', async (req, res) => {
       : {};
 
     const docs = await Artist.find(filter)
-      .select('name genre votes commentsCount')
+      .select('name genre votes commentsCount') // _id is included by default
       .lean()
       .exec();
 
