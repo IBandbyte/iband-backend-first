@@ -37,29 +37,18 @@ const Artist =
 const safeStr = (v, fallback = '') =>
   (v ?? fallback).toString().trim();
 
-// 👉 expose BOTH id and _id so tests can read first._id
-const toLeanListItem = (a) => {
-  const id = a._id?.toString();
-  return {
-    _id: id,            // <-- for tests
-    id,                 // <-- for UI compatibility
-    name: a.name,
-    genre: a.genre || 'No genre set',
-    votes:
-      Array.isArray(a.comments) || typeof a.votes === 'number'
-        ? a.votes || 0
-        : 0,
-    commentsCount:
-      Array.isArray(a.comments) && a.comments.length
-        ? a.comments.length
-        : a.commentsCount || 0,
-  };
-};
+const toLeanListItem = (a) => ({
+  id: a._id?.toString(),
+  name: a.name,
+  genre: a.genre || 'No genre set',
+  votes: typeof a.votes === 'number' ? a.votes : 0,
+  commentsCount: Array.isArray(a.comments)
+    ? a.comments.length
+    : a.commentsCount || 0,
+});
 
 /** ----------------------------------------------------------------
  *  GET /artists
- *  Optional query: ?q=searchText
- *  Returns a lean, deduped list (by name) sorted A→Z.
  *  ---------------------------------------------------------------- */
 router.get('/', async (req, res) => {
   try {
@@ -73,13 +62,11 @@ router.get('/', async (req, res) => {
       .lean()
       .exec();
 
-    // De-dupe by lowercased name
     const seen = new Set();
     const list = [];
     for (const a of docs) {
       const nameKey = safeStr(a.name).toLowerCase();
-      if (!nameKey) continue;
-      if (seen.has(nameKey)) continue;
+      if (!nameKey || seen.has(nameKey)) continue;
       seen.add(nameKey);
       list.push(toLeanListItem(a));
     }
@@ -93,41 +80,34 @@ router.get('/', async (req, res) => {
 });
 
 /** ----------------------------------------------------------------
- *  GET /artists/:id  → artist detail
+ *  GET /artists/:id
  *  ---------------------------------------------------------------- */
 router.get('/:id', async (req, res) => {
   try {
     const id = safeStr(req.params.id);
-    if (!id) return res.status(400).json({ error: 'Missing id' });
-
     const doc = await Artist.findById(id).lean().exec();
     if (!doc) return res.status(404).json({ error: 'Artist not found' });
 
-    const out = {
-      _id: doc._id?.toString(),  // expose _id for consistency
+    res.json({
       id: doc._id?.toString(),
       name: doc.name,
       genre: doc.genre || 'No genre set',
       bio: doc.bio || '',
       avatarUrl: doc.avatarUrl || '',
       votes: typeof doc.votes === 'number' ? doc.votes : 0,
-      commentsCount:
-        Array.isArray(doc.comments) && doc.comments.length
-          ? doc.comments.length
-          : doc.commentsCount || 0,
-      comments:
-        Array.isArray(doc.comments)
-          ? doc.comments.map((c) => ({
-              name: c.name || 'Anon',
-              text: c.text,
-              createdAt: c.createdAt,
-            }))
-          : [],
+      commentsCount: Array.isArray(doc.comments)
+        ? doc.comments.length
+        : doc.commentsCount || 0,
+      comments: Array.isArray(doc.comments)
+        ? doc.comments.map((c) => ({
+            name: c.name || 'Anon',
+            text: c.text,
+            createdAt: c.createdAt,
+          }))
+        : [],
       createdAt: doc.createdAt,
       updatedAt: doc.updatedAt,
-    };
-
-    res.json(out);
+    });
   } catch (err) {
     console.error('GET /artists/:id error:', err);
     res.status(500).json({ error: 'Failed to fetch artist' });
@@ -135,18 +115,14 @@ router.get('/:id', async (req, res) => {
 });
 
 /** ----------------------------------------------------------------
- *  POST /artists/:id/vote  → increments votes
- *  Body: { delta?: number }  (default +1)
- *  Tests expect 200 with { ok:true, votes:number }
+ *  POST /artists/:id/vote
  *  ---------------------------------------------------------------- */
 router.post('/:id/vote', async (req, res) => {
   try {
     const id = safeStr(req.params.id);
-    const deltaRaw = req.body?.delta;
-    const delta =
-      typeof deltaRaw === 'number' && Number.isFinite(deltaRaw)
-        ? Math.trunc(deltaRaw)
-        : 1;
+    const delta = Number.isFinite(req.body?.delta)
+      ? Math.trunc(req.body.delta)
+      : 1;
 
     const doc = await Artist.findById(id).exec();
     if (!doc) return res.status(404).json({ error: 'Artist not found' });
@@ -154,8 +130,7 @@ router.post('/:id/vote', async (req, res) => {
     doc.votes = Math.max(0, (doc.votes || 0) + delta);
     await doc.save();
 
-    // 👇 match the test’s expected shape
-    res.json({ ok: true, votes: doc.votes });
+    res.status(200).json({ ok: true, id: doc._id.toString(), votes: doc.votes });
   } catch (err) {
     console.error('POST /artists/:id/vote error:', err);
     res.status(500).json({ error: 'Failed to vote' });
@@ -163,22 +138,17 @@ router.post('/:id/vote', async (req, res) => {
 });
 
 /** ----------------------------------------------------------------
- *  GET /artists/:id/comments → list comments
+ *  GET /artists/:id/comments
  *  ---------------------------------------------------------------- */
 router.get('/:id/comments', async (req, res) => {
   try {
     const id = safeStr(req.params.id);
-    const doc = await Artist.findById(id)
-      .select('comments')
-      .lean()
-      .exec();
-
+    const doc = await Artist.findById(id).select('comments').lean().exec();
     if (!doc) return res.status(404).json({ error: 'Artist not found' });
 
     const comments = Array.isArray(doc.comments)
       ? [...doc.comments].sort(
-          (a, b) =>
-            new Date(b.createdAt || 0) - new Date(a.createdAt || 0)
+          (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
         )
       : [];
 
@@ -197,7 +167,7 @@ router.get('/:id/comments', async (req, res) => {
 });
 
 /** ----------------------------------------------------------------
- *  POST /artists/:id/comments → add a comment
+ *  POST /artists/:id/comments
  *  ---------------------------------------------------------------- */
 router.post('/:id/comments', async (req, res) => {
   try {
@@ -213,15 +183,13 @@ router.post('/:id/comments', async (req, res) => {
     if (!doc) return res.status(404).json({ error: 'Artist not found' });
 
     doc.comments = Array.isArray(doc.comments) ? doc.comments : [];
-    doc.comments.push({ name, text, createdAt: new Date() });
+    const newComment = { name, text, createdAt: new Date() };
+    doc.comments.push(newComment);
     doc.commentsCount = doc.comments.length;
 
     await doc.save();
 
-    res.json({
-      id: doc._id.toString(),
-      commentsCount: doc.commentsCount,
-    });
+    res.status(201).json(newComment);
   } catch (err) {
     console.error('POST /artists/:id/comments error:', err);
     res.status(500).json({ error: 'Failed to add comment' });
