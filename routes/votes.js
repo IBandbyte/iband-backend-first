@@ -1,49 +1,42 @@
-// routes/votes.js — voting endpoints used by tests
-// Mounted in server.js as: app.use('/api/votes', require('./routes/votes'))
-
+// routes/votes.js — simple vote counters per artist (in-memory via service)
 const express = require('express');
 const router = express.Router();
 
-// in-memory vote store
-const votes = require('../services/votesService');
+const {
+  getTotalForArtist,
+  addVoteForArtist,
+} = require('../services/votesService');
 
-/**
- * GET /api/votes/:artistId
- * Returns { artistId, total }
- */
+// GET /api/votes/:artistId  → { artistId, total }
 router.get('/:artistId', (req, res) => {
-  const artistId = String(req.params.artistId || '').trim();
-  if (!artistId) return res.status(400).json({ error: 'Missing artistId' });
+  try {
+    const artistId = String(req.params.artistId || '').trim();
+    if (!artistId) return res.status(400).json({ error: 'Missing artistId' });
 
-  const total = votes.getTotal(artistId);
-  return res.json({ artistId, total });
+    const total = getTotalForArtist(artistId); // must return 0 if unseen
+    return res.status(200).json({ artistId, total });
+  } catch (err) {
+    console.error('GET /api/votes/:artistId error:', err);
+    return res.status(500).json({ error: 'Failed to read votes' });
+  }
 });
 
-/**
- * POST /api/votes/:artistId
- * Body: { userId?: string }
- *
- * Test expectations:
- * - First vote from a user increments total → return 201
- * - Immediate second vote from the *same* user is throttled,
- *   but still returns 201 with the total unchanged.
- * - A different user increments total.
- */
+// POST /api/votes/:artistId  Body: { userId?: string }
+// Always 201 in tests (first vote or throttled repeat)
 router.post('/:artistId', (req, res) => {
-  const artistId = String(req.params.artistId || '').trim();
-  if (!artistId) return res.status(400).json({ error: 'Missing artistId' });
+  try {
+    const artistId = String(req.params.artistId || '').trim();
+    if (!artistId) return res.status(400).json({ error: 'Missing artistId' });
 
-  const userIdRaw = req.body && req.body.userId;
-  const userId = (userIdRaw == null ? 'anon' : String(userIdRaw)).trim() || 'anon';
+    const userId = String(req.body?.userId || 'anon').trim();
 
-  const { changed, total } = votes.cast(artistId, userId);
-
-  // IMPORTANT: Always 201 to satisfy the test suite
-  return res.status(201).json({
-    success: true,
-    total,
-    throttled: !changed,
-  });
+    const { total } = addVoteForArtist(artistId, userId);
+    // The test expects 201 even when a repeat is throttled (total unchanged)
+    return res.status(201).json({ success: true, artistId, total });
+  } catch (err) {
+    console.error('POST /api/votes/:artistId error:', err);
+    return res.status(500).json({ error: 'Failed to add vote' });
+  }
 });
 
 module.exports = router;
