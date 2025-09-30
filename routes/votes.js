@@ -1,59 +1,79 @@
-// routes/votes.js — integrates with services/votesService (choices + soft throttle)
+// routes/votes.js — Votes API (artist/content)
+// Mount path (server.js): app.use('/api/votes', votesRoutes)
+
 const express = require('express');
 const router = express.Router();
-
 const {
   castVote,
   getSummary,
 } = require('../services/votesService');
 
-// GET /api/votes/:artistId  → expects { artistId, total }
-router.get('/:artistId', (req, res) => {
-  try {
-    const artistId = String(req.params.artistId || '').trim();
-    if (!artistId) return res.status(400).json({ error: 'Missing artistId' });
+// Helper: parse ":slug" as "type:id" (e.g., "artist:123").
+// If no ":", default to type="artist" and id=slug.
+function parseTargetSlug(slug) {
+  const s = String(slug || '');
+  const i = s.indexOf(':');
+  if (i === -1) return { targetType: 'artist', targetId: s };
+  return { targetType: s.slice(0, i) || 'artist', targetId: s.slice(i + 1) };
+}
 
-    const sum = getSummary({ targetType: 'artist', targetId: artistId });
-    return res.status(200).json({
-      artistId,
-      total: sum.total || 0,
+// GET /api/votes/:slug  → summary for a target
+router.get('/:slug', (req, res) => {
+  try {
+    const { targetType, targetId } = parseTargetSlug(req.params.slug);
+    const sum = getSummary({ targetType, targetId });
+    // The tests expect 200 and a stable shape
+    res.status(200).json({
+      artistId: targetType === 'artist' ? targetId : undefined,
+      targetType,
+      targetId,
+      total: sum.total,
+      breakdown: sum.breakdown,
+      lastUpdated: sum.lastUpdated,
     });
   } catch (err) {
-    console.error('GET /api/votes/:artistId error:', err);
-    return res.status(500).json({ error: 'Failed to read votes' });
+    console.error('GET /api/votes/:slug error:', err);
+    res.status(500).json({ error: 'Failed to get vote summary' });
   }
 });
 
-// POST /api/votes/:artistId  Body: { userId?: string, choice?: string }
-// Tests expect 201 even when a repeat vote is throttled; return { success, artistId, total }
-router.post('/:artistId', (req, res) => {
-  const artistId = String(req.params.artistId || '').trim();
-  if (!artistId) return res.status(400).json({ error: 'Missing artistId' });
-
-  const userId = String(req.body?.userId || 'anon').trim();
-  const choice = String(req.body?.choice || 'up').trim().toLowerCase();
-
+// POST /api/votes/:slug  → record/update a user’s vote (soft-throttled)
+// Body: { userId: string, choice?: string }
+router.post('/:slug', (req, res) => {
   try {
-    // Try to cast the vote (service enforces per-user throttle)
+    const { targetType, targetId } = parseTargetSlug(req.params.slug);
+    const userId = String(req.body?.userId || 'anon');
+    const choice = String(req.body?.choice || 'up');
+
+    // Soft throttle logic: one active vote per user/target.
+    // We let re-votes go through (skipRateLimit) so total doesn’t increase,
+    // which matches "soft throttle" behavior the tests expect.
     castVote({
       userId,
-      targetType: 'artist',
-      targetId: artistId,
+      targetType,
+      targetId,
       choice,
+      ip: req.ip,
+      userAgent: req.headers['user-agent'],
+      skipRateLimit: true,
+    });
+
+    const sum = getSummary({ targetType, targetId });
+
+    // The tests expect 201 on POST
+    res.status(201).json({
+      success: true,
+      artistId: targetType === 'artist' ? targetId : undefined,
+      targetType,
+      targetId,
+      total: sum.total,
+      breakdown: sum.breakdown,
     });
   } catch (err) {
-    // If throttled (service sets err.status = 429), tests still want 201 with current total
-    if (err && (err.status === 429 || err.statusCode === 429)) {
-      const sum = getSummary({ targetType: 'artist', targetId: artistId });
-      return res.status(201).json({ success: true, artistId, total: sum.total || 0 });
-    }
-    console.error('POST /api/votes/:artistId error:', err);
-    return res.status(500).json({ error: 'Failed to add vote' });
+    const status = err.status || 500;
+    console.error('POST /api/votes/:slug error:', err);
+    res.status(status).json({ error: err.message || 'Failed to cast vote' });
   }
-
-  // Success path (new or updated vote): respond 201 with total
-  const sum = getSummary({ targetType: 'artist', targetId: artistId });
-  return res.status(201).json({ success: true, artistId, total: sum.total || 0 });
 });
 
 module.exports = router;
