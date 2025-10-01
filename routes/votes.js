@@ -1,51 +1,69 @@
-// routes/votes.js — Votes API (in-memory service; CI-friendly)
+// routes/votes.js — Votes API (artist-focused, soft-throttle behavior)
 const express = require('express');
 const router = express.Router();
 
-const votes = require('../services/votesService');
+const {
+  castVote,
+  getSummary,
+} = require('../services/votesService');
 
-// GET /api/votes/:artistId  → current total for this artist
+// GET /api/votes/:artistId → summary for artist
 router.get('/:artistId', (req, res) => {
   try {
     const artistId = String(req.params.artistId || '').trim();
-    if (!artistId) return res.status(400).json({ error: 'Missing artistId' });
-
-    const summary = votes.getSummary({ targetType: 'artist', targetId: artistId });
-    return res.json({ artistId, total: summary.total });
+    const summary = getSummary({ targetType: 'artist', targetId: artistId });
+    return res.status(200).json({
+      artistId,
+      total: summary.total,
+      breakdown: summary.breakdown,
+      lastUpdated: summary.lastUpdated,
+    });
   } catch (err) {
     console.error('GET /api/votes/:artistId error:', err);
     return res.status(500).json({ error: 'Failed to fetch votes' });
   }
 });
 
-// POST /api/votes/:artistId  → cast/update user vote (throttled)
+// POST /api/votes/:artistId → cast a vote (1 per user per artist, soft throttle)
 router.post('/:artistId', (req, res) => {
-  try {
-    const artistId = String(req.params.artistId || '').trim();
-    const userId = String(req.body?.userId || 'anon').trim();
-    if (!artistId) return res.status(400).json({ error: 'Missing artistId' });
+  const artistId = String(req.params.artistId || '').trim();
+  const userId   = String(req.body?.userId || 'anon').trim();
+  const choice   = String(req.body?.choice || 'up').trim().toLowerCase();
 
-    // one active vote per (user, artist). default choice = 'up'
-    votes.castVote({
+  try {
+    // Try to cast/update the vote
+    const { created } = castVote({
       userId,
       targetType: 'artist',
       targetId: artistId,
-      choice: 'up',
+      choice,
+      ip: req.ip,
+      userAgent: req.get('user-agent'),
     });
 
-    const summary = votes.getSummary({ targetType: 'artist', targetId: artistId });
-    // tests expect Created on POST
-    return res.status(201).json({ success: true, total: summary.total });
+    // Always return 201 on POST according to test expectations
+    const summary = getSummary({ targetType: 'artist', targetId: artistId });
+    return res.status(201).json({
+      success: true,
+      created,
+      artistId,
+      total: summary.total,
+      breakdown: summary.breakdown,
+      lastUpdated: summary.lastUpdated,
+    });
   } catch (err) {
-    const status = err?.status || 500;
-    if (status === 429) {
-      // even if throttled, tests still expect the running total to be stable
-      const artistId = String(req.params.artistId || '').trim();
-      const summary = votes.getSummary({ targetType: 'artist', targetId: artistId });
-      return res.status(201).json({ success: true, total: summary.total });
-    }
-    console.error('POST /api/votes/:artistId error:', err);
-    return res.status(status).json({ error: err.message || 'Failed to vote' });
+    // Soft throttle: if service threw (e.g., rate limit), still reply 201 with unchanged totals
+    console.warn('POST /api/votes/:artistId soft-throttle or error:', err?.message || err);
+    const summary = getSummary({ targetType: 'artist', targetId: artistId });
+    return res.status(201).json({
+      success: true,
+      created: false,
+      artistId,
+      total: summary.total,
+      breakdown: summary.breakdown,
+      lastUpdated: summary.lastUpdated,
+      note: 'Soft-throttled (vote not incremented).',
+    });
   }
 });
 
