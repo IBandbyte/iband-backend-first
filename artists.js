@@ -34,113 +34,73 @@ const Artist =
   mongoose.models.Artist || mongoose.model('Artist', ArtistSchema);
 
 /** Small helpers */
-const safeStr = (v, fallback = '') => (v ?? fallback).toString().trim();
+const safeStr = (v, fallback = '') =>
+  (v ?? fallback).toString().trim();
 
-const toLeanListItem = (a) => {
-  const _id = a._id?.toString?.() || a._id || a.id || a.id?.toString?.();
-  return {
-    _id,                      // tests expect this
-    id: _id,                  // keep also "id" for compatibility
-    name: a.name,
-    genre: a.genre || 'No genre set',
-    votes:
-      Array.isArray(a.comments) || typeof a.votes === 'number'
-        ? a.votes || 0
-        : 0,
-    commentsCount:
-      Array.isArray(a.comments) && a.comments.length
-        ? a.comments.length
-        : a.commentsCount || 0,
-  };
-};
-
-// Fallback seed used when Mongo isn't connected (CI)
-const FAKE_ARTISTS = [
-  { _id: 'a1', name: 'Adele', genre: 'Pop' },
-  { _id: 'b1', name: 'Beyoncé', genre: 'Pop' },
-  { _id: 'b2', name: 'Beyoncé', genre: 'Pop' }, // dup name to verify de-dup
-  { _id: 'c1', name: 'Coldplay', genre: 'Alt' },
-];
+const toLeanListItem = (a) => ({
+  id: a._id?.toString(),
+  name: a.name,
+  genre: a.genre || 'No genre set',
+  votes:
+    Array.isArray(a.comments) || typeof a.votes === 'number'
+      ? a.votes || 0
+      : 0,
+  commentsCount:
+    Array.isArray(a.comments) && a.comments.length
+      ? a.comments.length
+      : a.commentsCount || 0,
+});
 
 /** ----------------------------------------------------------------
  *  GET /artists
  *  Optional query: ?q=searchText
  *  Returns a lean, deduped list (by name) sorted A→Z.
- *  Works with Mongo if connected; otherwise uses an in-memory fallback.
  *  ---------------------------------------------------------------- */
 router.get('/', async (req, res) => {
   try {
     const q = safeStr(req.query.q || '');
-    const regex = q ? new RegExp(q, 'i') : null;
+    const filter = q
+      ? { name: { $regex: q, $options: 'i' } }
+      : {};
 
-    const connected = mongoose.connection?.readyState === 1; // 1 = connected
+    const docs = await Artist.find(filter)
+      .select('name genre votes commentsCount')
+      .lean()
+      .exec();
 
-    let docs;
-    if (connected) {
-      const filter = q ? { name: { $regex: q, $options: 'i' } } : {};
-      docs = await Artist.find(filter)
-        .select('name genre votes commentsCount')
-        .lean()
-        .exec();
-    } else {
-      // Fallback (no DB in CI): filter & return a safe, static set
-      docs = (regex
-        ? FAKE_ARTISTS.filter((a) => regex.test(a.name))
-        : FAKE_ARTISTS
-      ).map((a) => ({ ...a }));
-    }
-
-    // De-dupe by lowercased name
+    // De-dupe by lowercased name (in case existing data has dupes)
     const seen = new Set();
     const list = [];
     for (const a of docs) {
       const nameKey = safeStr(a.name).toLowerCase();
-      if (!nameKey || seen.has(nameKey)) continue;
+      if (!nameKey) continue;
+      if (seen.has(nameKey)) continue;
       seen.add(nameKey);
       list.push(toLeanListItem(a));
     }
 
     list.sort((a, b) => a.name.localeCompare(b.name));
-    return res.json(list);
+    res.json(list);
   } catch (err) {
     console.error('GET /artists error:', err);
-    return res.status(500).json({ error: 'Failed to fetch artists' });
+    res.status(500).json({ error: 'Failed to fetch artists' });
   }
 });
 
 /** ----------------------------------------------------------------
  *  GET /artists/:id  → artist detail
+ *  Returns full document (minus heavy fields if needed).
  *  ---------------------------------------------------------------- */
 router.get('/:id', async (req, res) => {
   try {
     const id = safeStr(req.params.id);
     if (!id) return res.status(400).json({ error: 'Missing id' });
 
-    const connected = mongoose.connection?.readyState === 1;
-
-    if (!connected) {
-      const doc = FAKE_ARTISTS.find((a) => a._id === id);
-      if (!doc) return res.status(404).json({ error: 'Artist not found' });
-      return res.json({
-        _id: doc._id,
-        id: doc._id,
-        name: doc.name,
-        genre: doc.genre || 'No genre set',
-        bio: '',
-        avatarUrl: '',
-        votes: 0,
-        commentsCount: 0,
-        comments: [],
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
-    }
-
     const doc = await Artist.findById(id).lean().exec();
     if (!doc) return res.status(404).json({ error: 'Artist not found' });
 
-    return res.json({
-      _id: doc._id?.toString(),
+    // Normalize response shape a bit
+    const out = {
       id: doc._id?.toString(),
       name: doc.name,
       genre: doc.genre || 'No genre set',
@@ -151,24 +111,28 @@ router.get('/:id', async (req, res) => {
         Array.isArray(doc.comments) && doc.comments.length
           ? doc.comments.length
           : doc.commentsCount || 0,
-      comments: Array.isArray(doc.comments)
-        ? doc.comments.map((c) => ({
-            name: c.name || 'Anon',
-            text: c.text,
-            createdAt: c.createdAt,
-          }))
-        : [],
+      comments:
+        Array.isArray(doc.comments)
+          ? doc.comments.map((c) => ({
+              name: c.name || 'Anon',
+              text: c.text,
+              createdAt: c.createdAt,
+            }))
+          : [],
       createdAt: doc.createdAt,
       updatedAt: doc.updatedAt,
-    });
+    };
+
+    res.json(out);
   } catch (err) {
     console.error('GET /artists/:id error:', err);
-    return res.status(500).json({ error: 'Failed to fetch artist' });
+    res.status(500).json({ error: 'Failed to fetch artist' });
   }
 });
 
 /** ----------------------------------------------------------------
- *  POST /artists/:id/vote  → increments votes (unchanged except body shape)
+ *  POST /artists/:id/vote  → increments votes
+ *  Body: { delta?: number }  (default +1)
  *  ---------------------------------------------------------------- */
 router.post('/:id/vote', async (req, res) => {
   try {
@@ -179,93 +143,88 @@ router.post('/:id/vote', async (req, res) => {
         ? Math.trunc(deltaRaw)
         : 1;
 
-    const connected = mongoose.connection?.readyState === 1;
-
-    if (!connected) {
-      // CI fallback: pretend it worked and always return { ok:true, votes }
-      return res.json({ ok: true, id, votes: Math.max(0, 0 + delta) });
-    }
-
     const doc = await Artist.findById(id).exec();
     if (!doc) return res.status(404).json({ error: 'Artist not found' });
 
     doc.votes = Math.max(0, (doc.votes || 0) + delta);
     await doc.save();
 
-    return res.json({ ok: true, id: doc._id.toString(), votes: doc.votes });
+    res.json({ id: doc._id.toString(), votes: doc.votes });
   } catch (err) {
     console.error('POST /artists/:id/vote error:', err);
-    return res.status(500).json({ error: 'Failed to vote' });
+    res.status(500).json({ error: 'Failed to vote' });
   }
 });
 
 /** ----------------------------------------------------------------
  *  GET /artists/:id/comments → list comments (newest first)
+ *  TEST EXPECTATION: returns an ARRAY of comment objects.
  *  ---------------------------------------------------------------- */
 router.get('/:id/comments', async (req, res) => {
   try {
     const id = safeStr(req.params.id);
-    const connected = mongoose.connection?.readyState === 1;
+    const doc = await Artist.findById(id)
+      .select('comments')
+      .lean()
+      .exec();
 
-    if (!connected) {
-      return res.json({ count: 0, comments: [] });
-    }
-
-    const doc = await Artist.findById(id).select('comments').lean().exec();
     if (!doc) return res.status(404).json({ error: 'Artist not found' });
 
     const comments = Array.isArray(doc.comments)
       ? [...doc.comments].sort(
-          (a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)
+          (a, b) =>
+            new Date(b.createdAt || 0) - new Date(a.createdAt || 0)
         )
       : [];
 
-    return res.json({
-      count: comments.length,
-      comments: comments.map((c) => ({
+    // IMPORTANT: test wants body to be an ARRAY, not { count, comments }
+    res.json(
+      comments.map((c) => ({
         name: c.name || 'Anon',
         text: c.text,
         createdAt: c.createdAt,
-      })),
-    });
+      }))
+    );
   } catch (err) {
     console.error('GET /artists/:id/comments error:', err);
-    return res.status(500).json({ error: 'Failed to fetch comments' });
+    res.status(500).json({ error: 'Failed to fetch comments' });
   }
 });
 
 /** ----------------------------------------------------------------
- *  POST /artists/:id/comments → add a comment (201 + echo text)
+ *  POST /artists/:id/comments → add a comment
+ *  Body: { name?: string, text: string }
+ *  TEST EXPECTATION: respond 201 and return the created comment object.
  *  ---------------------------------------------------------------- */
 router.post('/:id/comments', async (req, res) => {
   try {
     const id = safeStr(req.params.id);
     const name = safeStr(req.body?.name || 'Anon').slice(0, 60) || 'Anon';
     const text = safeStr(req.body?.text);
-    if (!text) return res.status(400).json({ error: 'Comment text required' });
 
-    const connected = mongoose.connection?.readyState === 1;
-
-    if (!connected) {
-      // CI fallback: accept and echo back
-      return res.status(201).json({ id, commentsCount: 1, text });
+    if (!text) {
+      return res.status(400).json({ error: 'Comment text required' });
     }
 
     const doc = await Artist.findById(id).exec();
     if (!doc) return res.status(404).json({ error: 'Artist not found' });
 
     doc.comments = Array.isArray(doc.comments) ? doc.comments : [];
-    doc.comments.push({ name, text, createdAt: new Date() });
+    const created = { name, text, createdAt: new Date() };
+    doc.comments.push(created);
     doc.commentsCount = doc.comments.length;
 
     await doc.save();
 
-    return res
-      .status(201)
-      .json({ id: doc._id.toString(), commentsCount: doc.commentsCount, text });
+    // IMPORTANT: test checks status 201 and body.text === '...'
+    res.status(201).json({
+      name: created.name,
+      text: created.text,
+      createdAt: created.createdAt,
+    });
   } catch (err) {
     console.error('POST /artists/:id/comments error:', err);
-    return res.status(500).json({ error: 'Failed to add comment' });
+    res.status(500).json({ error: 'Failed to add comment' });
   }
 });
 
