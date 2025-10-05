@@ -34,11 +34,10 @@ const Artist =
   mongoose.models.Artist || mongoose.model('Artist', ArtistSchema);
 
 /** Small helpers */
-const safeStr = (v, fallback = '') =>
-  (v ?? fallback).toString().trim();
+const safeStr = (v, fallback = '') => (v ?? fallback).toString().trim();
 
 const toLeanListItem = (a) => ({
-  _id: a._id?.toString(),           // keep _id to match tests that use first._id
+  _id: a._id?.toString(), // keep _id to match tests that use first._id
   name: a.name,
   genre: a.genre || 'No genre set',
   votes:
@@ -83,20 +82,33 @@ router.get('/', async (_req, res) => {
 });
 
 /** ----------------------------------------------------------------
- *  GET /artists/:id  → artist detail
- *  Returns full document (minus heavy fields if needed).
+ *  GET /artists/:id  → artist detail (robust)
+ *  - Tries findById for normal ObjectId
+ *  - Also tries findOne({_id: id}) to support string-stored _id
+ *  - Never throws a CastError back at the client; returns 404 when not found
  *  ---------------------------------------------------------------- */
 router.get('/:id', async (req, res) => {
-  try {
-    const id = req.params.id?.trim();
-    if (!id) return res.status(400).json({ error: 'Missing id' });
+  const id = safeStr(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Missing id' });
 
-    // Force MongoDB ObjectId lookup
-    const doc = await Artist.findById(id).lean().exec();
+  try {
+    const isValidObjectId = mongoose.Types.ObjectId.isValid(id);
+
+    // First attempt: native findById if the id looks like an ObjectId
+    let doc = null;
+    if (isValidObjectId) {
+      doc = await Artist.findById(id).lean().exec();
+    }
+
+    // Fallback: if not found (or id isn't a valid ObjectId), try an exact _id match as a string.
+    // This covers data that may have been inserted with string _id values.
+    if (!doc) {
+      doc = await Artist.findOne({ _id: id }).lean().exec();
+    }
+
     if (!doc) return res.status(404).json({ error: 'Artist not found' });
 
-    // Normalize response shape
-    res.status(200).json({
+    const out = {
       id: doc._id?.toString(),
       name: doc.name,
       genre: doc.genre || 'No genre set',
@@ -116,9 +128,12 @@ router.get('/:id', async (req, res) => {
         : [],
       createdAt: doc.createdAt,
       updatedAt: doc.updatedAt,
-    });
+    };
+
+    res.status(200).json(out);
   } catch (err) {
-    console.error('GET /artists/:id error:', err);
+    // Swallow any CastErrors and respond cleanly
+    console.error('GET /artists/:id error:', err?.message || err);
     res.status(500).json({ error: 'Failed to fetch artist' });
   }
 });
@@ -136,7 +151,16 @@ router.post('/:id/vote', async (req, res) => {
         ? Math.trunc(deltaRaw)
         : 1;
 
-    const doc = await Artist.findById(id).exec();
+    // Accept both ObjectId and string _id
+    const isValidObjectId = mongoose.Types.ObjectId.isValid(id);
+    let doc = null;
+    if (isValidObjectId) {
+      doc = await Artist.findById(id).exec();
+    }
+    if (!doc) {
+      doc = await Artist.findOne({ _id: id }).exec();
+    }
+
     if (!doc) return res.status(404).json({ error: 'Artist not found' });
 
     doc.votes = Math.max(0, (doc.votes || 0) + delta);
@@ -156,10 +180,15 @@ router.post('/:id/vote', async (req, res) => {
 router.get('/:id/comments', async (req, res) => {
   try {
     const id = safeStr(req.params.id);
-    const doc = await Artist.findById(id)
-      .select('comments')
-      .lean()
-      .exec();
+
+    const isValidObjectId = mongoose.Types.ObjectId.isValid(id);
+    let doc = null;
+    if (isValidObjectId) {
+      doc = await Artist.findById(id).select('comments').lean().exec();
+    }
+    if (!doc) {
+      doc = await Artist.findOne({ _id: id }).select('comments').lean().exec();
+    }
 
     if (!doc) return res.status(404).json({ error: 'Artist not found' });
 
@@ -170,7 +199,10 @@ router.get('/:id/comments', async (req, res) => {
             text: c.text,
             createdAt: c.createdAt,
           }))
-          .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+          .sort(
+            (a, b) =>
+              new Date(b.createdAt || 0) - new Date(a.createdAt || 0)
+          )
       : [];
 
     // Return array (per test)
@@ -196,7 +228,15 @@ router.post('/:id/comments', async (req, res) => {
       return res.status(400).json({ error: 'Comment text required' });
     }
 
-    const doc = await Artist.findById(id).exec();
+    const isValidObjectId = mongoose.Types.ObjectId.isValid(id);
+    let doc = null;
+    if (isValidObjectId) {
+      doc = await Artist.findById(id).exec();
+    }
+    if (!doc) {
+      doc = await Artist.findOne({ _id: id }).exec();
+    }
+
     if (!doc) return res.status(404).json({ error: 'Artist not found' });
 
     doc.comments = Array.isArray(doc.comments) ? doc.comments : [];
