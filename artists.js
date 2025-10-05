@@ -88,14 +88,15 @@ router.get('/', async (_req, res) => {
  *  ---------------------------------------------------------------- */
 router.get('/:id', async (req, res) => {
   try {
-    const id = safeStr(req.params.id);
+    const id = req.params.id?.trim();
     if (!id) return res.status(400).json({ error: 'Missing id' });
 
+    // Force MongoDB ObjectId lookup
     const doc = await Artist.findById(id).lean().exec();
     if (!doc) return res.status(404).json({ error: 'Artist not found' });
 
-    // Normalize response shape a bit
-    const out = {
+    // Normalize response shape
+    res.status(200).json({
       id: doc._id?.toString(),
       name: doc.name,
       genre: doc.genre || 'No genre set',
@@ -106,19 +107,16 @@ router.get('/:id', async (req, res) => {
         Array.isArray(doc.comments) && doc.comments.length
           ? doc.comments.length
           : doc.commentsCount || 0,
-      comments:
-        Array.isArray(doc.comments)
-          ? doc.comments.map((c) => ({
-              name: c.name || 'Anon',
-              text: c.text,
-              createdAt: c.createdAt,
-            }))
-          : [],
+      comments: Array.isArray(doc.comments)
+        ? doc.comments.map((c) => ({
+            name: c.name || 'Anon',
+            text: c.text,
+            createdAt: c.createdAt,
+          }))
+        : [],
       createdAt: doc.createdAt,
       updatedAt: doc.updatedAt,
-    };
-
-    res.status(200).json(out);
+    });
   } catch (err) {
     console.error('GET /artists/:id error:', err);
     res.status(500).json({ error: 'Failed to fetch artist' });
