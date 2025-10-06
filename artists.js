@@ -100,8 +100,7 @@ router.get('/:id', async (req, res) => {
       doc = await Artist.findById(id).lean().exec();
     }
 
-    // Fallback: if not found (or id isn't a valid ObjectId), try an exact _id match as a string.
-    // This covers data that may have been inserted with string _id values.
+    // Fallback for string _id
     if (!doc) {
       doc = await Artist.findOne({ _id: id }).lean().exec();
     }
@@ -132,7 +131,6 @@ router.get('/:id', async (req, res) => {
 
     res.status(200).json(out);
   } catch (err) {
-    // Swallow any CastErrors and respond cleanly
     console.error('GET /artists/:id error:', err?.message || err);
     res.status(500).json({ error: 'Failed to fetch artist' });
   }
@@ -151,7 +149,6 @@ router.post('/:id/vote', async (req, res) => {
         ? Math.trunc(deltaRaw)
         : 1;
 
-    // Accept both ObjectId and string _id
     const isValidObjectId = mongoose.Types.ObjectId.isValid(id);
     let doc = null;
     if (isValidObjectId) {
@@ -175,7 +172,6 @@ router.post('/:id/vote', async (req, res) => {
 
 /** ----------------------------------------------------------------
  *  GET /artists/:id/comments → list comments (newest first)
- *  NOTE: tests expect an ARRAY response, not an object wrapper.
  *  ---------------------------------------------------------------- */
 router.get('/:id/comments', async (req, res) => {
   try {
@@ -205,7 +201,6 @@ router.get('/:id/comments', async (req, res) => {
           )
       : [];
 
-    // Return array (per test)
     res.status(200).json(comments);
   } catch (err) {
     console.error('GET /artists/:id/comments error:', err);
@@ -216,7 +211,6 @@ router.get('/:id/comments', async (req, res) => {
 /** ----------------------------------------------------------------
  *  POST /artists/:id/comments → add a comment
  *  Body: { name?: string, text: string }
- *  NOTE: tests expect 201 and response containing { text: '...' }.
  *  ---------------------------------------------------------------- */
 router.post('/:id/comments', async (req, res) => {
   try {
@@ -246,7 +240,6 @@ router.post('/:id/comments', async (req, res) => {
 
     await doc.save();
 
-    // 201 created; include text so the test can assert it
     res.status(201).json({
       id: doc._id.toString(),
       name: newComment.name,
@@ -257,6 +250,57 @@ router.post('/:id/comments', async (req, res) => {
   } catch (err) {
     console.error('POST /artists/:id/comments error:', err);
     res.status(500).json({ error: 'Failed to add comment' });
+  }
+});
+
+/** ----------------------------------------------------------------
+ *  PATCH /artists/:id → update allowed fields (name, genre)
+ *  Body: { name?: string, genre?: string }
+ *  Accepts ObjectId or string _id, returns minimal confirmation.
+ *  ---------------------------------------------------------------- */
+router.patch('/:id', async (req, res) => {
+  try {
+    const id = safeStr(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Missing id' });
+
+    const updates = {};
+    if (typeof req.body?.name === 'string')
+      updates.name = safeStr(req.body.name).slice(0, 200);
+    if (typeof req.body?.genre === 'string')
+      updates.genre = safeStr(req.body.genre).slice(0, 120);
+
+    if (!Object.keys(updates).length) {
+      return res.status(400).json({ error: 'No valid fields to update' });
+    }
+
+    const isValidObjectId = mongoose.Types.ObjectId.isValid(id);
+    let doc = null;
+    if (isValidObjectId) {
+      doc = await Artist.findByIdAndUpdate(
+        id,
+        { $set: updates },
+        { new: true, runValidators: true }
+      ).lean();
+    }
+    if (!doc) {
+      doc = await Artist.findOneAndUpdate(
+        { _id: id },
+        { $set: updates },
+        { new: true, runValidators: true }
+      ).lean();
+    }
+
+    if (!doc) return res.status(404).json({ error: 'Artist not found' });
+
+    res.status(200).json({
+      ok: true,
+      id: doc._id?.toString(),
+      name: doc.name,
+      genre: doc.genre,
+    });
+  } catch (err) {
+    console.error('PATCH /artists/:id error:', err);
+    res.status(500).json({ error: 'Failed to update artist' });
   }
 });
 
