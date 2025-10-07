@@ -8,8 +8,9 @@ require('dotenv').config();
 const app = express();
 
 // --- Middleware ---
-app.use(cors());                 // allow your frontend to call this API
-app.use(express.json());         // parse JSON bodies
+app.use(cors());                          // allow your frontend to call this API
+app.use(express.json());                  // parse JSON bodies
+app.use(express.urlencoded({ extended: true })); // parse URL-encoded bodies (fixes PATCH/POST issues)
 
 // --- MongoDB Connection (supports either env name) ---
 const MONGO = process.env.MONGO_URI || process.env.MONGODB_URI;
