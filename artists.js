@@ -1,12 +1,12 @@
-// artists.js — Artists API (list, detail, update, vote, comments)
+// artists.js — Artists API (list, detail, vote, comments, update)
 const express = require('express');
 const mongoose = require('mongoose');
 
 const router = express.Router();
 
-/* ------------------------------------------------------------------ *
- * Model (reuse if already registered; define if not)
- * ------------------------------------------------------------------ */
+/** ----------------------------------------------------------------
+ *  Model (reuse if already registered; define if not)
+ *  ---------------------------------------------------------------- */
 const ArtistSchema =
   mongoose.models.Artist?.schema ||
   new mongoose.Schema(
@@ -24,50 +24,35 @@ const ArtistSchema =
           createdAt: { type: Date, default: Date.now },
         },
       ],
+      createdAt: { type: Date, default: Date.now },
+      updatedAt: { type: Date, default: Date.now },
     },
     { timestamps: true }
   );
 
-const Artist = mongoose.models.Artist || mongoose.model('Artist', ArtistSchema);
+const Artist =
+  mongoose.models.Artist || mongoose.model('Artist', ArtistSchema);
 
-/* ------------------------------------------------------------------ *
- * Helpers
- * ------------------------------------------------------------------ */
+/** Small helpers */
 const safeStr = (v, fallback = '') => (v ?? fallback).toString().trim();
-const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
-
-// Find one by either real ObjectId or string-stored _id
-const findOneByIdFlexible = async (id, select) => {
-  if (isValidObjectId(id)) {
-    const doc = await Artist.findById(id).select(select).exec();
-    if (doc) return doc;
-  }
-  return Artist.findOne({ _id: id }).select(select).exec();
-};
-
-// Same but lean()
-const findOneByIdFlexibleLean = async (id, select) => {
-  if (isValidObjectId(id)) {
-    const doc = await Artist.findById(id).select(select).lean().exec();
-    if (doc) return doc;
-  }
-  return Artist.findOne({ _id: id }).select(select).lean().exec();
-};
 
 const toLeanListItem = (a) => ({
   _id: a._id?.toString(),
   name: a.name,
   genre: a.genre || 'No genre set',
-  votes: typeof a.votes === 'number' ? a.votes : 0,
+  votes:
+    Array.isArray(a.comments) || typeof a.votes === 'number'
+      ? a.votes || 0
+      : 0,
   commentsCount:
     Array.isArray(a.comments) && a.comments.length
       ? a.comments.length
       : a.commentsCount || 0,
 });
 
-/* ------------------------------------------------------------------ *
- * GET /artists  → list (deduped by name, A→Z)
- * ------------------------------------------------------------------ */
+/** ----------------------------------------------------------------
+ *  GET /artists → list all artists
+ *  ---------------------------------------------------------------- */
 router.get('/', async (_req, res) => {
   try {
     const docs = await Artist.find({})
@@ -78,9 +63,10 @@ router.get('/', async (_req, res) => {
     const seen = new Set();
     const list = [];
     for (const a of docs) {
-      const key = safeStr(a.name).toLowerCase();
-      if (!key || seen.has(key)) continue;
-      seen.add(key);
+      const nameKey = safeStr(a.name).toLowerCase();
+      if (!nameKey) continue;
+      if (seen.has(nameKey)) continue;
+      seen.add(nameKey);
       list.push(toLeanListItem(a));
     }
 
@@ -92,15 +78,23 @@ router.get('/', async (_req, res) => {
   }
 });
 
-/* ------------------------------------------------------------------ *
- * GET /artists/:id  → artist detail (robust id handling)
- * ------------------------------------------------------------------ */
+/** ----------------------------------------------------------------
+ *  GET /artists/:id → artist detail
+ *  ---------------------------------------------------------------- */
 router.get('/:id', async (req, res) => {
   const id = safeStr(req.params.id);
   if (!id) return res.status(400).json({ error: 'Missing id' });
 
   try {
-    const doc = await findOneByIdFlexibleLean(id);
+    const isValidObjectId = mongoose.Types.ObjectId.isValid(id);
+    let doc = null;
+    if (isValidObjectId) {
+      doc = await Artist.findById(id).lean().exec();
+    }
+    if (!doc) {
+      doc = await Artist.findOne({ _id: id }).lean().exec();
+    }
+
     if (!doc) return res.status(404).json({ error: 'Artist not found' });
 
     const out = {
@@ -132,65 +126,61 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-/* ------------------------------------------------------------------ *
- * PATCH /artists/:id  → update limited fields (name, genre, bio, avatarUrl)
- * Body: JSON with any of { name, genre, bio, avatarUrl }
- * ------------------------------------------------------------------ */
+/** ----------------------------------------------------------------
+ *  PATCH /artists/:id → update artist fields
+ *  Body: { name?, genre?, bio?, avatarUrl? }
+ *  ---------------------------------------------------------------- */
 router.patch('/:id', async (req, res) => {
   const id = safeStr(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Missing id' });
 
-  // Collect only allowed fields
   const updates = {};
-  const maybe = (key) => {
-    if (typeof req.body?.[key] === 'string') {
-      const v = safeStr(req.body[key]);
-      if (v.length) updates[key] = v;
-    }
-  };
-  maybe('name');
-  maybe('genre');
-  maybe('bio');
-  maybe('avatarUrl');
+  if (req.body.name) updates.name = safeStr(req.body.name);
+  if (req.body.genre) updates.genre = safeStr(req.body.genre);
+  if (req.body.bio) updates.bio = safeStr(req.body.bio);
+  if (req.body.avatarUrl) updates.avatarUrl = safeStr(req.body.avatarUrl);
 
   if (Object.keys(updates).length === 0) {
     return res.status(400).json({ error: 'No valid fields to update' });
   }
-  updates.updatedAt = new Date();
 
   try {
-    // Build a flexible filter for either ObjectId or string _id
-    const filter = isValidObjectId(id)
-      ? { _id: new mongoose.Types.ObjectId(id) }
-      : { _id: id };
-
-    const doc = await Artist.findOneAndUpdate(filter, updates, {
-      new: true,
-      runValidators: true,
-      lean: true,
-    }).exec();
+    const isValidObjectId = mongoose.Types.ObjectId.isValid(id);
+    let doc = null;
+    if (isValidObjectId) {
+      doc = await Artist.findByIdAndUpdate(id, updates, {
+        new: true,
+        runValidators: true,
+      }).lean();
+    }
+    if (!doc) {
+      doc = await Artist.findOneAndUpdate({ _id: id }, updates, {
+        new: true,
+        runValidators: true,
+      }).lean();
+    }
 
     if (!doc) return res.status(404).json({ error: 'Artist not found' });
 
     res.status(200).json({
-      id: doc._id?.toString(),
-      name: doc.name,
-      genre: doc.genre,
-      bio: doc.bio,
-      avatarUrl: doc.avatarUrl,
-      votes: doc.votes || 0,
-      commentsCount: doc.commentsCount || (doc.comments?.length || 0),
-      updatedAt: doc.updatedAt,
+      ok: true,
+      updated: {
+        id: doc._id.toString(),
+        name: doc.name,
+        genre: doc.genre,
+        bio: doc.bio,
+        avatarUrl: doc.avatarUrl,
+      },
     });
   } catch (err) {
-    console.error('PATCH /artists/:id error:', err?.message || err);
+    console.error('PATCH /artists/:id error:', err);
     res.status(500).json({ error: 'Failed to update artist' });
   }
 });
 
-/* ------------------------------------------------------------------ *
- * POST /artists/:id/vote  → increments votes (default +1)
- * Body: { delta?: number }
- * ------------------------------------------------------------------ */
+/** ----------------------------------------------------------------
+ *  POST /artists/:id/vote → increment votes
+ *  ---------------------------------------------------------------- */
 router.post('/:id/vote', async (req, res) => {
   try {
     const id = safeStr(req.params.id);
@@ -200,7 +190,15 @@ router.post('/:id/vote', async (req, res) => {
         ? Math.trunc(deltaRaw)
         : 1;
 
-    const doc = await findOneByIdFlexible(id);
+    const isValidObjectId = mongoose.Types.ObjectId.isValid(id);
+    let doc = null;
+    if (isValidObjectId) {
+      doc = await Artist.findById(id).exec();
+    }
+    if (!doc) {
+      doc = await Artist.findOne({ _id: id }).exec();
+    }
+
     if (!doc) return res.status(404).json({ error: 'Artist not found' });
 
     doc.votes = Math.max(0, (doc.votes || 0) + delta);
@@ -213,14 +211,22 @@ router.post('/:id/vote', async (req, res) => {
   }
 });
 
-/* ------------------------------------------------------------------ *
- * GET /artists/:id/comments → list comments (newest first)
- * NOTE: returns an ARRAY (per tests)
- * ------------------------------------------------------------------ */
+/** ----------------------------------------------------------------
+ *  GET /artists/:id/comments → list comments
+ *  ---------------------------------------------------------------- */
 router.get('/:id/comments', async (req, res) => {
   try {
     const id = safeStr(req.params.id);
-    const doc = await findOneByIdFlexibleLean(id, 'comments');
+
+    const isValidObjectId = mongoose.Types.ObjectId.isValid(id);
+    let doc = null;
+    if (isValidObjectId) {
+      doc = await Artist.findById(id).select('comments').lean().exec();
+    }
+    if (!doc) {
+      doc = await Artist.findOne({ _id: id }).select('comments').lean().exec();
+    }
+
     if (!doc) return res.status(404).json({ error: 'Artist not found' });
 
     const comments = Array.isArray(doc.comments)
@@ -243,24 +249,35 @@ router.get('/:id/comments', async (req, res) => {
   }
 });
 
-/* ------------------------------------------------------------------ *
- * POST /artists/:id/comments → add a comment
- * Body: { name?: string, text: string }
- * ------------------------------------------------------------------ */
+/** ----------------------------------------------------------------
+ *  POST /artists/:id/comments → add a comment
+ *  ---------------------------------------------------------------- */
 router.post('/:id/comments', async (req, res) => {
   try {
     const id = safeStr(req.params.id);
     const name = safeStr(req.body?.name || 'Anon').slice(0, 60) || 'Anon';
     const text = safeStr(req.body?.text);
-    if (!text) return res.status(400).json({ error: 'Comment text required' });
 
-    const doc = await findOneByIdFlexible(id);
+    if (!text) {
+      return res.status(400).json({ error: 'Comment text required' });
+    }
+
+    const isValidObjectId = mongoose.Types.ObjectId.isValid(id);
+    let doc = null;
+    if (isValidObjectId) {
+      doc = await Artist.findById(id).exec();
+    }
+    if (!doc) {
+      doc = await Artist.findOne({ _id: id }).exec();
+    }
+
     if (!doc) return res.status(404).json({ error: 'Artist not found' });
 
     doc.comments = Array.isArray(doc.comments) ? doc.comments : [];
     const newComment = { name, text, createdAt: new Date() };
     doc.comments.push(newComment);
     doc.commentsCount = doc.comments.length;
+
     await doc.save();
 
     res.status(201).json({
