@@ -4,6 +4,28 @@ const mongoose = require('mongoose');
 
 const router = express.Router();
 
+/* Ensure body parsing even if app-level middleware was reordered */
+router.use(express.json());
+router.use(express.urlencoded({ extended: true }));
+
+/* Small helper to safely read JSON bodies even if sent as text/plain */
+function readBody(req) {
+  // If Express already parsed JSON/form, prefer that
+  if (req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body)) {
+    return req.body;
+  }
+  // If body came in as a raw string (e.g., content-type text/plain)
+  if (typeof req.body === 'string') {
+    const s = req.body.trim();
+    if (s.startsWith('{') || s.startsWith('[')) {
+      try {
+        return JSON.parse(s);
+      } catch (_) { /* fall through */ }
+    }
+  }
+  return {};
+}
+
 /** ----------------------------------------------------------------
  *  Model (reuse if already registered; define if not)
  *  ---------------------------------------------------------------- */
@@ -134,11 +156,14 @@ router.patch('/:id', async (req, res) => {
   const id = safeStr(req.params.id);
   if (!id) return res.status(400).json({ error: 'Missing id' });
 
+  const body = readBody(req);
+  console.log('PATCH body →', req.headers['content-type'], body);
+
   const updates = {};
-  if (req.body.name) updates.name = safeStr(req.body.name);
-  if (req.body.genre) updates.genre = safeStr(req.body.genre);
-  if (req.body.bio) updates.bio = safeStr(req.body.bio);
-  if (req.body.avatarUrl) updates.avatarUrl = safeStr(req.body.avatarUrl);
+  if (body.name) updates.name = safeStr(body.name);
+  if (body.genre) updates.genre = safeStr(body.genre);
+  if (body.bio) updates.bio = safeStr(body.bio);
+  if (body.avatarUrl) updates.avatarUrl = safeStr(body.avatarUrl);
 
   if (Object.keys(updates).length === 0) {
     return res.status(400).json({ error: 'No valid fields to update' });
