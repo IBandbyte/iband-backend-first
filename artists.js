@@ -1,4 +1,5 @@
 /* eslint-env node */
+/* global Buffer */
 
 // artists.js — Artists API (list, detail, vote, comments, update)
 const express = require('express');
