@@ -13,10 +13,17 @@ const app = express();
 // -----------------------------------------------------
 app.use(cors());
 
-// ✅ Universal JSON + URL Encoded Parsers (fixed for Hoppscotch + mobile)
-// This must come BEFORE routes
-app.use(express.json({ type: '*/*' }));
+// ✅ Universal JSON + URL Encoded Parsers
+app.use(express.json({ type: ['application/json', 'application/*+json', '*/*'] }));
 app.use(express.urlencoded({ extended: true }));
+
+// 🧩 Debug line — log what arrives on PATCH
+app.use((req, res, next) => {
+  if (req.method === 'PATCH') {
+    console.log('PATCH body →', req.headers['content-type'], req.body);
+  }
+  next();
+});
 
 // -----------------------------------------------------
 // Routes
