@@ -1,3 +1,5 @@
+/* eslint-env node */
+
 // artists.js — Artists API (list, detail, vote, comments, update)
 const express = require('express');
 const mongoose = require('mongoose');
