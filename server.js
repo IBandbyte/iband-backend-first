@@ -1,3 +1,4 @@
+/* eslint-env node */
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
@@ -16,8 +17,8 @@ app.use(
       'application/json',
       'application/*+json',
       'application/json; charset=utf-8',
-      '*/*'
-    ]
+      '*/*',
+    ],
   })
 );
 app.use(express.urlencoded({ extended: true }));
@@ -36,8 +37,15 @@ if (process.env.NODE_ENV !== 'production') {
 // -----------------------------------------------------
 // Routes
 // -----------------------------------------------------
-const artistRoutes = require('./routes/artists');
+const artistRoutes = require('./artists'); // ✅ Corrected path
 app.use('/artists', artistRoutes);
+
+// -----------------------------------------------------
+// Health check route (optional but helpful)
+// -----------------------------------------------------
+app.get('/', (_req, res) => {
+  res.status(200).json({ ok: true, service: 'iband-backend' });
+});
 
 // -----------------------------------------------------
 // MongoDB + Server Start
