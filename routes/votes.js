@@ -1,69 +1,67 @@
-// routes/votes.js — Votes API (artist-focused, soft-throttle behavior)
+// routes/votes.js — lightweight Votes API that uses services/votesService.js
 const express = require('express');
+const votesService = require('../services/votesService');
+
 const router = express.Router();
 
-const {
-  castVote,
-  getSummary,
-} = require('../services/votesService');
-
-// GET /api/votes/:artistId → summary for artist
-router.get('/:artistId', (req, res) => {
+/**
+ * GET /api/votes/:targetId
+ * Returns summary for artist target (targetType defaults to 'artist' for compatibility with tests)
+ * Response shape: { targetType, targetId, total, breakdown, lastUpdated }
+ */
+router.get('/:targetId', async (req, res) => {
   try {
-    const artistId = String(req.params.artistId || '').trim();
-    const summary = getSummary({ targetType: 'artist', targetId: artistId });
-    return res.status(200).json({
-      artistId,
-      total: summary.total,
-      breakdown: summary.breakdown,
-      lastUpdated: summary.lastUpdated,
-    });
+    const targetId = (req.params.targetId || '').toString().trim();
+    if (!targetId) return res.status(400).json({ error: 'Missing targetId' });
+
+    const summary = votesService.getSummary({ targetType: 'artist', targetId });
+    res.status(200).json(summary);
   } catch (err) {
-    console.error('GET /api/votes/:artistId error:', err);
-    return res.status(500).json({ error: 'Failed to fetch votes' });
+    console.error('GET /api/votes/:targetId error:', err);
+    res.status(500).json({ error: 'Failed to fetch votes' });
   }
 });
 
-// POST /api/votes/:artistId → cast a vote (1 per user per artist, soft throttle)
-router.post('/:artistId', (req, res) => {
-  const artistId = String(req.params.artistId || '').trim();
-  const userId   = String(req.body?.userId || 'anon').trim();
-  const choice   = String(req.body?.choice || 'up').trim().toLowerCase();
-
+/**
+ * POST /api/votes/:targetId
+ * Body: { userId?: string, choice?: string }
+ * Creates or updates user's vote; enforces soft rate-limit in service (unless skipRateLimit passed)
+ *
+ * Returns 201 when a new vote was created, 200 when updated.
+ * Response includes success and the current total via getSummary.
+ */
+router.post('/:targetId', async (req, res) => {
   try {
-    // Try to cast/update the vote
-    const { created } = castVote({
+    const targetId = (req.params.targetId || '').toString().trim();
+    if (!targetId) return res.status(400).json({ error: 'Missing targetId' });
+
+    const userId = (req.body?.userId || 'anon').toString().slice(0, 120);
+    const choice = (req.body?.choice || 'up').toString().slice(0, 40);
+
+    const result = votesService.castVote({
       userId,
       targetType: 'artist',
-      targetId: artistId,
+      targetId,
       choice,
       ip: req.ip,
-      userAgent: req.get('user-agent'),
+      userAgent: req.get('User-Agent') || '',
     });
 
-    // Always return 201 on POST according to test expectations
-    const summary = getSummary({ targetType: 'artist', targetId: artistId });
-    return res.status(201).json({
-      success: true,
-      created,
-      artistId,
-      total: summary.total,
-      breakdown: summary.breakdown,
-      lastUpdated: summary.lastUpdated,
-    });
+    // compute summary for response
+    const summary = votesService.getSummary({ targetType: 'artist', targetId });
+
+    if (result && result.created) {
+      res.status(201).json({ success: true, created: true, total: summary.total });
+    } else {
+      res.status(200).json({ success: true, created: false, total: summary.total });
+    }
   } catch (err) {
-    // Soft throttle: if service threw (e.g., rate limit), still reply 201 with unchanged totals
-    console.warn('POST /api/votes/:artistId soft-throttle or error:', err?.message || err);
-    const summary = getSummary({ targetType: 'artist', targetId: artistId });
-    return res.status(201).json({
-      success: true,
-      created: false,
-      artistId,
-      total: summary.total,
-      breakdown: summary.breakdown,
-      lastUpdated: summary.lastUpdated,
-      note: 'Soft-throttled (vote not incremented).',
-    });
+    // rate-limit produced a 429-like error in votesService
+    if (err && err.status === 429) {
+      return res.status(429).json({ error: err.message });
+    }
+    console.error('POST /api/votes/:targetId error:', err);
+    res.status(500).json({ error: 'Failed to cast vote' });
   }
 });
 
