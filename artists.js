@@ -160,6 +160,8 @@ router.patch('/:id', async (req, res) => {
   if (!id) return res.status(400).json({ error: 'Missing id' });
 
   const body = readBody(req);
+  // debug: log content-type and parsed body (helps Hoppscotch/mobiles)
+  // eslint-disable-next-line no-console
   console.log('PATCH body →', req.headers['content-type'], body);
 
   const updates = {};
