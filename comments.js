@@ -1,103 +1,79 @@
-// comments.js — per-artist comments API
-const express = require("express");
-const mongoose = require("mongoose");
+/* eslint-env node */
+/* global Buffer */
+
+// comments.js — comments API (root-level)
+// Stores comments linked to artistId and artistName (works with artists collection)
+
+const express = require('express');
+const mongoose = require('mongoose');
+
 const router = express.Router();
 
-// --- Schemas (reuse if already defined elsewhere) ---
-const Artist =
-  mongoose.models.Artist ||
-  mongoose.model(
-    "Artist",
-    new mongoose.Schema(
-      {
-        name: String,
-        genre: String,
-        votes: { type: Number, default: 0 },
-        commentsCount: { type: Number, default: 0 },
-      },
-      { timestamps: true }
-    )
+// Schema (reuse if already registered)
+const CommentSchema =
+  mongoose.models.Comment?.schema ||
+  new mongoose.Schema(
+    {
+      artistId: { type: String, required: true, trim: true }, // store as string to support string or ObjectId
+      artistName: { type: String, required: true, trim: true },
+      text: { type: String, required: true, trim: true },
+      createdAt: { type: Date, default: Date.now },
+    },
+    { timestamps: true }
   );
 
-const Comment =
-  mongoose.models.Comment ||
-  mongoose.model(
-    "Comment",
-    new mongoose.Schema(
-      {
-        artistId: { type: mongoose.Schema.Types.ObjectId, ref: "Artist", index: true, required: true },
-        artistName: { type: String, required: true }, // denormalized for convenience
-        text: { type: String, required: true },
-      },
-      { timestamps: true }
-    )
-  );
+const Comment = mongoose.models.Comment || mongoose.model('Comment', CommentSchema);
 
-// health for this module (optional)
-router.get("/health", (_req, res) =>
-  res.json({ ok: true, service: "comments", ts: new Date().toISOString() })
-);
+/** Safe string helper */
+const safeStr = (v = '') => (v ?? '').toString().trim();
 
 /**
- * GET /comments/:artistId
- * Returns newest → oldest (max 100)
+ * GET /comments
+ * Optional query:
+ *   - ?artistId=<id>   // filter by artistId
+ *   - ?artist=<name>   // filter by artistName
+ * Returns up to 200 newest comments (descending).
  */
-router.get("/:artistId", async (req, res) => {
+router.get('/', async (req, res) => {
   try {
-    const { artistId } = req.params;
-    if (!mongoose.isValidObjectId(artistId)) {
-      return res.status(400).json({ error: "Invalid artistId" });
-    }
-    const list = await Comment.find({ artistId })
-      .sort({ createdAt: -1 })
-      .limit(100)
-      .lean();
-    res.json(list);
+    const q = {};
+    if (req.query.artistId) q.artistId = safeStr(req.query.artistId);
+    if (req.query.artist) q.artistName = safeStr(req.query.artist);
+
+    const list = await Comment.find(q).sort({ createdAt: -1 }).limit(200).lean().exec();
+    res.status(200).json(list);
   } catch (err) {
-    console.error("GET /comments/:artistId", err);
-    res.status(500).json({ error: "Failed to fetch comments" });
+    console.error('GET /comments error:', err);
+    res.status(500).json({ error: 'Failed to fetch comments' });
   }
 });
 
 /**
- * POST /comments/:artistId
- * Body: { text: "your comment" }
- * Creates a comment and bumps the artist.commentsCount
+ * POST /comments
+ * Body: { artistId, artistName, text }
+ * Creates a comment and returns it (201).
  */
-router.post("/:artistId", async (req, res) => {
+router.post('/', async (req, res) => {
   try {
-    const { artistId } = req.params;
-    if (!mongoose.isValidObjectId(artistId)) {
-      return res.status(400).json({ error: "Invalid artistId" });
+    const artistId = safeStr(req.body?.artistId || req.body?.id || '');
+    const artistName = safeStr(req.body?.artistName || req.body?.artist || '');
+    const text = safeStr(req.body?.text || '');
+
+    if (!artistId || !artistName || !text) {
+      return res.status(400).json({ error: 'artistId, artistName and text are required' });
     }
-    const { text } = req.body || {};
-    if (!text || !text.trim()) {
-      return res.status(400).json({ error: "text required" });
-    }
 
-    const artist = await Artist.findById(artistId);
-    if (!artist) return res.status(404).json({ error: "Artist not found" });
-
-    const comment = await Comment.create({
-      artistId,
-      artistName: artist.name,
-      text: text.trim(),
-    });
-
-    // increment denormalized counter (safe & atomic)
-    await Artist.updateOne({ _id: artistId }, { $inc: { commentsCount: 1 } });
-
+    const c = await Comment.create({ artistId, artistName, text });
     res.status(201).json({
-      id: comment._id,
-      artistId,
-      artistName: artist.name,
-      text: comment.text,
-      createdAt: comment.createdAt,
-      commentsCount: (artist.commentsCount ?? 0) + 1,
+      id: c._id.toString(),
+      artistId: c.artistId,
+      artistName: c.artistName,
+      text: c.text,
+      createdAt: c.createdAt,
     });
   } catch (err) {
-    console.error("POST /comments/:artistId", err);
-    res.status(500).json({ error: "Failed to add comment" });
+    console.error('POST /comments error:', err);
+    res.status(500).json({ error: 'Failed to add comment' });
   }
 });
 
