@@ -1,43 +1,97 @@
-const express = require("express");
-const mongoose = require("mongoose");
-const cors = require("cors");
+/* eslint-env node */
+/* global Buffer */
+
+// server.js — iBandbyte backend (root-level)
+// Full app wiring: parsers, routes, mongo, health
+
+const express = require('express');
+const cors = require('cors');
+const mongoose = require('mongoose');
+require('dotenv').config();
 
 const app = express();
 
-// --- config ---
-const PORT = process.env.PORT || 3000;
-const MONGO_URI = process.env.MONGO_URI; // already present on Render
-
-// --- middleware ---
+// --------------------
+// Middleware
+// --------------------
 app.use(cors());
-app.use(express.json());
 
-// --- connect mongo once at boot ---
-mongoose
-  .connect(MONGO_URI, { dbName: process.env.MONGO_DB || "iband" })
-  .then(() => console.log("Mongo connected"))
-  .catch((e) => {
-    console.error("Mongo connection error", e);
-    process.exit(1);
+// Universal JSON parser (accept common mobile/web variants)
+app.use(
+  express.json({
+    type: ['application/json', 'application/*+json', 'application/json; charset=utf-8', '*/*'],
+  })
+);
+app.use(express.urlencoded({ extended: true }));
+
+// Small debug logger for PATCH bodies (safe for dev)
+if (process.env.NODE_ENV !== 'production') {
+  app.use((req, _res, next) => {
+    if (req.method === 'PATCH') {
+      // eslint-disable-next-line no-console
+      console.log('PATCH body →', req.headers['content-type'], req.body);
+    }
+    next();
   });
+}
 
-// --- health for whole service ---
-app.get("/health", (_req, res) =>
-  res.json({
+// --------------------
+// Health & root
+// --------------------
+app.get('/', (_req, res) => res.status(200).json({ ok: true, service: 'iband-backend' }));
+
+app.get('/health', (_req, res) =>
+  res.status(200).json({
     ok: true,
-    service: "iband-backend",
-    mongoUriPresent: !!MONGO_URI,
-    env: process.env.RENDER ? "render" : "local",
+    service: 'iband-backend',
+    mongoUriPresent: Boolean(process.env.MONGO_URI || process.env.MONGODB_URI),
+    env: process.env.RENDER ? 'render' : process.env.NODE_ENV || 'local',
   })
 );
 
-// --- existing routes ---
-app.use("/artists", require("./routes/artists.fake")); // your current file
-app.use("/vote", require("./routes/votes"));           // your current file
-app.use("/admin", require("./routes/safety"));         // your current file
+// --------------------
+// Routes (note: artists.js lives at project root)
+ // artists.js is at project root (not ./routes/artists)
+const artistRoutes = require('./artists');
+const commentsRoutes = require('./comments');      // root-level comments.js
+const votesRoutes = require('./routes/votes');    // existing in /routes
+const safetyRoutes = require('./routes/safety');  // existing in /routes
 
-// --- NEW comments route ---
-app.use("/comments", require("./comments"));           // <— add this line
+app.use('/artists', artistRoutes);
+app.use('/comments', commentsRoutes);
+app.use('/api/votes', votesRoutes);
+app.use('/api/safety', safetyRoutes);
 
-// --- start ---
-app.listen(PORT, () => console.log(`API listening on :${PORT}`));
+// --------------------
+// Mongo + Start
+// --------------------
+const PORT = process.env.PORT || 10000;
+const MONGO =
+  process.env.MONGO_URI ||
+  process.env.MONGODB_URI ||
+  process.env.MONGO ||
+  // keep this placeholder harmless; replace with real URI in env
+  'mongodb://127.0.0.1:27017/iband';
+
+async function start() {
+  try {
+    // eslint-disable-next-line no-console
+    console.log('Connecting to MongoDB...');
+    await mongoose.connect(MONGO, {
+      // options can be added if needed
+    });
+    // eslint-disable-next-line no-console
+    console.log('✅ MongoDB connected');
+
+    app.listen(PORT, () => {
+      // eslint-disable-next-line no-console
+      console.log(`🚀 Server running on :${PORT}`);
+    });
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('Mongo connection/start error:', err);
+    process.exit(1);
+  }
+}
+
+start();
