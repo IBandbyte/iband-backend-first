@@ -11,20 +11,25 @@ require('dotenv').config();
 
 const app = express();
 
-// --------------------
-// Middleware
-// --------------------
+/* --------------------
+ * Middleware
+ * ------------------ */
 app.use(cors());
 
 // Universal JSON parser (accept common mobile/web variants)
 app.use(
   express.json({
-    type: ['application/json', 'application/*+json', 'application/json; charset=utf-8', '*/*'],
+    type: [
+      'application/json',
+      'application/*+json',
+      'application/json; charset=utf-8',
+      '*/*',
+    ],
   })
 );
 app.use(express.urlencoded({ extended: true }));
 
-// Small debug logger for PATCH bodies (safe for dev)
+// Tiny debug logger for PATCH bodies (dev only)
 if (process.env.NODE_ENV !== 'production') {
   app.use((req, _res, next) => {
     if (req.method === 'PATCH') {
@@ -35,10 +40,12 @@ if (process.env.NODE_ENV !== 'production') {
   });
 }
 
-// --------------------
-// Health & root
-// --------------------
-app.get('/', (_req, res) => res.status(200).json({ ok: true, service: 'iband-backend' }));
+/* --------------------
+ * Health & Root
+ * ------------------ */
+app.get('/', (_req, res) =>
+  res.status(200).json({ ok: true, service: 'iband-backend' })
+);
 
 app.get('/health', (_req, res) =>
   res.status(200).json({
@@ -49,37 +56,42 @@ app.get('/health', (_req, res) =>
   })
 );
 
-// --------------------
-// Routes (note: artists.js lives at project root)
- // artists.js is at project root (not ./routes/artists)
+/* --------------------
+ * Routes
+ * ------------------ */
+// artists.js & comments.js live at repo root
 const artistRoutes = require('./artists');
-const commentsRoutes = require('./comments');      // root-level comments.js
-const votesRoutes = require('./routes/votes');    // existing in /routes
-const safetyRoutes = require('./routes/safety');  // existing in /routes
+const commentsRoutes = require('./comments');
 
-app.use('/artists', artistRoutes);
-app.use('/comments', commentsRoutes);
-app.use('/api/votes', votesRoutes);
+// votes & safety are in /routes
+const votesRouter = require('./routes/votes');
+const safetyRoutes = require('./routes/safety');
+
+// Mount with the intended public paths:
+app.use('/artists', artistRoutes);     // GET /artists, POST /artists, etc.
+app.use('/comments', commentsRoutes);  // GET /comments, POST /comments
+
+// IMPORTANT: mount votes router at root so /votes works (no /api prefix)
+app.use(votesRouter);                  // GET /votes, GET /votes/:id, POST /artists/:id/vote
+
+// Safety can stay under /api if you prefer; here we expose it as-is:
 app.use('/api/safety', safetyRoutes);
 
-// --------------------
-// Mongo + Start
-// --------------------
+/* --------------------
+ * Mongo + Start
+ * ------------------ */
 const PORT = process.env.PORT || 10000;
 const MONGO =
   process.env.MONGO_URI ||
   process.env.MONGODB_URI ||
   process.env.MONGO ||
-  // keep this placeholder harmless; replace with real URI in env
   'mongodb://127.0.0.1:27017/iband';
 
 async function start() {
   try {
     // eslint-disable-next-line no-console
     console.log('Connecting to MongoDB...');
-    await mongoose.connect(MONGO, {
-      // options can be added if needed
-    });
+    await mongoose.connect(MONGO);
     // eslint-disable-next-line no-console
     console.log('✅ MongoDB connected');
 
@@ -95,3 +107,5 @@ async function start() {
 }
 
 start();
+
+module.exports = app;
