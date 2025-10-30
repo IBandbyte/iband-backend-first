@@ -1,79 +1,147 @@
 /* eslint-env node */
-/* global Buffer */
 
-// comments.js — comments API (root-level)
-// Stores comments linked to artistId and artistName (works with artists collection)
+// comments.js — iBandbyte comments API (root-level)
+// - POST /comments        -> create a comment  { artistId, user, text }
+// - GET  /comments        -> list comments (optional ?artistId= or ?artist=Name)
+// - GET  /comments/counts -> comment counts per artist (lightweight)
 
 const express = require('express');
 const mongoose = require('mongoose');
 
 const router = express.Router();
 
-// Schema (reuse if already registered)
-const CommentSchema =
-  mongoose.models.Comment?.schema ||
-  new mongoose.Schema(
-    {
-      artistId: { type: String, required: true, trim: true }, // store as string to support string or ObjectId
-      artistName: { type: String, required: true, trim: true },
-      text: { type: String, required: true, trim: true },
-      createdAt: { type: Date, default: Date.now },
-    },
-    { timestamps: true }
+/* ----------------------------------------
+ * Minimal Artist model (only what we need)
+ * -------------------------------------- */
+const Artist =
+  mongoose.models.Artist ||
+  mongoose.model(
+    'Artist',
+    new mongoose.Schema(
+      {
+        name: String,
+        genre: String,
+        votes: { type: Number, default: 0 },
+        commentsCount: { type: Number, default: 0 }, // denormalized counter
+      },
+      { collection: 'artists' } // use existing collection
+    )
   );
 
-const Comment = mongoose.models.Comment || mongoose.model('Comment', CommentSchema);
+/* ----------------------------------------
+ * Comment model
+ * -------------------------------------- */
+const Comment =
+  mongoose.models.Comment ||
+  mongoose.model(
+    'Comment',
+    new mongoose.Schema(
+      {
+        artistId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'Artist',
+          required: true,
+        },
+        user: { type: String, required: true, trim: true },
+        text: { type: String, required: true, trim: true, maxlength: 1000 },
+      },
+      { timestamps: true, collection: 'comments' }
+    )
+  );
 
-/** Safe string helper */
-const safeStr = (v = '') => (v ?? '').toString().trim();
+/* ----------------------------------------
+ * Helpers
+ * -------------------------------------- */
+function bad(res, status, msg) {
+  return res.status(status).json({ ok: false, error: msg });
+}
 
-/**
+/* ----------------------------------------
  * GET /comments
- * Optional query:
- *   - ?artistId=<id>   // filter by artistId
- *   - ?artist=<name>   // filter by artistName
- * Returns up to 200 newest comments (descending).
- */
+ *  - optional filters:
+ *      ?artistId=68be...   OR   ?artist=Aria%20Nova
+ * -------------------------------------- */
 router.get('/', async (req, res) => {
   try {
     const q = {};
-    if (req.query.artistId) q.artistId = safeStr(req.query.artistId);
-    if (req.query.artist) q.artistName = safeStr(req.query.artist);
+    if (req.query.artistId) {
+      if (!mongoose.isValidObjectId(req.query.artistId)) {
+        return bad(res, 400, 'Invalid artistId');
+      }
+      q.artistId = req.query.artistId;
+    }
+    if (req.query.artist) {
+      const found = await Artist.findOne({ name: req.query.artist }).select('_id');
+      if (!found) return res.json([]); // no artist -> empty list
+      q.artistId = found._id;
+    }
 
-    const list = await Comment.find(q).sort({ createdAt: -1 }).limit(200).lean().exec();
-    res.status(200).json(list);
+    const list = await Comment.find(q).sort({ createdAt: -1 }).limit(200);
+    return res.json(list);
   } catch (err) {
-    console.error('GET /comments error:', err);
-    res.status(500).json({ error: 'Failed to fetch comments' });
+    return bad(res, 500, 'Failed to fetch comments');
   }
 });
 
-/**
+/* ----------------------------------------
  * POST /comments
- * Body: { artistId, artistName, text }
- * Creates a comment and returns it (201).
- */
+ * Body: { artistId, user, text }
+ * -------------------------------------- */
 router.post('/', async (req, res) => {
   try {
-    const artistId = safeStr(req.body?.artistId || req.body?.id || '');
-    const artistName = safeStr(req.body?.artistName || req.body?.artist || '');
-    const text = safeStr(req.body?.text || '');
+    const { artistId, user, text } = req.body || {};
 
-    if (!artistId || !artistName || !text) {
-      return res.status(400).json({ error: 'artistId, artistName and text are required' });
+    if (!artistId || !mongoose.isValidObjectId(artistId)) {
+      return bad(res, 400, 'artistId (ObjectId) is required');
+    }
+    if (!user || typeof user !== 'string' || !user.trim()) {
+      return bad(res, 400, 'user is required');
+    }
+    if (!text || typeof text !== 'string' || !text.trim()) {
+      return bad(res, 400, 'text is required');
     }
 
-    const c = await Comment.create({ artistId, artistName, text });
-    res.status(201).json({
-      id: c._id.toString(),
-      artistId: c.artistId,
-      artistName: c.artistName,
-      text: c.text,
-      createdAt: c.createdAt,
+    // ensure artist exists
+    const artist = await Artist.findById(artistId).select('_id name');
+    if (!artist) return bad(res, 404, 'Artist not found');
+
+    // create comment
+    const comment = await Comment.create({
+      artistId: artist._id,
+      user: user.trim(),
+      text: text.trim(),
+    });
+
+    // bump denormalized counter
+    await Artist.updateOne({ _id: artist._id }, { $inc: { commentsCount: 1 } });
+
+    return res.status(201).json({
+      ok: true,
+      id: comment._id,
+      artistId: artist._id,
+      artistName: artist.name,
+      user: comment.user,
+      text: comment.text,
+      createdAt: comment.createdAt,
     });
   } catch (err) {
-    console.error('POST /comments error:', err);
-    res.status(500).json({ error: 'Failed to add comment' });
+    return bad(res, 500, 'Failed to add comment');
+  }
+});
+
+/* ----------------------------------------
+ * GET /comments/counts
+ * quick counts per artist (useful for admin/tools)
+ * -------------------------------------- */
+router.get('/counts', async (_req, res) => {
+  try {
+    const agg = await Comment.aggregate([
+      { $group: { _id: '$artistId', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+    ]);
+    return res.json(agg);
+  } catch (_e) {
+    return bad(res, 500, 'Failed to get counts');
   }
 });
 
