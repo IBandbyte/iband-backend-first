@@ -2,7 +2,6 @@
 /* global Buffer */
 
 // server.js — iBandbyte backend (root-level)
-// Full app wiring: parsers, routes, mongo, health
 
 const express = require('express');
 const cors = require('cors');
@@ -15,25 +14,13 @@ const app = express();
  * Middleware
  * ------------------ */
 app.use(cors());
-
-// Universal JSON parser (accept common mobile/web variants)
-app.use(
-  express.json({
-    type: [
-      'application/json',
-      'application/*+json',
-      'application/json; charset=utf-8',
-      '*/*',
-    ],
-  })
-);
+app.use(express.json());                    // standard JSON parser
 app.use(express.urlencoded({ extended: true }));
 
 // Tiny debug logger for PATCH bodies (dev only)
 if (process.env.NODE_ENV !== 'production') {
   app.use((req, _res, next) => {
     if (req.method === 'PATCH') {
-      // eslint-disable-next-line no-console
       console.log('PATCH body →', req.headers['content-type'], req.body);
     }
     next();
@@ -43,38 +30,38 @@ if (process.env.NODE_ENV !== 'production') {
 /* --------------------
  * Health & Root
  * ------------------ */
-app.get('/', (_req, res) =>
-  res.status(200).json({ ok: true, service: 'iband-backend' })
-);
+app.get('/', (_req, res) => {
+  res.status(200).json({ ok: true, service: 'iband-backend' });
+});
 
-app.get('/health', (_req, res) =>
+app.get('/health', (_req, res) => {
   res.status(200).json({
     ok: true,
     service: 'iband-backend',
     mongoUriPresent: Boolean(process.env.MONGO_URI || process.env.MONGODB_URI),
     env: process.env.RENDER ? 'render' : process.env.NODE_ENV || 'local',
-  })
-);
+  });
+});
 
 /* --------------------
  * Routes
  * ------------------ */
-// artists.js & comments.js live at repo root
+// Root-level routes
 const artistRoutes = require('./artists');
 const commentsRoutes = require('./comments');
 
-// votes & safety are in /routes
+// /routes folder
 const votesRouter = require('./routes/votes');
 const safetyRoutes = require('./routes/safety');
 
-// Mount with the intended public paths:
-app.use('/artists', artistRoutes);     // GET /artists, POST /artists, etc.
-app.use('/comments', commentsRoutes);  // GET /comments, POST /comments
+// Mount with public paths
+app.use('/artists', artistRoutes);
+app.use('/comments', commentsRoutes);
 
-// IMPORTANT: mount votes router at root so /votes works (no /api prefix)
-app.use(votesRouter);                  // GET /votes, GET /votes/:id, POST /artists/:id/vote
+// votes router exports paths starting with /votes and /artists/:id/vote
+app.use(votesRouter);
 
-// Safety can stay under /api if you prefer; here we expose it as-is:
+// keep safety under /api
 app.use('/api/safety', safetyRoutes);
 
 /* --------------------
@@ -89,19 +76,19 @@ const MONGO =
 
 async function start() {
   try {
-    // eslint-disable-next-line no-console
     console.log('Connecting to MongoDB...');
-    await mongoose.connect(MONGO);
-    // eslint-disable-next-line no-console
+    await mongoose.connect(MONGO, {
+      // these options are safe across modern drivers
+      maxPoolSize: 10,
+      serverSelectionTimeoutMS: 15000,
+    });
     console.log('✅ MongoDB connected');
 
     app.listen(PORT, () => {
-      // eslint-disable-next-line no-console
       console.log(`🚀 Server running on :${PORT}`);
     });
   } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error('Mongo connection/start error:', err);
+    console.error('Mongo connection/start error:', err?.message || err);
     process.exit(1);
   }
 }
