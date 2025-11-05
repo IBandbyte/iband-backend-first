@@ -1,9 +1,13 @@
 /* eslint-env node */
 
-// comments.js — iBandbyte comments API (root-level)
-// - POST /comments        -> create a comment  { artistId, user, text }
-// - GET  /comments        -> list comments (optional ?artistId= or ?artist=Name)
-// - GET  /comments/counts -> comment counts per artist (lightweight)
+// comments.js — iBandbyte comments API (root-level + artist-path aliases)
+// Root:
+//   - POST /comments        -> create a comment  { artistId, user, text }
+//   - GET  /comments        -> list comments (optional ?artistId= or ?artist=Name)
+//   - GET  /comments/counts -> comment counts per artist
+// Aliases under artist path (optional):
+//   - GET  /artists/:id/comments
+//   - POST /artists/:id/comments  { user, text }
 
 const express = require('express');
 const mongoose = require('mongoose');
@@ -41,8 +45,9 @@ const Comment =
           type: mongoose.Schema.Types.ObjectId,
           ref: 'Artist',
           required: true,
+          index: true,
         },
-        user: { type: String, required: true, trim: true },
+        user: { type: String, required: true, trim: true, default: 'Anonymous' },
         text: { type: String, required: true, trim: true, maxlength: 1000 },
       },
       { timestamps: true, collection: 'comments' }
@@ -56,12 +61,16 @@ function bad(res, status, msg) {
   return res.status(status).json({ ok: false, error: msg });
 }
 
+/* =========================================================
+ * ROOT ENDPOINTS
+ * ======================================================= */
+
 /* ----------------------------------------
  * GET /comments
  *  - optional filters:
  *      ?artistId=68be...   OR   ?artist=Aria%20Nova
  * -------------------------------------- */
-router.get('/', async (req, res) => {
+router.get('/comments', async (req, res) => {
   try {
     const q = {};
     if (req.query.artistId) {
@@ -78,7 +87,7 @@ router.get('/', async (req, res) => {
 
     const list = await Comment.find(q).sort({ createdAt: -1 }).limit(200);
     return res.json(list);
-  } catch (err) {
+  } catch (_err) {
     return bad(res, 500, 'Failed to fetch comments');
   }
 });
@@ -87,7 +96,7 @@ router.get('/', async (req, res) => {
  * POST /comments
  * Body: { artistId, user, text }
  * -------------------------------------- */
-router.post('/', async (req, res) => {
+router.post('/comments', async (req, res) => {
   try {
     const { artistId, user, text } = req.body || {};
 
@@ -124,7 +133,7 @@ router.post('/', async (req, res) => {
       text: comment.text,
       createdAt: comment.createdAt,
     });
-  } catch (err) {
+  } catch (_err) {
     return bad(res, 500, 'Failed to add comment');
   }
 });
@@ -133,7 +142,7 @@ router.post('/', async (req, res) => {
  * GET /comments/counts
  * quick counts per artist (useful for admin/tools)
  * -------------------------------------- */
-router.get('/counts', async (_req, res) => {
+router.get('/comments/counts', async (_req, res) => {
   try {
     const agg = await Comment.aggregate([
       { $group: { _id: '$artistId', count: { $sum: 1 } } },
@@ -142,6 +151,66 @@ router.get('/counts', async (_req, res) => {
     return res.json(agg);
   } catch (_e) {
     return bad(res, 500, 'Failed to get counts');
+  }
+});
+
+/* =========================================================
+ * ARTIST-PATH ALIASES (OPTIONAL)
+ * These are convenience routes; they proxy to the same logic.
+ * ======================================================= */
+
+/* GET /artists/:id/comments */
+router.get('/artists/:id/comments', async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.isValidObjectId(id)) {
+      return bad(res, 400, 'Invalid artistId');
+    }
+    const list = await Comment.find({ artistId: id }).sort({ createdAt: -1 }).limit(200);
+    return res.json(list);
+  } catch (_err) {
+    return bad(res, 500, 'Failed to fetch comments');
+  }
+});
+
+/* POST /artists/:id/comments  { user, text } */
+router.post('/artists/:id/comments', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { user, text } = req.body || {};
+
+    if (!mongoose.isValidObjectId(id)) {
+      return bad(res, 400, 'Invalid artistId');
+    }
+    if (!user || typeof user !== 'string' || !user.trim()) {
+      return bad(res, 400, 'user is required');
+    }
+    if (!text || typeof text !== 'string' || !text.trim()) {
+      return bad(res, 400, 'text is required');
+    }
+
+    const artist = await Artist.findById(id).select('_id name');
+    if (!artist) return bad(res, 404, 'Artist not found');
+
+    const comment = await Comment.create({
+      artistId: artist._id,
+      user: user.trim(),
+      text: text.trim(),
+    });
+
+    await Artist.updateOne({ _id: artist._id }, { $inc: { commentsCount: 1 } });
+
+    return res.status(201).json({
+      ok: true,
+      id: comment._id,
+      artistId: artist._id,
+      artistName: artist.name,
+      user: comment.user,
+      text: comment.text,
+      createdAt: comment.createdAt,
+    });
+  } catch (_err) {
+    return bad(res, 500, 'Failed to add comment');
   }
 });
 
