@@ -1,87 +1,126 @@
+// routes/votes.js
 /* eslint-env node */
 
-// routes/votes.js — lightweight votes API under /api/votes
-// Works alongside artists.js which stores the tally on each Artist doc.
+const express = require('express');
+const mongoose = require('mongoose');
+const { isObjectId } = require('../utils/isObjectId');
 
-const express = require("express");
-const mongoose = require("mongoose");
 const router = express.Router();
 
-// Minimal Artist model (matches the collection used by artists.js)
+/* ------------------------------
+ * Models (shared collections)
+ * ---------------------------- */
 const Artist =
   mongoose.models.Artist ||
   mongoose.model(
-    "Artist",
+    'Artist',
     new mongoose.Schema(
       {
-        name: String,
-        genre: String,
+        name: { type: String, required: true, trim: true },
+        genre: { type: String, default: '' },
         votes: { type: Number, default: 0 },
         commentsCount: { type: Number, default: 0 },
       },
-      { collection: "artists", timestamps: false }
+      { collection: 'artists', timestamps: false }
     )
   );
 
-/**
- * GET /api/votes
- * Returns an array of { artistId, votes }
- */
-router.get("/", async (_req, res) => {
-  try {
-    const rows = await Artist.find({}, { votes: 1 }).lean();
-    const out = rows.map((r) => ({ artistId: String(r._id), votes: r.votes || 0 }));
-    res.json(out);
-  } catch (e) {
-    res.status(500).json({ error: "Failed to read votes" });
-  }
-});
+const Vote =
+  mongoose.models.Vote ||
+  mongoose.model(
+    'Vote',
+    new mongoose.Schema(
+      {
+        artistId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'Artist',
+          index: true,
+          required: true,
+        },
+        // Optional: track IP or user token later if you want anti-spam
+        meta: { type: Object, default: {} },
+      },
+      { collection: 'votes', timestamps: true }
+    )
+  );
 
-/**
- * GET /api/votes/:artistId
- * Returns { artistId, votes }
- */
-router.get("/:artistId", async (req, res) => {
+/* ------------------------------
+ * Helpers
+ * ---------------------------- */
+function bad(res, code, msg) {
+  return res.status(code).json({ ok: false, error: msg });
+}
+
+/* ------------------------------
+ * GET /votes
+ * Returns a simple top list: [{ _id: artistId, votes }, ...]
+ * ---------------------------- */
+router.get('/votes', async (_req, res) => {
   try {
-    const { artistId } = req.params;
-    if (!mongoose.isValidObjectId(artistId)) {
-      return res.status(400).json({ error: "Invalid artistId" });
-    }
-    const a = await Artist.findById(artistId, { votes: 1 }).lean();
-    if (!a) return res.status(404).json({ error: "Artist not found" });
-    res.json({ artistId, votes: a.votes || 0 });
+    const agg = await Artist.aggregate([
+      { $project: { votes: 1 } },
+      { $sort: { votes: -1 } },
+      { $limit: 100 },
+    ]);
+    return res.json(agg);
   } catch (_e) {
-    res.status(500).json({ error: "Failed to read vote" });
+    return bad(res, 500, 'Failed to fetch votes');
   }
 });
 
-/**
- * POST /api/votes
- * Body: { artistId, delta }   // delta = +1 or -1
- * Returns { artistId, votes }
- */
-router.post("/", async (req, res) => {
+/* ------------------------------
+ * GET /votes/:id
+ * Return current vote count for a single artist
+ * ---------------------------- */
+router.get('/votes/:id', async (req, res) => {
   try {
-    const { artistId, delta } = req.body || {};
-    if (!artistId || !mongoose.isValidObjectId(artistId)) {
-      return res.status(400).json({ error: "artistId required" });
-    }
-    const n = Number(delta);
-    if (![1, -1].includes(n)) {
-      return res.status(400).json({ error: "delta must be +1 or -1" });
+    const { id } = req.params;
+    if (!isObjectId(id)) return bad(res, 400, 'Invalid artist id');
+
+    const art = await Artist.findById(id, { votes: 1, name: 1 }).lean();
+    if (!art) return bad(res, 404, 'Artist not found');
+
+    return res.json({ id: String(art._id), name: art.name, votes: art.votes || 0 });
+  } catch (_e) {
+    return bad(res, 500, 'Failed to fetch artist votes');
+  }
+});
+
+/* ------------------------------
+ * POST /artists/:id/vote
+ * Body (optional): { delta: +1 | -1 } default +1
+ * ---------------------------- */
+router.post('/artists/:id/vote', async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isObjectId(id)) return bad(res, 400, 'Invalid artist id');
+
+    let delta = 1;
+    if (req.body && typeof req.body.delta !== 'undefined') {
+      const n = Number(req.body.delta);
+      if (![1, -1].includes(n)) return bad(res, 400, 'delta must be +1 or -1');
+      delta = n;
     }
 
     const updated = await Artist.findByIdAndUpdate(
-      artistId,
-      { $inc: { votes: n } },
-      { new: true, projection: { votes: 1 } }
+      id,
+      { $inc: { votes: delta } },
+      { new: true, projection: { name: 1, votes: 1 } }
     ).lean();
 
-    if (!updated) return res.status(404).json({ error: "Artist not found" });
+    if (!updated) return bad(res, 404, 'Artist not found');
 
-    res.status(200).json({ artistId, votes: updated.votes || 0 });
+    // Optional audit row — safe to keep for analytics; can be removed if undesired
+    await Vote.create({ artistId: updated._id, meta: { delta } });
+
+    return res.status(200).json({
+      ok: true,
+      id: String(updated._id),
+      name: updated.name,
+      votes: updated.votes || 0,
+    });
   } catch (_e) {
-    res.status(500).json({ error: "Failed to update vote" });
+    return bad(res, 500, 'Failed to cast vote');
   }
 });
 
