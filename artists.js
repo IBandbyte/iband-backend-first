@@ -1,53 +1,40 @@
 /* eslint-env node */
 
-// artists.js — artist listing + single fetch + vote endpoint (robust to string IDs)
+// artists.js — iBandbyte Artists API
+// - GET  /artists                 -> list artists (lean projection)
+// - GET  /artists/:id             -> single artist (safe id handling)
+// - POST /artists/:id/vote        -> bump votes (+1 | -1)  [convenience]
+//   (canonical voting endpoints also live in routes/votes.js)
 
-const express = require("express");
-const mongoose = require("mongoose");
+const express = require('express');
+const mongoose = require('mongoose');
 const router = express.Router();
 
-/* ------------------------------------------------------------------ */
-/* Model (kept minimal; uses existing "artists" collection)           */
-/* ------------------------------------------------------------------ */
+// Minimal, shared Artist model
 const Artist =
   mongoose.models.Artist ||
   mongoose.model(
-    "Artist",
+    'Artist',
     new mongoose.Schema(
       {
-        name: { type: String, required: true },
-        genre: { type: String, default: "" },
+        name: { type: String, required: true, trim: true },
+        genre: { type: String, default: '', trim: true },
         votes: { type: Number, default: 0 },
         commentsCount: { type: Number, default: 0 },
       },
-      { collection: "artists", timestamps: false }
+      { collection: 'artists', timestamps: false }
     )
   );
 
-/* ------------------------------------------------------------------ */
-/* Helpers                                                            */
-/* ------------------------------------------------------------------ */
+// Helpers
+const isObjectId = (v) => {
+  if (!v) return false;
+  if (v instanceof mongoose.Types.ObjectId) return true;
+  return typeof v === 'string' && mongoose.Types.ObjectId.isValid(v);
+};
 
-// Accept both Mongo ObjectId and plain string IDs that your DB currently uses
-function isAcceptableId(id) {
-  if (!id || typeof id !== "string") return false;
-  // Accept if it is a valid ObjectId OR a non-empty string length >= 8
-  return mongoose.isValidObjectId(id) || id.length >= 8;
-}
-
-// Defensive parse for bodies coming from mobile/web tools
-function coerceNumber(n, fallback = 0) {
-  if (typeof n === "number" && Number.isFinite(n)) return n;
-  const parsed = Number(n);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-/* ------------------------------------------------------------------ */
-/* Routes                                                             */
-/* ------------------------------------------------------------------ */
-
-// GET /artists — list artists
-router.get("/", async (_req, res) => {
+// GET /artists — list
+router.get('/', async (_req, res) => {
   try {
     const list = await Artist.find(
       {},
@@ -57,53 +44,73 @@ router.get("/", async (_req, res) => {
       .lean();
     return res.json(list);
   } catch (_e) {
-    return res.status(500).json({ error: "Failed to fetch artists" });
+    return res.status(500).json({ error: 'Failed to fetch artists' });
   }
 });
 
-// GET /artists/:id — fetch single artist
-router.get("/:id", async (req, res) => {
+// GET /artists/:id — single (safe)
+router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
 
-    if (!isAcceptableId(id)) {
-      return res.status(400).json({ error: "Invalid artist id" });
+    // Accept ObjectId or string id stored as _id
+    let artist = null;
+    if (isObjectId(id)) {
+      artist = await Artist.findById(id, {
+        name: 1,
+        genre: 1,
+        votes: 1,
+        commentsCount: 1,
+      }).lean();
+    }
+    if (!artist) {
+      artist = await Artist.findOne(
+        { _id: id },
+        { name: 1, genre: 1, votes: 1, commentsCount: 1 }
+      ).lean();
     }
 
-    // Works for string _id or ObjectId
-    const artist = await Artist.findOne(
-      { _id: id },
-      { name: 1, genre: 1, votes: 1, commentsCount: 1 }
-    ).lean();
-
-    if (!artist) return res.status(404).json({ error: "Artist not found" });
+    if (!artist) return res.status(404).json({ error: 'Artist not found' });
     return res.json(artist);
   } catch (_e) {
-    return res.status(500).json({ error: "Failed to fetch artist" });
+    return res.status(500).json({ error: 'Failed to fetch artist' });
   }
 });
 
-// POST /artists/:id/vote — change vote counter
-// Body: { "delta": +1 | -1 }
-router.post("/:id/vote", async (req, res) => {
+// POST /artists/:id/vote — convenience vote route
+// Body: { delta: +1 | -1 } default +1
+router.post('/:id/vote', async (req, res) => {
   try {
     const { id } = req.params;
-    const n = coerceNumber((req.body || {}).delta, NaN);
 
-    if (!isAcceptableId(id)) {
-      return res.status(400).json({ error: "Invalid artist id" });
+    // Allow string _id or ObjectId
+    const findById = isObjectId(id);
+    let delta = 1;
+    if (req.body && typeof req.body.delta !== 'undefined') {
+      const n = Number(req.body.delta);
+      if (![1, -1].includes(n)) {
+        return res.status(400).json({ error: 'delta must be +1 or -1' });
+      }
+      delta = n;
     }
-    if (!(n === 1 || n === -1)) {
-      return res.status(400).json({ error: "delta must be +1 or -1" });
+
+    let updated = null;
+    if (findById) {
+      updated = await Artist.findByIdAndUpdate(
+        id,
+        { $inc: { votes: delta } },
+        { new: true, projection: { name: 1, votes: 1 } }
+      ).lean();
+    }
+    if (!updated) {
+      updated = await Artist.findOneAndUpdate(
+        { _id: id },
+        { $inc: { votes: delta } },
+        { new: true, projection: { name: 1, votes: 1 } }
+      ).lean();
     }
 
-    const updated = await Artist.findByIdAndUpdate(
-      id,
-      { $inc: { votes: n } },
-      { new: true, projection: { name: 1, votes: 1 } }
-    ).lean();
-
-    if (!updated) return res.status(404).json({ error: "Artist not found" });
+    if (!updated) return res.status(404).json({ error: 'Artist not found' });
 
     return res.json({
       id: String(updated._id),
@@ -111,7 +118,7 @@ router.post("/:id/vote", async (req, res) => {
       votes: updated.votes || 0,
     });
   } catch (_e) {
-    return res.status(500).json({ error: "Failed to update vote" });
+    return res.status(500).json({ error: 'Failed to update vote' });
   }
 });
 
