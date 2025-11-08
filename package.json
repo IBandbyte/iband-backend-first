@@ -1,35 +1,26 @@
 {
   "name": "iband-backend",
   "version": "1.0.0",
-  "private": true,
-  "description": "iBandbyte backend (Express) with CI, linting, formatting, tests",
+  "description": "iBandbyte backend (Express + Mongoose) — artists, votes, comments",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "format": "prettier --write .",
-    "format:check": "prettier --check .",
-    "lint": "eslint .",
-    "test": "jest --silent"
+    "dev": "nodemon --watch . server.js",
+    "seed": "node scripts/seed.js",
+    "lint": "eslint ."
   },
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "mongoose": "^8.5.1"
+    "mongoose": "^8.6.3"
   },
   "devDependencies": {
-    "@eslint/js": "^9.9.0",
-    "eslint": "^9.9.0",
-    "eslint-config-prettier": "^9.1.0",
-    "eslint-plugin-prettier": "^5.2.1",
-    "jest": "^29.7.0",
-    "prettier": "^3.3.3",
-    "supertest": "^6.3.4"
+    "eslint": "^9.11.1",
+    "nodemon": "^3.1.4"
   },
-  "jest": {
-    "testEnvironment": "node",
-    "testMatch": [
-      "**/__tests__/**/*.js"
-    ]
-  }
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
 }
