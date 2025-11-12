@@ -1,84 +1,83 @@
-// src/artists.js
+/* eslint-env node */
+
 const express = require('express');
-const router = express.Router();
 const mongoose = require('mongoose');
+const { isObjectIdLike } = require('./src/utils/isObjectId');
 
-const ArtistSchema = new mongoose.Schema(
-  {
-    name: { type: String, required: true, trim: true },
-    genre: { type: String, default: '' },
-    bio: { type: String, default: '' },
-    image: { type: String, default: '' },
-    votes: { type: Number, default: 0, min: 0 }
-  },
-  { timestamps: true }
-);
+const router = express.Router();
 
-const Artist = mongoose.model('Artist', ArtistSchema);
+// extra body parsers (defensive)
+router.use(express.json({ type: ['application/json', 'application/*+json', '*/*'] }));
+router.use(express.urlencoded({ extended: true }));
 
-// GET /artists -> list
+const Artist =
+  mongoose.models.Artist ||
+  mongoose.model(
+    'Artist',
+    new mongoose.Schema(
+      {
+        name: { type: String, required: true, trim: true },
+        genre: { type: String, default: 'No genre set', trim: true },
+        votes: { type: Number, default: 0 },
+        commentsCount: { type: Number, default: 0 },
+      },
+      { collection: 'artists' }
+    )
+  );
+
+// GET /artists
 router.get('/', async (_req, res) => {
   try {
-    const artists = await Artist.find().sort({ createdAt: -1 }).lean();
-    res.json(artists);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch artists' });
+    const list = await Artist.find({}, { name: 1, genre: 1, votes: 1, commentsCount: 1 })
+      .sort({ name: 1 })
+      .lean();
+    return res.status(200).json(list);
+  } catch (_e) {
+    return res.status(500).json({ error: 'Failed to fetch artists' });
   }
 });
 
-// GET /artists/:id -> single
+// GET /artists/:id
 router.get('/:id', async (req, res) => {
+  const { id } = req.params;
+  if (!isObjectIdLike(id)) return res.status(400).json({ error: 'Invalid artist id' });
   try {
-    const { id } = req.params;
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ error: 'Invalid artist id' });
-    }
-    const artist = await Artist.findById(id).lean();
+    const artist = await Artist.findById(id, { name: 1, genre: 1, votes: 1, commentsCount: 1 }).lean();
     if (!artist) return res.status(404).json({ error: 'Artist not found' });
-    res.json(artist);
-  } catch {
-    res.status(500).json({ error: 'Failed to fetch artist' });
+    return res.json(artist);
+  } catch (_e) {
+    return res.status(500).json({ error: 'Failed to fetch artist' });
   }
 });
 
-// POST /artists -> create
-router.post('/', async (req, res) => {
-  try {
-    const { name, genre = '', bio = '', image = '', votes = 0 } = req.body || {};
-    if (!name || typeof name !== 'string' || !name.trim()) {
-      return res.status(400).json({ error: 'name is required' });
-    }
-    const doc = await Artist.create({
-      name: name.trim(),
-      genre,
-      bio,
-      image,
-      votes: Number.isFinite(votes) ? Math.max(0, Math.trunc(votes)) : 0
-    });
-    res.status(201).json(doc);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to create artist' });
-  }
-});
-
-// POST /artists/:id/vote -> add/subtract votes
+// POST /artists/:id/vote   Body: { "delta": 1 | -1 }
 router.post('/:id/vote', async (req, res) => {
+  const { id } = req.params;
+
+  // accept delta from JSON, form-encoded, or text/plain containing JSON
+  let delta = 1;
+  const b = req.body;
+  if (b && typeof b === 'object' && !Buffer.isBuffer(b) && b.delta !== undefined) {
+    const n = Number(b.delta);
+    if (Number.isFinite(n)) delta = Math.trunc(n);
+  }
+
+  if (!isObjectIdLike(id)) return res.status(400).json({ error: 'Invalid artist id' });
+  if (![1, -1].includes(delta)) return res.status(400).json({ error: 'delta must be +1 or -1' });
+
   try {
-    const { id } = req.params;
-    const { delta = 1 } = req.body || {};
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ error: 'Invalid artist id' });
-    }
     const updated = await Artist.findByIdAndUpdate(
       id,
-      { $inc: { votes: Math.trunc(Number(delta) || 0) } },
-      { new: true }
+      { $inc: { votes: delta } },
+      { new: true, projection: { name: 1, votes: 1 } }
     ).lean();
+
     if (!updated) return res.status(404).json({ error: 'Artist not found' });
-    res.json(updated);
-  } catch {
-    res.status(500).json({ error: 'Failed to update votes' });
+
+    return res.json({ id: String(updated._id), name: updated.name, votes: updated.votes || 0 });
+  } catch (_e) {
+    return res.status(500).json({ error: 'Failed to update vote' });
   }
 });
 
-module.exports = { router, Artist };
+module.exports = router;
