@@ -1,18 +1,14 @@
 /* eslint-env node */
 
-// comments.js — iBandbyte comments API (root-level)
-// - POST /comments        -> create a comment  { artistId, user, text }
-// - GET  /comments        -> list comments (optional ?artistId= or ?artist=Name)
-// - GET  /comments/counts -> comment counts per artist (lightweight)
-
 const express = require('express');
 const mongoose = require('mongoose');
+const { isObjectIdLike } = require('./src/utils/isObjectId');
 
 const router = express.Router();
 
-/* ----------------------------------------
- * Minimal Artist model (only what we need)
- * -------------------------------------- */
+router.use(express.json({ type: ['application/json', 'application/*+json', '*/*'] }));
+router.use(express.urlencoded({ extended: true }));
+
 const Artist =
   mongoose.models.Artist ||
   mongoose.model(
@@ -22,27 +18,19 @@ const Artist =
         name: String,
         genre: String,
         votes: { type: Number, default: 0 },
-        commentsCount: { type: Number, default: 0 }, // denormalized counter
+        commentsCount: { type: Number, default: 0 },
       },
-      { collection: 'artists' } // use existing collection
+      { collection: 'artists' }
     )
   );
 
-/* ----------------------------------------
- * Comment model
- * -------------------------------------- */
 const Comment =
   mongoose.models.Comment ||
   mongoose.model(
     'Comment',
     new mongoose.Schema(
       {
-        artistId: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: 'Artist',
-          required: true,
-          index: true,
-        },
+        artistId: { type: mongoose.Schema.Types.ObjectId, ref: 'Artist', required: true, index: true },
         user: { type: String, required: true, trim: true },
         text: { type: String, required: true, trim: true, maxlength: 1000 },
       },
@@ -50,38 +38,22 @@ const Comment =
     )
   );
 
-/* ----------------------------------------
- * Helpers
- * -------------------------------------- */
 function bad(res, status, msg) {
   return res.status(status).json({ ok: false, error: msg });
 }
-const isObjectId = (v) => {
-  if (!v) return false;
-  if (v instanceof mongoose.Types.ObjectId) return true;
-  return typeof v === 'string' && mongoose.Types.ObjectId.isValid(v);
-};
 
-/* ----------------------------------------
- * GET /comments
- *  - optional filters:
- *      ?artistId=68be...   OR   ?artist=Aria%20Nova
- * -------------------------------------- */
+// GET /comments  (?artistId= OR ?artist=Name)
 router.get('/', async (req, res) => {
   try {
     const q = {};
     if (req.query.artistId) {
-      if (!isObjectId(req.query.artistId)) {
-        return bad(res, 400, 'Invalid artistId');
-      }
+      if (!isObjectIdLike(req.query.artistId)) return bad(res, 400, 'Invalid artistId');
       q.artistId = req.query.artistId;
-    }
-    if (req.query.artist) {
+    } else if (req.query.artist) {
       const found = await Artist.findOne({ name: req.query.artist }).select('_id');
-      if (!found) return res.json([]); // no artist -> empty list
+      if (!found) return res.json([]); // no such artist
       q.artistId = found._id;
     }
-
     const list = await Comment.find(q).sort({ createdAt: -1 }).limit(200);
     return res.json(list);
   } catch (_e) {
@@ -89,36 +61,23 @@ router.get('/', async (req, res) => {
   }
 });
 
-/* ----------------------------------------
- * POST /comments
- * Body: { artistId, user, text }
- * -------------------------------------- */
+// POST /comments  { artistId, user, text }
 router.post('/', async (req, res) => {
   try {
     const { artistId, user, text } = req.body || {};
+    if (!isObjectIdLike(artistId)) return bad(res, 400, 'artistId (ObjectId) is required');
+    if (!user || !String(user).trim()) return bad(res, 400, 'user is required');
+    if (!text || !String(text).trim()) return bad(res, 400, 'text is required');
 
-    if (!artistId || !isObjectId(artistId)) {
-      return bad(res, 400, 'artistId (ObjectId) is required');
-    }
-    if (!user || typeof user !== 'string' || !user.trim()) {
-      return bad(res, 400, 'user is required');
-    }
-    if (!text || typeof text !== 'string' || !text.trim()) {
-      return bad(res, 400, 'text is required');
-    }
-
-    // ensure artist exists
     const artist = await Artist.findById(artistId).select('_id name');
     if (!artist) return bad(res, 404, 'Artist not found');
 
-    // create comment
     const comment = await Comment.create({
       artistId: artist._id,
-      user: user.trim(),
-      text: text.trim(),
+      user: String(user).trim(),
+      text: String(text).trim(),
     });
 
-    // bump denormalized counter
     await Artist.updateOne({ _id: artist._id }, { $inc: { commentsCount: 1 } });
 
     return res.status(201).json({
@@ -135,10 +94,7 @@ router.post('/', async (req, res) => {
   }
 });
 
-/* ----------------------------------------
- * GET /comments/counts
- * quick counts per artist (useful for admin/tools)
- * -------------------------------------- */
+// GET /comments/counts — per-artist counts (quick admin tool)
 router.get('/counts', async (_req, res) => {
   try {
     const agg = await Comment.aggregate([
