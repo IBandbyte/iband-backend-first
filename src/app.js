@@ -55,10 +55,11 @@ app.use((req, res, next) => {
 // ROUTERS
 // ===================================
 const commentsRouter = require('./routes/comments');
-// (Votes, Artists, Admin will be added later following Protocol.)
+const votesRouter = require('./routes/votes');
 
-// Hook up all routers (full, not snippets)
+// Hook up all routers
 app.use('/api/comments', commentsRouter);
+app.use('/api/votes', votesRouter);
 
 // ===================================
 // Health Check (for Render, Vercel, CI)
