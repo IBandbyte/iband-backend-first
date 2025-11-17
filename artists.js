@@ -1,105 +1,232 @@
-/* eslint-env node */
+// backend/src/routes/artists.js
+// iBand - Artists routes (full CRUD, future-proof)
+// This router handles:
+//   GET    /artists
+//   GET    /artists/:id
+//   POST   /artists
+//   PUT    /artists/:id
+//   PATCH  /artists/:id
+//   DELETE /artists/:id
 
-// artists.js — iBandbyte Artist API (root-level)
-// Full CRUD-ready, vote logic, strong ObjectId validation
+const express = require('express');
+const mongoose = require('mongoose');
 
-const express = require("express");
-const mongoose = require("mongoose");
-const isObjectId = require("../utils/isObjectId");
+// NOTE: This assumes your Artist model file is:
+//   backend/src/models/artistModel.js
+// If your file is named differently (e.g. artist.js),
+// keep the original require line from your old file.
+const Artist = require('../models/artistModel');
 
 const router = express.Router();
 
-/* ----------------------------------------
- * Artist Model
- * -------------------------------------- */
-const Artist =
-  mongoose.models.Artist ||
-  mongoose.model(
-    "Artist",
-    new mongoose.Schema(
-      {
-        name: { type: String, required: true, trim: true },
-        genre: { type: String, default: "" },
-        votes: { type: Number, default: 0 },
-        commentsCount: { type: Number, default: 0 },
-      },
-      { collection: "artists", timestamps: false }
-    )
-  );
+/**
+ * Utility: build a clean update object from request body
+ * so we don't accidentally allow unknown fields.
+ */
+function buildArtistUpdate(body) {
+  const allowedFields = [
+    'name',
+    'genre',
+    'bio',
+    'imageUrl',
+    'location',
+    'country',
+    'debutYear',
+    'isFeatured',
+    'isActive',
+    'tags',
+    'socialLinks',
+    'externalLinks'
+  ];
 
-/* ----------------------------------------
- * GET /artists — list all artists
- * -------------------------------------- */
-router.get("/", async (_req, res) => {
+  const update = {};
+
+  for (const field of allowedFields) {
+    if (Object.prototype.hasOwnProperty.call(body, field)) {
+      update[field] = body[field];
+    }
+  }
+
+  return update;
+}
+
+/**
+ * GET /artists
+ * Optional future filters could go here (genre, search, etc.)
+ */
+router.get('/', async (req, res) => {
   try {
-    const list = await Artist.find(
-      {},
-      { name: 1, genre: 1, votes: 1, commentsCount: 1 }
-    )
-      .sort({ name: 1 })
-      .lean();
-
-    return res.json({ ok: true, count: list.length, artists: list });
+    const artists = await Artist.find().sort({ createdAt: -1 });
+    res.json(artists);
   } catch (err) {
-    return res.status(500).json({ ok: false, error: "Failed to fetch artists" });
+    console.error('GET /artists error:', err);
+    res.status(500).json({ message: 'Failed to fetch artists' });
   }
 });
 
-/* ----------------------------------------
- * GET /artists/:id — fetch single artist
- * -------------------------------------- */
-router.get("/:id", async (req, res) => {
-  const { id } = req.params;
-
-  if (!isObjectId(id)) {
-    return res.status(400).json({ ok: false, error: "Invalid artist ID" });
-  }
-
+/**
+ * GET /artists/:id
+ */
+router.get('/:id', async (req, res) => {
   try {
-    const artist = await Artist.findById(id).lean();
-    if (!artist)
-      return res.status(404).json({ ok: false, error: "Artist not found" });
+    const { id } = req.params;
 
-    return res.json({ ok: true, artist });
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ message: 'Invalid artist id' });
+    }
+
+    const artist = await Artist.findById(id);
+
+    if (!artist) {
+      return res.status(404).json({ message: 'Artist not found' });
+    }
+
+    res.json(artist);
   } catch (err) {
-    return res.status(500).json({ ok: false, error: "Fetch failed" });
+    console.error('GET /artists/:id error:', err);
+    res.status(500).json({ message: 'Failed to fetch artist' });
   }
 });
 
-/* ----------------------------------------
- * POST /artists/:id/vote
- * Body: { delta: +1 | -1 }
- * -------------------------------------- */
-router.post("/:id/vote", async (req, res) => {
-  const { id } = req.params;
-
-  if (!isObjectId(id)) {
-    return res.status(400).json({ ok: false, error: "Invalid artist ID" });
-  }
-
-  const delta = Number(req.body?.delta);
-  if (![1, -1].includes(delta)) {
-    return res.status(400).json({ ok: false, error: "delta must be +1 or -1" });
-  }
-
+/**
+ * POST /artists
+ * Create a new artist
+ */
+router.post('/', async (req, res) => {
   try {
-    const updated = await Artist.findByIdAndUpdate(
-      id,
-      { $inc: { votes: delta } },
-      { new: true }
-    ).lean();
+    const {
+      name,
+      genre,
+      bio,
+      imageUrl,
+      location,
+      country,
+      debutYear,
+      isFeatured,
+      isActive,
+      tags,
+      socialLinks,
+      externalLinks
+    } = req.body;
 
-    if (!updated)
-      return res.status(404).json({ ok: false, error: "Artist not found" });
+    if (!name || !genre) {
+      return res.status(400).json({ message: 'Name and genre are required' });
+    }
 
-    return res.json({
-      ok: true,
-      id,
-      name: updated.name,
-      votes: updated.votes,
+    const artist = new Artist({
+      name,
+      genre,
+      bio: bio || '',
+      imageUrl: imageUrl || null,
+      location: location || null,
+      country: country || null,
+      debutYear: debutYear || null,
+      isFeatured: typeof isFeatured === 'boolean' ? isFeatured : false,
+      isActive: typeof isActive === 'boolean' ? isActive : true,
+      tags: Array.isArray(tags) ? tags : [],
+      socialLinks: socialLinks || {},
+      externalLinks: externalLinks || {}
     });
+
+    const saved = await artist.save();
+
+    res.status(201).json(saved);
   } catch (err) {
-    return res.status(500).json({ ok: false, error: "Failed to apply vote" });
+    console.error('POST /artists error:', err);
+    res.status(500).json({ message: 'Failed to create artist' });
+  }
+});
+
+/**
+ * PUT /artists/:id
+ * Full-ish update (we still restrict to allowed fields).
+ * If artist does not exist, return 404.
+ */
+router.put('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ message: 'Invalid artist id' });
+    }
+
+    const update = buildArtistUpdate(req.body);
+
+    if (Object.keys(update).length === 0) {
+      return res.status(400).json({ message: 'No valid fields provided to update' });
+    }
+
+    const updated = await Artist.findByIdAndUpdate(id, update, {
+      new: true,
+      runValidators: true
+    });
+
+    if (!updated) {
+      return res.status(404).json({ message: 'Artist not found' });
+    }
+
+    res.json(updated);
+  } catch (err) {
+    console.error('PUT /artists/:id error:', err);
+    res.status(500).json({ message: 'Failed to update artist' });
+  }
+});
+
+/**
+ * PATCH /artists/:id
+ * Partial update (same as PUT but semantically "partial").
+ */
+router.patch('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ message: 'Invalid artist id' });
+    }
+
+    const update = buildArtistUpdate(req.body);
+
+    if (Object.keys(update).length === 0) {
+      return res.status(400).json({ message: 'No valid fields provided to update' });
+    }
+
+    const updated = await Artist.findByIdAndUpdate(id, update, {
+      new: true,
+      runValidators: true
+    });
+
+    if (!updated) {
+      return res.status(404).json({ message: 'Artist not found' });
+    }
+
+    res.json(updated);
+  } catch (err) {
+    console.error('PATCH /artists/:id error:', err);
+    res.status(500).json({ message: 'Failed to update artist' });
+  }
+});
+
+/**
+ * DELETE /artists/:id
+ */
+router.delete('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ message: 'Invalid artist id' });
+    }
+
+    const deleted = await Artist.findByIdAndDelete(id);
+
+    if (!deleted) {
+      return res.status(404).json({ message: 'Artist not found' });
+    }
+
+    res.json({ message: 'Artist deleted successfully' });
+  } catch (err) {
+    console.error('DELETE /artists/:id error:', err);
+    res.status(500).json({ message: 'Failed to delete artist' });
   }
 });
 
