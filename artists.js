@@ -1,4 +1,4 @@
-// backend/src/routes/artists.js
+// root/artists.js
 // iBand - Artists routes (full CRUD, future-proof)
 // This router handles:
 //   GET    /artists
@@ -11,11 +11,10 @@
 const express = require('express');
 const mongoose = require('mongoose');
 
-// NOTE: This assumes your Artist model file is:
-//   backend/src/models/artistModel.js
-// If your file is named differently (e.g. artist.js),
-// keep the original require line from your old file.
-const Artist = require('../models/artistModel');
+// IMPORTANT: artists.js is in the project ROOT.
+// Your model is in: root/models/artistModel.js
+// So the correct path is:
+const Artist = require('./models/artistModel');
 
 const router = express.Router();
 
