@@ -1,34 +1,56 @@
-// src/server.js
+// server.js
+// iBand backend — main server entrypoint (root-level)
+//
+// Wires up:
+//   - MongoDB connection
+//   - JSON + CORS middleware
+//   - /artists router (full CRUD)
+
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
 
+// ✅ Use the root artists.js router
+// (the file that contains GET/POST/PUT/PATCH/DELETE for /artists)
+const artistsRouter = require('./artists');
+
 const app = express();
 
+// ---- Global middleware ----
 app.use(cors());
 app.use(express.json());
 
+// ---- Mongo URI ----
 const MONGO_URI = process.env.MONGO_URI || process.env.MONGODB_URI;
 
+// ---- Health check route ----
+app.get('/health', (_req, res) => {
+  res.json({
+    ok: true,
+    service: 'iband-backend',
+    mongoUriSet: !!MONGO_URI,
+  });
+});
+
+// ---- Mount routers ----
+// All artist routes live under /artists
+app.use('/artists', artistsRouter);
+
+// ---- Start server ----
 async function start() {
-  console.log('Connecting to MongoDB...');
-  await mongoose.connect(MONGO_URI, { dbName: 'iband' });
-  console.log('✅ MongoDB connected');
+  try {
+    console.log('Connecting to MongoDB...');
+    await mongoose.connect(MONGO_URI, { dbName: 'iband' });
+    console.log('✅ MongoDB connected');
 
-  const { router: artistsRouter } = require('./artists');
-  app.use('/artists', artistsRouter);
-
-  app.get('/health', (_req, res) => {
-    res.json({ ok: true, service: 'iband-backend', mongoUriSet: !!MONGO_URI });
-  });
-
-  const port = process.env.PORT || 10000;
-  app.listen(port, () => {
-    console.log(`🚀 Server running on :${port}`);
-  });
+    const port = process.env.PORT || 10000;
+    app.listen(port, () => {
+      console.log(`🚀 Server running on :${port}`);
+    });
+  } catch (err) {
+    console.error('❌ Failed to start server:', err);
+    process.exit(1);
+  }
 }
 
-start().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+start();
