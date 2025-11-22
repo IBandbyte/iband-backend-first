@@ -1,18 +1,18 @@
 // server.js
-// iBand backend — main server entrypoint (root-level)
+// iBand backend – main server entrypoint (ROOT level)
 //
 // Wires up:
 //   - MongoDB connection
 //   - JSON + CORS middleware
 //   - /artists router (full CRUD)
+//   - /votes router (fan voting, in-memory for now)
 
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
 
-// ✅ Use the root artists.js router
-// (the file that contains GET/POST/PUT/PATCH/DELETE for /artists)
 const artistsRouter = require('./artists');
+const votesRouter = require('./votes');
 
 const app = express();
 
@@ -32,23 +32,23 @@ app.get('/health', (_req, res) => {
   });
 });
 
-// ---- Mount routers ----
-// All artist routes live under /artists
-app.use('/artists', artistsRouter);
-
-// ---- Start server ----
+// ---- Start server + connect to Mongo ----
 async function start() {
   try {
     console.log('Connecting to MongoDB...');
     await mongoose.connect(MONGO_URI, { dbName: 'iband' });
     console.log('✅ MongoDB connected');
 
+    // Mount routers AFTER DB is ready
+    app.use('/artists', artistsRouter);
+    app.use('/votes', votesRouter);
+
     const port = process.env.PORT || 10000;
     app.listen(port, () => {
       console.log(`🚀 Server running on :${port}`);
     });
   } catch (err) {
-    console.error('❌ Failed to start server:', err);
+    console.error('Failed to start server:', err);
     process.exit(1);
   }
 }
