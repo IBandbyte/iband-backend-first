@@ -1,13 +1,11 @@
 // src/comments.js
 // iBand - Comments Router (mounted by server.js at /comments)
-// Captain’s Protocol: full file, stable paths, Render-safe.
 
 const express = require('express');
-const router = express.Router();
 const mongoose = require('mongoose');
-
-// ✅ Uses root/models folder (you already have models/commentModel.js)
 const Comment = require('../models/commentModel');
+
+const router = express.Router();
 
 // Small helper to validate Mongo IDs
 function validateObjectId(id) {
@@ -62,6 +60,10 @@ router.post('/:artistId', async (req, res) => {
     return res.status(201).json(comment);
   } catch (err) {
     console.error('Error creating comment:', err);
+    // If it's a validation error, send 400 so we can see it's bad input
+    if (err.name === 'ValidationError') {
+      return res.status(400).json({ error: 'Validation error', details: err.errors });
+    }
     return res.status(500).json({ error: 'Server error creating comment' });
   }
 });
@@ -78,7 +80,7 @@ router.get('/:artistId', async (req, res) => {
       return res.status(400).json({ error: 'Invalid artistId' });
     }
 
-    const comments = await Comment.find({ artistId })
+    const comments = await Comment.find({ artistId, isDeleted: false })
       .sort({ createdAt: -1 })
       .lean();
 
