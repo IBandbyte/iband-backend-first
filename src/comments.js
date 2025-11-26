@@ -1,230 +1,33 @@
 // src/comments.js
-// iBand – Comments Router (user + admin)
+// iBand - Comments Router (mounted by server.js at /comments)
 // Captain’s Protocol: full file, stable paths, Render-safe.
 
 const express = require('express');
-const mongoose = require('mongoose');
 const router = express.Router();
+const mongoose = require('mongoose');
 
+// Uses root/models folder
 const Comment = require('../models/commentModel');
 
-// --------------------------------------------------
-// Helpers
-// --------------------------------------------------
-
+// Small helper to validate Mongo IDs (for commentId, artistId path params)
 function validateObjectId(id) {
   return mongoose.Types.ObjectId.isValid(id);
 }
 
-function getPaginationParams(req) {
-  const pageRaw = parseInt(req.query.page, 10);
-  const limitRaw = parseInt(req.query.limit, 10);
-
-  const page = Number.isNaN(pageRaw) || pageRaw < 1 ? 1 : pageRaw;
-  let limit = Number.isNaN(limitRaw) || limitRaw < 1 ? 10 : limitRaw;
-
-  if (limit > 100) limit = 100;
-
-  const skip = (page - 1) * limit;
-  return { page, limit, skip };
-}
-
-function getSortOption(sortParam, defaultField = 'createdAt') {
-  const sort = (sortParam || 'newest').toString().toLowerCase();
-
-  switch (sort) {
-    case 'oldest':
-      return { [defaultField]: 1 };
-    case 'popular':
-      return { likeCount: -1, [defaultField]: -1 };
-    default:
-      // 'newest' or anything unknown
-      return { [defaultField]: -1 };
-  }
-}
-
-// --------------------------------------------------
-// Admin auth helpers
-// --------------------------------------------------
-
-const ADMIN_COMMENTS_KEY = process.env.ADMIN_COMMENTS_KEY || 'mysecret123';
-
-function requireAdmin(req, res, next) {
-  const headerKey = req.header('x-admin-key');
-
-  if (!headerKey || headerKey !== ADMIN_COMMENTS_KEY) {
-    return res
-      .status(401)
-      .json({ error: 'Unauthorized: invalid admin key' });
-  }
-
-  return next();
-}
-
-// --------------------------------------------------
-//  A. ADMIN ROUTES – defined BEFORE /:artistId
-//  This fixes the bug where /admin was hitting /:artistId
-// --------------------------------------------------
-
-/**
- * GET /comments/admin
- *
- * Admin list of comments with filters + pagination.
- * Query params:
- *  - artistId (optional)
- *  - status: visible | flagged | deleted | all (default: all)
- *  - page, limit
- *  - sort: newest | oldest | popular
- */
-router.get('/admin', requireAdmin, async (req, res) => {
-  try {
-    const { artistId, status = 'all', sort } = req.query;
-    const { page, limit, skip } = getPaginationParams(req);
-
-    const filter = {};
-
-    // Optional artist filter – only apply if non-empty
-    if (artistId && artistId.trim() !== '') {
-      const trimmed = artistId.trim();
-
-      // Our artist IDs are Mongo ObjectIds, so we validate here
-      if (!validateObjectId(trimmed)) {
-        return res.status(400).json({ error: 'Invalid artistId' });
-      }
-
-      filter.artistId = trimmed;
-    }
-
-    // Status / deletion filters
-    if (status && status !== 'all') {
-      if (status === 'deleted') {
-        filter.isDeleted = true;
-      } else {
-        filter.status = status;
-        filter.isDeleted = false;
-      }
-    }
-
-    const sortOption = getSortOption(sort);
-
-    const total = await Comment.countDocuments(filter);
-    const comments = await Comment.find(filter)
-      .sort(sortOption)
-      .skip(skip)
-      .limit(limit)
-      .lean();
-
-    const totalPages = Math.max(Math.ceil(total / limit) || 1, 1);
-
-    return res.json({
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages,
-        sort: (sort || 'newest').toString().toLowerCase(),
-        filters: {
-          artistId: artistId && artistId.trim() !== '' ? artistId.trim() : null,
-          status: status || 'all',
-        },
-      },
-      data: comments,
-    });
-  } catch (err) {
-    console.error('Error in admin comments list:', err);
-    return res
-      .status(500)
-      .json({ error: 'Server error fetching admin comments' });
-  }
-});
-
-/**
- * PATCH /comments/admin/status/:commentId
- *
- * Admin can change status (visible / flagged / hidden / deleted).
- * This is future-proof for the admin dashboard.
- */
-router.patch('/admin/status/:commentId', requireAdmin, async (req, res) => {
-  try {
-    const { commentId } = req.params;
-    const { status } = req.body || {};
-
-    if (!validateObjectId(commentId)) {
-      return res.status(400).json({ error: 'Invalid commentId' });
-    }
-
-    const allowedStatuses = ['visible', 'flagged', 'hidden', 'deleted'];
-
-    if (!status || !allowedStatuses.includes(status)) {
-      return res.status(400).json({
-        error: 'Invalid status. Allowed: visible, flagged, hidden, deleted',
-      });
-    }
-
-    const update = { status };
-
-    if (status === 'deleted') {
-      update.isDeleted = true;
-      update.deletedAt = new Date();
-      update.content = '[deleted]';
-    }
-
-    const updated = await Comment.findByIdAndUpdate(commentId, update, {
-      new: true,
-    });
-
-    if (!updated) {
-      return res.status(404).json({ error: 'Comment not found' });
-    }
-
-    return res.json(updated);
-  } catch (err) {
-    console.error('Error updating comment status (admin):', err);
-    return res
-      .status(500)
-      .json({ error: 'Server error updating comment status' });
-  }
-});
-
-/**
- * DELETE /comments/admin/hard/:commentId
- *
- * Hard delete – ONLY for admin tools.
- */
-router.delete('/admin/hard/:commentId', requireAdmin, async (req, res) => {
-  try {
-    const { commentId } = req.params;
-
-    if (!validateObjectId(commentId)) {
-      return res.status(400).json({ error: 'Invalid commentId' });
-    }
-
-    const deleted = await Comment.findByIdAndDelete(commentId);
-
-    if (!deleted) {
-      return res.status(404).json({ error: 'Comment not found' });
-    }
-
-    return res.json({ success: true });
-  } catch (err) {
-    console.error('Error hard-deleting comment (admin):', err);
-    return res
-      .status(500)
-      .json({ error: 'Server error hard deleting comment' });
-  }
-});
-
-// --------------------------------------------------
-//  B. PUBLIC / ARTIST ROUTES
-// --------------------------------------------------
-
-/**
- * POST /comments/:artistId
- * Create a new comment for an artist.
- */
+// ---------------------------------------------------------
+// 1️⃣ Create a new comment for an artist
+// POST /comments/:artistId
+// ---------------------------------------------------------
 router.post('/:artistId', async (req, res) => {
   try {
     const { artistId } = req.params;
+
+    // For safety, make sure this at least looks like a Mongo ObjectId.
+    // It is stored as a string in the Comment model.
+    if (!validateObjectId(artistId)) {
+      return res.status(400).json({ error: 'Invalid artistId' });
+    }
+
     const {
       content,
       parentId = null,
@@ -235,10 +38,6 @@ router.post('/:artistId', async (req, res) => {
       userAgent = null,
       deviceId = null,
     } = req.body || {};
-
-    if (!validateObjectId(artistId)) {
-      return res.status(400).json({ error: 'Invalid artistId' });
-    }
 
     if (!content || !content.trim()) {
       return res.status(400).json({ error: 'Content is required' });
@@ -260,9 +59,7 @@ router.post('/:artistId', async (req, res) => {
 
     // If this is a reply, bump parent replyCount
     if (parentId && validateObjectId(parentId)) {
-      await Comment.findByIdAndUpdate(parentId, {
-        $inc: { replyCount: 1 },
-      });
+      await Comment.findByIdAndUpdate(parentId, { $inc: { replyCount: 1 } });
     }
 
     return res.status(201).json(comment);
@@ -272,57 +69,76 @@ router.post('/:artistId', async (req, res) => {
   }
 });
 
-/**
- * GET /comments/:artistId
- * Public list of comments for a given artist, with pagination.
- */
-router.get('/:artistId', async (req, res) => {
+// ---------------------------------------------------------
+// 2️⃣ Public: Get comments for an artist (simple list)
+// GET /comments/:artistId
+// Optional query: ?page=&limit=&sort= (same as artist scoped pagination)
+// ---------------------------------------------------------
+router.get('/:artistId', async (req, res, next) => {
   try {
     const { artistId } = req.params;
-    const { sort } = req.query;
+    const { page, limit, sort } = req.query || {};
+
+    // If the path segment is actually "admin", let the admin route handle it
+    if (artistId === 'admin') {
+      return next();
+    }
 
     if (!validateObjectId(artistId)) {
       return res.status(400).json({ error: 'Invalid artistId' });
     }
 
-    const { page, limit, skip } = getPaginationParams(req);
-    const sortOption = getSortOption(sort);
+    // If no pagination params, return simple array (backwards compatible)
+    if (!page && !limit && !sort) {
+      const comments = await Comment.find({
+        artistId,
+        isDeleted: { $ne: true },
+      })
+        .sort({ createdAt: -1 })
+        .lean();
 
-    const filter = {
+      return res.json(comments);
+    }
+
+    // Otherwise use the same logic as the artist-scoped pagination
+    const pageNum = Math.max(parseInt(page, 10) || 1, 1);
+    const limitNum = Math.min(Math.max(parseInt(limit, 10) || 10, 1), 50);
+
+    let sortOption = { createdAt: -1 }; // default newest
+    if (sort === 'oldest') sortOption = { createdAt: 1 };
+    if (sort === 'popular') sortOption = { likeCount: -1, createdAt: -1 };
+
+    const query = {
       artistId,
-      isDeleted: false,
+      isDeleted: { $ne: true },
     };
 
-    const total = await Comment.countDocuments(filter);
-    const comments = await Comment.find(filter)
-      .sort(sortOption)
-      .skip(skip)
-      .limit(limit)
-      .lean();
-
-    const totalPages = Math.max(Math.ceil(total / limit) || 1, 1);
+    const [data, total] = await Promise.all([
+      Comment.find(query).sort(sortOption).skip((pageNum - 1) * limitNum).limit(limitNum).lean(),
+      Comment.countDocuments(query),
+    ]);
 
     return res.json({
       meta: {
         artistId,
-        page,
-        limit,
+        page: pageNum,
+        limit: limitNum,
         total,
-        totalPages,
-        sort: (sort || 'newest').toString().toLowerCase(),
+        totalPages: Math.max(Math.ceil(total / limitNum), 1),
+        sort: sort || 'newest',
       },
-      data: comments,
+      data,
     });
   } catch (err) {
-    console.error('Error fetching comments:', err);
+    console.error('Error fetching artist comments:', err);
     return res.status(500).json({ error: 'Server error fetching comments' });
   }
 });
 
-/**
- * PATCH /comments/like/:commentId
- * Increment like count.
- */
+// ---------------------------------------------------------
+// 3️⃣ Like a comment
+// PATCH /comments/like/:commentId
+// ---------------------------------------------------------
 router.patch('/like/:commentId', async (req, res) => {
   try {
     const { commentId } = req.params;
@@ -331,8 +147,8 @@ router.patch('/like/:commentId', async (req, res) => {
       return res.status(400).json({ error: 'Invalid commentId' });
     }
 
-    const updated = await Comment.findOneAndUpdate(
-      { _id: commentId, isDeleted: false },
+    const updated = await Comment.findByIdAndUpdate(
+      commentId,
       { $inc: { likeCount: 1 } },
       { new: true }
     );
@@ -348,10 +164,10 @@ router.patch('/like/:commentId', async (req, res) => {
   }
 });
 
-/**
- * PATCH /comments/flag/:commentId
- * Flag a comment for moderation.
- */
+// ---------------------------------------------------------
+// 4️⃣ Flag a comment
+// PATCH /comments/flag/:commentId
+// ---------------------------------------------------------
 router.patch('/flag/:commentId', async (req, res) => {
   try {
     const { commentId } = req.params;
@@ -365,14 +181,16 @@ router.patch('/flag/:commentId', async (req, res) => {
       type,
       reason,
       reporterId,
-      createdAt: new Date(),
+      flaggedAt: new Date(),
     };
 
     const updated = await Comment.findByIdAndUpdate(
       commentId,
       {
         status: 'flagged',
-        $push: { flags: flagEntry },
+        $push: {
+          flags: flagEntry,
+        },
       },
       { new: true }
     );
@@ -388,13 +206,18 @@ router.patch('/flag/:commentId', async (req, res) => {
   }
 });
 
-/**
- * DELETE /comments/:commentId
- * Soft delete a comment (user-level delete).
- */
-router.delete('/:commentId', async (req, res) => {
+// ---------------------------------------------------------
+// 5️⃣ Soft delete a comment
+// DELETE /comments/:commentId
+// ---------------------------------------------------------
+router.delete('/:commentId', async (req, res, next) => {
   try {
     const { commentId } = req.params;
+
+    // If this is actually the "admin" path, let the admin router handle it
+    if (commentId === 'admin') {
+      return next();
+    }
 
     if (!validateObjectId(commentId)) {
       return res.status(400).json({ error: 'Invalid commentId' });
@@ -404,7 +227,6 @@ router.delete('/:commentId', async (req, res) => {
       commentId,
       {
         isDeleted: true,
-        status: 'deleted',
         content: '[deleted]',
         deletedAt: new Date(),
       },
@@ -419,6 +241,82 @@ router.delete('/:commentId', async (req, res) => {
   } catch (err) {
     console.error('Error deleting comment:', err);
     return res.status(500).json({ error: 'Server error deleting comment' });
+  }
+});
+
+// ---------------------------------------------------------
+// 6️⃣ Admin view: paginated comments (global & per-artist)
+// GET /comments/admin
+// Query:
+//   artistId (optional)
+//   status = all | visible | flagged | deleted
+//   page, limit
+//   sort = newest | oldest | popular
+// Requires x-admin-key header checked in server.js middleware
+// ---------------------------------------------------------
+router.get('/admin', async (req, res) => {
+  try {
+    const {
+      artistId,
+      status = 'all',
+      page = 1,
+      limit = 10,
+      sort = 'newest',
+    } = req.query || {};
+
+    const pageNum = Math.max(parseInt(page, 10) || 1, 1);
+    const limitNum = Math.min(Math.max(parseInt(limit, 10) || 10, 1), 50);
+
+    const query = {};
+
+    // 🔹 IMPORTANT: for admin filtering we DO NOT validate as ObjectId.
+    // We just match the stored string exactly. This fixes the “total: 0” bug.
+    if (artistId) {
+      query.artistId = String(artistId);
+    }
+
+    // Status & deletion filters
+    if (status === 'visible') {
+      query.status = 'visible';
+      query.isDeleted = { $ne: true };
+    } else if (status === 'flagged') {
+      query.status = 'flagged';
+    } else if (status === 'deleted') {
+      query.isDeleted = true;
+    } else {
+      // "all" -> no extra status filter, show everything
+    }
+
+    let sortOption = { createdAt: -1 }; // default newest
+    if (sort === 'oldest') sortOption = { createdAt: 1 };
+    if (sort === 'popular') sortOption = { likeCount: -1, createdAt: -1 };
+
+    const [data, total] = await Promise.all([
+      Comment.find(query)
+        .sort(sortOption)
+        .skip((pageNum - 1) * limitNum)
+        .limit(limitNum)
+        .lean(),
+      Comment.countDocuments(query),
+    ]);
+
+    return res.json({
+      meta: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages: Math.max(Math.ceil(total / limitNum), 1),
+        sort,
+        filters: {
+          artistId: artistId || null,
+          status,
+        },
+      },
+      data,
+    });
+  } catch (err) {
+    console.error('Error in admin comments list:', err);
+    return res.status(500).json({ error: 'Server error fetching admin comments' });
   }
 });
 
