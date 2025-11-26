@@ -1,58 +1,46 @@
 // models/commentModel.js
-// iBand - Comment model (MongoDB/Mongoose)
-// Supports artist comments with moderation + metrics.
+// iBand - Comment model (MongoDB / Mongoose)
+// Fully moderation-ready: likes, flags, soft-delete, status, timestamps.
 
 const mongoose = require("mongoose");
 
-const { Schema } = mongoose;
-
-// A single flag entry (who reported, why)
-const flagSchema = new Schema(
+// Embedded subdocument for individual flags
+const flagSchema = new mongoose.Schema(
   {
     type: {
       type: String,
       default: "other",
       trim: true,
-      maxlength: 40,
     },
     reason: {
       type: String,
-      default: null,
       trim: true,
-      maxlength: 500,
     },
     reporterId: {
       type: String,
-      default: null,
       trim: true,
-      maxlength: 120,
     },
     createdAt: {
       type: Date,
       default: Date.now,
     },
   },
-  { _id: false }
+  {
+    _id: false,
+  }
 );
 
-const commentSchema = new Schema(
+const commentSchema = new mongoose.Schema(
   {
-    // Which artist this comment belongs to
+    // Artist this comment belongs to
     artistId: {
-      type: Schema.Types.ObjectId,
-      ref: "Artist",
+      type: String,
       required: true,
       index: true,
+      trim: true,
     },
 
-    // Nested replies
-    parentId: {
-      type: Schema.Types.ObjectId,
-      ref: "Comment",
-      default: null,
-    },
-
-    // Main content
+    // Comment body text
     content: {
       type: String,
       required: true,
@@ -60,12 +48,20 @@ const commentSchema = new Schema(
       maxlength: 2000,
     },
 
-    // Optional user info (no auth yet)
+    // Threading (optional)
+    parentId: {
+      type: String,
+      default: null,
+    },
+    replyCount: {
+      type: Number,
+      default: 0,
+    },
+
+    // Basic user/fan info (no auth yet)
     userId: {
       type: String,
       default: null,
-      trim: true,
-      maxlength: 120,
     },
     userDisplayName: {
       type: String,
@@ -77,78 +73,54 @@ const commentSchema = new Schema(
       type: String,
       default: null,
       trim: true,
-      maxlength: 500,
     },
 
-    // Device / request metadata (for later abuse detection)
+    // Device / meta (optional, for later analytics / anti-abuse)
     ipAddress: {
       type: String,
       default: null,
-      trim: true,
-      maxlength: 64,
     },
     userAgent: {
       type: String,
       default: null,
-      trim: true,
-      maxlength: 256,
     },
     deviceId: {
       type: String,
       default: null,
-      trim: true,
-      maxlength: 120,
     },
 
-    // Engagement counters
+    // Engagement
     likeCount: {
       type: Number,
       default: 0,
-      min: 0,
-    },
-    replyCount: {
-      type: Number,
-      default: 0,
-      min: 0,
     },
 
-    // Moderation & UI state
+    // Moderation state
     status: {
       type: String,
-      enum: ["visible", "hidden", "blocked", "flagged"],
+      enum: ["visible", "pending", "flagged", "rejected", "deleted"],
       default: "visible",
       index: true,
     },
-    isPinned: {
-      type: Boolean,
-      default: false,
-      index: true,
-    },
+
     isDeleted: {
       type: Boolean,
       default: false,
       index: true,
     },
+
     deletedAt: {
       type: Date,
       default: null,
     },
 
-    // All flags raised by users / admins
-    flags: {
-      type: [flagSchema],
-      default: [],
-    },
+    // Flags for abuse/spam/etc.
+    flags: [flagSchema],
   },
   {
     timestamps: true, // createdAt + updatedAt
   }
 );
-
-// Helpful indexes for common queries
-commentSchema.index({ artistId: 1, isDeleted: 1, createdAt: -1 });
-commentSchema.index({ status: 1, isDeleted: 1, createdAt: -1 });
-commentSchema.index({ isPinned: -1, likeCount: -1, createdAt: -1 });
 
 const Comment = mongoose.model("Comment", commentSchema);
 
