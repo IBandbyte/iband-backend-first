@@ -1,27 +1,48 @@
-// comments.js
-// iBand - Comments Router (root-level)
-// Captain’s Protocol: full file, stable paths, Render-safe.
+// server/comments.js
+// Comment routes (public + admin)
 
 const express = require('express');
-const router = express.Router();
 const mongoose = require('mongoose');
+const router = express.Router();
 
-// ✅ FINAL: correct path to the model, matching your root/models folder
-const Comment = require('./models/commentModel');
+// ⚠️ IMPORTANT: keep this path exactly how it already exists in your project.
+// If your Comment model file is named differently, use that same path here.
+const Comment = require('./models/commentModel'); // this should match your existing model path
 
-// Small helper to validate Mongo IDs
-function validateObjectId(id) {
-  return mongoose.Types.ObjectId.isValid(id);
+// Simple admin middleware using header x-admin-key
+const ADMIN_KEY = process.env.ADMIN_KEY || 'mysecret123';
+
+function adminAuth(req, res, next) {
+  const headerKey = req.headers['x-admin-key'];
+  if (!headerKey || headerKey !== ADMIN_KEY) {
+    return res.status(401).json({ error: 'Unauthorized: invalid admin key' });
+  }
+  next();
 }
 
-// ---------------------------------------------------------
-// 1️⃣ Create a new comment for an artist
-// POST /comments/:artistId
-// ---------------------------------------------------------
-router.post('/:artistId', async (req, res) => {
+/**
+ * Helper: build sort object from sort string
+ */
+function getSortOption(sort) {
+  switch (sort) {
+    case 'oldest':
+      return { createdAt: 1 };
+    case 'popular':
+      return { likeCount: -1, createdAt: -1 };
+    case 'newest':
+    default:
+      return { createdAt: -1 };
+  }
+}
+
+/**
+ * PUBLIC: create a comment
+ * POST /comments
+ */
+router.post('/', async (req, res) => {
   try {
-    const { artistId } = req.params;
     const {
+      artistId,
       content,
       parentId = null,
       userId = null,
@@ -30,17 +51,17 @@ router.post('/:artistId', async (req, res) => {
       ipAddress = null,
       userAgent = null,
       deviceId = null,
-    } = req.body || {};
+    } = req.body;
 
-    if (!validateObjectId(artistId)) {
-      return res.status(400).json({ error: 'Invalid artistId' });
+    if (!artistId || !mongoose.Types.ObjectId.isValid(artistId)) {
+      return res.status(400).json({ error: 'Invalid or missing artistId' });
     }
 
-    if (!content || !content.trim()) {
+    if (!content || typeof content !== 'string' || !content.trim()) {
       return res.status(400).json({ error: 'Content is required' });
     }
 
-    const comment = new Comment({
+    const comment = await Comment.create({
       artistId,
       content: content.trim(),
       parentId,
@@ -50,143 +71,328 @@ router.post('/:artistId', async (req, res) => {
       ipAddress,
       userAgent,
       deviceId,
+      likeCount: 0,
+      replyCount: 0,
+      status: 'visible',
+      isDeleted: false,
+      deletedAt: null,
+      flags: [],
     });
-
-    await comment.save();
-
-    // if this is a reply, bump parent replyCount
-    if (parentId && validateObjectId(parentId)) {
-      await Comment.findByIdAndUpdate(parentId, { $inc: { replyCount: 1 } });
-    }
 
     return res.status(201).json(comment);
   } catch (err) {
     console.error('Error creating comment:', err);
-    return res.status(500).json({ error: 'Server error creating comment' });
+    return res.status(500).json({ error: 'Failed to create comment' });
   }
 });
 
-// ---------------------------------------------------------
-// 2️⃣ Get all comments for an artist
-// GET /comments/:artistId
-// ---------------------------------------------------------
+/**
+ * PUBLIC: get comments for an artist with pagination + sorting
+ * GET /comments/:artistId?page=&limit=&sort=
+ */
 router.get('/:artistId', async (req, res) => {
   try {
     const { artistId } = req.params;
 
-    if (!validateObjectId(artistId)) {
+    if (!mongoose.Types.ObjectId.isValid(artistId)) {
       return res.status(400).json({ error: 'Invalid artistId' });
     }
 
-    const comments = await Comment.find({ artistId })
-      .sort({ createdAt: -1 })
-      .lean();
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = Math.min(parseInt(req.query.limit, 10) || 10, 50);
+    const sort = req.query.sort || 'newest'; // newest | oldest | popular
 
-    return res.json(comments);
+    const filter = {
+      artistId,
+      isDeleted: false,
+      status: 'visible',
+    };
+
+    const sortOption = getSortOption(sort);
+
+    const [items, total] = await Promise.all([
+      Comment.find(filter)
+        .sort(sortOption)
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
+      Comment.countDocuments(filter),
+    ]);
+
+    return res.json({
+      meta: {
+        artistId,
+        page,
+        limit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
+        sort,
+      },
+      data: items,
+    });
   } catch (err) {
-    console.error('Error fetching comments:', err);
-    return res.status(500).json({ error: 'Server error fetching comments' });
+    console.error('Error fetching artist comments:', err);
+    return res.status(500).json({ error: 'Failed to fetch comments' });
   }
 });
 
-// ---------------------------------------------------------
-// 3️⃣ Like a comment
-// PATCH /comments/like/:commentId
-// ---------------------------------------------------------
+/**
+ * PUBLIC: like a comment
+ * PATCH /comments/like/:commentId
+ */
 router.patch('/like/:commentId', async (req, res) => {
   try {
     const { commentId } = req.params;
 
-    if (!validateObjectId(commentId)) {
+    if (!mongoose.Types.ObjectId.isValid(commentId)) {
       return res.status(400).json({ error: 'Invalid commentId' });
     }
 
-    const updated = await Comment.findByIdAndUpdate(
+    const comment = await Comment.findByIdAndUpdate(
       commentId,
       { $inc: { likeCount: 1 } },
       { new: true }
     );
 
-    if (!updated) {
+    if (!comment) {
       return res.status(404).json({ error: 'Comment not found' });
     }
 
-    return res.json(updated);
+    return res.json(comment);
   } catch (err) {
     console.error('Error liking comment:', err);
-    return res.status(500).json({ error: 'Server error liking comment' });
+    return res.status(500).json({ error: 'Failed to like comment' });
   }
 });
 
-// ---------------------------------------------------------
-// 4️⃣ Flag a comment
-// PATCH /comments/flag/:commentId
-// ---------------------------------------------------------
+/**
+ * PUBLIC: flag a comment
+ * PATCH /comments/flag/:commentId
+ */
 router.patch('/flag/:commentId', async (req, res) => {
   try {
     const { commentId } = req.params;
-    const { type = 'other', reason = null, reporterId = null } = req.body || {};
 
-    if (!validateObjectId(commentId)) {
+    if (!mongoose.Types.ObjectId.isValid(commentId)) {
       return res.status(400).json({ error: 'Invalid commentId' });
     }
 
-    const updated = await Comment.findByIdAndUpdate(
+    const { type = 'other', reason = null, reporterId = null } = req.body || {};
+
+    const flag = {
+      type,
+      reason,
+      reporterId,
+      flaggedAt: new Date(),
+    };
+
+    const comment = await Comment.findByIdAndUpdate(
       commentId,
       {
-        status: 'flagged',
-        $push: {
-          flags: {
-            type,
-            reason,
-            reporterId,
-          },
+        $set: { status: 'flagged' },
+        $push: { flags: flag },
+      },
+      { new: true }
+    );
+
+    if (!comment) {
+      return res.status(404).json({ error: 'Comment not found' });
+    }
+
+    return res.json(comment);
+  } catch (err) {
+    console.error('Error flagging comment:', err);
+    return res.status(500).json({ error: 'Failed to flag comment' });
+  }
+});
+
+/**
+ * PUBLIC: soft delete a comment
+ * DELETE /comments/:commentId
+ */
+router.delete('/:commentId', async (req, res) => {
+  try {
+    const { commentId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(commentId)) {
+      return res.status(400).json({ error: 'Invalid commentId' });
+    }
+
+    const comment = await Comment.findByIdAndUpdate(
+      commentId,
+      {
+        $set: {
+          isDeleted: true,
+          deletedAt: new Date(),
+          content: '[deleted]',
         },
       },
       { new: true }
     );
 
-    if (!updated) {
+    if (!comment) {
       return res.status(404).json({ error: 'Comment not found' });
     }
 
-    return res.json(updated);
+    return res.json(comment);
   } catch (err) {
-    console.error('Error flagging comment:', err);
-    return res.status(500).json({ error: 'Server error flagging comment' });
+    console.error('Error soft deleting comment:', err);
+    return res.status(500).json({ error: 'Failed to delete comment' });
   }
 });
 
-// ---------------------------------------------------------
-// 5️⃣ Soft delete a comment
-// DELETE /comments/:commentId
-// ---------------------------------------------------------
-router.delete('/:commentId', async (req, res) => {
+/* ------------------------------------------------------------------
+ * ADMIN ROUTES
+ * -----------------------------------------------------------------*/
+
+/**
+ * ADMIN: list comments with optional artist filter
+ * GET /comments/admin?status=&artistId=&page=&limit=&sort=
+ *
+ * - status: all | visible | flagged | deleted
+ * - artistId: optional ObjectId (if omitted, no filter)
+ * - sort: newest | oldest | popular
+ */
+router.get('/admin', adminAuth, async (req, res) => {
+  try {
+    const {
+      artistId,              // optional
+      status = 'all',
+      page = 1,
+      limit = 10,
+      sort = 'newest',
+    } = req.query;
+
+    const numericPage = parseInt(page, 10) || 1;
+    const numericLimit = Math.min(parseInt(limit, 10) || 10, 50);
+
+    const filter = {};
+
+    // ✅ IMPORTANT: ONLY validate artistId if it is actually provided
+    if (artistId) {
+      if (!mongoose.Types.ObjectId.isValid(artistId)) {
+        return res.status(400).json({ error: 'Invalid artistId' });
+      }
+      filter.artistId = artistId;
+    }
+
+    if (status && status !== 'all') {
+      if (status === 'visible') {
+        filter.status = 'visible';
+        filter.isDeleted = false;
+      } else if (status === 'flagged') {
+        filter.status = 'flagged';
+      } else if (status === 'deleted') {
+        filter.isDeleted = true;
+      }
+    }
+
+    const sortOption = getSortOption(sort);
+
+    const [items, total] = await Promise.all([
+      Comment.find(filter)
+        .sort(sortOption)
+        .skip((numericPage - 1) * numericLimit)
+        .limit(numericLimit)
+        .lean(),
+      Comment.countDocuments(filter),
+    ]);
+
+    return res.json({
+      meta: {
+        page: numericPage,
+        limit: numericLimit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / numericLimit)),
+        sort,
+        filters: {
+          artistId: artistId || null,
+          status,
+        },
+      },
+      data: items,
+    });
+  } catch (err) {
+    console.error('Error fetching admin comments:', err);
+    return res.status(500).json({ error: 'Failed to fetch admin comments' });
+  }
+});
+
+/**
+ * ADMIN: update / moderate a comment
+ * PATCH /comments/admin/:commentId
+ * Body can contain: { status, isDeleted }
+ */
+router.patch('/admin/:commentId', adminAuth, async (req, res) => {
   try {
     const { commentId } = req.params;
 
-    if (!validateObjectId(commentId)) {
+    if (!mongoose.Types.ObjectId.isValid(commentId)) {
       return res.status(400).json({ error: 'Invalid commentId' });
     }
 
-    const updated = await Comment.findByIdAndUpdate(
+    const updates = {};
+    const { status, isDeleted } = req.body || {};
+
+    if (typeof status === 'string') {
+      updates.status = status;
+    }
+
+    if (typeof isDeleted === 'boolean') {
+      updates.isDeleted = isDeleted;
+      updates.deletedAt = isDeleted ? new Date() : null;
+      if (isDeleted) {
+        updates.content = '[deleted]';
+      }
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'No valid fields to update' });
+    }
+
+    const comment = await Comment.findByIdAndUpdate(
       commentId,
-      {
-        isDeleted: true,
-        content: '[deleted]',
-        deletedAt: new Date(),
-      },
+      { $set: updates },
       { new: true }
     );
 
-    if (!updated) {
+    if (!comment) {
       return res.status(404).json({ error: 'Comment not found' });
     }
 
-    return res.json(updated);
+    return res.json(comment);
   } catch (err) {
-    console.error('Error deleting comment:', err);
-    return res.status(500).json({ error: 'Server error deleting comment' });
+    console.error('Error updating comment (admin):', err);
+    return res.status(500).json({ error: 'Failed to update comment' });
+  }
+});
+
+/**
+ * ADMIN: hard delete a comment
+ * DELETE /comments/admin/:commentId
+ */
+router.delete('/admin/:commentId', adminAuth, async (req, res) => {
+  try {
+    const { commentId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(commentId)) {
+      return res.status(400).json({ error: 'Invalid commentId' });
+    }
+
+    const deleted = await Comment.findByIdAndDelete(commentId);
+
+    if (!deleted) {
+      return res.status(404).json({ error: 'Comment not found' });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Comment deleted permanently',
+      id: commentId,
+    });
+  } catch (err) {
+    console.error('Error hard deleting comment (admin):', err);
+    return res.status(500).json({ error: 'Failed to delete comment' });
   }
 });
 
