@@ -44,7 +44,9 @@ app.get("/", (req, res) => {
   res.sendFile(indexPath, (err) => {
     if (err) {
       // Fallback JSON if index.html is missing or fails to send
-      console.warn("index.html not found or failed to send, falling back to JSON.");
+      console.warn(
+        "index.html not found or failed to send, falling back to JSON."
+      );
       res.json({
         message: "iBand backend is running.",
         docs: {
