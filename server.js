@@ -1,43 +1,61 @@
-// server.js (FULL FILE)
+// server.js (root)
+// iBand - Main server entry point
 
-const express = require("express");
-const mongoose = require("mongoose");
-const cors = require("cors");
-require("dotenv").config();
+require('dotenv').config();
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
+
+// -----------------------------------------
+// Import Routers (all inside /src)
+// -----------------------------------------
+const artistRoutes = require('./src/artistRoutes');
+const voteRoutes = require('./src/votes');
+const commentRoutes = require('./src/comments');
+const adminRoutes = require('./src/admin');
 
 const app = express();
+
+// -----------------------------------------
+// Middleware
+// -----------------------------------------
 app.use(cors());
 app.use(express.json());
 
-// IMPORT ROUTES FROM THE CORRECT LOCATIONS
-const artistRoutes = require("./src/artistRoutes");
-const commentRoutes = require("./src/comments");
-const voteRoutes = require("./src/votes");
+// -----------------------------------------
+// API Routes (Public)
+// -----------------------------------------
+app.use('/artists', artistRoutes);
+app.use('/votes', voteRoutes);
+app.use('/comments', commentRoutes);
 
-// MOUNT ROUTES
-app.use("/artists", artistRoutes);
-app.use("/comments", commentRoutes);
-app.use("/votes", voteRoutes);
+// -----------------------------------------
+// API Routes (Admin - Protected via x-admin-secret)
+// -----------------------------------------
+app.use('/admin', adminRoutes);
 
-// ROOT MESSAGE
-app.get("/", (req, res) => {
-  res.send("iBand Backend is running!");
+// -----------------------------------------
+// Root endpoint
+// -----------------------------------------
+app.get('/', (_req, res) => {
+  res.json({ message: 'iBand Backend API is running.' });
 });
 
-// CONNECT TO MONGO
-const mongoURI = process.env.MONGODB_URI;
-
-console.log("Connecting to MongoDB...");
+// -----------------------------------------
+// Database Connection & Server Start
+// -----------------------------------------
+const PORT = process.env.PORT || 5000;
+const MONGO_URI = process.env.MONGO_URI || '';
 
 mongoose
-  .connect(mongoURI)
+  .connect(MONGO_URI)
   .then(() => {
-    console.log("✅ MongoDB connected");
-    const PORT = process.env.PORT || 10000;
+    console.log('Connected to MongoDB');
+
     app.listen(PORT, () => {
-      console.log(`🚀 Server running on :${PORT}`);
+      console.log(`Server running on port ${PORT}`);
     });
   })
   .catch((err) => {
-    console.error("❌ MongoDB connection error:", err);
+    console.error('MongoDB connection error:', err);
   });
