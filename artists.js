@@ -1,152 +1,118 @@
 // artists.js
-// Artists router for iBand backend (in-memory store, root-based layout)
+// iBand backend - Artists router (in-memory store, DB-ready API shape)
+//
+// Artist structure:
+// {
+//   id: string,
+//   name: string,
+//   genre: string | null,
+//   bio: string | null,
+//   imageUrl: string | null,
+//   votes: number,          // display-only for now (canonical votes live in votes.js)
+//   commentsCount: number,  // display-only (canonical comments live in comments.js)
+//   createdAt: string (ISO),
+//   updatedAt: string (ISO)
+// }
 
 const express = require("express");
 const router = express.Router();
 
-/**
- * Artist structure (in-memory for now):
- * {
- *   id: string,
- *   name: string,
- *   genre: string | null,
- *   bio: string | null,
- *   imageUrl: string | null,
- *   createdAt: string (ISO),
- *   updatedAt: string (ISO),
- *   isFeatured: boolean
- * }
- *
- * NOTE:
- * - This is an in-memory store, so data resets when the server restarts.
- * - We can later swap this out for a real database without changing routes.
- */
+// --- In-memory data store ----------------------------------------------------
 
-// Seed a few demo artists so the frontend has something to show
-let nextId = 1;
-
-function createSeedArtist({ name, genre, bio, imageUrl, isFeatured = false }) {
-  const now = new Date().toISOString();
-  return {
-    id: String(nextId++),
-    name,
-    genre: genre || null,
-    bio: bio || null,
-    imageUrl: imageUrl || null,
-    createdAt: now,
-    updatedAt: now,
-    isFeatured: Boolean(isFeatured),
-  };
-}
+const nowISO = () => new Date().toISOString();
 
 let artists = [
-  createSeedArtist({
-    name: "Neon Echo",
+  {
+    id: "1",
+    name: "Aria Nova",
+    genre: "Pop",
+    bio: "Rising star blending electro-pop with dreamy vocals.",
+    imageUrl: "https://i.imgur.com/XYZ123a.jpg",
+    votes: 0,
+    commentsCount: 0,
+    createdAt: nowISO(),
+    updatedAt: nowISO(),
+  },
+  {
+    id: "2",
+    name: "Neon Harbor",
     genre: "Synthwave",
-    bio: "Unsigned producer blending retro synths with modern trap drums.",
-    imageUrl: null,
-    isFeatured: true,
-  }),
-  createSeedArtist({
-    name: "Luna Verse",
-    genre: "Alt Pop",
-    bio: "DIY bedroom artist powered by TikTok loops and fan votes.",
-    imageUrl: null,
-  }),
-  createSeedArtist({
-    name: "Rogue Signal",
-    genre: "Indie Rock",
-    bio: "Glitchy guitars, big choruses, and festival energy.",
-    imageUrl: null,
-  }),
+    bio: "Retro-futuristic vibes, heavy synth, 80s nostalgia.",
+    imageUrl: "https://i.imgur.com/XYZ123b.jpg",
+    votes: 0,
+    commentsCount: 0,
+    createdAt: nowISO(),
+    updatedAt: nowISO(),
+  },
+  {
+    id: "3",
+    name: "Stone & Sparrow",
+    genre: "Indie Folk",
+    bio: "Acoustic harmonies, storytelling, and soulful strings.",
+    imageUrl: "https://i.imgur.com/XYZ123c.jpg",
+    votes: 0,
+    commentsCount: 0,
+    createdAt: nowISO(),
+    updatedAt: nowISO(),
+  },
 ];
 
-/**
- * Utility: find artist index by ID
- */
-function findArtistIndex(id) {
-  return artists.findIndex((a) => a.id === String(id));
-}
+let nextArtistId = 4;
 
-/**
- * Utility: basic payload validation
- */
+// --- Helpers -----------------------------------------------------------------
+
 function validateArtistPayload(body, { requireName = true } = {}) {
   const errors = [];
 
-  if (requireName && (!body.name || typeof body.name !== "string" || !body.name.trim())) {
-    errors.push("name is required and must be a non-empty string.");
+  if (requireName) {
+    if (!body.name || typeof body.name !== "string" || !body.name.trim()) {
+      errors.push("name is required and must be a non-empty string.");
+    }
+  } else if (typeof body.name !== "undefined") {
+    if (!body.name || typeof body.name !== "string" || !body.name.trim()) {
+      errors.push("if provided, name must be a non-empty string.");
+    }
   }
 
-  if (body.name && typeof body.name !== "string") {
-    errors.push("name must be a string.");
+  if (typeof body.genre !== "undefined" && body.genre !== null) {
+    if (typeof body.genre !== "string") {
+      errors.push("genre must be a string if provided.");
+    }
   }
 
-  if (body.genre && typeof body.genre !== "string") {
-    errors.push("genre must be a string if provided.");
+  if (typeof body.bio !== "undefined" && body.bio !== null) {
+    if (typeof body.bio !== "string") {
+      errors.push("bio must be a string if provided.");
+    }
   }
 
-  if (body.bio && typeof body.bio !== "string") {
-    errors.push("bio must be a string if provided.");
-  }
-
-  if (body.imageUrl && typeof body.imageUrl !== "string") {
-    errors.push("imageUrl must be a string if provided.");
-  }
-
-  if (
-    typeof body.isFeatured !== "undefined" &&
-    typeof body.isFeatured !== "boolean"
-  ) {
-    errors.push("isFeatured must be a boolean if provided.");
+  if (typeof body.imageUrl !== "undefined" && body.imageUrl !== null) {
+    if (typeof body.imageUrl !== "string") {
+      errors.push("imageUrl must be a string if provided.");
+    }
   }
 
   return errors;
 }
 
+function toPublicArtist(a) {
+  // In case we later want to hide internal fields, this is the mapping point
+  return a;
+}
+
+// --- Routes ------------------------------------------------------------------
+
 /**
  * GET /api/artists
- * Optional query parameters:
- * - search: filter by name or genre (case-insensitive)
- * - genre: filter by exact genre
- * - featured: "true" or "false" to filter by isFeatured
- * - limit: max number of results
+ * List all artists.
  */
 router.get("/", (req, res) => {
   try {
-    const { search, genre, featured, limit } = req.query;
-
-    let result = [...artists];
-
-    if (search && typeof search === "string") {
-      const term = search.toLowerCase();
-      result = result.filter(
-        (a) =>
-          (a.name && a.name.toLowerCase().includes(term)) ||
-          (a.genre && a.genre.toLowerCase().includes(term))
-      );
-    }
-
-    if (genre && typeof genre === "string") {
-      result = result.filter(
-        (a) => a.genre && a.genre.toLowerCase() === genre.toLowerCase()
-      );
-    }
-
-    if (typeof featured !== "undefined") {
-      const wantFeatured = String(featured).toLowerCase() === "true";
-      result = result.filter((a) => a.isFeatured === wantFeatured);
-    }
-
-    let numericLimit = parseInt(limit, 10);
-    if (!isNaN(numericLimit) && numericLimit > 0) {
-      result = result.slice(0, numericLimit);
-    }
-
+    const mapped = artists.map(toPublicArtist);
     res.json({
       success: true,
-      count: result.length,
-      artists: result,
+      count: mapped.length,
+      artists: mapped,
     });
   } catch (error) {
     console.error("GET /api/artists error:", error);
@@ -158,34 +124,13 @@ router.get("/", (req, res) => {
 });
 
 /**
- * GET /api/artists/featured
- * Convenience route to get only featured artists
- */
-router.get("/featured", (req, res) => {
-  try {
-    const featuredArtists = artists.filter((a) => a.isFeatured);
-    res.json({
-      success: true,
-      count: featuredArtists.length,
-      artists: featuredArtists,
-    });
-  } catch (error) {
-    console.error("GET /api/artists/featured error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch featured artists.",
-    });
-  }
-});
-
-/**
  * GET /api/artists/:id
- * Fetch a single artist by ID
+ * Fetch a single artist by ID.
  */
 router.get("/:id", (req, res) => {
   try {
     const { id } = req.params;
-    const artist = artists.find((a) => a.id === String(id));
+    const artist = artists.find((a) => String(a.id) === String(id));
 
     if (!artist) {
       return res.status(404).json({
@@ -196,7 +141,7 @@ router.get("/:id", (req, res) => {
 
     res.json({
       success: true,
-      artist,
+      artist: toPublicArtist(artist),
     });
   } catch (error) {
     console.error("GET /api/artists/:id error:", error);
@@ -209,13 +154,13 @@ router.get("/:id", (req, res) => {
 
 /**
  * POST /api/artists
- * Create a new artist
+ * Create a new artist.
+ *
  * Body:
- * - name (required)
- * - genre (optional)
- * - bio (optional)
- * - imageUrl (optional)
- * - isFeatured (optional boolean)
+ * - name (string, required)
+ * - genre (string, optional)
+ * - bio (string, optional)
+ * - imageUrl (string, optional)
  */
 router.post("/", (req, res) => {
   try {
@@ -229,26 +174,27 @@ router.post("/", (req, res) => {
       });
     }
 
-    const { name, genre, bio, imageUrl, isFeatured } = req.body;
-    const now = new Date().toISOString();
+    const { name, genre, bio, imageUrl } = req.body;
+    const now = nowISO();
 
-    const newArtist = {
-      id: String(nextId++),
+    const artist = {
+      id: String(nextArtistId++),
       name: name.trim(),
-      genre: genre ? genre.trim() : null,
-      bio: bio ? bio.trim() : null,
-      imageUrl: imageUrl ? imageUrl.trim() : null,
+      genre: genre ? String(genre).trim() : null,
+      bio: bio ? String(bio).trim() : null,
+      imageUrl: imageUrl ? String(imageUrl).trim() : null,
+      votes: 0,
+      commentsCount: 0,
       createdAt: now,
       updatedAt: now,
-      isFeatured: Boolean(isFeatured),
     };
 
-    artists.push(newArtist);
+    artists.push(artist);
 
     res.status(201).json({
       success: true,
       message: "Artist created successfully.",
-      artist: newArtist,
+      artist: toPublicArtist(artist),
     });
   } catch (error) {
     console.error("POST /api/artists error:", error);
@@ -260,75 +206,21 @@ router.post("/", (req, res) => {
 });
 
 /**
- * PUT /api/artists/:id
- * Replace an artist's fields
- * Body:
- * - name (required)
- * - genre (optional)
- * - bio (optional)
- * - imageUrl (optional)
- * - isFeatured (optional boolean)
- */
-router.put("/:id", (req, res) => {
-  try {
-    const { id } = req.params;
-    const index = findArtistIndex(id);
-
-    if (index === -1) {
-      return res.status(404).json({
-        success: false,
-        message: "Artist not found.",
-      });
-    }
-
-    const errors = validateArtistPayload(req.body, { requireName: true });
-
-    if (errors.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid artist payload.",
-        errors,
-      });
-    }
-
-    const { name, genre, bio, imageUrl, isFeatured } = req.body;
-    const now = new Date().toISOString();
-    const existing = artists[index];
-
-    const updated = {
-      ...existing,
-      name: name.trim(),
-      genre: genre ? genre.trim() : null,
-      bio: bio ? bio.trim() : null,
-      imageUrl: imageUrl ? imageUrl.trim() : null,
-      isFeatured: typeof isFeatured === "boolean" ? isFeatured : existing.isFeatured,
-      updatedAt: now,
-    };
-
-    artists[index] = updated;
-
-    res.json({
-      success: true,
-      message: "Artist updated successfully.",
-      artist: updated,
-    });
-  } catch (error) {
-    console.error("PUT /api/artists/:id error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to update artist.",
-    });
-  }
-});
-
-/**
  * PATCH /api/artists/:id
- * Partially update an artist (any subset of fields)
+ * Update an existing artist (partial update).
+ *
+ * Body (any subset):
+ * - name (string, optional)
+ * - genre (string, optional)
+ * - bio (string, optional)
+ * - imageUrl (string, optional)
+ * - votes (number, optional)          // admin-only in future
+ * - commentsCount (number, optional)  // admin-only in future
  */
 router.patch("/:id", (req, res) => {
   try {
     const { id } = req.params;
-    const index = findArtistIndex(id);
+    const index = artists.findIndex((a) => String(a.id) === String(id));
 
     if (index === -1) {
       return res.status(404).json({
@@ -348,23 +240,29 @@ router.patch("/:id", (req, res) => {
     }
 
     const existing = artists[index];
-    const now = new Date().toISOString();
     const patch = {};
+    const now = nowISO();
 
     if (typeof req.body.name !== "undefined") {
-      patch.name = req.body.name.trim();
+      patch.name = req.body.name ? req.body.name.trim() : existing.name;
     }
     if (typeof req.body.genre !== "undefined") {
-      patch.genre = req.body.genre ? req.body.genre.trim() : null;
+      patch.genre = req.body.genre ? String(req.body.genre).trim() : null;
     }
     if (typeof req.body.bio !== "undefined") {
-      patch.bio = req.body.bio ? req.body.bio.trim() : null;
+      patch.bio = req.body.bio ? String(req.body.bio).trim() : null;
     }
     if (typeof req.body.imageUrl !== "undefined") {
-      patch.imageUrl = req.body.imageUrl ? req.body.imageUrl.trim() : null;
+      patch.imageUrl = req.body.imageUrl
+        ? String(req.body.imageUrl).trim()
+        : null;
     }
-    if (typeof req.body.isFeatured !== "undefined") {
-      patch.isFeatured = Boolean(req.body.isFeatured);
+
+    if (typeof req.body.votes === "number") {
+      patch.votes = req.body.votes;
+    }
+    if (typeof req.body.commentsCount === "number") {
+      patch.commentsCount = req.body.commentsCount;
     }
 
     const updated = {
@@ -377,26 +275,26 @@ router.patch("/:id", (req, res) => {
 
     res.json({
       success: true,
-      message: "Artist patched successfully.",
-      artist: updated,
+      message: "Artist updated successfully.",
+      artist: toPublicArtist(updated),
     });
   } catch (error) {
     console.error("PATCH /api/artists/:id error:", error);
     res.status(500).json({
       success: false,
-      message: "Failed to patch artist.",
+      message: "Failed to update artist.",
     });
   }
 });
 
 /**
  * DELETE /api/artists/:id
- * Remove an artist
+ * Delete a single artist.
  */
 router.delete("/:id", (req, res) => {
   try {
     const { id } = req.params;
-    const index = findArtistIndex(id);
+    const index = artists.findIndex((a) => String(a.id) === String(id));
 
     if (index === -1) {
       return res.status(404).json({
@@ -410,13 +308,38 @@ router.delete("/:id", (req, res) => {
     res.json({
       success: true,
       message: "Artist deleted successfully.",
-      artist: removed,
+      artist: toPublicArtist(removed),
     });
   } catch (error) {
     console.error("DELETE /api/artists/:id error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to delete artist.",
+    });
+  }
+});
+
+/**
+ * DELETE /api/artists
+ * Danger: delete ALL artists.
+ * (Useful for tests/admin; secured later via admin key.)
+ */
+router.delete("/", (req, res) => {
+  try {
+    const deletedCount = artists.length;
+    artists = [];
+    nextArtistId = 1;
+
+    res.json({
+      success: true,
+      message: "All artists deleted.",
+      deletedCount,
+    });
+  } catch (error) {
+    console.error("DELETE /api/artists error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to delete artists.",
     });
   }
 });
