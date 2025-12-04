@@ -1,67 +1,43 @@
 // comments.js
-// Comments router for iBand backend
-// Handles CRUD operations for fan comments on artists
+// Comments router for iBand backend (in-memory, DB-ready API shape)
+//
+// Comment structure:
+// {
+//   id: string,
+//   artistId: string,
+//   author: string | null,
+//   text: string,
+//   createdAt: string (ISO),
+//   updatedAt: string (ISO)
+// }
+//
+// NOTE:
+// - This is an in-memory store for now (resets when the server restarts).
+// - The route shapes are designed so we can later swap in a real DB
+//   without breaking the frontend API contract.
 
 const express = require("express");
 const router = express.Router();
 
-/**
- * Comment structure (in-memory for now):
- * {
- *   id: string,
- *   artistId: string,
- *   authorName: string,
- *   message: string,
- *   createdAt: string (ISO),
- *   updatedAt: string (ISO),
- *   isFlagged: boolean
- * }
- *
- * NOTE:
- * - This is an in-memory store so comments reset when the server restarts.
- * - Later we can swap this for a real database layer without changing routes.
- */
-
+let nextCommentId = 1;
 let comments = [];
-let nextId = 1;
 
 /**
- * Utility: create a new comment object
+ * Validate payload for creating/updating a comment.
  */
-function createComment({ artistId, authorName, message }) {
-  const now = new Date().toISOString();
-
-  return {
-    id: String(nextId++),
-    artistId: String(artistId),
-    authorName: authorName?.trim() || "Anonymous",
-    message: message.trim(),
-    createdAt: now,
-    updatedAt: now,
-    isFlagged: false,
-  };
-}
-
-/**
- * Utility: basic validation
- */
-function validateCommentPayload(body, { requireArtistId = true } = {}) {
+function validateCommentPayload(body, { requireText = true, requireArtistId = true } = {}) {
   const errors = [];
 
-  if (requireArtistId && !body.artistId) {
-    errors.push("artistId is required.");
+  if (requireArtistId && (!body.artistId || typeof body.artistId !== "string")) {
+    errors.push("artistId is required and must be a string.");
   }
 
-  if (body.artistId && typeof body.artistId !== "string" && typeof body.artistId !== "number") {
-    errors.push("artistId must be a string or number.");
+  if (requireText && (!body.text || typeof body.text !== "string" || !body.text.trim())) {
+    errors.push("text is required and must be a non-empty string.");
   }
 
-  if (!body.message || typeof body.message !== "string" || !body.message.trim()) {
-    errors.push("message is required and must be a non-empty string.");
-  }
-
-  if (body.authorName && typeof body.authorName !== "string") {
-    errors.push("authorName must be a string if provided.");
+  if (body.author && typeof body.author !== "string") {
+    errors.push("author must be a string if provided.");
   }
 
   return errors;
@@ -69,25 +45,17 @@ function validateCommentPayload(body, { requireArtistId = true } = {}) {
 
 /**
  * GET /api/comments
- * Optional query parameters:
- * - artistId: filter comments for a specific artist
- * - limit: max number of comments to return
+ * Return all comments (optionally filtered by artistId via query).
+ * Query params:
+ * - artistId (optional) – filter comments for a specific artist
  */
 router.get("/", (req, res) => {
   try {
-    const { artistId, limit } = req.query;
-
+    const { artistId } = req.query;
     let result = comments;
 
     if (artistId) {
-      result = result.filter(
-        (c) => String(c.artistId) === String(artistId)
-      );
-    }
-
-    let numericLimit = parseInt(limit, 10);
-    if (!isNaN(numericLimit) && numericLimit > 0) {
-      result = result.slice(0, numericLimit);
+      result = result.filter((c) => String(c.artistId) === String(artistId));
     }
 
     res.json({
@@ -105,13 +73,39 @@ router.get("/", (req, res) => {
 });
 
 /**
+ * GET /api/comments/by-artist/:artistId
+ * Return comments for a specific artist.
+ */
+router.get("/by-artist/:artistId", (req, res) => {
+  try {
+    const { artistId } = req.params;
+    const artistComments = comments.filter(
+      (c) => String(c.artistId) === String(artistId)
+    );
+
+    res.json({
+      success: true,
+      artistId: String(artistId),
+      count: artistComments.length,
+      comments: artistComments,
+    });
+  } catch (error) {
+    console.error("GET /api/comments/by-artist/:artistId error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch artist comments.",
+    });
+  }
+});
+
+/**
  * GET /api/comments/:id
- * Fetch a single comment by its ID
+ * Fetch a single comment by ID.
  */
 router.get("/:id", (req, res) => {
   try {
     const { id } = req.params;
-    const comment = comments.find((c) => c.id === String(id));
+    const comment = comments.find((c) => String(c.id) === String(id));
 
     if (!comment) {
       return res.status(404).json({
@@ -134,44 +128,19 @@ router.get("/:id", (req, res) => {
 });
 
 /**
- * GET /api/comments/by-artist/:artistId
- * Convenience route to fetch all comments for a given artist
- */
-router.get("/by-artist/:artistId", (req, res) => {
-  try {
-    const { artistId } = req.params;
-
-    const artistComments = comments.filter(
-      (c) => String(c.artistId) === String(artistId)
-    );
-
-    res.json({
-      success: true,
-      artistId: String(artistId),
-      count: artistComments.length,
-      comments: artistComments,
-    });
-  } catch (error) {
-    console.error("GET /api/comments/by-artist/:artistId error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch artist comments.",
-    });
-  }
-});
-
-/**
  * POST /api/comments
- * Create a new comment for an artist
+ * Create a new comment.
+ *
  * Body:
- * - artistId (required)
- * - message (required)
- * - authorName (optional)
+ * - artistId (string, required)
+ * - text (string, required)
+ * - author (string, optional)
  */
 router.post("/", (req, res) => {
   try {
     const errors = validateCommentPayload(req.body, {
       requireArtistId: true,
+      requireText: true,
     });
 
     if (errors.length > 0) {
@@ -182,8 +151,18 @@ router.post("/", (req, res) => {
       });
     }
 
-    const { artistId, authorName, message } = req.body;
-    const newComment = createComment({ artistId, authorName, message });
+    const { artistId, text, author } = req.body;
+    const now = new Date().toISOString();
+
+    const newComment = {
+      id: String(nextCommentId++),
+      artistId: String(artistId),
+      text: text.trim(),
+      author: author ? String(author).trim() : null,
+      createdAt: now,
+      updatedAt: now,
+    };
+
     comments.push(newComment);
 
     res.status(201).json({
@@ -201,63 +180,66 @@ router.post("/", (req, res) => {
 });
 
 /**
- * PUT /api/comments/:id
- * Update an existing comment (replace message/authorName)
- * Body:
- * - message (optional but must be non-empty if provided)
- * - authorName (optional)
+ * PATCH /api/comments/:id
+ * Update an existing comment (text/author only).
+ *
+ * Body (any subset):
+ * - text (string, optional)
+ * - author (string, optional)
  */
-router.put("/:id", (req, res) => {
+router.patch("/:id", (req, res) => {
   try {
     const { id } = req.params;
-    const commentIndex = comments.findIndex((c) => c.id === String(id));
+    const index = comments.findIndex((c) => String(c.id) === String(id));
 
-    if (commentIndex === -1) {
+    if (index === -1) {
       return res.status(404).json({
         success: false,
         message: "Comment not found.",
       });
     }
 
-    const { authorName, message } = req.body;
-    const updatedFields = {};
+    const errors = validateCommentPayload(req.body, {
+      requireArtistId: false,
+      requireText: false,
+    });
 
-    if (typeof authorName !== "undefined") {
-      if (typeof authorName !== "string") {
-        return res.status(400).json({
-          success: false,
-          message: "authorName must be a string.",
-        });
-      }
-      updatedFields.authorName = authorName.trim() || "Anonymous";
+    if (errors.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid comment payload.",
+        errors,
+      });
     }
 
-    if (typeof message !== "undefined") {
-      if (typeof message !== "string" || !message.trim()) {
-        return res.status(400).json({
-          success: false,
-          message: "message must be a non-empty string when provided.",
-        });
-      }
-      updatedFields.message = message.trim();
-    }
-
-    const existing = comments[commentIndex];
+    const existing = comments[index];
+    const patch = {};
     const now = new Date().toISOString();
 
-    comments[commentIndex] = {
+    if (typeof req.body.text !== "undefined") {
+      patch.text = req.body.text ? req.body.text.trim() : existing.text;
+    }
+    if (typeof req.body.author !== "undefined") {
+      patch.author = req.body.author
+        ? String(req.body.author).trim()
+        : null;
+    }
+
+    const updated = {
       ...existing,
-      ...updatedFields,
+      ...patch,
       updatedAt: now,
     };
+
+    comments[index] = updated;
 
     res.json({
       success: true,
       message: "Comment updated successfully.",
-      comment: comments[commentIndex],
+      comment: updated,
     });
   } catch (error) {
-    console.error("PUT /api/comments/:id error:", error);
+    console.error("PATCH /api/comments/:id error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to update comment.",
@@ -266,75 +248,22 @@ router.put("/:id", (req, res) => {
 });
 
 /**
- * PATCH /api/comments/:id/flag
- * Flag or unflag a comment (for moderation)
- * Body:
- * - isFlagged (boolean, optional; if omitted, toggles current value)
- */
-router.patch("/:id/flag", (req, res) => {
-  try {
-    const { id } = req.params;
-    const commentIndex = comments.findIndex((c) => c.id === String(id));
-
-    if (commentIndex === -1) {
-      return res.status(404).json({
-        success: false,
-        message: "Comment not found.",
-      });
-    }
-
-    const current = comments[commentIndex];
-    let { isFlagged } = req.body;
-
-    if (typeof isFlagged === "undefined") {
-      // Toggle if not explicitly provided
-      isFlagged = !current.isFlagged;
-    } else if (typeof isFlagged !== "boolean") {
-      return res.status(400).json({
-        success: false,
-        message: "isFlagged must be a boolean when provided.",
-      });
-    }
-
-    const now = new Date().toISOString();
-
-    comments[commentIndex] = {
-      ...current,
-      isFlagged,
-      updatedAt: now,
-    };
-
-    res.json({
-      success: true,
-      message: `Comment ${isFlagged ? "flagged" : "unflagged"} successfully.`,
-      comment: comments[commentIndex],
-    });
-  } catch (error) {
-    console.error("PATCH /api/comments/:id/flag error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to update comment flag state.",
-    });
-  }
-});
-
-/**
  * DELETE /api/comments/:id
- * Remove a comment completely
+ * Delete a single comment by ID.
  */
 router.delete("/:id", (req, res) => {
   try {
     const { id } = req.params;
-    const commentIndex = comments.findIndex((c) => c.id === String(id));
+    const index = comments.findIndex((c) => String(c.id) === String(id));
 
-    if (commentIndex === -1) {
+    if (index === -1) {
       return res.status(404).json({
         success: false,
         message: "Comment not found.",
       });
     }
 
-    const removed = comments.splice(commentIndex, 1)[0];
+    const removed = comments.splice(index, 1)[0];
 
     res.json({
       success: true,
@@ -346,6 +275,34 @@ router.delete("/:id", (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to delete comment.",
+    });
+  }
+});
+
+/**
+ * DELETE /api/comments/by-artist/:artistId
+ * Delete all comments for a given artist.
+ */
+router.delete("/by-artist/:artistId", (req, res) => {
+  try {
+    const { artistId } = req.params;
+    const before = comments.length;
+    comments = comments.filter(
+      (c) => String(c.artistId) !== String(artistId)
+    );
+    const removedCount = before - comments.length;
+
+    res.json({
+      success: true,
+      message: "Comments deleted for artist.",
+      artistId: String(artistId),
+      removedCount,
+    });
+  } catch (error) {
+    console.error("DELETE /api/comments/by-artist/:artistId error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to delete artist comments.",
     });
   }
 });
