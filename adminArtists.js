@@ -1,5 +1,5 @@
 // adminArtists.js
-// Full admin CRUD for artists – backed by artistsStore.js
+// Full admin artist CRUD + reset/seed routes, protected by x-admin-key
 
 const express = require("express");
 const router = express.Router();
@@ -9,69 +9,40 @@ const {
   getArtistById,
   createArtist,
   updateArtist,
-  patchArtist,
   deleteArtist,
   resetArtists,
   seedArtists,
 } = require("./artistsStore");
 
-// NOTE: We are not enforcing admin key yet to keep Hoppscotch tests simple.
+const ADMIN_KEY = process.env.ADMIN_KEY || "mysecret123";
 
-// ───────────────────────────────────────────────
-// Helper: Validate artist payload
-// ───────────────────────────────────────────────
-function validateArtistPayload(body, { partial = false } = {}) {
-  if (!partial) {
-    if (!body || !body.name || !body.genre) {
-      return "Fields 'name' and 'genre' are required.";
-    }
-  } else {
-    if (!body || Object.keys(body).length === 0) {
-      return "At least one field is required for PATCH.";
-    }
+// Simple admin-key guard
+function requireAdminKey(req, res, next) {
+  const headerKey = req.headers["x-admin-key"];
+
+  if (!headerKey || headerKey !== ADMIN_KEY) {
+    return res.status(401).json({
+      success: false,
+      message: "Unauthorized: invalid or missing admin key.",
+    });
   }
-  return null;
+
+  next();
 }
 
-// ───────────────────────────────────────────────
-// Admin endpoints
-// Base: /api/admin/artists
-// ───────────────────────────────────────────────
-
-// POST /api/admin/artists/reset
-router.post("/reset", (req, res) => {
-  const { deleted } = resetArtists();
-  res.json({
-    success: true,
-    deleted,
-    message: "All artists have been deleted.",
-  });
-});
-
-// POST /api/admin/artists/seed
-router.post("/seed", (req, res) => {
-  const { seeded } = seedArtists();
-  res.json({
-    success: true,
-    seeded,
-    message: "Demo artists seeded.",
-  });
-});
-
 // GET /api/admin/artists
-router.get("/", (req, res) => {
-  const artists = getAllArtists();
+router.get("/", requireAdminKey, (req, res) => {
+  const list = getAllArtists();
   res.json({
     success: true,
-    count: artists.length,
-    artists,
+    count: list.length,
+    artists: list,
   });
 });
 
 // GET /api/admin/artists/:id
-router.get("/:id", (req, res) => {
-  const { id } = req.params;
-  const artist = getArtistById(id);
+router.get("/:id", requireAdminKey, (req, res) => {
+  const artist = getArtistById(req.params.id);
 
   if (!artist) {
     return res.status(404).json({
@@ -87,117 +58,138 @@ router.get("/:id", (req, res) => {
 });
 
 // POST /api/admin/artists
-router.post("/", (req, res) => {
-  const error = validateArtistPayload(req.body, { partial: false });
-  if (error) {
-    return res.status(400).json({
+router.post("/", requireAdminKey, (req, res) => {
+  try {
+    const created = createArtist(req.body || {});
+    res.status(201).json({
+      success: true,
+      message: "Artist created.",
+      artist: created,
+    });
+  } catch (err) {
+    console.error("Error creating artist:", err);
+    res.status(500).json({
       success: false,
-      message: error,
+      message: "Internal server error.",
     });
   }
-
-  const { name, genre, bio, imageUrl } = req.body;
-
-  const artist = createArtist({
-    name,
-    genre,
-    bio: bio || "",
-    imageUrl: imageUrl || "",
-  });
-
-  res.status(201).json({
-    success: true,
-    message: "Artist created.",
-    artist,
-  });
 });
 
 // PUT /api/admin/artists/:id
-router.put("/:id", (req, res) => {
-  const { id } = req.params;
+router.put("/:id", requireAdminKey, (req, res) => {
+  try {
+    const updated = updateArtist(req.params.id, req.body || {});
 
-  const error = validateArtistPayload(req.body, { partial: false });
-  if (error) {
-    return res.status(400).json({
+    if (!updated) {
+      return res.status(404).json({
+        success: false,
+        message: "Artist not found.",
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Artist fully updated.",
+      artist: updated,
+    });
+  } catch (err) {
+    console.error("Error updating artist:", err);
+    res.status(500).json({
       success: false,
-      message: error,
+      message: "Internal server error.",
     });
   }
-
-  const updated = updateArtist(id, {
-    name: req.body.name,
-    genre: req.body.genre,
-    bio: req.body.bio || "",
-    imageUrl: req.body.imageUrl || "",
-  });
-
-  if (!updated) {
-    return res.status(404).json({
-      success: false,
-      message: "Artist not found.",
-    });
-  }
-
-  res.json({
-    success: true,
-    message: `Artist ${id} updated.`,
-    artist: updated,
-  });
 });
 
 // PATCH /api/admin/artists/:id
-router.patch("/:id", (req, res) => {
-  const { id } = req.params;
+router.patch("/:id", requireAdminKey, (req, res) => {
+  try {
+    const updated = updateArtist(req.params.id, req.body || {});
 
-  const error = validateArtistPayload(req.body, { partial: true });
-  if (error) {
-    return res.status(400).json({
+    if (!updated) {
+      return res.status(404).json({
+        success: false,
+        message: "Artist not found.",
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Artist partially updated.",
+      artist: updated,
+    });
+  } catch (err) {
+    console.error("Error patching artist:", err);
+    res.status(500).json({
       success: false,
-      message: error,
+      message: "Internal server error.",
     });
   }
-
-  const allowed = ["name", "genre", "bio", "imageUrl"];
-  const changes = {};
-
-  for (const key of allowed) {
-    if (key in req.body) changes[key] = req.body[key];
-  }
-
-  const patched = patchArtist(id, changes);
-
-  if (!patched) {
-    return res.status(404).json({
-      success: false,
-      message: "Artist not found.",
-    });
-  }
-
-  res.json({
-    success: true,
-    message: `Artist ${id} patched.`,
-    artist: patched,
-  });
 });
 
 // DELETE /api/admin/artists/:id
-router.delete("/:id", (req, res) => {
-  const { id } = req.params;
+router.delete("/:id", requireAdminKey, (req, res) => {
+  try {
+    const result = deleteArtist(req.params.id);
 
-  const removed = deleteArtist(id);
+    if (!result.deleted) {
+      return res.status(404).json({
+        success: false,
+        message: "Artist not found.",
+      });
+    }
 
-  if (!removed) {
-    return res.status(404).json({
+    res.json({
+      success: true,
+      message: "Artist deleted.",
+      artist: result.artist,
+    });
+  } catch (err) {
+    console.error("Error deleting artist:", err);
+    res.status(500).json({
       success: false,
-      message: "Artist not found.",
+      message: "Internal server error.",
     });
   }
+});
 
-  res.json({
-    success: true,
-    message: "Artist deleted.",
-    artist: removed,
-  });
+// POST /api/admin/artists/reset
+router.post("/reset", requireAdminKey, (req, res) => {
+  try {
+    const { deleted } = resetArtists();
+    res.json({
+      success: true,
+      deleted,
+      message: "All artists have been deleted (reset).",
+    });
+  } catch (err) {
+    console.error("Error resetting artists:", err);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error.",
+    });
+  }
+});
+
+// POST /api/admin/artists/seed
+router.post("/seed", requireAdminKey, (req, res) => {
+  try {
+    const result = seedArtists(req.body || {});
+    res.status(201).json({
+      success: true,
+      message: result.usedDefault
+        ? "Demo artists seeded from defaults."
+        : "Custom artists seeded from request body.",
+      seeded: result.seeded,
+      artists: result.artists,
+    });
+  } catch (err) {
+    console.error("Error seeding artists:", err);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error.",
+    });
+  }
 });
 
 module.exports = router;
