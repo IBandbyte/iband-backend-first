@@ -1,84 +1,131 @@
 // commentsStore.js
-// Central in-memory store + helpers for comments.
-// Used by both public comments API and admin comments API.
+// In-memory comment engine for iBand (public + admin)
 
 let comments = [];
-let nextCommentId = 1;
+let nextId = 1;
 
-function sanitiseComment(comment) {
-  return {
-    id: String(comment.id),
-    artistId: String(comment.artistId),
-    author: comment.author,
-    text: comment.text,
-    createdAt: comment.createdAt,
-  };
+/**
+ * Normalize IDs so "1" and 1 behave the same.
+ */
+function normalizeId(id) {
+  return String(id).trim();
 }
 
+/**
+ * Return a shallow copy of all non-deleted comments.
+ */
 function getAllComments() {
-  return comments.map(sanitiseComment);
+  return comments.filter((c) => !c.deleted).map((c) => ({ ...c }));
 }
 
+/**
+ * Return all comments for a given artist (non-deleted).
+ */
 function getCommentsByArtist(artistId) {
-  const artistIdStr = String(artistId);
+  const targetId = normalizeId(artistId);
   return comments
-    .filter((c) => String(c.artistId) === artistIdStr)
-    .map(sanitiseComment);
+    .filter((c) => !c.deleted && normalizeId(c.artistId) === targetId)
+    .map((c) => ({ ...c }));
 }
 
+/**
+ * Find a single comment by ID (non-deleted).
+ */
 function getCommentById(id) {
-  const idStr = String(id);
-  const found = comments.find((c) => String(c.id) === idStr);
-  return found ? sanitiseComment(found) : null;
+  const targetId = normalizeId(id);
+  const found = comments.find(
+    (c) => !c.deleted && normalizeId(c.id) === targetId
+  );
+  return found ? { ...found } : null;
 }
 
+/**
+ * Create a new comment.
+ * Expects: { artistId, author, text }
+ */
 function createComment({ artistId, author, text }) {
   const now = new Date().toISOString();
 
   const comment = {
-    id: nextCommentId++,
-    artistId: String(artistId),
+    id: String(nextId++),
+    artistId: normalizeId(artistId),
     author: author && String(author).trim() ? String(author).trim() : "Anonymous",
-    text: text.trim(),
+    text: String(text).trim(),
     createdAt: now,
+    updatedAt: now,
+    deleted: false,
   };
 
   comments.push(comment);
-  return sanitiseComment(comment);
+  return { ...comment };
 }
 
-function deleteComment(id) {
-  const idStr = String(id);
-  const index = comments.findIndex((c) => String(c.id) === idStr);
-
-  if (index === -1) {
-    return null;
-  }
-
-  const [deleted] = comments.splice(index, 1);
-  return sanitiseComment(deleted);
-}
-
-function deleteCommentsByArtist(artistId) {
-  const artistIdStr = String(artistId);
-  const before = comments.length;
-
-  comments = comments.filter(
-    (c) => String(c.artistId) !== artistIdStr
+/**
+ * Update a comment (for future use / admin tools).
+ * Only allows author + text to change.
+ */
+function updateComment(id, { author, text }) {
+  const targetId = normalizeId(id);
+  const idx = comments.findIndex(
+    (c) => !c.deleted && normalizeId(c.id) === targetId
   );
 
-  const deleted = before - comments.length;
-  return {
-    deleted,
-    artistId: artistIdStr,
-  };
+  if (idx === -1) return null;
+
+  if (typeof author === "string" && author.trim()) {
+    comments[idx].author = author.trim();
+  }
+  if (typeof text === "string" && text.trim()) {
+    comments[idx].text = text.trim();
+  }
+  comments[idx].updatedAt = new Date().toISOString();
+
+  return { ...comments[idx] };
 }
 
+/**
+ * Soft-delete a single comment by ID.
+ */
+function deleteComment(id) {
+  const targetId = normalizeId(id);
+  const idx = comments.findIndex(
+    (c) => !c.deleted && normalizeId(c.id) === targetId
+  );
+
+  if (idx === -1) return { deleted: 0 };
+
+  comments[idx].deleted = true;
+  comments[idx].updatedAt = new Date().toISOString();
+
+  return { deleted: 1 };
+}
+
+/**
+ * Soft-delete all comments for a given artist.
+ */
+function deleteCommentsByArtist(artistId) {
+  const targetId = normalizeId(artistId);
+  let deleted = 0;
+
+  comments.forEach((c) => {
+    if (!c.deleted && normalizeId(c.artistId) === targetId) {
+      c.deleted = true;
+      c.updatedAt = new Date().toISOString();
+      deleted += 1;
+    }
+  });
+
+  return { deleted };
+}
+
+/**
+ * Fully reset the comments store (admin use).
+ */
 function resetComments() {
-  const deleted = comments.length;
+  const deleted = comments.filter((c) => !c.deleted).length;
   comments = [];
-  nextCommentId = 1;
-  return deleted;
+  nextId = 1;
+  return { deleted };
 }
 
 module.exports = {
@@ -86,6 +133,7 @@ module.exports = {
   getCommentsByArtist,
   getCommentById,
   createComment,
+  updateComment,
   deleteComment,
   deleteCommentsByArtist,
   resetComments,
