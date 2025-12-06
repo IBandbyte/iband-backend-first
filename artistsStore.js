@@ -1,163 +1,146 @@
 // artistsStore.js
-// Shared in-memory "database" for artists.
-// Used by both artists.js (public API) and admin.js (admin API).
+// Central in-memory store for all artist data + admin helpers.
 
-// --- internal state ---
-// Seed demo artists (same flavour as before).
-let artists = [
+let artists = [];
+
+// Demo seed data for iBand
+const SEED_ARTISTS = [
   {
     id: "1",
     name: "Aria Nova",
-    genre: "Pop",
-    bio: "Rising star blending electro-pop with dreamy vocals.",
-    imageUrl: "https://i.imgur.com/XYZ123a.jpg",
-    votes: 0,
-    commentsCount: 0,
+    genre: "Hyper Pop",
+    bio: "A cosmic vocal powerhouse bending pop into new dimensions.",
+    imageUrl: "https://example.com/aria-nova.jpg",
   },
   {
     id: "2",
-    name: "Neon Harbor",
-    genre: "Synthwave",
-    bio: "Retro-futuristic vibes, heavy synth, 80s nostalgia.",
-    imageUrl: "https://i.imgur.com/XYZ123b.jpg",
-    votes: 0,
-    commentsCount: 0,
+    name: "Captain Sex",
+    genre: "Cosmic Pop",
+    bio: "Commander of interstellar A&R, broadcasting bangers from deep space.",
+    imageUrl: "https://example.com/captain-sex.jpg",
   },
   {
     id: "3",
-    name: "Stone & Sparrow",
-    genre: "Indie Folk",
-    bio: "Acoustic harmonies, storytelling, and soulful strings.",
-    imageUrl: "https://i.imgur.com/XYZ123c.jpg",
-    votes: 0,
-    commentsCount: 0,
+    name: "Quantum Ghost",
+    genre: "Alt Trap",
+    bio: "Haunting 808s from a different timeline.",
+    imageUrl: "https://example.com/quantum-ghost.jpg",
   },
 ];
 
-// --- helpers ---
+let nextId = 1;
 
-function cloneArtist(a) {
-  return { ...a };
-}
-
-function nextId() {
-  if (artists.length === 0) return "1";
-  const maxNumeric = artists.reduce((max, a) => {
-    const n = parseInt(a.id, 10);
-    if (Number.isNaN(n)) return max;
-    return n > max ? n : max;
+function applySeed() {
+  // Deep clone the seed data so mutations never affect the original array.
+  artists = SEED_ARTISTS.map((artist) => ({ ...artist }));
+  const maxId = artists.reduce((max, artist) => {
+    const numericId = Number(artist.id) || 0;
+    return numericId > max ? numericId : max;
   }, 0);
-  return String(maxNumeric + 1);
+  nextId = maxId + 1;
 }
 
-// --- CRUD operations ---
+// Initialize store with seed data on startup
+applySeed();
+
+// ────────────────────────────────────────────────────────────────
+// Public store functions
+// ────────────────────────────────────────────────────────────────
 
 function getAllArtists() {
-  return artists.map(cloneArtist);
+  return artists.map((artist) => ({ ...artist }));
 }
 
 function getArtistById(id) {
-  const found = artists.find((a) => String(a.id) === String(id));
-  return found ? cloneArtist(found) : null;
+  const targetId = String(id);
+  const artist = artists.find((a) => a.id === targetId);
+  return artist ? { ...artist } : null;
 }
 
-function createArtist({ name, genre, bio, imageUrl }) {
-  const artist = {
-    id: nextId(),
-    name: name?.trim() || "Untitled Artist",
-    genre: genre?.trim() || "No genre set",
-    bio: bio?.trim() || "",
-    imageUrl: imageUrl?.trim() || "",
-    votes: 0,
-    commentsCount: 0,
+function createArtist(data) {
+  const newArtist = {
+    id: String(nextId++),
+    name: data.name,
+    genre: data.genre || "",
+    bio: data.bio || "",
+    imageUrl: data.imageUrl || "",
   };
-  artists.push(artist);
-  return cloneArtist(artist);
+
+  artists.push(newArtist);
+  return { ...newArtist };
 }
 
-function updateArtist(id, patch) {
-  const idx = artists.findIndex((a) => String(a.id) === String(id));
-  if (idx === -1) return null;
+function updateArtist(id, data) {
+  const targetId = String(id);
+  const index = artists.findIndex((a) => a.id === targetId);
 
-  const current = artists[idx];
+  if (index === -1) {
+    return null;
+  }
+
   const updated = {
-    ...current,
-    // Only overwrite fields if provided (undefined means "leave as is")
-    name: patch.name !== undefined ? String(patch.name).trim() || current.name : current.name,
-    genre:
-      patch.genre !== undefined
-        ? String(patch.genre).trim() || current.genre
-        : current.genre,
-    bio:
-      patch.bio !== undefined
-        ? String(patch.bio).trim()
-        : current.bio,
-    imageUrl:
-      patch.imageUrl !== undefined
-        ? String(patch.imageUrl).trim()
-        : current.imageUrl,
+    id: targetId,
+    name: data.name,
+    genre: data.genre || "",
+    bio: data.bio || "",
+    imageUrl: data.imageUrl || "",
   };
 
-  artists[idx] = updated;
-  return cloneArtist(updated);
+  artists[index] = updated;
+  return { ...updated };
+}
+
+function patchArtist(id, changes) {
+  const targetId = String(id);
+  const index = artists.findIndex((a) => a.id === targetId);
+
+  if (index === -1) {
+    return null;
+  }
+
+  const current = artists[index];
+
+  const patched = {
+    ...current,
+    ...changes,
+    id: targetId, // never allow ID to be changed
+  };
+
+  artists[index] = patched;
+  return { ...patched };
 }
 
 function deleteArtist(id) {
-  const before = artists.length;
-  artists = artists.filter((a) => String(a.id) !== String(id));
-  return artists.length < before;
-}
+  const targetId = String(id);
+  const index = artists.findIndex((a) => a.id === targetId);
 
-// --- admin utilities ---
+  if (index === -1) {
+    return null;
+  }
+
+  const [removed] = artists.splice(index, 1);
+  return { ...removed };
+}
 
 function resetArtists() {
   const deleted = artists.length;
   artists = [];
-  return deleted;
+  nextId = 1;
+  return { deleted };
 }
 
-function seedDemoArtists() {
-  const demo = [
-    {
-      id: "1",
-      name: "Aria Nova",
-      genre: "Pop",
-      bio: "Rising star blending electro-pop with dreamy vocals.",
-      imageUrl: "https://i.imgur.com/XYZ123a.jpg",
-      votes: 0,
-      commentsCount: 0,
-    },
-    {
-      id: "2",
-      name: "Neon Harbor",
-      genre: "Synthwave",
-      bio: "Retro-futuristic vibes, heavy synth, 80s nostalgia.",
-      imageUrl: "https://i.imgur.com/XYZ123b.jpg",
-      votes: 0,
-      commentsCount: 0,
-    },
-    {
-      id: "3",
-      name: "Stone & Sparrow",
-      genre: "Indie Folk",
-      bio: "Acoustic harmonies, storytelling, and soulful strings.",
-      imageUrl: "https://i.imgur.com/XYZ123c.jpg",
-      votes: 0,
-      commentsCount: 0,
-    },
-  ];
-  artists = demo.map(cloneArtist);
-  return artists.length;
+function seedArtists() {
+  applySeed();
+  return { seeded: artists.length };
 }
 
 module.exports = {
-  // CRUD
   getAllArtists,
   getArtistById,
   createArtist,
   updateArtist,
+  patchArtist,
   deleteArtist,
-  // admin helpers
   resetArtists,
-  seedDemoArtists,
+  seedArtists,
 };
