@@ -1,6 +1,6 @@
 // admin.js
 // Admin control endpoints for iBand backend.
-// Provides diagnostics + full CRUD over artists, using artistsStore.
+// Provides diagnostics + full CRUD over artists, and admin controls for comments.
 
 const express = require("express");
 const router = express.Router();
@@ -15,6 +15,15 @@ const {
   seedDemoArtists,
 } = require("./artistsStore");
 
+const {
+  getAllComments,
+  getCommentsByArtist,
+  getCommentById,
+  deleteComment,
+  deleteCommentsByArtist,
+  resetComments,
+} = require("./commentsStore");
+
 // Optional admin key. If not set, admin endpoints are OPEN (dev mode).
 const ADMIN_KEY = process.env.ADMIN_KEY || "";
 
@@ -26,6 +35,7 @@ function requireAdmin(req, res, next) {
   }
 
   const key = req.headers["x-admin-key"];
+
   if (!key || key !== ADMIN_KEY) {
     return res.status(403).json({
       success: false,
@@ -46,12 +56,24 @@ router.get("/", (req, res) => {
     docs: {
       ping: "/api/admin/ping",
       info: "/api/admin/info",
+
+      // Artist admin
       artistsList: "/api/admin/artists",
-      artistsCreate: "/api/admin/artists  (POST)",
-      artistsUpdate: "/api/admin/artists/:id  (PUT/PATCH)",
-      artistsDelete: "/api/admin/artists/:id  (DELETE)",
-      artistsReset: "/api/admin/artists/reset  (POST)",
-      artistsSeed: "/api/admin/artists/seed  (POST)",
+      artistsCreate: "/api/admin/artists (POST)",
+      artistsUpdate: "/api/admin/artists/:id (PUT/PATCH)",
+      artistsDelete: "/api/admin/artists/:id (DELETE)",
+      artistsReset: "/api/admin/artists/reset (POST)",
+      artistsSeed: "/api/admin/artists/seed (POST)",
+
+      // Comment admin
+      commentsList: "/api/admin/comments",
+      commentsListForArtist:
+        "/api/admin/comments?artistId={artistId}",
+      commentGet: "/api/admin/comments/:id",
+      commentDelete: "/api/admin/comments/:id (DELETE)",
+      commentsDeleteForArtist:
+        "/api/admin/comments/by-artist/:artistId (DELETE)",
+      commentsReset: "/api/admin/comments/reset (POST)",
     },
   });
 });
@@ -80,7 +102,6 @@ router.get("/info", (_req, res) => {
 // ----- ADMIN ARTIST CONTROL (FULL CRUD) -----
 
 // GET /api/admin/artists
-// Same data as public list, but behind admin prefix.
 router.get("/artists", requireAdmin, (_req, res) => {
   const artists = getAllArtists();
   res.json({
@@ -109,7 +130,6 @@ router.get("/artists/:id", requireAdmin, (req, res) => {
 });
 
 // POST /api/admin/artists
-// Create new artist (admin flavour)
 router.post("/artists", requireAdmin, (req, res) => {
   const { name, genre, bio, imageUrl } = req.body || {};
 
@@ -187,9 +207,9 @@ router.delete("/artists/:id", requireAdmin, (req, res) => {
 });
 
 // POST /api/admin/artists/reset
-// Danger: wipe ALL artists.
 router.post("/artists/reset", requireAdmin, (_req, res) => {
   const deleted = resetArtists();
+
   res.json({
     success: true,
     deleted,
@@ -198,13 +218,100 @@ router.post("/artists/reset", requireAdmin, (_req, res) => {
 });
 
 // POST /api/admin/artists/seed
-// Re-seed demo artists.
 router.post("/artists/seed", requireAdmin, (_req, res) => {
   const count = seedDemoArtists();
+
   res.json({
     success: true,
     seeded: count,
     message: "Demo artists seeded.",
+  });
+});
+
+// ----- ADMIN COMMENT CONTROL -----
+
+// GET /api/admin/comments
+// Optional query: ?artistId=1 to filter
+router.get("/comments", requireAdmin, (req, res) => {
+  const { artistId } = req.query;
+
+  let comments;
+  if (artistId) {
+    comments = getCommentsByArtist(artistId);
+  } else {
+    comments = getAllComments();
+  }
+
+  res.json({
+    success: true,
+    count: comments.length,
+    ...(artistId ? { artistId: String(artistId) } : {}),
+    comments,
+  });
+});
+
+// GET /api/admin/comments/:id
+router.get("/comments/:id", requireAdmin, (req, res) => {
+  const { id } = req.params;
+  const comment = getCommentById(id);
+
+  if (!comment) {
+    return res.status(404).json({
+      success: false,
+      message: "Comment not found.",
+    });
+  }
+
+  res.json({
+    success: true,
+    comment,
+  });
+});
+
+// DELETE /api/admin/comments/by-artist/:artistId
+router.delete(
+  "/comments/by-artist/:artistId",
+  requireAdmin,
+  (req, res) => {
+    const { artistId } = req.params;
+    const { deleted } = deleteCommentsByArtist(artistId);
+
+    res.json({
+      success: true,
+      message: `Deleted ${deleted} comment(s) for artist ${artistId}.`,
+      deleted,
+      artistId: String(artistId),
+    });
+  }
+);
+
+// DELETE /api/admin/comments/:id
+router.delete("/comments/:id", requireAdmin, (req, res) => {
+  const { id } = req.params;
+  const deleted = deleteComment(id);
+
+  if (!deleted) {
+    return res.status(404).json({
+      success: false,
+      message: "Comment not found.",
+    });
+  }
+
+  res.json({
+    success: true,
+    message: "Comment deleted.",
+    comment: deleted,
+  });
+});
+
+// POST /api/admin/comments/reset
+router.post("/comments/reset", requireAdmin, (_req, res) => {
+  const deleted = resetComments();
+
+  res.json({
+    success: true,
+    deleted,
+    message: "All comments have been removed.",
   });
 });
 
