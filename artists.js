@@ -1,39 +1,33 @@
 // artists.js
-// Public artist API – powered by artistsStore.js
+// Public artist API used by the frontend.
 
 const express = require("express");
 const router = express.Router();
+const artistsStore = require("./artistsStore");
 
-const {
-  getAllArtists,
-  getArtistById,
-} = require("./artistsStore");
-
-// GET /api/artists
-router.get("/", (req, res) => {
-  const artists = getAllArtists();
+router.get("/artists", (req, res) => {
+  const all = artistsStore.getAllArtists();
   res.json({
     success: true,
-    count: artists.length,
-    artists,
+    count: all.length,
+    artists: all
   });
 });
 
-// GET /api/artists/:id
-router.get("/:id", (req, res) => {
+router.get("/artists/:id", (req, res) => {
   const { id } = req.params;
-  const artist = getArtistById(id);
+  const artist = artistsStore.getArtistById(id);
 
   if (!artist) {
     return res.status(404).json({
       success: false,
-      message: "Artist not found.",
+      message: `Artist with id ${id} not found.`
     });
   }
 
   res.json({
     success: true,
-    artist,
+    artist
   });
 });
 
