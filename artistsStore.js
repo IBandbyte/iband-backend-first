@@ -1,49 +1,62 @@
-import fs from "fs";
-import path from "path";
+// artistsStore.js
+// Simple in-memory artist store used by both public + admin routes.
 
-const FILE_PATH = path.join(process.cwd(), "artists.json");
-
-class ArtistsStore {
-  constructor() {
-    this.ensureFile();
+let artists = [
+  {
+    id: "1",
+    name: "Aria Nova",
+    genre: "Pop",
+    bio: "Rising star blending catchy hooks with emotional lyrics.",
+    imageUrl: "https://example.com/aria.jpg"
+  },
+  {
+    id: "2",
+    name: "Midnight Echo",
+    genre: "Indie Rock",
+    bio: "Raw guitars, smoky vocals, and late-night anthems.",
+    imageUrl: "https://example.com/midnight.jpg"
+  },
+  {
+    id: "3",
+    name: "Luna Waves",
+    genre: "Electronic",
+    bio: "Atmospheric beats and cosmic soundscapes.",
+    imageUrl: "https://example.com/luna.jpg"
   }
+];
 
-  ensureFile() {
-    if (!fs.existsSync(FILE_PATH)) {
-      fs.writeFileSync(FILE_PATH, JSON.stringify([]));
-    }
-  }
-
-  read() {
-    const raw = fs.readFileSync(FILE_PATH, "utf-8");
-    return JSON.parse(raw || "[]");
-  }
-
-  write(data) {
-    fs.writeFileSync(FILE_PATH, JSON.stringify(data, null, 2));
-  }
-
-  all() {
-    return this.read();
-  }
-
-  seed(artist) {
-    const artists = this.read();
-
-    const newArtist = {
-      id: String(Date.now()),
-      name: artist.name,
-      genre: artist.genre,
-      bio: artist.bio,
-      imageUrl: artist.imageUrl,
-      createdAt: new Date().toISOString(),
-    };
-
-    artists.push(newArtist);
-    this.write(artists);
-
-    return newArtist;
-  }
+function getAllArtists() {
+  return artists;
 }
 
-export default new ArtistsStore();
+function getArtistById(id) {
+  return artists.find((artist) => artist.id === String(id)) || null;
+}
+
+function getNextId() {
+  if (!artists.length) return "1";
+  const maxNumericId = artists
+    .map((a) => Number(a.id) || 0)
+    .reduce((max, current) => (current > max ? current : max), 0);
+  return String(maxNumericId + 1);
+}
+
+function addArtist({ name, genre, bio = "", imageUrl = "" }) {
+  const id = getNextId();
+  const artist = { id, name, genre, bio, imageUrl };
+  artists.push(artist);
+  return artist;
+}
+
+function resetArtists() {
+  const deleted = artists.length;
+  artists = [];
+  return { deleted };
+}
+
+module.exports = {
+  getAllArtists,
+  getArtistById,
+  addArtist,
+  resetArtists
+};
