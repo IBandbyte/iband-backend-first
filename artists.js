@@ -1,118 +1,60 @@
-const express = require("express");
+// artists.js
+// Public artist routes (no admin key required)
+
+const express = require('express');
+const ArtistsStore = require('./artistsStore');
+
 const router = express.Router();
-const db = require("./db");
 
-const ADMIN_KEY = process.env.ADMIN_KEY || "mysecret123";
-
-// ===========================================================
-// Helper: Admin Key Check
-// ===========================================================
-function checkAdminKey(req, res) {
-  const headerKey = req.headers["x-admin-key"];
-  if (!headerKey || headerKey !== ADMIN_KEY) {
-    return res.status(401).json({
-      success: false,
-      message: "Unauthorized: Invalid admin key.",
-    });
-  }
-  return true;
-}
-
-// ===========================================================
-// CREATE ARTIST (ADMIN)
-// ===========================================================
-router.post("/admin/artists/seed", async (req, res) => {
-  if (!checkAdminKey(req, res)) return;
-
+/**
+ * GET /api/artists
+ * List all artists (public)
+ */
+router.get('/', (req, res) => {
   try {
-    const { name, genre, bio, imageUrl } = req.body;
-
-    const result = await db.execute(
-      "INSERT INTO artists (name, genre, bio, imageUrl) VALUES (?, ?, ?, ?)",
-      [name, genre, bio, imageUrl]
-    );
-
-    res.status(201).json({
+    const artists = ArtistsStore.getAll();
+    res.json({
       success: true,
-      artist: {
-        id: result[0].insertId,
-        name,
-        genre,
-        bio,
-        imageUrl,
-      },
+      count: artists.length,
+      artists,
     });
-  } catch (error) {
+  } catch (err) {
+    console.error('Error listing artists:', err);
     res.status(500).json({
       success: false,
-      message: "Internal server error.",
-      error: error.message,
+      message: 'Internal server error.',
     });
   }
 });
 
-// ===========================================================
-// UPDATE ARTIST (ADMIN) — THIS IS THE ONE YOU NEED
-// ===========================================================
-router.put("/admin/artists/:id", async (req, res) => {
-  if (!checkAdminKey(req, res)) return;
-
+/**
+ * GET /api/artists/:id
+ * Get one artist by ID (public)
+ */
+router.get('/:id', (req, res) => {
   try {
-    const artistId = req.params.id;
+    const { id } = req.params;
+    const artist = ArtistsStore.getById(id);
 
-    // Check if exists
-    const [existing] = await db.execute(
-      "SELECT * FROM artists WHERE id = ?",
-      [artistId]
-    );
-
-    if (existing.length === 0) {
+    if (!artist) {
       return res.status(404).json({
         success: false,
-        message: "Artist not found.",
+        message: 'Artist not found.',
+        id,
       });
     }
 
-    // Only update submitted fields
-    const fields = [];
-    const values = [];
-
-    ["name", "genre", "bio", "imageUrl"].forEach((key) => {
-      if (req.body[key]) {
-        fields.push(`${key} = ?`);
-        values.push(req.body[key]);
-      }
-    });
-
-    if (fields.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "No valid fields to update.",
-      });
-    }
-
-    values.push(artistId);
-
-    await db.execute(
-      `UPDATE artists SET ${fields.join(", ")} WHERE id = ?`,
-      values
-    );
-
-    return res.json({
+    res.json({
       success: true,
-      message: "Artist updated successfully.",
-      updatedFields: req.body,
+      artist,
     });
-  } catch (error) {
+  } catch (err) {
+    console.error('Error fetching artist by id:', err);
     res.status(500).json({
       success: false,
-      message: "Internal server error.",
-      error: error.message,
+      message: 'Internal server error.',
     });
   }
 });
 
-// ===========================================================
-// EXPORT ROUTER
-// ===========================================================
 module.exports = router;
