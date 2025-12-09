@@ -1,80 +1,81 @@
-const db = require("./index");
+// db/artists.js
+// In-memory artist "DB" with async-style functions to match the service layer.
+// This replaces the previous sqlite3-based implementation to avoid native
+// dependencies on Render.
 
-// Create artist
+let artists = [];
+let lastId = 0;
+
+function nextId() {
+  lastId += 1;
+  return String(lastId);
+}
+
+// Create artist: returns { id }
 exports.createArtist = (name, genre, bio, imageUrl) => {
-  return new Promise((resolve, reject) => {
-    const sql = `
-      INSERT INTO artists (name, genre, bio, imageUrl)
-      VALUES (?, ?, ?, ?)
-    `;
-
-    db.run(sql, [name, genre, bio, imageUrl], function (err) {
-      if (err) {
-        return reject(err);
-      }
-      resolve({ id: this.lastID });
-    });
+  return new Promise((resolve) => {
+    const id = nextId();
+    const artist = {
+      id,
+      name,
+      genre,
+      bio,
+      imageUrl,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    artists.push(artist);
+    resolve({ id });
   });
 };
 
 // Get all artists
 exports.getAllArtists = () => {
-  return new Promise((resolve, reject) => {
-    db.all("SELECT * FROM artists ORDER BY id DESC", [], (err, rows) => {
-      if (err) return reject(err);
-      resolve(rows);
-    });
+  return new Promise((resolve) => {
+    resolve([...artists]);
   });
 };
 
 // Get artist by ID
 exports.getArtistById = (id) => {
-  return new Promise((resolve, reject) => {
-    db.get("SELECT * FROM artists WHERE id = ?", [id], (err, row) => {
-      if (err) return reject(err);
-      resolve(row);
-    });
+  return new Promise((resolve) => {
+    const found = artists.find((a) => String(a.id) === String(id)) || null;
+    resolve(found);
   });
 };
 
-// Update artist
+// Update artist: returns { changes }
 exports.updateArtist = (id, fields) => {
-  return new Promise((resolve, reject) => {
-    const allowed = ["name", "genre", "bio", "imageUrl"];
-    const updates = [];
-    const values = [];
+  return new Promise((resolve) => {
+    const idx = artists.findIndex((a) => String(a.id) === String(id));
+    if (idx === -1) {
+      return resolve({ changes: 0 });
+    }
 
+    const existing = artists[idx];
+
+    const allowed = ["name", "genre", "bio", "imageUrl"];
     for (const key of allowed) {
-      if (fields[key]) {
-        updates.push(`${key} = ?`);
-        values.push(fields[key]);
+      if (fields[key] !== undefined) {
+        existing[key] = fields[key];
       }
     }
 
-    if (updates.length === 0) {
-      return reject(new Error("No valid update fields provided"));
-    }
+    existing.updatedAt = new Date().toISOString();
+    artists[idx] = existing;
 
-    values.push(id);
-
-    const sql = `
-      UPDATE artists SET ${updates.join(", ")}
-      WHERE id = ?
-    `;
-
-    db.run(sql, values, function (err) {
-      if (err) return reject(err);
-      resolve({ changes: this.changes });
-    });
+    resolve({ changes: 1 });
   });
 };
 
-// Delete artist
+// Delete artist: returns { changes }
 exports.deleteArtist = (id) => {
-  return new Promise((resolve, reject) => {
-    db.run("DELETE FROM artists WHERE id = ?", [id], function (err) {
-      if (err) return reject(err);
-      resolve({ changes: this.changes });
-    });
+  return new Promise((resolve) => {
+    const idx = artists.findIndex((a) => String(a.id) === String(id));
+    if (idx === -1) {
+      return resolve({ changes: 0 });
+    }
+    artists.splice(idx, 1);
+    resolve({ changes: 1 });
   });
 };
