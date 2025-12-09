@@ -1,46 +1,39 @@
-// server.js
-// Main iBand backend server
-
 const express = require("express");
 const cors = require("cors");
+const helmet = require("helmet");
 
-// Initialize DB (creates artists table if needed)
-require("./db/init");
+// Initialise the in-memory "db" (logs: "iBand in-memory DB initialised (no sqlite).")
+require("./db");
 
-// Route modules
-const votesRoutes = require("./routes/votes");
 const safetyRoutes = require("./routes/safety");
-const artistsRoutes = require("./routes/artists.fake"); // current public artists mock
-const commentsRouter = require("./comments"); // existing comments API
-const adminCommentsRouter = require("./adminComments"); // existing admin comments API
-const adminArtistsRoute = require("./routes/admin.artists"); // new admin artists CRUD
+const votesRoutes = require("./routes/votes");
+const adminArtistsRoutes = require("./routes/admin.artists");
+const publicArtistsRoutes = require("./routes/artists");
 
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-// Global middleware
+// Basic middleware
+app.use(helmet());
 app.use(cors());
 app.use(express.json());
 
-// Health/root endpoint
+// Root / health check
 app.get("/", (req, res) => {
   res.json({
     success: true,
-    message: "iBand backend is live 🚀",
+    message: "iBand backend is live",
   });
 });
 
-// Public routes
-app.use("/api/votes", votesRoutes);
+// Feature routes
 app.use("/api/safety", safetyRoutes);
-app.use("/api/artists", artistsRoutes);
-app.use("/api/comments", commentsRouter);
+app.use("/api/votes", votesRoutes);
+app.use("/api/admin/artists", adminArtistsRoutes);
+// Public artists API (list + detail)
+app.use("/api", publicArtistsRoutes);
 
-// Admin routes
-app.use("/api/admin/comments", adminCommentsRouter);
-app.use("/api/admin/artists", adminArtistsRoute);
-
-// 404 handler (must be after all routes)
+// 404 handler (keep same shape as before)
 app.use((req, res) => {
   res.status(404).json({
     success: false,
@@ -49,7 +42,8 @@ app.use((req, res) => {
   });
 });
 
-// Global error handler (last)
+// Error handler
+// eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
   console.error("Unhandled error:", err);
   res.status(500).json({
@@ -58,7 +52,6 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Start server
 app.listen(PORT, () => {
   console.log(`iBand backend listening on port ${PORT}`);
 });
