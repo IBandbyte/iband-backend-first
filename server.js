@@ -1,39 +1,58 @@
+require("dotenv").config();
+
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
+const compression = require("compression");
+const morgan = require("morgan");
 
-// Initialise the in-memory "db" (logs: "iBand in-memory DB initialised (no sqlite).")
+// Ensure DB module is loaded so the in-memory store is initialised
 require("./db");
 
-const safetyRoutes = require("./routes/safety");
-const votesRoutes = require("./routes/votes");
-const adminArtistsRoutes = require("./routes/admin.artists");
-const publicArtistsRoutes = require("./routes/artists");
+const artistsRouter = require("./routes/artists");
+const adminArtistsRouter = require("./routes/admin.artists");
+const votesRouter = require("./routes/votes");
+const safetyRouter = require("./routes/safety");
 
 const app = express();
-const PORT = process.env.PORT || 10000;
 
-// Basic middleware
-app.use(helmet());
-app.use(cors());
-app.use(express.json());
+// ===== Middlewares =====
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  })
+);
 
-// Root / health check
+app.use(
+  cors({
+    origin: "*", // we can tighten this later when frontend domain is fixed
+  })
+);
+
+app.use(compression());
+app.use(express.json({ limit: "1mb" }));
+app.use(morgan("tiny"));
+
+// ===== Health check / root =====
 app.get("/", (req, res) => {
   res.json({
-    success: true,
-    message: "iBand backend is live",
+    status: "ok",
+    service: "iBand backend",
+    time: new Date().toISOString(),
   });
 });
 
-// Feature routes
-app.use("/api/safety", safetyRoutes);
-app.use("/api/votes", votesRoutes);
-app.use("/api/admin/artists", adminArtistsRoutes);
-// Public artists API (list + detail)
-app.use("/api", publicArtistsRoutes);
+// ===== Public routes =====
+app.use("/api/artists", artistsRouter);
 
-// 404 handler (keep same shape as before)
+// ===== Admin routes =====
+app.use("/api/admin/artists", adminArtistsRouter);
+
+// ===== Existing routes (votes, safety) =====
+app.use("/api/votes", votesRouter);
+app.use("/api/safety", safetyRouter);
+
+// ===== 404 handler =====
 app.use((req, res) => {
   res.status(404).json({
     success: false,
@@ -42,18 +61,18 @@ app.use((req, res) => {
   });
 });
 
-// Error handler
-// eslint-disable-next-line no-unused-vars
+// ===== Global error handler =====
 app.use((err, req, res, next) => {
   console.error("Unhandled error:", err);
-  res.status(500).json({
-    success: false,
-    message: "Internal server error.",
-  });
+  res
+    .status(500)
+    .json({ success: false, message: "Internal server error." });
 });
+
+// ===== Start server =====
+const PORT = process.env.PORT || 10000;
 
 app.listen(PORT, () => {
+  console.log("iBand in-memory DB initialised (no sqlite).");
   console.log(`iBand backend listening on port ${PORT}`);
 });
-
-module.exports = app;
