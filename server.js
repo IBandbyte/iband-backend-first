@@ -4,14 +4,16 @@
 const express = require("express");
 const cors = require("cors");
 
-// Ensure DB is initialized (creates artists table if needed)
+// Initialize DB (creates artists table if needed)
 require("./db/init");
 
 // Route modules
 const votesRoutes = require("./routes/votes");
 const safetyRoutes = require("./routes/safety");
-const artistsRoutes = require("./routes/artists.fake"); // current public artists API (fake/mock)
-const adminArtistsRoute = require("./routes/admin.artists"); // new admin CRUD for artists
+const artistsRoutes = require("./routes/artists.fake"); // current public artists mock
+const commentsRouter = require("./comments"); // existing comments API
+const adminCommentsRouter = require("./adminComments"); // existing admin comments API
+const adminArtistsRoute = require("./routes/admin.artists"); // new admin artists CRUD
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -32,8 +34,10 @@ app.get("/", (req, res) => {
 app.use("/api/votes", votesRoutes);
 app.use("/api/safety", safetyRoutes);
 app.use("/api/artists", artistsRoutes);
+app.use("/api/comments", commentsRouter);
 
 // Admin routes
+app.use("/api/admin/comments", adminCommentsRouter);
 app.use("/api/admin/artists", adminArtistsRoute);
 
 // 404 handler (must be after all routes)
