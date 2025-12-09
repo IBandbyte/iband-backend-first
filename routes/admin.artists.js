@@ -3,7 +3,15 @@
 
 const express = require("express");
 const router = express.Router();
-const ArtistsService = require("../services/artistsService");
+
+// Pull helpers from our in-memory DB
+const {
+  getAllArtists,
+  getArtistById,
+  createArtist,
+  updateArtist,
+  deleteArtist,
+} = require("../db");
 
 // Simple admin-key guard
 function adminGuard(req, res, next) {
@@ -20,18 +28,19 @@ function adminGuard(req, res, next) {
 }
 
 // GET /api/admin/artists
-// List all artists
-router.get("/", adminGuard, async (req, res) => {
+// List all admin-created artists
+router.get("/", adminGuard, (req, res) => {
   try {
-    const artists = await ArtistsService.getAllArtists();
-    res.json({
+    const artists = getAllArtists();
+
+    return res.json({
       success: true,
       count: artists.length,
       artists,
     });
   } catch (err) {
     console.error("Admin GET /artists error:", err);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Internal server error.",
     });
@@ -40,17 +49,17 @@ router.get("/", adminGuard, async (req, res) => {
 
 // POST /api/admin/artists/seed
 // Create (seed) a new artist
-router.post("/seed", adminGuard, async (req, res) => {
+router.post("/seed", adminGuard, (req, res) => {
   try {
-    const artist = await ArtistsService.createArtist(req.body);
+    const artist = createArtist(req.body);
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       artist,
     });
   } catch (err) {
     console.error("Admin POST /artists/seed error:", err);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Unable to create artist.",
       error: err.message,
@@ -60,10 +69,10 @@ router.post("/seed", adminGuard, async (req, res) => {
 
 // PUT /api/admin/artists/:id
 // Update an existing artist (partial updates allowed)
-router.put("/:id", adminGuard, async (req, res) => {
+router.put("/:id", adminGuard, (req, res) => {
   try {
     const { id } = req.params;
-    const updated = await ArtistsService.updateArtist(id, req.body);
+    const updated = updateArtist(id, req.body);
 
     if (!updated) {
       return res.status(404).json({
@@ -73,13 +82,13 @@ router.put("/:id", adminGuard, async (req, res) => {
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
       artist: updated,
     });
   } catch (err) {
     console.error("Admin PUT /artists/:id error:", err);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Internal server error.",
     });
@@ -88,10 +97,10 @@ router.put("/:id", adminGuard, async (req, res) => {
 
 // DELETE /api/admin/artists/:id
 // Delete an artist
-router.delete("/:id", adminGuard, async (req, res) => {
+router.delete("/:id", adminGuard, (req, res) => {
   try {
     const { id } = req.params;
-    const removed = await ArtistsService.deleteArtist(id);
+    const removed = deleteArtist(id);
 
     if (!removed) {
       return res.status(404).json({
@@ -101,13 +110,13 @@ router.delete("/:id", adminGuard, async (req, res) => {
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
       deleted: removed,
     });
   } catch (err) {
     console.error("Admin DELETE /artists/:id error:", err);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Internal server error.",
     });
