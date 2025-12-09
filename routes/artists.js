@@ -1,58 +1,92 @@
 const express = require("express");
 const router = express.Router();
 
-const artistsDb = require("../db/artists");
+// Pull in-memory admin artists from our DB module
+const { artists: adminArtists, getAllArtists } = require("../db");
 
-// ---------------------------------------------------------------------------
-// PUBLIC ARTISTS API (backed by the same in-memory store as admin)
-// ---------------------------------------------------------------------------
-// This powers:
-//   GET  /api/artists       → list all artists (public view)
-//   GET  /api/artists/:id   → single artist by numeric id
-//
-// Admin CRUD still uses /api/admin/artists/* and the same artistsDb module.
-// ---------------------------------------------------------------------------
+// Fixed demo artists (public-facing seed data)
+const DEMO_ARTISTS = [
+  {
+    _id: "A",
+    name: "Alpha Band",
+    genre: "Alt Rock",
+    votes: 0,
+    comments: [],
+    imageUrl: "https://example.com/alpha.jpg",
+  },
+  {
+    _id: "B",
+    name: "Beta Beats",
+    genre: "Hip Hop",
+    votes: 0,
+    comments: [],
+    imageUrl: "https://example.com/beta.jpg",
+  },
+  {
+    _id: "C",
+    name: "Cosmic Choir",
+    genre: "Pop",
+    votes: 0,
+    comments: [],
+    imageUrl: "https://example.com/cosmic.jpg",
+  },
+];
 
-// GET /api/artists → list of all artists
-router.get("/artists", (req, res) => {
+// Helper to get ALL artists: demo + admin-created
+function getCombinedArtists() {
+  // Prefer the helper if it exists, otherwise fall back to the exported array
+  const admin =
+    typeof getAllArtists === "function" ? getAllArtists() : adminArtists || [];
+
+  return [...DEMO_ARTISTS, ...admin];
+}
+
+// GET /api/artists  → list all artists (demo + admin)
+router.get("/", (req, res) => {
   try {
-    const artists = artistsDb.getAll();
+    const combined = getCombinedArtists();
 
-    // Keep the response simple: just the array,
-    // same style as the old fake endpoint.
-    return res.json(artists);
+    return res.json({
+      success: true,
+      count: combined.length,
+      artists: combined,
+    });
   } catch (err) {
     console.error("Error in GET /api/artists:", err);
-    return res.status(500).json({
-      success: false,
-      message: "Failed to fetch artists.",
-    });
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to fetch artists." });
   }
 });
 
-// GET /api/artists/:id → single artist detail
-router.get("/artists/:id", (req, res) => {
-  const { id } = req.params;
-
+// GET /api/artists/:id  → fetch single artist by id or _id
+router.get("/:id", (req, res) => {
   try {
-    const artist = artistsDb.getById(id);
+    const { id } = req.params;
+    const combined = getCombinedArtists();
+
+    const artist = combined.find(
+      (a) =>
+        String(a.id) === String(id) ||
+        String(a._id) === String(id) ||
+        String(a.id) === String(Number(id)) // handles numeric ids passed as strings
+    );
 
     if (!artist) {
-      return res.status(404).json({
-        success: false,
-        message: "Artist not found.",
-        id,
-      });
+      return res
+        .status(404)
+        .json({ success: false, message: "Artist not found." });
     }
 
-    return res.json(artist);
+    return res.json({
+      success: true,
+      artist,
+    });
   } catch (err) {
     console.error("Error in GET /api/artists/:id:", err);
-    return res.status(500).json({
-      success: false,
-      message: "Failed to fetch artist.",
-      id,
-    });
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to fetch artist." });
   }
 });
 
