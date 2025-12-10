@@ -1,10 +1,6 @@
 // routes/admin.stats.js
-// Admin-only stats endpoint for dashboard-style overviews.
-//
-// URL base: /api/admin/stats
-// Currently returns totals for artists, votes and comments,
-// plus a per-artist summary. Designed to be easy for the
-// frontend dashboard to consume.
+// Admin-only stats for the iBand backend.
+// Exposed under /api/admin/stats and /api/admin/stats/by-artist
 
 const express = require("express");
 const router = express.Router();
@@ -12,7 +8,7 @@ const router = express.Router();
 const ArtistsService = require("../services/artistsService");
 const CommentsService = require("../services/commentsService");
 
-// --- Simple admin-key guard (same as admin.artists.js & admin.comments.js) ---
+// Simple admin-key guard (same as other admin routes)
 function adminGuard(req, res, next) {
   const key = req.headers["x-admin-key"];
 
@@ -26,69 +22,82 @@ function adminGuard(req, res, next) {
   next();
 }
 
-// --- GET /api/admin/stats ---
-// High-level summary for dashboards and admin panels.
+/**
+ * GET /api/admin/stats
+ * High-level totals:
+ * - how many artists
+ * - sum of all votes
+ * - how many comments
+ */
 router.get("/", adminGuard, async (req, res) => {
   try {
-    // Artists & votes
-    const artists =
-      (await ArtistsService.getAllArtists()) || [];
+    const artists = await ArtistsService.getAllArtists();
+    const comments = await CommentsService.getAllComments();
 
-    const totalArtists = artists.length;
+    const artistCount = artists.length;
     const totalVotes = artists.reduce(
       (sum, artist) => sum + (Number(artist.votes) || 0),
       0
     );
+    const commentCount = comments.length;
 
-    // Comments (use the CommentsService so we don't duplicate logic)
-    let totalComments = 0;
-    let allComments = [];
+    return res.json({
+      success: true,
+      stats: {
+        artistCount,
+        totalVotes,
+        commentCount,
+      },
+    });
+  } catch (err) {
+    console.error("Admin GET /stats error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch admin stats.",
+    });
+  }
+});
 
-    if (
-      CommentsService &&
-      typeof CommentsService.getAllComments === "function"
-    ) {
-      allComments = (await CommentsService.getAllComments()) || [];
-      totalComments = allComments.length;
-    }
+/**
+ * GET /api/admin/stats/by-artist
+ * Per-artist breakdown so the dashboard can show:
+ * - artist id
+ * - name
+ * - votes
+ * - number of comments
+ */
+router.get("/by-artist", adminGuard, async (req, res) => {
+  try {
+    const artists = await ArtistsService.getAllArtists();
+    const comments = await CommentsService.getAllComments();
 
-    // Per-artist summary (id, name, votes, optional comment count)
-    const commentsByArtist = {};
-    for (const comment of allComments) {
-      const artistId = comment.artistId;
-      if (!commentsByArtist[artistId]) {
-        commentsByArtist[artistId] = 0;
-      }
-      commentsByArtist[artistId] += 1;
-    }
+    const breakdown = artists.map((artist) => {
+      const rawId = artist.id ?? artist._id;
+      const numericId =
+        typeof rawId === "number" ? rawId : Number(rawId) || rawId;
 
-    const artistSummaries = artists.map((artist) => {
-      const artistId = artist.id || artist._id;
-      const commentsCount = commentsByArtist[artistId] || 0;
+      const commentCountForArtist = comments.filter(
+        (c) => c.artistId === numericId
+      ).length;
 
       return {
-        id: artistId,
+        id: rawId,
         name: artist.name,
-        genre: artist.genre,
         votes: Number(artist.votes) || 0,
-        commentsCount,
+        comments: commentCountForArtist,
       };
     });
 
     return res.json({
       success: true,
-      stats: {
-        totalArtists,
-        totalVotes,
-        totalComments,
-        artists: artistSummaries,
-      },
+      count: breakdown.length,
+      items: breakdown,
     });
   } catch (err) {
-    console.error("Admin GET /api/admin/stats error:", err);
+    console.error("Admin GET /stats/by-artist error:", err);
     return res.status(500).json({
       success: false,
-      message: "Internal server error.",
+      message: "Failed to fetch per-artist stats.",
     });
   }
 });
