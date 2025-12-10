@@ -1,149 +1,79 @@
 // comments.js
-// Public comment API routes for iBand
+// Public comments API for artists.
+// Mounted at /api/comments in server.js.
+//
+// Endpoints:
+//   GET  /api/comments/:artistId   -> list comments for an artist
+//   POST /api/comments/:artistId   -> add a comment for an artist
 
 const express = require("express");
 const router = express.Router();
 
-const {
-  getAllComments,
-  getCommentsByArtist,
-  getCommentById,
-  createComment,
-  deleteComment,
-} = require("./commentsStore");
+const { getArtistById, getCommentsForArtist, addComment } = require("./db");
 
-/**
- * Basic payload validation
- */
-function validateCreatePayload(body) {
-  const errors = [];
-  const { artistId, author, text } = body || {};
+// GET /api/comments/:artistId
+// List comments for a single artist
+router.get("/:artistId", (req, res) => {
+  try {
+    const { artistId } = req.params;
+    const artist = getArtistById(artistId);
 
-  if (!artistId && artistId !== 0) {
-    errors.push("artistId is required.");
-  }
-
-  if (typeof text !== "string" || !text.trim()) {
-    errors.push("text is required.");
-  } else {
-    const len = text.trim().length;
-    if (len < 3) {
-      errors.push("text must be at least 3 characters.");
+    if (!artist) {
+      return res.status(404).json({
+        success: false,
+        message: "Artist not found.",
+        artistId,
+      });
     }
-    if (len > 500) {
-      errors.push("text must be at most 500 characters.");
+
+    const comments = getCommentsForArtist(artistId) || [];
+
+    return res.json({
+      success: true,
+      artistId: artist.id,
+      count: comments.length,
+      comments,
+    });
+  } catch (err) {
+    console.error("Error in GET /api/comments/:artistId:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch comments.",
+    });
+  }
+});
+
+// POST /api/comments/:artistId
+// Add a new comment to an artist
+router.post("/:artistId", (req, res) => {
+  try {
+    const { artistId } = req.params;
+    const artist = getArtistById(artistId);
+
+    if (!artist) {
+      return res.status(404).json({
+        success: false,
+        message: "Artist not found.",
+        artistId,
+      });
     }
-  }
 
-  if (author != null && typeof author !== "string") {
-    errors.push("author must be a string if provided.");
-  }
+    const { user, text } = req.body || {};
 
-  return { isValid: errors.length === 0, errors };
-}
+    const comment = addComment(artistId, { user, text });
 
-/**
- * GET /api/comments
- * Return all comments (non-deleted).
- */
-router.get("/", (req, res) => {
-  const comments = getAllComments();
-  res.json({
-    success: true,
-    count: comments.length,
-    comments,
-  });
-});
-
-/**
- * GET /api/comments/by-artist/:artistId
- * Return all comments for a specific artist.
- */
-router.get("/by-artist/:artistId", (req, res) => {
-  const { artistId } = req.params;
-  const comments = getCommentsByArtist(artistId);
-
-  res.json({
-    success: true,
-    artistId: String(artistId),
-    count: comments.length,
-    comments,
-  });
-});
-
-/**
- * GET /api/comments/:id
- * Return a single comment by ID.
- */
-router.get("/:id", (req, res) => {
-  const { id } = req.params;
-  const comment = getCommentById(id);
-
-  if (!comment) {
-    return res.status(404).json({
+    return res.status(201).json({
+      success: true,
+      comment,
+    });
+  } catch (err) {
+    console.error("Error in POST /api/comments/:artistId:", err);
+    return res.status(500).json({
       success: false,
-      message: "Comment not found.",
+      message: "Failed to add comment.",
+      error: err.message,
     });
   }
-
-  res.json({
-    success: true,
-    comment,
-  });
-});
-
-/**
- * POST /api/comments
- * Create a new public comment.
- *
- * Body: { artistId, author?, text }
- */
-router.post("/", (req, res) => {
-  const { isValid, errors } = validateCreatePayload(req.body);
-
-  if (!isValid) {
-    return res.status(400).json({
-      success: false,
-      message: "Invalid comment payload.",
-      errors,
-    });
-  }
-
-  const { artistId, author, text } = req.body;
-
-  const comment = createComment({
-    artistId,
-    author,
-    text,
-  });
-
-  res.status(201).json({
-    success: true,
-    message: "Comment created successfully.",
-    comment,
-  });
-});
-
-/**
- * DELETE /api/comments/:id
- * Public delete (for future use: may be restricted later).
- */
-router.delete("/:id", (req, res) => {
-  const { id } = req.params;
-  const { deleted } = deleteComment(id);
-
-  if (!deleted) {
-    return res.status(404).json({
-      success: false,
-      message: "Comment not found.",
-    });
-  }
-
-  res.json({
-    success: true,
-    message: "Comment deleted.",
-    id: String(id),
-  });
 });
 
 module.exports = router;
