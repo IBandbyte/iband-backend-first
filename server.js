@@ -6,13 +6,15 @@ const helmet = require("helmet");
 const compression = require("compression");
 const morgan = require("morgan");
 
-// Ensure DB module is loaded so the in-memory store is initialised
+// Ensure in-memory DB is initialised
 require("./db");
 
 const artistsRouter = require("./routes/artists");
 const adminArtistsRouter = require("./routes/admin.artists");
 const votesRouter = require("./routes/votes");
 const safetyRouter = require("./routes/safety");
+const commentsRouter = require("./comments");
+const adminCommentsRouter = require("./adminComments");
 
 const app = express();
 
@@ -25,7 +27,7 @@ app.use(
 
 app.use(
   cors({
-    origin: "*", // we can tighten this later when frontend domain is fixed
+    origin: "*", // can be restricted later when frontend domain is fixed
   })
 );
 
@@ -44,13 +46,13 @@ app.get("/", (req, res) => {
 
 // ===== Public routes =====
 app.use("/api/artists", artistsRouter);
+app.use("/api/votes", votesRouter);
+app.use("/api/comments", commentsRouter);
+app.use("/api/safety", safetyRouter);
 
 // ===== Admin routes =====
 app.use("/api/admin/artists", adminArtistsRouter);
-
-// ===== Existing routes (votes, safety) =====
-app.use("/api/votes", votesRouter);
-app.use("/api/safety", safetyRouter);
+app.use("/api/admin/comments", adminCommentsRouter);
 
 // ===== 404 handler =====
 app.use((req, res) => {
@@ -73,6 +75,8 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 10000;
 
 app.listen(PORT, () => {
-  console.log("iBand in-memory DB initialised (no sqlite).");
+  console.log("iBand in-memory DB initialised.");
   console.log(`iBand backend listening on port ${PORT}`);
 });
+
+module.exports = app;
