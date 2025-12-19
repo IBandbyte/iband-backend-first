@@ -1,186 +1,364 @@
+ import express from "express";
+import crypto from "crypto";
+
+export const artistsRouter = express.Router();
+
 /**
- * iBand Backend — Artists Routes
- * Root-level file (per Captain’s Protocol)
- *
- * Endpoints:
- * - GET    /artists
- * - GET    /artists/:id
- * - POST   /artists
- * - PUT    /artists/:id
- * - PATCH  /artists/:id
- * - DELETE /artists/:id
- *
- * Extra (future-proof helpers):
- * - POST   /artists/:id/votes      (increment votes)
- * - GET    /artists/meta/genres    (list known genres)
+ * In-memory store (Phase 2.1)
+ * Later we’ll swap this to a real DB without changing the API contract.
  */
+const store = {
+  artists: new Map(), // id -> artist
+};
 
-import express from "express";
-import {
-  listArtists,
-  createArtist,
-  getArtistById,
-  updateArtist,
-  deleteArtist,
-  incrementArtistVotes,
-  toPublicArtist,
-} from "./models/artist.model.js";
-
-const router = express.Router();
-
-/** ---------------- Helpers ---------------- */
-
-function sendOk(res, data, status = 200) {
-  return res.status(status).json(data);
+function nowIso() {
+  return new Date().toISOString();
 }
 
-function sendError(res, err) {
-  const status = Number(err?.status) || 500;
+function newId() {
+  return crypto.randomUUID();
+}
 
-  const payload = {
-    error: err?.message || "Server error",
-    code: err?.code || (status === 500 ? "SERVER_ERROR" : "ERROR"),
+function toNumber(v, fallback) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function clamp(n, min, max) {
+  return Math.max(min, Math.min(max, n));
+}
+
+function normalizeString(v) {
+  return typeof v === "string" ? v.trim() : "";
+}
+
+function safeUrl(v) {
+  const s = normalizeString(v);
+  if (!s) return "";
+  return s;
+}
+
+function normalizeSocials(socials = {}) {
+  return {
+    instagram: safeUrl(socials.instagram),
+    youtube: safeUrl(socials.youtube),
+    spotify: safeUrl(socials.spotify),
+    soundcloud: safeUrl(socials.soundcloud),
+    tiktok: safeUrl(socials.tiktok),
+    website: safeUrl(socials.website),
   };
+}
 
-  if (err?.fields && typeof err.fields === "object") {
-    payload.fields = err.fields;
+function normalizeTracks(tracks = []) {
+  if (!Array.isArray(tracks)) return [];
+  return tracks
+    .filter((t) => t && typeof t === "object")
+    .map((t) => ({
+      id: normalizeString(t.id) || newId(),
+      title: normalizeString(t.title) || "Untitled Track",
+      url: safeUrl(t.url),
+      platform: normalizeString(t.platform) || "link",
+      durationSec: clamp(toNumber(t.durationSec, 0), 0, 60 * 60),
+    }))
+    .filter((t) => t.url || t.title);
+}
+
+function normalizeArtistInput(body = {}) {
+  const name = normalizeString(body.name);
+  if (!name) {
+    const err = new Error("Artist name is required");
+    err.status = 400;
+    throw err;
   }
 
-  return res.status(status).json(payload);
+  const artist = {
+    name,
+    genre: normalizeString(body.genre),
+    location: normalizeString(body.location),
+    bio: normalizeString(body.bio),
+    avatarUrl: safeUrl(body.avatarUrl),
+    bannerUrl: safeUrl(body.bannerUrl),
+    socials: normalizeSocials(body.socials),
+    tracks: normalizeTracks(body.tracks),
+    status: normalizeString(body.status) || "active", // active | pending | blocked | deleted
+  };
+
+  return artist;
 }
 
-/**
- * Very lightweight query parsing for iPhone Hoppscotch reliability
- */
-function parseListQuery(q) {
+function serializeArtist(a) {
   return {
-    q: q?.q,
-    genre: q?.genre,
-    status: q?.status, // active|pending|hidden|all
-    sort: q?.sort, // new|votes|name
-    order: q?.order, // asc|desc
-    page: q?.page,
-    limit: q?.limit,
+    id: a.id,
+    name: a.name,
+    genre: a.genre,
+    location: a.location,
+    bio: a.bio,
+    avatarUrl: a.avatarUrl,
+    bannerUrl: a.bannerUrl,
+    socials: a.socials,
+    tracks: a.tracks,
+    status: a.status,
+    votes: a.votes,
+    createdAt: a.createdAt,
+    updatedAt: a.updatedAt,
   };
 }
 
-/** ---------------- Routes ---------------- */
+/**
+ * Seed: a single demo artist (keeps UI alive even if list empty)
+ */
+function ensureSeed() {
+  if (store.artists.size > 0) return;
+
+  const id = "demo";
+  store.artists.set(id, {
+    id,
+    name: "Demo Artist",
+    genre: "Pop / Urban",
+    location: "London, UK",
+    bio: "This is demo data. Next phase: real submissions + moderation + playback.",
+    avatarUrl: "",
+    bannerUrl: "",
+    socials: normalizeSocials({
+      instagram: "https://instagram.com/",
+      youtube: "https://youtube.com/",
+    }),
+    tracks: normalizeTracks([
+      {
+        title: "Demo Track",
+        url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
+        platform: "mp3",
+        durationSec: 30,
+      },
+    ]),
+    status: "active",
+    votes: 42,
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+  });
+}
+
+ensureSeed();
 
 /**
  * GET /artists
  * Query:
- *  - q, genre, status, sort, order, page, limit
- * Returns:
- *  { page, limit, total, items: [...] }
+ * - q (search name/genre/location)
+ * - status
+ * - sort: new | votes | name
+ * - order: asc | desc
+ * - page, limit
  */
-router.get("/", (req, res) => {
-  try {
-    const result = listArtists(parseListQuery(req.query));
-    const items = result.items.map(toPublicArtist);
-    return sendOk(res, { ...result, items });
-  } catch (err) {
-    return sendError(res, err);
+artistsRouter.get("/", (req, res) => {
+  const q = normalizeString(req.query.q).toLowerCase();
+  const status = normalizeString(req.query.status).toLowerCase();
+
+  const sort = normalizeString(req.query.sort).toLowerCase() || "new";
+  const order = normalizeString(req.query.order).toLowerCase() || "desc";
+
+  const page = clamp(toNumber(req.query.page, 1), 1, 9999);
+  const limit = clamp(toNumber(req.query.limit, 20), 1, 100);
+
+  let items = Array.from(store.artists.values());
+
+  // Filter deleted unless explicitly requested
+  if (!status) {
+    items = items.filter((a) => a.status !== "deleted");
+  } else {
+    items = items.filter((a) => a.status.toLowerCase() === status);
   }
+
+  if (q) {
+    items = items.filter((a) => {
+      const hay = `${a.name} ${a.genre} ${a.location}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }
+
+  items.sort((a, b) => {
+    let cmp = 0;
+    if (sort === "votes") cmp = (a.votes || 0) - (b.votes || 0);
+    else if (sort === "name") cmp = a.name.localeCompare(b.name);
+    else cmp = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(); // new
+
+    return order === "asc" ? cmp : -cmp;
+  });
+
+  const total = items.length;
+  const start = (page - 1) * limit;
+  const paged = items.slice(start, start + limit).map(serializeArtist);
+
+  res.json({
+    success: true,
+    data: paged,
+    meta: {
+      page,
+      limit,
+      total,
+      hasMore: start + limit < total,
+    },
+  });
 });
 
 /**
- * GET /artists/meta/genres
- * Returns unique genres currently in store
+ * GET /artists/demo (easy sanity check)
  */
-router.get("/meta/genres", (req, res) => {
-  try {
-    const result = listArtists({ status: "all", limit: 50, page: 1 });
-    const all = [];
-    for (const a of result.items) {
-      for (const g of a.genres || []) all.push(String(g || "").trim());
-    }
-    const unique = Array.from(new Set(all.filter(Boolean))).sort((a, b) =>
-      a.localeCompare(b)
-    );
-    return sendOk(res, { items: unique });
-  } catch (err) {
-    return sendError(res, err);
+artistsRouter.get("/demo", (req, res) => {
+  const a = store.artists.get("demo");
+  if (!a) {
+    return res.status(404).json({ success: false, message: "Demo not found" });
   }
+  return res.json({ success: true, data: serializeArtist(a) });
+});
+
+/**
+ * POST /artists
+ */
+artistsRouter.post("/", (req, res) => {
+  const input = normalizeArtistInput(req.body);
+
+  const id = newId();
+  const created = {
+    id,
+    ...input,
+    votes: 0,
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+  };
+
+  store.artists.set(id, created);
+
+  res.status(201).json({
+    success: true,
+    data: serializeArtist(created),
+  });
 });
 
 /**
  * GET /artists/:id
  */
-router.get("/:id", (req, res) => {
-  try {
-    const artist = getArtistById(req.params.id);
-    return sendOk(res, toPublicArtist(artist));
-  } catch (err) {
-    return sendError(res, err);
+artistsRouter.get("/:id", (req, res) => {
+  const id = normalizeString(req.params.id);
+  const a = store.artists.get(id);
+
+  if (!a || a.status === "deleted") {
+    return res.status(404).json({ success: false, message: "Artist not found" });
   }
+
+  return res.json({ success: true, data: serializeArtist(a) });
 });
 
 /**
- * POST /artists
- * Body:
- *  { name, genres?, location?, bio?, avatarUrl?, socials?, tracks?, status? }
+ * PUT /artists/:id (replace)
  */
-router.post("/", (req, res) => {
-  try {
-    const created = createArtist(req.body);
-    return sendOk(res, toPublicArtist(created), 201);
-  } catch (err) {
-    return sendError(res, err);
+artistsRouter.put("/:id", (req, res) => {
+  const id = normalizeString(req.params.id);
+  const existing = store.artists.get(id);
+
+  if (!existing || existing.status === "deleted") {
+    return res.status(404).json({ success: false, message: "Artist not found" });
   }
+
+  const input = normalizeArtistInput(req.body);
+
+  const updated = {
+    ...existing,
+    ...input,
+    id,
+    votes: existing.votes ?? 0,
+    createdAt: existing.createdAt,
+    updatedAt: nowIso(),
+  };
+
+  store.artists.set(id, updated);
+  return res.json({ success: true, data: serializeArtist(updated) });
 });
 
 /**
- * PUT /artists/:id
- * Full update (but we still allow partial values safely)
+ * PATCH /artists/:id (partial)
  */
-router.put("/:id", (req, res) => {
-  try {
-    const updated = updateArtist(req.params.id, req.body);
-    return sendOk(res, toPublicArtist(updated));
-  } catch (err) {
-    return sendError(res, err);
+artistsRouter.patch("/:id", (req, res) => {
+  const id = normalizeString(req.params.id);
+  const existing = store.artists.get(id);
+
+  if (!existing || existing.status === "deleted") {
+    return res.status(404).json({ success: false, message: "Artist not found" });
   }
+
+  const body = req.body || {};
+
+  const next = { ...existing };
+
+  if (body.name !== undefined) next.name = normalizeString(body.name);
+  if (!next.name) {
+    return res.status(400).json({ success: false, message: "Artist name is required" });
+  }
+
+  if (body.genre !== undefined) next.genre = normalizeString(body.genre);
+  if (body.location !== undefined) next.location = normalizeString(body.location);
+  if (body.bio !== undefined) next.bio = normalizeString(body.bio);
+  if (body.avatarUrl !== undefined) next.avatarUrl = safeUrl(body.avatarUrl);
+  if (body.bannerUrl !== undefined) next.bannerUrl = safeUrl(body.bannerUrl);
+
+  if (body.socials !== undefined) next.socials = normalizeSocials(body.socials);
+  if (body.tracks !== undefined) next.tracks = normalizeTracks(body.tracks);
+
+  if (body.status !== undefined) next.status = normalizeString(body.status) || next.status;
+
+  next.updatedAt = nowIso();
+
+  store.artists.set(id, next);
+  return res.json({ success: true, data: serializeArtist(next) });
 });
 
 /**
- * PATCH /artists/:id
- * Partial update
+ * DELETE /artists/:id (soft delete)
  */
-router.patch("/:id", (req, res) => {
-  try {
-    const updated = updateArtist(req.params.id, req.body);
-    return sendOk(res, toPublicArtist(updated));
-  } catch (err) {
-    return sendError(res, err);
-  }
-});
+artistsRouter.delete("/:id", (req, res) => {
+  const id = normalizeString(req.params.id);
+  const existing = store.artists.get(id);
 
-/**
- * DELETE /artists/:id
- */
-router.delete("/:id", (req, res) => {
-  try {
-    const result = deleteArtist(req.params.id);
-    return sendOk(res, result);
-  } catch (err) {
-    return sendError(res, err);
+  if (!existing || existing.status === "deleted") {
+    return res.status(404).json({ success: false, message: "Artist not found" });
   }
+
+  const updated = { ...existing, status: "deleted", updatedAt: nowIso() };
+  store.artists.set(id, updated);
+
+  return res.json({ success: true, data: { id, status: "deleted" } });
 });
 
 /**
  * POST /artists/:id/votes
- * Body (optional):
- *  { amount: number }  // default 1
- * Returns updated artist
+ * Body: { amount?: number }
  */
-router.post("/:id/votes", (req, res) => {
-  try {
-    const amount = req.body?.amount ?? 1;
-    const updated = incrementArtistVotes(req.params.id, amount);
-    return sendOk(res, toPublicArtist(updated));
-  } catch (err) {
-    return sendError(res, err);
+artistsRouter.post("/:id/votes", (req, res) => {
+  const id = normalizeString(req.params.id);
+  const existing = store.artists.get(id);
+
+  if (!existing || existing.status === "deleted") {
+    return res.status(404).json({ success: false, message: "Artist not found" });
   }
+
+  const amount = clamp(toNumber(req.body?.amount, 1), 1, 100);
+  const votes = clamp((existing.votes ?? 0) + amount, 0, 1_000_000_000);
+
+  const updated = { ...existing, votes, updatedAt: nowIso() };
+  store.artists.set(id, updated);
+
+  return res.json({ success: true, data: { artistId: id, votes } });
 });
 
-export default router;
+/**
+ * GET /artists/:id/votes
+ */
+artistsRouter.get("/:id/votes", (req, res) => {
+  const id = normalizeString(req.params.id);
+  const existing = store.artists.get(id);
+
+  if (!existing || existing.status === "deleted") {
+    return res.status(404).json({ success: false, message: "Artist not found" });
+  }
+
+  return res.json({ success: true, data: { artistId: id, votes: existing.votes ?? 0 } });
+});
