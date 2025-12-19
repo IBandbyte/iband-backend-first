@@ -1,118 +1,186 @@
 /**
- * iBandbyte Backend — Artists Module (Future-proof foundation)
- * Root-based layout: artists.js lives beside server.js
+ * iBand Backend — Artists Routes
+ * Root-level file (per Captain’s Protocol)
  *
- * Supports:
- * - Music artists, actors/actresses, influencers
- * - Portfolios / auditions / performances (media array)
- * - Voting + basic search/filtering
+ * Endpoints:
+ * - GET    /artists
+ * - GET    /artists/:id
+ * - POST   /artists
+ * - PUT    /artists/:id
+ * - PATCH  /artists/:id
+ * - DELETE /artists/:id
  *
- * NOTE:
- * This module uses an in-memory store for now (safe + fast for Phase 2).
- * Later we can swap the store for a real DB with minimal frontend changes.
+ * Extra (future-proof helpers):
+ * - POST   /artists/:id/votes      (increment votes)
+ * - GET    /artists/meta/genres    (list known genres)
  */
 
-const express = require("express");
-const crypto = require("crypto");
+import express from "express";
+import {
+  listArtists,
+  createArtist,
+  getArtistById,
+  updateArtist,
+  deleteArtist,
+  incrementArtistVotes,
+  toPublicArtist,
+} from "./models/artist.model.js";
 
 const router = express.Router();
 
-/** -----------------------------
- * Helpers
- * ----------------------------- */
+/** ---------------- Helpers ---------------- */
 
-function nowISO() {
-  return new Date().toISOString();
+function sendOk(res, data, status = 200) {
+  return res.status(status).json(data);
 }
 
-function safeUUID() {
-  if (crypto.randomUUID) return crypto.randomUUID();
-  // fallback
-  return "id_" + crypto.randomBytes(12).toString("hex");
-}
+function sendError(res, err) {
+  const status = Number(err?.status) || 500;
 
-function isNonEmptyString(v) {
-  return typeof v === "string" && v.trim().length > 0;
-}
+  const payload = {
+    error: err?.message || "Server error",
+    code: err?.code || (status === 500 ? "SERVER_ERROR" : "ERROR"),
+  };
 
-function clampInt(n, min, max, fallback) {
-  const x = Number.parseInt(String(n), 10);
-  if (Number.isNaN(x)) return fallback;
-  return Math.min(max, Math.max(min, x));
-}
-
-function normalizeType(t) {
-  const val = String(t || "").trim().toLowerCase();
-  if (val === "music" || val === "artist") return "music";
-  if (val === "actor" || val === "actress" || val === "acting") return "actor";
-  if (val === "influencer" || val === "creator") return "influencer";
-  return null;
-}
-
-function normalizeVisibility(v) {
-  const val = String(v || "").trim().toLowerCase();
-  if (val === "public" || val === "listed") return "public";
-  if (val === "unlisted") return "unlisted";
-  if (val === "private" || val === "hidden") return "private";
-  return null;
-}
-
-function asArrayOfStrings(v) {
-  if (!v) return [];
-  if (Array.isArray(v)) return v.map(String).map((s) => s.trim()).filter(Boolean);
-  // comma separated
-  if (typeof v === "string") {
-    return v
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
+  if (err?.fields && typeof err.fields === "object") {
+    payload.fields = err.fields;
   }
-  return [];
+
+  return res.status(status).json(payload);
 }
 
 /**
- * media item shape (future-proof)
- * type: "track" | "video" | "audition" | "portfolio" | "image" | "link"
+ * Very lightweight query parsing for iPhone Hoppscotch reliability
  */
-function normalizeMedia(media) {
-  const arr = Array.isArray(media) ? media : [];
-  return arr
-    .map((m) => (m && typeof m === "object" ? m : null))
-    .filter(Boolean)
-    .map((m) => ({
-      id: isNonEmptyString(m.id) ? m.id : safeUUID(),
-      type: isNonEmptyString(m.type) ? String(m.type).trim().toLowerCase() : "link",
-      title: isNonEmptyString(m.title) ? String(m.title).trim() : "",
-      url: isNonEmptyString(m.url) ? String(m.url).trim() : "",
-      provider: isNonEmptyString(m.provider) ? String(m.provider).trim() : "",
-      // optional metadata
-      durationSec: Number.isFinite(Number(m.durationSec)) ? Number(m.durationSec) : null,
-      thumbnailUrl: isNonEmptyString(m.thumbnailUrl) ? String(m.thumbnailUrl).trim() : "",
-      createdAt: isNonEmptyString(m.createdAt) ? String(m.createdAt) : nowISO(),
-    }));
+function parseListQuery(q) {
+  return {
+    q: q?.q,
+    genre: q?.genre,
+    status: q?.status, // active|pending|hidden|all
+    sort: q?.sort, // new|votes|name
+    order: q?.order, // asc|desc
+    page: q?.page,
+    limit: q?.limit,
+  };
 }
 
+/** ---------------- Routes ---------------- */
+
 /**
- * Core Artist Model
- * - type: "music" | "actor" | "influencer"
- * - genres: for music
- * - roles: for acting (e.g., "Lead", "Supporting", "Commercial")
- * - niches: for influencers (e.g., "Fashion", "Fitness")
+ * GET /artists
+ * Query:
+ *  - q, genre, status, sort, order, page, limit
+ * Returns:
+ *  { page, limit, total, items: [...] }
  */
-function validateAndBuildArtist(payload, { partial = false } = {}) {
-  const p = payload && typeof payload === "object" ? payload : {};
-
-  // Required on create
-  const name = isNonEmptyString(p.name) ? p.name.trim() : null;
-  const type = normalizeType(p.type);
-  const visibility = normalizeVisibility(p.visibility);
-
-  if (!partial) {
-    if (!name) return { ok: false, error: "Name is required." };
-    if (!type) return { ok: false, error: "Type is required: music | actor | influencer." };
+router.get("/", (req, res) => {
+  try {
+    const result = listArtists(parseListQuery(req.query));
+    const items = result.items.map(toPublicArtist);
+    return sendOk(res, { ...result, items });
+  } catch (err) {
+    return sendError(res, err);
   }
+});
 
-  // Optional fields
-  const bio = isNonEmptyString(p.bio) ? p.bio.trim() : "";
-  const location = isNonEmptyString(p.location) ? p.location.trim() : "";
-  const avatarUrl = isNonEmptyString(p.avatarUrl) ?
+/**
+ * GET /artists/meta/genres
+ * Returns unique genres currently in store
+ */
+router.get("/meta/genres", (req, res) => {
+  try {
+    const result = listArtists({ status: "all", limit: 50, page: 1 });
+    const all = [];
+    for (const a of result.items) {
+      for (const g of a.genres || []) all.push(String(g || "").trim());
+    }
+    const unique = Array.from(new Set(all.filter(Boolean))).sort((a, b) =>
+      a.localeCompare(b)
+    );
+    return sendOk(res, { items: unique });
+  } catch (err) {
+    return sendError(res, err);
+  }
+});
+
+/**
+ * GET /artists/:id
+ */
+router.get("/:id", (req, res) => {
+  try {
+    const artist = getArtistById(req.params.id);
+    return sendOk(res, toPublicArtist(artist));
+  } catch (err) {
+    return sendError(res, err);
+  }
+});
+
+/**
+ * POST /artists
+ * Body:
+ *  { name, genres?, location?, bio?, avatarUrl?, socials?, tracks?, status? }
+ */
+router.post("/", (req, res) => {
+  try {
+    const created = createArtist(req.body);
+    return sendOk(res, toPublicArtist(created), 201);
+  } catch (err) {
+    return sendError(res, err);
+  }
+});
+
+/**
+ * PUT /artists/:id
+ * Full update (but we still allow partial values safely)
+ */
+router.put("/:id", (req, res) => {
+  try {
+    const updated = updateArtist(req.params.id, req.body);
+    return sendOk(res, toPublicArtist(updated));
+  } catch (err) {
+    return sendError(res, err);
+  }
+});
+
+/**
+ * PATCH /artists/:id
+ * Partial update
+ */
+router.patch("/:id", (req, res) => {
+  try {
+    const updated = updateArtist(req.params.id, req.body);
+    return sendOk(res, toPublicArtist(updated));
+  } catch (err) {
+    return sendError(res, err);
+  }
+});
+
+/**
+ * DELETE /artists/:id
+ */
+router.delete("/:id", (req, res) => {
+  try {
+    const result = deleteArtist(req.params.id);
+    return sendOk(res, result);
+  } catch (err) {
+    return sendError(res, err);
+  }
+});
+
+/**
+ * POST /artists/:id/votes
+ * Body (optional):
+ *  { amount: number }  // default 1
+ * Returns updated artist
+ */
+router.post("/:id/votes", (req, res) => {
+  try {
+    const amount = req.body?.amount ?? 1;
+    const updated = incrementArtistVotes(req.params.id, amount);
+    return sendOk(res, toPublicArtist(updated));
+  } catch (err) {
+    return sendError(res, err);
+  }
+});
+
+export default router;
