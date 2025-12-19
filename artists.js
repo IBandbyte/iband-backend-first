@@ -1,11 +1,11 @@
-// artists.js (CommonJS)
+// artists.js (ESM)
 // Future-proof artist "model" + routes with file-backed storage (no DB required yet)
 
-const express = require("express");
-const fs = require("fs");
-const fsp = require("fs/promises");
-const path = require("path");
-const crypto = require("crypto");
+import express from "express";
+import fs from "fs";
+import fsp from "fs/promises";
+import path from "path";
+import crypto from "crypto";
 
 const router = express.Router();
 
@@ -92,7 +92,6 @@ function nowIso() {
 }
 
 function makeId(prefix = "art") {
-  // short, URL-safe-ish id
   return `${prefix}_${crypto.randomBytes(6).toString("hex")}`;
 }
 
@@ -129,7 +128,6 @@ function safeSocials(input = {}) {
     website: normalizeStr(socials.website),
   };
 
-  // validate urls if present
   for (const k of Object.keys(out)) {
     if (!isValidUrl(out[k])) out[k] = "";
   }
@@ -161,7 +159,6 @@ function safeStatus(s) {
 }
 
 function toPublicArtist(a) {
-  // keep everything for now, but this is where we can hide admin-only fields later
   return a;
 }
 
@@ -255,7 +252,6 @@ router.get("/", async (req, res) => {
         if (an > bn) return 1 * dir;
         return 0;
       }
-      // default: "new" (createdAt)
       const at = new Date(a.createdAt || 0).getTime();
       const bt = new Date(b.createdAt || 0).getTime();
       return (at - bt) * dir;
@@ -297,7 +293,6 @@ router.get("/:id", async (req, res) => {
 
 /**
  * POST /artists
- * Body: minimal required: name OR stageName
  */
 router.post("/", async (req, res) => {
   try {
@@ -310,10 +305,10 @@ router.post("/", async (req, res) => {
       return bad(res, "name or stageName is required");
     }
 
-    const { artists } = await readStore();
+    const store = await readStore();
     const id = normalizeStr(body.id) || makeId("art");
 
-    if (artists.some((a) => a.id === id)) {
+    if (store.artists.some((a) => a.id === id)) {
       return bad(res, "Artist id already exists");
     }
 
@@ -340,8 +335,8 @@ router.post("/", async (req, res) => {
       updatedAt: nowIso(),
     };
 
-    artists.push(artist);
-    await writeStore({ artists });
+    store.artists.push(artist);
+    await writeStore(store);
 
     return created(res, toPublicArtist(artist));
   } catch (e) {
@@ -350,8 +345,8 @@ router.post("/", async (req, res) => {
 });
 
 /**
- * PUT /artists/:id (full replace-ish)
- * PATCH /artists/:id (partial update)
+ * PUT /artists/:id
+ * PATCH /artists/:id
  */
 async function updateArtist(req, res, isPatch) {
   try {
@@ -364,10 +359,8 @@ async function updateArtist(req, res, isPatch) {
     if (idx === -1) return notFound(res);
 
     const current = store.artists[idx];
-
     const next = { ...current };
 
-    // Only overwrite on PUT; on PATCH only apply provided keys
     const apply = (key, value) => {
       if (!isPatch) {
         next[key] = value;
@@ -444,7 +437,7 @@ router.delete("/:id", async (req, res) => {
 
 /**
  * POST /artists/:id/votes
- * Body: { amount?: number }  (default 1)
+ * Body: { amount?: number } (default 1)
  */
 router.post("/:id/votes", async (req, res) => {
   try {
@@ -472,4 +465,8 @@ router.post("/:id/votes", async (req, res) => {
   }
 });
 
-module.exports = router;
+// ✅ REQUIRED named export for server.js:  import { artistsRouter } from "./artists.js";
+export const artistsRouter = router;
+
+// Optional default export (harmless)
+export default router;
