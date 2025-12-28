@@ -1,99 +1,60 @@
+// server.js
 import express from "express";
 import cors from "cors";
-import helmet from "helmet";
-import morgan from "morgan";
-import rateLimit from "express-rate-limit";
 
 import { artistsRouter } from "./artists.js";
+import { commentsRouter } from "./comments.js";
 
 const app = express();
-
-/**
- * Core middleware
- */
-app.set("trust proxy", 1);
 
 app.use(
   cors({
     origin: "*",
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
     allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 
-app.use(
-  helmet({
-    crossOriginResourcePolicy: false,
-  })
-);
-
-app.use(
-  rateLimit({
-    windowMs: 60 * 1000,
-    max: 300,
-    standardHeaders: true,
-    legacyHeaders: false,
-  })
-);
-
 app.use(express.json({ limit: "1mb" }));
-app.use(express.urlencoded({ extended: true }));
-app.use(morgan("tiny"));
 
-/**
- * Health + root
- */
-app.get("/", (req, res) => {
-  res.json({
-    success: true,
-    name: "iBand Backend",
-    status: "ok",
-    now: new Date().toISOString(),
-  });
-});
-
+// Health
 app.get("/health", (req, res) => {
-  res.json({
+  return res.status(200).json({
     success: true,
     status: "ok",
     service: "iband-backend",
-    now: new Date().toISOString(),
+    ts: new Date().toISOString(),
   });
 });
 
-/**
- * Routes (mounted at BOTH root and /api for maximum compatibility)
- * Frontend calls /artists and /health
- * Admin or future clients can use /api/artists too
- */
+// Artists (existing)
 app.use("/artists", artistsRouter);
-app.use("/api/artists", artistsRouter);
 
-/**
- * 404
- */
+// Comments (Phase 2.2.1)
+app.use("/", commentsRouter);
+
+// Root
+app.get("/", (req, res) => {
+  res.status(200).json({
+    success: true,
+    service: "iband-backend",
+    endpoints: {
+      health: "/health",
+      artists: "/artists",
+      artistById: "/artists/:id",
+      votes: "/artists/:id/votes",
+      comments: "/comments?artistId=:id",
+      artistComments: "/artists/:id/comments",
+    },
+  });
+});
+
+// 404 JSON
 app.use((req, res) => {
-  res.status(404).json({
-    success: false,
-    message: "Route not found.",
-    path: req.originalUrl,
-  });
+  res.status(404).json({ success: false, error: "Not found" });
 });
 
-/**
- * Error handler
- */
-app.use((err, req, res, next) => {
-  const status = Number(err?.status || 500);
-  res.status(status).json({
-    success: false,
-    message: err?.message || "Internal server error",
-    status,
-  });
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  // eslint-disable-next-line no-console
-  console.log(`iBand backend listening on port ${PORT}`);
+const port = process.env.PORT || 10000;
+app.listen(port, () => {
+  console.log(`iBand backend listening on port ${port}`);
 });
