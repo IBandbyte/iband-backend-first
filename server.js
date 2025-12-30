@@ -4,6 +4,7 @@ import cors from "cors";
 
 import { artistsRouter } from "./artists.js";
 import { commentsRouter } from "./comments.js";
+import { registerAdminArtists } from "./adminArtists.js";
 
 const app = express();
 
@@ -11,7 +12,7 @@ app.use(
   cors({
     origin: "*",
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Admin-Key"],
   })
 );
 
@@ -33,6 +34,9 @@ app.use("/artists", artistsRouter);
 // Comments (Phase 2.2.1)
 app.use("/", commentsRouter);
 
+// Admin moderation (Phase 2.2.3)
+registerAdminArtists(app);
+
 // Root
 app.get("/", (req, res) => {
   res.status(200).json({
@@ -45,6 +49,11 @@ app.get("/", (req, res) => {
       votes: "/artists/:id/votes",
       comments: "/comments?artistId=:id",
       artistComments: "/artists/:id/comments",
+      adminArtists: "/admin/artists?status=pending",
+      adminApprove: "/admin/artists/:id/approve",
+      adminReject: "/admin/artists/:id/reject",
+      adminRestore: "/admin/artists/:id/restore",
+      adminStats: "/admin/stats",
     },
   });
 });
