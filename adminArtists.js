@@ -2,17 +2,23 @@
  * adminArtists.js
  * Phase 2.2.3 — Admin Moderation Panel (Artists)
  *
- * Goals:
- * - Admin-only endpoints to moderate artist submissions (pending/active/rejected)
- * - Works even if artistsStore API differs (defensive adapters)
- * - Optional admin auth via ADMIN_KEY (if not set, routes are open for dev)
+ * What this file does:
+ * - Adds admin endpoints for artist moderation: pending/active/rejected
+ * - Optional auth via ADMIN_KEY (if not set -> dev mode open)
+ * - Defensive adapter around artistsStore.js (doesn't assume exact function names)
  *
- * Expected artist fields (flexible):
- * - id / _id / slug
- * - name, genre, location, bio, imageUrl, socials, tracks
- * - status: "pending" | "active" | "rejected"
- * - createdAt, updatedAt
+ * Routes exposed (both aliases):
+ * - /admin/artists
+ * - /api/admin/artists
+ * - /admin/artists/:id
+ * - /api/admin/artists/:id
+ * - /admin/artists/:id/approve | reject | restore
+ * - /api/admin/artists/:id/approve | reject | restore
+ * - /admin/stats
+ * - /api/admin/stats
  */
+
+import * as storeModule from "./artistsStore.js";
 
 function makeId(raw) {
   if (raw === null || raw === undefined) return "";
@@ -25,7 +31,9 @@ function nowIso() {
 
 function pick(obj, keys) {
   const out = {};
-  for (const k of keys) if (obj && Object.prototype.hasOwnProperty.call(obj, k)) out[k] = obj[k];
+  for (const k of keys) {
+    if (obj && Object.prototype.hasOwnProperty.call(obj, k)) out[k] = obj[k];
+  }
   return out;
 }
 
@@ -42,7 +50,8 @@ function ensureArray(v) {
 
 /**
  * Defensive adapter around artistsStore.js
- * We don’t assume exact function names — we try common ones.
+ * - Tries common function names
+ * - Falls back to in-memory arrays if present
  */
 function createArtistsStoreAdapter(store) {
   const fn = (names) => names.map((n) => store && store[n]).find((f) => typeof f === "function");
@@ -53,7 +62,6 @@ function createArtistsStoreAdapter(store) {
   const deleteFn = fn(["deleteArtist", "removeArtist", "deleteById", "removeById"]);
   const saveFn = fn(["save", "persist", "write", "flush"]);
 
-  // fallback data references (in-memory store style)
   const getArrayRef = () => {
     if (!store) return null;
     if (Array.isArray(store.artists)) return store.artists;
@@ -74,7 +82,7 @@ function createArtistsStoreAdapter(store) {
 
     if (getFn) return getFn(cleanId);
 
-    const arr = await list();
+    const arr = ensureArray(await list());
     return (
       arr.find((a) => makeId(a.id) === cleanId) ||
       arr.find((a) => makeId(a._id) === cleanId) ||
@@ -89,7 +97,6 @@ function createArtistsStoreAdapter(store) {
 
     if (updateFn) return updateFn(cleanId, patch);
 
-    // fallback mutate in-memory
     const arr = getArrayRef();
     if (!arr) return null;
 
@@ -147,12 +154,12 @@ function createArtistsStoreAdapter(store) {
 
 /**
  * Optional admin auth:
- * - If process.env.ADMIN_KEY exists: require header "x-admin-key" match
- * - If not set: allow all (dev)
+ * - If ADMIN_KEY exists => require header x-admin-key to match
+ * - If not set => open (dev)
  */
 function requireAdmin(req, res, next) {
   const key = (process.env.ADMIN_KEY || "").trim();
-  if (!key) return next(); // dev mode
+  if (!key) return next();
 
   const got = String(req.headers["x-admin-key"] || "").trim();
   if (!got || got !== key) {
@@ -178,18 +185,7 @@ function paginate(items, page, limit) {
 }
 
 function sanitizePatch(body) {
-  // Allow only safe editable fields for admin PATCH
-  const allowed = [
-    "name",
-    "genre",
-    "location",
-    "bio",
-    "imageUrl",
-    "socials",
-    "tracks",
-    "status",
-  ];
-
+  const allowed = ["name", "genre", "location", "bio", "imageUrl", "socials", "tracks", "status"];
   const patch = pick(body || {}, allowed);
 
   if (patch.status) {
@@ -204,21 +200,10 @@ function sanitizePatch(body) {
   return patch;
 }
 
-module.exports = function registerAdminArtists(app) {
-  // Lazy require so this file can be loaded even if store path changes
-  // (your repo shows artistsStore.js at root)
-  // If you later move it, update this require only.
-  // eslint-disable-next-line global-require
-  const store = require("./artistsStore");
+export function registerAdminArtists(app) {
+  // artistsStore.js could export via default or named exports; support both:
+  const store = storeModule?.default && typeof storeModule.default === "object" ? storeModule.default : storeModule;
   const Artists = createArtistsStoreAdapter(store);
-
-  /**
-   * ROUTES
-   * We expose BOTH:
-   * - /admin/artists/... (human-friendly)
-   * - /api/admin/artists/... (API-friendly)
-   * so frontend can choose later without changing backend again.
-   */
 
   // LIST
   app.get(["/admin/artists", "/api/admin/artists"], requireAdmin, async (req, res) => {
@@ -228,10 +213,8 @@ module.exports = function registerAdminArtists(app) {
       const page = req.query.page;
       const limit = req.query.limit;
 
-      let all = await Artists.list();
-      all = ensureArray(all);
+      let all = ensureArray(await Artists.list());
 
-      // Normalize id field for sorting/filtering; do not overwrite originals
       const normalized = all.map((a) => ({
         ...a,
         __id: makeId(a.id || a._id || a.slug || ""),
@@ -254,7 +237,6 @@ module.exports = function registerAdminArtists(app) {
         });
       }
 
-      // Sort newest-first if createdAt exists, else stable by name
       filtered.sort((a, b) => {
         const ta = Date.parse(a.createdAt || "") || 0;
         const tb = Date.parse(b.createdAt || "") || 0;
@@ -262,7 +244,6 @@ module.exports = function registerAdminArtists(app) {
         return String(a.name || "").localeCompare(String(b.name || ""));
       });
 
-      // strip internal helper props from output
       const out = filtered.map(({ __id, __status, __name, __genre, __location, ...rest }) => rest);
 
       return res.json({ success: true, ...paginate(out, page, limit) });
@@ -272,40 +253,32 @@ module.exports = function registerAdminArtists(app) {
   });
 
   // GET ONE
-  app.get(
-    ["/admin/artists/:id", "/api/admin/artists/:id"],
-    requireAdmin,
-    async (req, res) => {
-      try {
-        const id = req.params.id;
-        const artist = await Artists.get(id);
-        if (!artist) return res.status(404).json({ success: false, error: "Not found" });
-        return res.json({ success: true, data: artist });
-      } catch (e) {
-        return res.status(500).json({ success: false, error: e?.message || "Server error" });
-      }
+  app.get(["/admin/artists/:id", "/api/admin/artists/:id"], requireAdmin, async (req, res) => {
+    try {
+      const id = req.params.id;
+      const artist = await Artists.get(id);
+      if (!artist) return res.status(404).json({ success: false, error: "Not found" });
+      return res.json({ success: true, data: artist });
+    } catch (e) {
+      return res.status(500).json({ success: false, error: e?.message || "Server error" });
     }
-  );
+  });
 
   // PATCH (edit fields)
-  app.patch(
-    ["/admin/artists/:id", "/api/admin/artists/:id"],
-    requireAdmin,
-    async (req, res) => {
-      try {
-        const id = req.params.id;
-        const existing = await Artists.get(id);
-        if (!existing) return res.status(404).json({ success: false, error: "Not found" });
+  app.patch(["/admin/artists/:id", "/api/admin/artists/:id"], requireAdmin, async (req, res) => {
+    try {
+      const id = req.params.id;
+      const existing = await Artists.get(id);
+      if (!existing) return res.status(404).json({ success: false, error: "Not found" });
 
-        const patch = sanitizePatch(req.body);
-        const updated = await Artists.update(id, { ...patch, updatedAt: nowIso() });
+      const patch = sanitizePatch(req.body);
+      const updated = await Artists.update(id, { ...patch, updatedAt: nowIso() });
 
-        return res.json({ success: true, data: updated || { ...existing, ...patch } });
-      } catch (e) {
-        return res.status(500).json({ success: false, error: e?.message || "Server error" });
-      }
+      return res.json({ success: true, data: updated || { ...existing, ...patch } });
+    } catch (e) {
+      return res.status(500).json({ success: false, error: e?.message || "Server error" });
     }
-  );
+  });
 
   // APPROVE
   app.post(
@@ -343,7 +316,7 @@ module.exports = function registerAdminArtists(app) {
     }
   );
 
-  // RESTORE → pending
+  // RESTORE -> pending
   app.post(
     ["/admin/artists/:id/restore", "/api/admin/artists/:id/restore"],
     requireAdmin,
@@ -362,24 +335,20 @@ module.exports = function registerAdminArtists(app) {
   );
 
   // DELETE
-  app.delete(
-    ["/admin/artists/:id", "/api/admin/artists/:id"],
-    requireAdmin,
-    async (req, res) => {
-      try {
-        const id = req.params.id;
-        const existing = await Artists.get(id);
-        if (!existing) return res.status(404).json({ success: false, error: "Not found" });
+  app.delete(["/admin/artists/:id", "/api/admin/artists/:id"], requireAdmin, async (req, res) => {
+    try {
+      const id = req.params.id;
+      const existing = await Artists.get(id);
+      if (!existing) return res.status(404).json({ success: false, error: "Not found" });
 
-        const ok = await Artists.remove(id);
-        return res.json({ success: true, data: { id: makeId(id), deleted: !!ok } });
-      } catch (e) {
-        return res.status(500).json({ success: false, error: e?.message || "Server error" });
-      }
+      const ok = await Artists.remove(id);
+      return res.json({ success: true, data: { id: makeId(id), deleted: !!ok } });
+    } catch (e) {
+      return res.status(500).json({ success: false, error: e?.message || "Server error" });
     }
-  );
+  });
 
-  // SIMPLE STATS (counts by status)
+  // STATS
   app.get(["/admin/stats", "/api/admin/stats"], requireAdmin, async (req, res) => {
     try {
       const all = ensureArray(await Artists.list());
@@ -395,4 +364,4 @@ module.exports = function registerAdminArtists(app) {
       return res.status(500).json({ success: false, error: e?.message || "Server error" });
     }
   });
-};
+}
