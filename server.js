@@ -1,17 +1,14 @@
-// server.js
+// server.js (root) — ESM
 import express from "express";
 import cors from "cors";
 
 import { artistsRouter } from "./artists.js";
 import { commentsRouter } from "./comments.js";
-
-// IMPORTANT:
-// adminArtists.js MUST be ESM and export default function registerAdminArtists(app)
-// We will make that change next (adminArtists.js full file replacement).
 import registerAdminArtists from "./adminArtists.js";
 
 const app = express();
 
+// CORS (Hoppscotch + Vercel safe)
 app.use(
   cors({
     origin: "*",
@@ -35,7 +32,7 @@ app.get("/health", (req, res) => {
 // Artists
 app.use("/artists", artistsRouter);
 
-// Comments (Phase 2.2.1)
+// Comments (Phase 2.2.1 uses /comments and /artists/:id/comments)
 app.use("/", commentsRouter);
 
 // Admin moderation (Phase 2.2.3)
@@ -55,13 +52,6 @@ app.get("/", (req, res) => {
       artistComments: "/artists/:id/comments",
       adminArtists: "/admin/artists",
       adminStats: "/admin/stats",
-      adminApprove: "/admin/artists/:id/approve",
-      adminReject: "/admin/artists/:id/reject",
-      adminRestore: "/admin/artists/:id/restore",
-    },
-    notes: {
-      adminAuth:
-        "If ADMIN_KEY is set on Render, send header x-admin-key: <ADMIN_KEY> to access /admin routes.",
     },
   });
 });
