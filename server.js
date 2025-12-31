@@ -1,22 +1,17 @@
 // server.js
-// iBand Backend — Phase 2.2.x
-// ESM ONLY (package.json has "type": "module")
-
 import express from "express";
 import cors from "cors";
 
 import { artistsRouter } from "./artists.js";
 import { commentsRouter } from "./comments.js";
 
-// adminArtists.js is CommonJS-style (module.exports = function)
-// In ESM, import it and call it defensively.
-import adminArtistsModule from "./adminArtists.js";
+// IMPORTANT:
+// adminArtists.js MUST be ESM and export default function registerAdminArtists(app)
+// We will make that change next (adminArtists.js full file replacement).
+import registerAdminArtists from "./adminArtists.js";
 
 const app = express();
 
-/* -----------------------------
-   Global Middleware
--------------------------------- */
 app.use(
   cors({
     origin: "*",
@@ -27,9 +22,7 @@ app.use(
 
 app.use(express.json({ limit: "1mb" }));
 
-/* -----------------------------
-   Health Check
--------------------------------- */
+// Health
 app.get("/health", (req, res) => {
   return res.status(200).json({
     success: true,
@@ -39,33 +32,16 @@ app.get("/health", (req, res) => {
   });
 });
 
-/* -----------------------------
-   Core Routes
--------------------------------- */
+// Artists
 app.use("/artists", artistsRouter);
 
 // Comments (Phase 2.2.1)
 app.use("/", commentsRouter);
 
-/* -----------------------------
-   Admin Routes (Phase 2.2.3)
--------------------------------- */
-const registerAdminArtists =
-  typeof adminArtistsModule === "function"
-    ? adminArtistsModule
-    : typeof adminArtistsModule?.default === "function"
-      ? adminArtistsModule.default
-      : null;
+// Admin moderation (Phase 2.2.3)
+registerAdminArtists(app);
 
-if (registerAdminArtists) {
-  registerAdminArtists(app);
-} else {
-  console.warn("⚠️ adminArtists.js did not export a callable function (admin routes NOT mounted).");
-}
-
-/* -----------------------------
-   Root Info
--------------------------------- */
+// Root
 app.get("/", (req, res) => {
   res.status(200).json({
     success: true,
@@ -77,30 +53,25 @@ app.get("/", (req, res) => {
       votes: "/artists/:id/votes",
       comments: "/comments?artistId=:id",
       artistComments: "/artists/:id/comments",
-
-      // Admin
       adminArtists: "/admin/artists",
-      adminArtistById: "/admin/artists/:id",
+      adminStats: "/admin/stats",
       adminApprove: "/admin/artists/:id/approve",
       adminReject: "/admin/artists/:id/reject",
       adminRestore: "/admin/artists/:id/restore",
-      adminDelete: "/admin/artists/:id",
-      adminStats: "/admin/stats",
+    },
+    notes: {
+      adminAuth:
+        "If ADMIN_KEY is set on Render, send header x-admin-key: <ADMIN_KEY> to access /admin routes.",
     },
   });
 });
 
-/* -----------------------------
-   404 Handler
--------------------------------- */
+// 404 JSON
 app.use((req, res) => {
   res.status(404).json({ success: false, error: "Not found" });
 });
 
-/* -----------------------------
-   Boot Server
--------------------------------- */
 const port = process.env.PORT || 10000;
 app.listen(port, () => {
-  console.log(`🚀 iBand backend listening on port ${port}`);
+  console.log(`iBand backend listening on port ${port}`);
 });
