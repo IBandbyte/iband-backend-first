@@ -1,14 +1,23 @@
-// server.js (root) — ESM
+// server.js — iBand Backend (ESM-safe, Render-safe)
+
 import express from "express";
 import cors from "cors";
+import { createRequire } from "module";
 
 import { artistsRouter } from "./artists.js";
 import { commentsRouter } from "./comments.js";
-import registerAdminArtists from "./adminArtists.js";
+
+// 🔐 REQUIRED to load CommonJS modules inside ESM
+const require = createRequire(import.meta.url);
+
+// adminArtists.js is CommonJS (module.exports = fn)
+const registerAdminArtists = require("./adminArtists.js");
 
 const app = express();
 
-// CORS (Hoppscotch + Vercel safe)
+// ----------------------
+// Middleware
+// ----------------------
 app.use(
   cors({
     origin: "*",
@@ -19,7 +28,9 @@ app.use(
 
 app.use(express.json({ limit: "1mb" }));
 
+// ----------------------
 // Health
+// ----------------------
 app.get("/health", (req, res) => {
   return res.status(200).json({
     success: true,
@@ -29,16 +40,21 @@ app.get("/health", (req, res) => {
   });
 });
 
-// Artists
+// ----------------------
+// Core Routes
+// ----------------------
 app.use("/artists", artistsRouter);
-
-// Comments (Phase 2.2.1 uses /comments and /artists/:id/comments)
 app.use("/", commentsRouter);
 
-// Admin moderation (Phase 2.2.3)
+// ----------------------
+// Admin Routes (Phase 2.2.3)
+// IMPORTANT: this MUST be mounted AFTER app creation
+// ----------------------
 registerAdminArtists(app);
 
-// Root
+// ----------------------
+// Root Index
+// ----------------------
 app.get("/", (req, res) => {
   res.status(200).json({
     success: true,
@@ -48,20 +64,27 @@ app.get("/", (req, res) => {
       artists: "/artists",
       artistById: "/artists/:id",
       votes: "/artists/:id/votes",
-      comments: "/comments?artistId=:id",
-      artistComments: "/artists/:id/comments",
+      comments: "/artists/:id/comments",
       adminArtists: "/admin/artists",
+      adminApprove: "/admin/artists/:id/approve",
+      adminReject: "/admin/artists/:id/reject",
+      adminRestore: "/admin/artists/:id/restore",
       adminStats: "/admin/stats",
     },
   });
 });
 
-// 404 JSON
+// ----------------------
+// 404 JSON (must be last)
+// ----------------------
 app.use((req, res) => {
   res.status(404).json({ success: false, error: "Not found" });
 });
 
+// ----------------------
+// Server
+// ----------------------
 const port = process.env.PORT || 10000;
 app.listen(port, () => {
-  console.log(`iBand backend listening on port ${port}`);
+  console.log(`🚀 iBand backend listening on port ${port}`);
 });
