@@ -1,110 +1,166 @@
-// commentsStore.js
-// In-memory comments store (Phase 2.2.1)
-// Future-proofed for DB swap later.
+/**
+ * commentsStore.js (ESM)
+ * Single source of truth for comment persistence.
+ *
+ * Supports:
+ * - listComments({ artistId })
+ * - getComment(id)
+ * - createComment({ artistId, name, text })
+ * - deleteComment(id)
+ * - save()
+ *
+ * Storage:
+ * - db/comments.json (if writable) + in-memory fallback
+ */
 
+import fs from "fs";
+import path from "path";
 import crypto from "crypto";
 
 function nowIso() {
   return new Date().toISOString();
 }
 
-function makeId() {
-  // Works in Node 18+
-  if (crypto.randomUUID) return crypto.randomUUID();
-  return crypto.randomBytes(16).toString("hex");
+function safeText(v) {
+  if (v === null || v === undefined) return "";
+  return String(v);
 }
 
-function cleanText(v, maxLen) {
-  const s = String(v ?? "").trim();
+function isNonEmptyString(v) {
+  return typeof v === "string" && v.trim().length > 0;
+}
+
+function clampText(v, max = 2000) {
+  const s = safeText(v).trim();
   if (!s) return "";
-  return s.length > maxLen ? s.slice(0, maxLen) : s;
+  return s.length > max ? s.slice(0, max) : s;
 }
 
-class CommentsStore {
-  constructor() {
-    this.byId = new Map(); // commentId -> comment
-    this.byArtist = new Map(); // artistId -> [commentId... newest first]
-  }
+function makeId() {
+  return crypto.randomUUID();
+}
 
-  listByArtistId(artistId, { limit = 50, page = 1 } = {}) {
-    const aId = String(artistId ?? "").trim();
-    if (!aId) return { items: [], total: 0, page: 1, limit };
+function ensureArray(v) {
+  return Array.isArray(v) ? v : [];
+}
 
-    const ids = this.byArtist.get(aId) || [];
-    const total = ids.length;
+function normalizeComment(raw) {
+  const c = raw || {};
+  const id = safeText(c.id || c._id || "").trim() || makeId();
 
-    const safeLimit = Math.max(1, Math.min(Number(limit) || 50, 100));
-    const safePage = Math.max(1, Number(page) || 1);
-    const start = (safePage - 1) * safeLimit;
-    const end = start + safeLimit;
+  return {
+    id,
+    artistId: safeText(c.artistId || "").trim(),
+    name: clampText(c.name || "Anonymous", 80) || "Anonymous",
+    text: clampText(c.text || "", 2000),
+    createdAt: isNonEmptyString(c.createdAt) ? c.createdAt : nowIso(),
+    updatedAt: isNonEmptyString(c.updatedAt) ? c.updatedAt : nowIso(),
+  };
+}
 
-    const items = ids.slice(start, end).map((id) => this.byId.get(id)).filter(Boolean);
+const ROOT = process.cwd();
+const DB_DIR = path.join(ROOT, "db");
+const DB_FILE = path.join(DB_DIR, "comments.json");
 
-    return { items, total, page: safePage, limit: safeLimit };
-  }
+// In-memory store
+let comments = [];
 
-  add({ artistId, name, text }) {
-    const aId = String(artistId ?? "").trim();
-    if (!aId) {
-      const err = new Error("artistId is required");
-      err.status = 400;
-      throw err;
+function loadFromDisk() {
+  try {
+    if (!fs.existsSync(DB_FILE)) {
+      comments = [];
+      return;
     }
-
-    const cleanName = cleanText(name, 60) || "Anonymous";
-    const cleanBody = cleanText(text, 500);
-    if (!cleanBody) {
-      const err = new Error("text is required");
-      err.status = 400;
-      throw err;
-    }
-
-    const id = makeId();
-    const comment = {
-      id,
-      artistId: aId,
-      name: cleanName,
-      text: cleanBody,
-      createdAt: nowIso(),
-    };
-
-    this.byId.set(id, comment);
-
-    const arr = this.byArtist.get(aId) || [];
-    arr.unshift(id); // newest first
-    this.byArtist.set(aId, arr);
-
-    return comment;
-  }
-
-  remove(commentId) {
-    const id = String(commentId ?? "").trim();
-    if (!id) return null;
-
-    const existing = this.byId.get(id);
-    if (!existing) return null;
-
-    this.byId.delete(id);
-
-    const aId = existing.artistId;
-    const arr = this.byArtist.get(aId) || [];
-    const next = arr.filter((x) => x !== id);
-    this.byArtist.set(aId, next);
-
-    return existing;
-  }
-
-  stats() {
-    let total = this.byId.size;
-    let artists = this.byArtist.size;
-    return { totalComments: total, artistsWithComments: artists };
-  }
-
-  // Useful for tests / admin later
-  clearAll() {
-    this.byId.clear();
-    this.byArtist.clear();
+    const raw = fs.readFileSync(DB_FILE, "utf8");
+    const parsed = JSON.parse(raw);
+    const list = ensureArray(parsed?.data || parsed?.comments || parsed);
+    comments = list.map(normalizeComment);
+  } catch {
+    comments = [];
   }
 }
 
-export const commentsStore = new CommentsStore();
+function saveToDisk() {
+  try {
+    if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true });
+    const payload = { updatedAt: nowIso(), data: comments };
+    fs.writeFileSync(DB_FILE, JSON.stringify(payload, null, 2), "utf8");
+    return true;
+  } catch {
+    // Render disk can be ephemeral; keep in-memory working regardless
+    return false;
+  }
+}
+
+// Load once
+loadFromDisk();
+
+/** PUBLIC API **/
+
+export function listComments({ artistId } = {}) {
+  const aId = safeText(artistId).trim();
+  const list = ensureArray(comments);
+
+  if (!aId) return list;
+
+  return list.filter((c) => safeText(c.artistId).trim() === aId);
+}
+
+export function getComment(id) {
+  const cId = safeText(id).trim();
+  if (!cId) return null;
+  return comments.find((c) => safeText(c.id).trim() === cId) || null;
+}
+
+export function createComment({ artistId, name, text } = {}) {
+  const aId = safeText(artistId).trim();
+  const t = clampText(text, 2000);
+
+  if (!aId) {
+    return { error: "artistId is required" };
+  }
+  if (!t) {
+    return { error: "text is required" };
+  }
+
+  const c = normalizeComment({
+    id: makeId(),
+    artistId: aId,
+    name: clampText(name || "Anonymous", 80) || "Anonymous",
+    text: t,
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+  });
+
+  comments.unshift(c);
+  saveToDisk();
+  return c;
+}
+
+export function deleteComment(id) {
+  const cId = safeText(id).trim();
+  if (!cId) return false;
+
+  const idx = comments.findIndex((c) => safeText(c.id).trim() === cId);
+  if (idx === -1) return false;
+
+  comments.splice(idx, 1);
+  saveToDisk();
+  return true;
+}
+
+export function save() {
+  return saveToDisk();
+}
+
+// Optional default export for compatibility
+export default {
+  listComments,
+  getComment,
+  createComment,
+  deleteComment,
+  save,
+  get comments() {
+    return comments;
+  },
+};
