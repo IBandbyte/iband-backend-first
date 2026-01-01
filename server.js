@@ -1,4 +1,4 @@
-// server.js (ESM ONLY — no CommonJS)
+// server.js (ESM ONLY)
 
 import express from "express";
 import cors from "cors";
@@ -9,24 +9,19 @@ import { registerAdminArtists } from "./adminArtists.js";
 
 const app = express();
 
-/* =========================
-   Middleware
-========================= */
 app.use(
   cors({
     origin: "*",
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "x-admin-key"],
   })
 );
 
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json());
 
-/* =========================
-   Health Check
-========================= */
+// Health
 app.get("/health", (req, res) => {
-  return res.status(200).json({
+  res.json({
     success: true,
     status: "ok",
     service: "iband-backend",
@@ -34,53 +29,33 @@ app.get("/health", (req, res) => {
   });
 });
 
-/* =========================
-   Core Routes
-========================= */
+// Core routes
 app.use("/artists", artistsRouter);
 app.use("/", commentsRouter);
 
-/* =========================
-   Admin Routes (CRITICAL)
-========================= */
+// ✅ ADMIN ROUTES MOUNTED HERE
 registerAdminArtists(app);
 
-/* =========================
-   Root Info
-========================= */
+// Root
 app.get("/", (req, res) => {
-  res.status(200).json({
+  res.json({
     success: true,
     service: "iband-backend",
     endpoints: {
       health: "/health",
       artists: "/artists",
-      artistById: "/artists/:id",
-      votes: "/artists/:id/votes",
-      comments: "/comments?artistId=:id",
       adminArtists: "/admin/artists",
-      adminApprove: "/admin/artists/:id/approve",
-      adminReject: "/admin/artists/:id/reject",
       adminStats: "/admin/stats",
     },
   });
 });
 
-/* =========================
-   404 JSON (must be last)
-========================= */
+// 404
 app.use((req, res) => {
-  res.status(404).json({
-    success: false,
-    error: "Not found",
-  });
+  res.status(404).json({ success: false, error: "Not found" });
 });
 
-/* =========================
-   Boot
-========================= */
 const port = process.env.PORT || 10000;
-
 app.listen(port, () => {
-  console.log(`🚀 iBand backend listening on port ${port}`);
+  console.log(`🚀 iBand backend running on port ${port}`);
 });
