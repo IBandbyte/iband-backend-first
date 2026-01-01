@@ -1,4 +1,4 @@
-// server.js (ESM ONLY)
+// server.js (ESM ONLY — FINAL)
 
 import express from "express";
 import cors from "cors";
@@ -9,6 +9,8 @@ import { registerAdminArtists } from "./adminArtists.js";
 
 const app = express();
 
+/* -------------------- Middleware -------------------- */
+
 app.use(
   cors({
     origin: "*",
@@ -17,45 +19,58 @@ app.use(
   })
 );
 
-app.use(express.json());
+app.use(express.json({ limit: "1mb" }));
 
-// Health
+/* -------------------- Health -------------------- */
+
 app.get("/health", (req, res) => {
-  res.json({
+  res.status(200).json({
     success: true,
-    status: "ok",
     service: "iband-backend",
+    status: "ok",
     ts: new Date().toISOString(),
   });
 });
 
-// Core routes
+/* -------------------- Core Routes -------------------- */
+
+// Artists (public)
 app.use("/artists", artistsRouter);
+
+// Comments (Phase 2.2.1)
 app.use("/", commentsRouter);
 
-// ✅ ADMIN ROUTES MOUNTED HERE
+// Admin moderation (Phase 2.2.3)
 registerAdminArtists(app);
 
-// Root
+/* -------------------- Root -------------------- */
+
 app.get("/", (req, res) => {
-  res.json({
+  res.status(200).json({
     success: true,
     service: "iband-backend",
     endpoints: {
       health: "/health",
       artists: "/artists",
+      artistById: "/artists/:id",
+      votes: "/artists/:id/votes",
+      comments: "/comments?artistId=:id",
       adminArtists: "/admin/artists",
       adminStats: "/admin/stats",
     },
   });
 });
 
-// 404
+/* -------------------- 404 -------------------- */
+
 app.use((req, res) => {
   res.status(404).json({ success: false, error: "Not found" });
 });
 
+/* -------------------- Boot -------------------- */
+
 const port = process.env.PORT || 10000;
+
 app.listen(port, () => {
   console.log(`🚀 iBand backend running on port ${port}`);
 });
