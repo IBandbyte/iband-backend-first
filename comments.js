@@ -1,117 +1,153 @@
-// comments.js
-// Phase 2.2.1 - Comments API (live fan interaction)
+/**
+ * comments.js (ESM)
+ * Phase 2.2.A — Artist Comments + Admin Moderation
+ *
+ * Public:
+ * - GET  /comments?artistId=:id
+ * - POST /comments  { artistId, name, text }
+ * - GET  /artists/:id/comments
+ *
+ * Admin (requires x-admin-key only if ADMIN_KEY is set):
+ * - DELETE /admin/comments/:id
+ * - DELETE /api/admin/comments/:id
+ */
 
 import express from "express";
-import { commentsStore } from "./commentsStore.js";
+import * as commentsStore from "./commentsStore.js";
+import * as artistsStore from "./artistsStore.js";
 
 export const commentsRouter = express.Router();
 
-function toNumber(v, fallback) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : fallback;
+// ----------------------
+// Helpers
+// ----------------------
+function safeText(v) {
+  if (v === null || v === undefined) return "";
+  return String(v);
 }
 
-function ok(res, data, extra = {}) {
-  return res.status(200).json({ success: true, data, ...extra });
+function isNonEmptyString(v) {
+  return typeof v === "string" && v.trim().length > 0;
 }
 
-function created(res, data, extra = {}) {
-  return res.status(201).json({ success: true, data, ...extra });
+function normalizeName(v) {
+  const s = safeText(v).trim();
+  if (!s) return "Anonymous";
+  return s.length > 80 ? s.slice(0, 80) : s;
 }
 
-function fail(res, status, message, extra = {}) {
-  return res.status(status).json({ success: false, error: message, ...extra });
+function normalizeText(v) {
+  const s = safeText(v).trim();
+  if (!s) return "";
+  return s.length > 2000 ? s.slice(0, 2000) : s;
 }
 
-/**
- * GET /comments?artistId=demo&limit=50&page=1
- * Returns newest-first (store inserts newest first)
- */
+function normalizeArtistId(v) {
+  return safeText(v).trim();
+}
+
+function requireAdmin(req, res, next) {
+  const key = safeText(process.env.ADMIN_KEY).trim();
+  if (!key) return next(); // dev mode (open)
+
+  const got = safeText(req.headers["x-admin-key"]).trim();
+  if (!got || got !== key) {
+    return res.status(401).json({ success: false, error: "Unauthorized" });
+  }
+  return next();
+}
+
+function ok(res, data, meta) {
+  const payload = { success: true, data };
+  if (meta) payload.meta = meta;
+  return res.status(200).json(payload);
+}
+
+function badRequest(res, message, errors) {
+  const payload = { success: false, message: message || "Bad request." };
+  if (errors) payload.errors = errors;
+  return res.status(400).json(payload);
+}
+
+function notFound(res, message) {
+  return res.status(404).json({ success: false, message: message || "Not found." });
+}
+
+// ----------------------
+// Public routes
+// ----------------------
+
+// GET /comments?artistId=:id
 commentsRouter.get("/comments", (req, res) => {
-  try {
-    const artistId = String(req.query.artistId ?? "").trim();
-    if (!artistId) {
-      // In Phase 2.2.1 we only support artist scoped list for frontend.
-      return ok(res, { items: [], total: 0, page: 1, limit: 50 }, { note: "artistId required" });
-    }
+  const artistId = normalizeArtistId(req.query.artistId);
 
-    const limit = toNumber(req.query.limit, 50);
-    const page = toNumber(req.query.page, 1);
-
-    const result = commentsStore.listByArtistId(artistId, { limit, page });
-
-    return ok(res, {
-      artistId,
-      items: result.items,
-      total: result.total,
-      page: result.page,
-      limit: result.limit,
-    });
-  } catch (e) {
-    return fail(res, e.status || 500, e.message || "Failed to list comments");
-  }
+  const list = commentsStore.listComments({ artistId: artistId || undefined });
+  return ok(res, list, {
+    artistId: artistId || null,
+    total: Array.isArray(list) ? list.length : 0,
+  });
 });
 
-/**
- * POST /comments
- * Body: { artistId, name, text }
- */
-commentsRouter.post("/comments", (req, res) => {
-  try {
-    const { artistId, name, text } = req.body || {};
-    const comment = commentsStore.add({ artistId, name, text });
-    return created(res, comment);
-  } catch (e) {
-    return fail(res, e.status || 500, e.message || "Failed to add comment");
-  }
-});
-
-/**
- * Convenience aliases (nice for future UI)
- * GET  /artists/:id/comments
- * POST /artists/:id/comments  { name, text }
- */
+// GET /artists/:id/comments
 commentsRouter.get("/artists/:id/comments", (req, res) => {
-  try {
-    const artistId = String(req.params.id ?? "").trim();
-    const limit = toNumber(req.query.limit, 50);
-    const page = toNumber(req.query.page, 1);
+  const artistId = normalizeArtistId(req.params.id);
+  if (!artistId) return badRequest(res, "artistId is required");
 
-    const result = commentsStore.listByArtistId(artistId, { limit, page });
+  const artist = artistsStore.getArtist(artistId);
+  if (!artist) return notFound(res, "Artist not found.");
 
-    return ok(res, {
-      artistId,
-      items: result.items,
-      total: result.total,
-      page: result.page,
-      limit: result.limit,
-    });
-  } catch (e) {
-    return fail(res, e.status || 500, e.message || "Failed to list comments");
-  }
+  const list = commentsStore.listComments({ artistId });
+  return ok(res, list, { artistId, total: list.length });
 });
 
-commentsRouter.post("/artists/:id/comments", (req, res) => {
-  try {
-    const artistId = String(req.params.id ?? "").trim();
-    const { name, text } = req.body || {};
-    const comment = commentsStore.add({ artistId, name, text });
-    return created(res, comment);
-  } catch (e) {
-    return fail(res, e.status || 500, e.message || "Failed to add comment");
+// POST /comments  { artistId, name, text }
+commentsRouter.post("/comments", express.json({ limit: "50kb" }), (req, res) => {
+  const errors = [];
+
+  const artistId = normalizeArtistId(req.body?.artistId);
+  const name = normalizeName(req.body?.name);
+  const text = normalizeText(req.body?.text);
+
+  if (!artistId) errors.push({ field: "artistId", message: "artistId is required." });
+  if (!text) errors.push({ field: "text", message: "text is required." });
+
+  if (errors.length) return badRequest(res, "Validation failed.", errors);
+
+  const artist = artistsStore.getArtist(artistId);
+  if (!artist) return notFound(res, "Artist not found.");
+
+  const created = commentsStore.createComment({ artistId, name, text });
+  if (created?.error) {
+    return badRequest(res, created.error);
   }
+
+  return res.status(201).json({ success: true, data: created });
 });
 
-/**
- * DELETE /comments/:id
- * (No auth yet — admin phase will add protection.)
- */
-commentsRouter.delete("/comments/:id", (req, res) => {
-  try {
-    const removed = commentsStore.remove(req.params.id);
-    if (!removed) return fail(res, 404, "Comment not found");
-    return ok(res, removed);
-  } catch (e) {
-    return fail(res, e.status || 500, e.message || "Failed to delete comment");
-  }
+// ----------------------
+// Admin moderation
+// ----------------------
+
+// DELETE /admin/comments/:id
+commentsRouter.delete("/admin/comments/:id", requireAdmin, (req, res) => {
+  const id = safeText(req.params.id).trim();
+  if (!id) return badRequest(res, "id is required");
+
+  const existing = commentsStore.getComment(id);
+  if (!existing) return notFound(res, "Comment not found.");
+
+  const okDel = commentsStore.deleteComment(id);
+  return res.status(200).json({ success: true, data: { id, deleted: !!okDel } });
+});
+
+// DELETE /api/admin/comments/:id
+commentsRouter.delete("/api/admin/comments/:id", requireAdmin, (req, res) => {
+  const id = safeText(req.params.id).trim();
+  if (!id) return badRequest(res, "id is required");
+
+  const existing = commentsStore.getComment(id);
+  if (!existing) return notFound(res, "Comment not found.");
+
+  const okDel = commentsStore.deleteComment(id);
+  return res.status(200).json({ success: true, data: { id, deleted: !!okDel } });
 });
