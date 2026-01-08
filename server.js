@@ -1,11 +1,13 @@
-// server.js (F2)
-// iBand Backend - root-based layout (no /src)
-// Public APIs: /api/artists, /api/votes, /api/comments
-// Admin APIs:  /api/admin/*
-// Health:      /health
+// server.js
+// iBand Backend — ES Module entrypoint (authoritative)
 
-const express = require("express");
-const cors = require("cors");
+import express from "express";
+import cors from "cors";
+
+import artistsRouter from "./artists.js";
+import votesRouter from "./votes.js";
+import commentsRouter from "./comments.js";
+import adminRouter from "./admin.js";
 
 const app = express();
 
@@ -22,15 +24,8 @@ app.use(
 
 app.use(express.json({ limit: "1mb" }));
 
-// simple request id
-app.use((req, res, next) => {
-  req.requestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  res.setHeader("x-request-id", req.requestId);
-  next();
-});
-
 // ---------- Health ----------
-app.get("/", (req, res) => {
+app.get("/", (_req, res) => {
   res.json({
     success: true,
     message: "iBand backend is running",
@@ -38,7 +33,7 @@ app.get("/", (req, res) => {
   });
 });
 
-app.get("/health", (req, res) => {
+app.get("/health", (_req, res) => {
   res.json({
     status: "ok",
     uptime: process.uptime(),
@@ -47,11 +42,6 @@ app.get("/health", (req, res) => {
 });
 
 // ---------- Routes ----------
-const artistsRouter = require("./artists");
-const votesRouter = require("./votes");
-const commentsRouter = require("./comments");
-const adminRouter = require("./admin");
-
 app.use("/api/artists", artistsRouter);
 app.use("/api/votes", votesRouter);
 app.use("/api/comments", commentsRouter);
@@ -67,9 +57,8 @@ app.use((req, res) => {
 });
 
 // ---------- Error handler ----------
-app.use((err, req, res, next) => {
+app.use((err, req, res, _next) => {
   console.error("API_ERROR", {
-    requestId: req.requestId,
     path: req.originalUrl,
     message: err?.message,
   });
@@ -77,7 +66,6 @@ app.use((err, req, res, next) => {
   res.status(500).json({
     success: false,
     message: "Internal server error",
-    requestId: req.requestId,
   });
 });
 
@@ -88,4 +76,4 @@ app.listen(PORT, () => {
   console.log("our service is live 🎉");
 });
 
-module.exports = app;
+export default app;
