@@ -1,5 +1,4 @@
-// CommentsStore.js
-// iBand backend — in-memory comments store
+// CommentsStore.js (ESM)
 // Single source of truth for ALL comments (public + admin)
 
 class CommentsStore {
@@ -8,11 +7,8 @@ class CommentsStore {
     this.nextId = 1;
   }
 
-  // Create a new comment
   create({ artistId, author, text }) {
-    if (!artistId) {
-      throw new Error("artistId is required");
-    }
+    if (!artistId) throw new Error("artistId is required");
     if (!text || typeof text !== "string" || !text.trim()) {
       throw new Error("text is required");
     }
@@ -20,7 +16,7 @@ class CommentsStore {
     const comment = {
       id: String(this.nextId++),
       artistId: String(artistId),
-      author: author && author.trim() ? author.trim() : "Anonymous",
+      author: author && String(author).trim() ? String(author).trim() : "Anonymous",
       text: text.trim(),
       createdAt: new Date().toISOString(),
     };
@@ -29,62 +25,42 @@ class CommentsStore {
     return comment;
   }
 
-  // Get all comments
   getAll() {
     return this.comments;
   }
 
-  // Get comments for a specific artist
   getByArtist(artistId) {
-    return this.comments.filter(
-      (c) => c.artistId === String(artistId)
-    );
+    return this.comments.filter((c) => c.artistId === String(artistId));
   }
 
-  // Get single comment by ID
   getById(id) {
-    return this.comments.find(
-      (c) => c.id === String(id)
-    ) || null;
+    return this.comments.find((c) => c.id === String(id)) || null;
   }
 
-  // Update a comment (admin use)
   update(id, updates = {}) {
     const comment = this.getById(id);
     if (!comment) return null;
 
-    if (updates.author !== undefined) {
-      comment.author = updates.author;
-    }
-    if (updates.text !== undefined) {
-      comment.text = updates.text;
-    }
+    if (updates.author !== undefined) comment.author = updates.author;
+    if (updates.text !== undefined) comment.text = updates.text;
 
     comment.updatedAt = new Date().toISOString();
     return comment;
   }
 
-  // Delete a single comment
   delete(id) {
-    const index = this.comments.findIndex(
-      (c) => c.id === String(id)
-    );
+    const index = this.comments.findIndex((c) => c.id === String(id));
     if (index === -1) return false;
-
     this.comments.splice(index, 1);
     return true;
   }
 
-  // Delete all comments for an artist
   deleteByArtist(artistId) {
     const before = this.comments.length;
-    this.comments = this.comments.filter(
-      (c) => c.artistId !== String(artistId)
-    );
+    this.comments = this.comments.filter((c) => c.artistId !== String(artistId));
     return before - this.comments.length;
   }
 
-  // Reset all comments (admin use)
   reset() {
     const deleted = this.comments.length;
     this.comments = [];
@@ -93,5 +69,5 @@ class CommentsStore {
   }
 }
 
-// Export a SINGLE instance (shared memory)
-module.exports = new CommentsStore();
+const store = new CommentsStore();
+export default store;
