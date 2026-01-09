@@ -1,39 +1,42 @@
-// comments.js
-// Public comments API for iBand
-// Uses CommentsStore as the single source of truth
+// comments.js (ESM)
+// Public comments API
 
-const express = require("express");
+import express from "express";
+import commentsStore from "./commentsStore.js";
+
 const router = express.Router();
 
-const CommentsStore = require("./CommentsStore");
-
-// ---------- Create comment ----------
-// POST /api/comments
+/**
+ * POST /api/comments
+ * Create a new comment
+ */
 router.post("/", (req, res) => {
   try {
     const { artistId, author, text } = req.body || {};
-    const comment = CommentsStore.create({ artistId, author, text });
+    const created = commentsStore.create({ artistId, author, text });
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
-      message: "Comment created successfully",
-      comment,
+      message: "Comment created successfully.",
+      comment: created,
     });
   } catch (err) {
-    res.status(400).json({
+    return res.status(400).json({
       success: false,
-      message: err.message,
+      message: err.message || "Invalid request.",
     });
   }
 });
 
-// ---------- List comments by artist ----------
-// GET /api/comments/by-artist/:artistId
+/**
+ * GET /api/comments/by-artist/:artistId
+ * List comments for an artist
+ */
 router.get("/by-artist/:artistId", (req, res) => {
   const { artistId } = req.params;
-  const comments = CommentsStore.getByArtist(artistId);
+  const comments = commentsStore.getByArtistId(artistId);
 
-  res.json({
+  return res.status(200).json({
     success: true,
     artistId: String(artistId),
     count: comments.length,
@@ -41,4 +44,4 @@ router.get("/by-artist/:artistId", (req, res) => {
   });
 });
 
-module.exports = router;
+export default router;
