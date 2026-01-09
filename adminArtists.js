@@ -1,104 +1,188 @@
-// adminArtists.js — ESM ONLY
-// Admin moderation routes for artists
+import express from "express";
+import artistsStore from "./artistsStore.js";
 
-import {
-  listArtists,
-  getArtist,
-  updateArtist,
-  save,
-} from "./artistsStore.js";
+const router = express.Router();
 
 /**
- * Register admin artist moderation routes
- * @param {import("express").Express} app
+ * Helpers
  */
-export function registerAdminArtists(app) {
-  // ----------------------
-  // Middleware
-  // ----------------------
-  function requireAdmin(req, res, next) {
-    const expected = (process.env.ADMIN_KEY || "").trim();
-    if (!expected) return next(); // dev mode
-    if (req.headers["x-admin-key"] !== expected) {
-      return res.status(401).json({ success: false, error: "Unauthorized" });
-    }
-    next();
-  }
-
-  function normalizeStatus(s) {
-    return ["pending", "active", "rejected"].includes(s) ? s : "pending";
-  }
-
-  // ----------------------
-  // Routes
-  // ----------------------
-
-  // GET /admin/artists
-  app.get("/admin/artists", requireAdmin, (req, res) => {
-    const status = req.query.status;
-    let artists = listArtists();
-
-    if (status) {
-      artists = artists.filter((a) => a.status === status);
-    }
-
-    res.json({
-      success: true,
-      page: 1,
-      limit: 25,
-      total: artists.length,
-      data: artists,
-    });
-  });
-
-  // GET /admin/stats
-  app.get("/admin/stats", requireAdmin, (req, res) => {
-    const artists = listArtists();
-    const counts = { pending: 0, active: 0, rejected: 0 };
-
-    artists.forEach((a) => {
-      const s = normalizeStatus(a.status);
-      counts[s]++;
-    });
-
-    res.json({ success: true, data: counts });
-  });
-
-  // POST /admin/artists/:id/approve
-  app.post("/admin/artists/:id/approve", requireAdmin, (req, res) => {
-    const id = String(req.params.id);
-    const artist = getArtist(id);
-
-    if (!artist) {
-      return res.status(404).json({ success: false, error: "Not found" });
-    }
-
-    const updated = updateArtist(id, {
-      status: "active",
-      updatedAt: new Date().toISOString(),
-    });
-
-    save();
-
-    res.json({ success: true, data: updated });
-  });
-
-  // POST /admin/artists/:id/reject
-  app.post("/admin/artists/:id/reject", requireAdmin, (req, res) => {
-    const id = String(req.params.id);
-    const artist = getArtist(id);
-
-    if (!artist) {
-      return res.status(404).json({ success: false, error: "Not found" });
-    }
-
-    const updated = updateArtist(id, {
-      status: "rejected",
-      updatedAt: new Date().toISOString(),
-    });
-
-    save();
-
-    res.json({ success: true, data: updated });
-  });
+function isNonEmptyString(v) {
+  return typeof v === "string" && v.trim().length > 0;
 }
+
+function normalizeArtistPayload(body = {}) {
+  return {
+    name: isNonEmptyString(body.name) ? body.name.trim() : undefined,
+    genre: isNonEmptyString(body.genre) ? body.genre.trim() : undefined,
+    bio: isNonEmptyString(body.bio) ? body.bio.trim() : undefined,
+    imageUrl: isNonEmptyString(body.imageUrl) ? body.imageUrl.trim() : undefined,
+  };
+}
+
+/**
+ * GET /api/admin/artists
+ */
+router.get("/", (req, res) => {
+  const artists = artistsStore.getAll();
+  return res.status(200).json({
+    success: true,
+    count: artists.length,
+    artists,
+  });
+});
+
+/**
+ * GET /api/admin/artists/:id
+ */
+router.get("/:id", (req, res) => {
+  const artist = artistsStore.getById(req.params.id);
+  if (!artist) {
+    return res.status(404).json({ success: false, message: "Artist not found." });
+  }
+  return res.status(200).json({ success: true, artist });
+});
+
+/**
+ * POST /api/admin/artists
+ * Create new artist
+ */
+router.post("/", (req, res) => {
+  const payload = normalizeArtistPayload(req.body);
+
+  if (!payload.name) {
+    return res.status(400).json({
+      success: false,
+      message: "Validation error: 'name' is required.",
+    });
+  }
+
+  const created = artistsStore.create({
+    name: payload.name,
+    genre: payload.genre ?? "Unknown",
+    bio: payload.bio ?? "",
+    imageUrl: payload.imageUrl ?? "",
+  });
+
+  return res.status(201).json({
+    success: true,
+    message: "Artist created successfully.",
+    artist: created,
+  });
+});
+
+/**
+ * PUT /api/admin/artists/:id
+ * Replace full artist (requires name)
+ */
+router.put("/:id", (req, res) => {
+  const existing = artistsStore.getById(req.params.id);
+  if (!existing) {
+    return res.status(404).json({ success: false, message: "Artist not found." });
+  }
+
+  const payload = normalizeArtistPayload(req.body);
+
+  if (!payload.name) {
+    return res.status(400).json({
+      success: false,
+      message: "Validation error: 'name' is required.",
+    });
+  }
+
+  const updated = artistsStore.update(req.params.id, {
+    name: payload.name,
+    genre: payload.genre ?? "Unknown",
+    bio: payload.bio ?? "",
+    imageUrl: payload.imageUrl ?? "",
+  });
+
+  return res.status(200).json({
+    success: true,
+    message: "Artist updated successfully.",
+    artist: updated,
+  });
+});
+
+/**
+ * PATCH /api/admin/artists/:id
+ * Partial update
+ */
+router.patch("/:id", (req, res) => {
+  const existing = artistsStore.getById(req.params.id);
+  if (!existing) {
+    return res.status(404).json({ success: false, message: "Artist not found." });
+  }
+
+  const payload = normalizeArtistPayload(req.body);
+
+  // No valid fields
+  if (
+    payload.name === undefined &&
+    payload.genre === undefined &&
+    payload.bio === undefined &&
+    payload.imageUrl === undefined
+  ) {
+    return res.status(400).json({
+      success: false,
+      message: "No valid fields provided to update.",
+    });
+  }
+
+  const updated = artistsStore.patch(req.params.id, payload);
+
+  return res.status(200).json({
+    success: true,
+    message: "Artist patched successfully.",
+    artist: updated,
+  });
+});
+
+/**
+ * DELETE /api/admin/artists/:id
+ */
+router.delete("/:id", (req, res) => {
+  const existing = artistsStore.getById(req.params.id);
+  if (!existing) {
+    return res.status(404).json({ success: false, message: "Artist not found." });
+  }
+
+  const deleted = artistsStore.remove(req.params.id);
+
+  return res.status(200).json({
+    success: true,
+    message: "Artist deleted successfully.",
+    artist: deleted,
+  });
+});
+
+/**
+ * POST /api/admin/artists/reset
+ * Delete all artists
+ */
+router.post("/reset", (req, res) => {
+  const deleted = artistsStore.reset();
+  return res.status(200).json({
+    success: true,
+    deleted,
+    message: "All artists have been deleted.",
+  });
+});
+
+/**
+ * POST /api/admin/artists/seed
+ * Seed demo artists
+ */
+router.post("/seed", (req, res) => {
+  const seeded = artistsStore.seed();
+  return res.status(200).json({
+    success: true,
+    seeded,
+    message: "Demo artists seeded successfully.",
+  });
+});
+
+/**
+ * ✅ CRITICAL FIX:
+ * Provide default export so admin.js can import it as default.
+ */
+export default router;
