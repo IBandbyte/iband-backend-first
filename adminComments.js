@@ -1,26 +1,15 @@
+// adminComments.js (ESM)
+// Admin-only comment controls — Option A
+// Adds bulk delete + moderation endpoints
+
 import express from "express";
 import commentsStore from "./commentsStore.js";
 
 const router = express.Router();
 
 /**
- * Helpers
- */
-function isNonEmptyString(v) {
-  return typeof v === "string" && v.trim().length > 0;
-}
-
-function normalizeCommentPayload(body = {}) {
-  return {
-    artistId: isNonEmptyString(body.artistId) ? body.artistId.trim() : undefined,
-    author: isNonEmptyString(body.author) ? body.author.trim() : undefined,
-    text: isNonEmptyString(body.text) ? body.text.trim() : undefined,
-  };
-}
-
-/**
  * GET /api/admin/comments
- * List all comments
+ * List all comments (admin view)
  */
 router.get("/", (req, res) => {
   const comments = commentsStore.getAll();
@@ -32,132 +21,138 @@ router.get("/", (req, res) => {
 });
 
 /**
- * GET /api/admin/comments/:id
- * Get a single comment by id
- */
-router.get("/:id", (req, res) => {
-  const comment = commentsStore.getById(req.params.id);
-  if (!comment) {
-    return res.status(404).json({ success: false, message: "Comment not found." });
-  }
-  return res.status(200).json({ success: true, comment });
-});
-
-/**
- * POST /api/admin/comments
- * Create a comment
- */
-router.post("/", (req, res) => {
-  const payload = normalizeCommentPayload(req.body);
-
-  if (!payload.artistId) {
-    return res.status(400).json({
-      success: false,
-      message: "Validation error: 'artistId' is required.",
-    });
-  }
-
-  if (!payload.author) {
-    return res.status(400).json({
-      success: false,
-      message: "Validation error: 'author' is required.",
-    });
-  }
-
-  if (!payload.text) {
-    return res.status(400).json({
-      success: false,
-      message: "Validation error: 'text' is required.",
-    });
-  }
-
-  const created = commentsStore.create({
-    artistId: payload.artistId,
-    author: payload.author,
-    text: payload.text,
-  });
-
-  return res.status(201).json({
-    success: true,
-    message: "Comment created successfully.",
-    comment: created,
-  });
-});
-
-/**
- * PUT /api/admin/comments/:id
- * Replace full comment (requires artistId, author, text)
- */
-router.put("/:id", (req, res) => {
-  const existing = commentsStore.getById(req.params.id);
-  if (!existing) {
-    return res.status(404).json({ success: false, message: "Comment not found." });
-  }
-
-  const payload = normalizeCommentPayload(req.body);
-
-  if (!payload.artistId || !payload.author || !payload.text) {
-    return res.status(400).json({
-      success: false,
-      message: "Validation error: 'artistId', 'author', and 'text' are required.",
-    });
-  }
-
-  const updated = commentsStore.update(req.params.id, {
-    artistId: payload.artistId,
-    author: payload.author,
-    text: payload.text,
-  });
-
-  return res.status(200).json({
-    success: true,
-    message: "Comment updated successfully.",
-    comment: updated,
-  });
-});
-
-/**
  * PATCH /api/admin/comments/:id
- * Partial update
+ * Edit or moderate a single comment
  */
 router.patch("/:id", (req, res) => {
-  const existing = commentsStore.getById(req.params.id);
-  if (!existing) {
-    return res.status(404).json({ success: false, message: "Comment not found." });
-  }
-
-  const payload = normalizeCommentPayload(req.body);
-
-  if (payload.artistId === undefined && payload.author === undefined && payload.text === undefined) {
-    return res.status(400).json({
+  const updated = commentsStore.patch(req.params.id, req.body || {});
+  if (!updated) {
+    return res.status(404).json({
       success: false,
-      message: "No valid fields provided to update.",
+      message: "Comment not found or invalid update.",
     });
   }
 
-  const updated = commentsStore.patch(req.params.id, payload);
+  return res.status(200).json({
+    success: true,
+    message: "Comment updated.",
+    comment: updated,
+  });
+});
+
+/**
+ * POST /api/admin/comments/:id/flag
+ * Add a moderation flag
+ */
+router.post("/:id/flag", (req, res) => {
+  const { code, reason } = req.body || {};
+  const updated = commentsStore.addFlag(req.params.id, { code, reason });
+
+  if (!updated) {
+    return res.status(404).json({
+      success: false,
+      message: "Comment not found.",
+    });
+  }
 
   return res.status(200).json({
     success: true,
-    message: "Comment patched successfully.",
+    message: "Flag added.",
     comment: updated,
+  });
+});
+
+/**
+ * POST /api/admin/comments/:id/flags/clear
+ * Clear all flags from a comment
+ */
+router.post("/:id/flags/clear", (req, res) => {
+  const updated = commentsStore.clearFlags(req.params.id);
+
+  if (!updated) {
+    return res.status(404).json({
+      success: false,
+      message: "Comment not found.",
+    });
+  }
+
+  return res.status(200).json({
+    success: true,
+    message: "Flags cleared.",
+    comment: updated,
+  });
+});
+
+/**
+ * POST /api/admin/comments/bulk-delete
+ * Delete multiple comments at once
+ */
+router.post("/bulk-delete", (req, res) => {
+  const { ids } = req.body || {};
+
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: "ids array is required.",
+    });
+  }
+
+  const result = commentsStore.bulkRemove(ids);
+
+  return res.status(200).json({
+    success: true,
+    deletedIds: result.deletedIds,
+    notFoundIds: result.notFoundIds,
+  });
+});
+
+/**
+ * POST /api/admin/comments/bulk-status
+ * Set status for multiple comments
+ */
+router.post("/bulk-status", (req, res) => {
+  const { ids, status, moderatedBy } = req.body || {};
+
+  if (!Array.isArray(ids) || ids.length === 0 || !status) {
+    return res.status(400).json({
+      success: false,
+      message: "ids array and status are required.",
+    });
+  }
+
+  const result = commentsStore.bulkSetStatus(ids, status, moderatedBy);
+
+  if (!result) {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid status value.",
+    });
+  }
+
+  return res.status(200).json({
+    success: true,
+    status: result.status,
+    updatedIds: result.updatedIds,
+    notFoundIds: result.notFoundIds,
   });
 });
 
 /**
  * DELETE /api/admin/comments/:id
+ * Delete a single comment
  */
 router.delete("/:id", (req, res) => {
-  const existing = commentsStore.getById(req.params.id);
-  if (!existing) {
-    return res.status(404).json({ success: false, message: "Comment not found." });
-  }
-
   const deleted = commentsStore.remove(req.params.id);
+  if (!deleted) {
+    return res.status(404).json({
+      success: false,
+      message: "Comment not found.",
+    });
+  }
 
   return res.status(200).json({
     success: true,
-    message: "Comment deleted successfully.",
+    message: "Comment deleted.",
     comment: deleted,
   });
 });
@@ -171,25 +166,8 @@ router.post("/reset", (req, res) => {
   return res.status(200).json({
     success: true,
     deleted,
-    message: "All comments have been deleted.",
+    message: "All comments deleted.",
   });
 });
 
-/**
- * POST /api/admin/comments/seed
- * Seed demo comments (optional, safe)
- */
-router.post("/seed", (req, res) => {
-  const seeded = commentsStore.seed?.() ?? 0;
-  return res.status(200).json({
-    success: true,
-    seeded,
-    message: "Demo comments seeded successfully.",
-  });
-});
-
-/**
- * ✅ CRITICAL FIX:
- * Provide default export so admin.js can import it as default.
- */
 export default router;
