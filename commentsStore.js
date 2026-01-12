@@ -1,14 +1,10 @@
 // commentsStore.js (ESM)
-// In-memory comments store used by:
-// - comments.js (public)
-// - adminComments.js (admin)
-//
-// Option A upgrades:
-// - moderation fields (status, flags, moderation info)
-// - bulk delete
-// - bulk moderation actions
+// In-memory store for comments with moderation status support.
+// Option B: keep "rejected" stored (hidden from public), visible to admin.
 
-function nowISO() {
+const ALLOWED_STATUSES = new Set(["pending", "approved", "rejected"]);
+
+function nowIso() {
   return new Date().toISOString();
 }
 
@@ -16,221 +12,173 @@ function isNonEmptyString(v) {
   return typeof v === "string" && v.trim().length > 0;
 }
 
-function normalizeStatus(v) {
-  const s = String(v || "").trim().toLowerCase();
-  if (s === "visible" || s === "hidden" || s === "approved" || s === "pending") return s;
-  return null;
+function normalizeId(v) {
+  // We store IDs as strings for consistency across Hoppscotch usage.
+  return String(v);
 }
 
-class CommentsStore {
-  constructor() {
-    this._comments = [];
-    this._nextId = 1;
-  }
-
-  // ---------- reads ----------
-  getAll() {
-    return this._comments;
-  }
-
-  getById(id) {
-    return this._comments.find((c) => c.id === String(id)) || null;
-  }
-
-  getByArtistId(artistId) {
-    return this._comments.filter((c) => c.artistId === String(artistId));
-  }
-
-  // ---------- create ----------
-  create({ artistId, author, text }) {
-    if (!isNonEmptyString(String(artistId))) throw new Error("artistId is required");
-    if (!isNonEmptyString(author)) throw new Error("author is required");
-    if (!isNonEmptyString(text)) throw new Error("text is required");
-
-    const comment = {
-      id: String(this._nextId++),
-      artistId: String(artistId),
-      author: String(author).trim(),
-      text: String(text).trim(),
-
-      // Moderation (Option A)
-      status: "visible", // visible | hidden | approved | pending
-      flags: [], // array of { code, reason, at }
-      moderatedAt: null,
-      moderatedBy: null,
-
-      createdAt: nowISO(),
-      updatedAt: null,
+function validateStatus(status) {
+  if (!isNonEmptyString(status)) return { ok: false, message: "status is required" };
+  const normalized = status.trim().toLowerCase();
+  if (!ALLOWED_STATUSES.has(normalized)) {
+    return {
+      ok: false,
+      message: `Invalid status value. Allowed: ${Array.from(ALLOWED_STATUSES).join(", ")}`
     };
-
-    this._comments.push(comment);
-    return comment;
   }
-
-  // ---------- update (full replace) ----------
-  update(id, { artistId, author, text, status }) {
-    const comment = this.getById(id);
-    if (!comment) return null;
-
-    if (!isNonEmptyString(String(artistId))) return null;
-    if (!isNonEmptyString(author)) return null;
-    if (!isNonEmptyString(text)) return null;
-
-    comment.artistId = String(artistId);
-    comment.author = String(author).trim();
-    comment.text = String(text).trim();
-
-    if (status !== undefined) {
-      const s = normalizeStatus(status);
-      if (!s) return null;
-      comment.status = s;
-      comment.moderatedAt = nowISO();
-    }
-
-    comment.updatedAt = nowISO();
-    return comment;
-  }
-
-  // ---------- patch (partial update + moderation) ----------
-  patch(id, partial = {}) {
-    const comment = this.getById(id);
-    if (!comment) return null;
-
-    if (partial.artistId !== undefined && isNonEmptyString(String(partial.artistId))) {
-      comment.artistId = String(partial.artistId);
-    }
-
-    if (partial.author !== undefined && isNonEmptyString(partial.author)) {
-      comment.author = String(partial.author).trim();
-    }
-
-    if (partial.text !== undefined && isNonEmptyString(partial.text)) {
-      comment.text = String(partial.text).trim();
-    }
-
-    // Moderation fields
-    if (partial.status !== undefined) {
-      const s = normalizeStatus(partial.status);
-      if (!s) return null;
-      comment.status = s;
-      comment.moderatedAt = nowISO();
-      if (partial.moderatedBy !== undefined && isNonEmptyString(partial.moderatedBy)) {
-        comment.moderatedBy = String(partial.moderatedBy).trim();
-      }
-    }
-
-    comment.updatedAt = nowISO();
-    return comment;
-  }
-
-  // ---------- moderation helpers ----------
-  addFlag(id, { code, reason } = {}) {
-    const comment = this.getById(id);
-    if (!comment) return null;
-
-    const flagCode = isNonEmptyString(code) ? String(code).trim().toLowerCase() : "flag";
-    const flagReason = isNonEmptyString(reason) ? String(reason).trim() : "";
-
-    comment.flags.push({
-      code: flagCode,
-      reason: flagReason,
-      at: nowISO(),
-    });
-
-    comment.moderatedAt = nowISO();
-    comment.updatedAt = nowISO();
-    return comment;
-  }
-
-  clearFlags(id) {
-    const comment = this.getById(id);
-    if (!comment) return null;
-
-    comment.flags = [];
-    comment.moderatedAt = nowISO();
-    comment.updatedAt = nowISO();
-    return comment;
-  }
-
-  // ---------- delete ----------
-  remove(id) {
-    const idx = this._comments.findIndex((c) => c.id === String(id));
-    if (idx === -1) return null;
-    const [deleted] = this._comments.splice(idx, 1);
-    return deleted;
-  }
-
-  removeByArtistId(artistId) {
-    const before = this._comments.length;
-    this._comments = this._comments.filter((c) => c.artistId !== String(artistId));
-    return before - this._comments.length;
-  }
-
-  // ---------- bulk ops (Option A) ----------
-  bulkRemove(ids = []) {
-    const wanted = new Set((Array.isArray(ids) ? ids : []).map((x) => String(x)));
-    const deletedIds = [];
-    const notFoundIds = [];
-
-    // Track which existed
-    for (const id of wanted) {
-      if (!this.getById(id)) notFoundIds.push(id);
-    }
-
-    this._comments = this._comments.filter((c) => {
-      if (wanted.has(c.id)) {
-        deletedIds.push(c.id);
-        return false;
-      }
-      return true;
-    });
-
-    return { deletedIds, notFoundIds };
-  }
-
-  bulkSetStatus(ids = [], status, moderatedBy) {
-    const s = normalizeStatus(status);
-    if (!s) return null;
-
-    const wanted = new Set((Array.isArray(ids) ? ids : []).map((x) => String(x)));
-    const updatedIds = [];
-    const notFoundIds = [];
-
-    for (const id of wanted) {
-      const c = this.getById(id);
-      if (!c) {
-        notFoundIds.push(id);
-        continue;
-      }
-      c.status = s;
-      c.moderatedAt = nowISO();
-      c.updatedAt = nowISO();
-      if (isNonEmptyString(moderatedBy)) c.moderatedBy = String(moderatedBy).trim();
-      updatedIds.push(id);
-    }
-
-    return { status: s, updatedIds, notFoundIds };
-  }
-
-  // ---------- reset / seed ----------
-  reset() {
-    const deleted = this._comments.length;
-    this._comments = [];
-    this._nextId = 1;
-    return deleted;
-  }
-
-  seed() {
-    const before = this._comments.length;
-    const demo = [
-      { artistId: "1", author: "Fan One", text: "This track is fire 🔥" },
-      { artistId: "1", author: "Fan Two", text: "Vote incoming — keep going!" },
-      { artistId: "2", author: "Captain", text: "Moderation system online." },
-    ];
-    for (const d of demo) this.create(d);
-    return this._comments.length - before;
-  }
+  return { ok: true, value: normalized };
 }
 
-const commentsStore = new CommentsStore();
+const state = {
+  nextId: 1,
+  comments: []
+};
+
+function create({ artistId, author, text }) {
+  if (!isNonEmptyString(artistId)) {
+    return { ok: false, status: 400, error: "artistId is required" };
+  }
+  if (!isNonEmptyString(author)) {
+    return { ok: false, status: 400, error: "author is required" };
+  }
+  if (!isNonEmptyString(text)) {
+    return { ok: false, status: 400, error: "text is required" };
+  }
+
+  const comment = {
+    id: normalizeId(state.nextId++),
+    artistId: normalizeId(artistId),
+    author: author.trim(),
+    text: text.trim(),
+    status: "pending",
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+    moderatedBy: null,
+    moderatedAt: null
+  };
+
+  state.comments.unshift(comment); // newest first
+  return { ok: true, status: 201, comment };
+}
+
+function listAll({ status } = {}) {
+  // Admin view. Optionally filter by status.
+  if (status === undefined || status === null || status === "") {
+    return { ok: true, status: 200, comments: [...state.comments] };
+  }
+
+  const v = validateStatus(status);
+  if (!v.ok) return { ok: false, status: 400, error: v.message };
+
+  const filtered = state.comments.filter((c) => c.status === v.value);
+  return { ok: true, status: 200, comments: filtered };
+}
+
+function listByArtist({ artistId, status } = {}) {
+  // Admin view for a specific artist. Optionally filter by status.
+  if (!isNonEmptyString(artistId)) {
+    return { ok: false, status: 400, error: "artistId is required" };
+  }
+
+  const id = normalizeId(artistId);
+  let results = state.comments.filter((c) => c.artistId === id);
+
+  if (status !== undefined && status !== null && status !== "") {
+    const v = validateStatus(status);
+    if (!v.ok) return { ok: false, status: 400, error: v.message };
+    results = results.filter((c) => c.status === v.value);
+  }
+
+  return { ok: true, status: 200, comments: results };
+}
+
+function listPublicByArtist({ artistId } = {}) {
+  // Public view MUST only show approved comments (Option B).
+  if (!isNonEmptyString(artistId)) {
+    return { ok: false, status: 400, error: "artistId is required" };
+  }
+
+  const id = normalizeId(artistId);
+  const results = state.comments.filter((c) => c.artistId === id && c.status === "approved");
+  return { ok: true, status: 200, comments: results };
+}
+
+function getById(id) {
+  const cid = normalizeId(id);
+  return state.comments.find((c) => c.id === cid) || null;
+}
+
+function updateStatus({ id, status, moderatedBy } = {}) {
+  if (!isNonEmptyString(id)) return { ok: false, status: 400, error: "id is required" };
+
+  const v = validateStatus(status);
+  if (!v.ok) return { ok: false, status: 400, error: v.message };
+
+  const comment = getById(id);
+  if (!comment) return { ok: false, status: 404, error: "Comment not found" };
+
+  comment.status = v.value;
+  comment.moderatedBy = isNonEmptyString(moderatedBy) ? moderatedBy.trim() : comment.moderatedBy;
+  comment.moderatedAt = nowIso();
+  comment.updatedAt = nowIso();
+
+  return { ok: true, status: 200, comment };
+}
+
+function bulkUpdateStatus({ ids, status, moderatedBy } = {}) {
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return { ok: false, status: 400, error: "ids is required (non-empty array)" };
+  }
+
+  const v = validateStatus(status);
+  if (!v.ok) return { ok: false, status: 400, error: v.message };
+
+  const normalizedIds = ids.map(normalizeId);
+  const updated = [];
+  const notFound = [];
+
+  for (const id of normalizedIds) {
+    const comment = getById(id);
+    if (!comment) {
+      notFound.push(id);
+      continue;
+    }
+    comment.status = v.value;
+    comment.moderatedBy = isNonEmptyString(moderatedBy) ? moderatedBy.trim() : comment.moderatedBy;
+    comment.moderatedAt = nowIso();
+    comment.updatedAt = nowIso();
+    updated.push(comment);
+  }
+
+  return {
+    ok: true,
+    status: 200,
+    result: {
+      status: v.value,
+      updatedCount: updated.length,
+      updatedIds: updated.map((c) => c.id),
+      notFoundCount: notFound.length,
+      notFoundIds: notFound
+    }
+  };
+}
+
+function reset() {
+  state.nextId = 1;
+  state.comments = [];
+  return { ok: true, status: 200 };
+}
+
+export const commentsStore = {
+  ALLOWED_STATUSES: Array.from(ALLOWED_STATUSES),
+  create,
+  listAll,
+  listByArtist,
+  listPublicByArtist,
+  getById,
+  updateStatus,
+  bulkUpdateStatus,
+  reset
+};
+
 export default commentsStore;
