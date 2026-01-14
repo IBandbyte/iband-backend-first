@@ -1,86 +1,55 @@
+// adminComments.js
 import express from "express";
 import commentsStore, { ALLOWED_COMMENT_STATUSES } from "./commentsStore.js";
 
 const router = express.Router();
 
-/**
- * ADMIN: list all comments (optionally filter)
- * GET /api/admin/comments?status=pending|approved|rejected&artistId=1
- */
-router.get("/", (req, res) => {
+// GET /api/admin/comments?status=pending|approved|rejected
+router.get("/comments", (req, res) => {
   try {
-    const { status, artistId } = req.query;
+    const status = (req.query.status ?? "").toString().trim();
+    const result = commentsStore.getAll({ status });
 
-    let all = commentsStore.getAll(); // always returns array (hardened in store)
-    if (artistId !== undefined) {
-      all = all.filter((c) => String(c.artistId) === String(artistId));
-    }
-    if (status !== undefined) {
-      all = all.filter((c) => String(c.status) === String(status));
+    if (!result.success) {
+      return res.status(result.status || 400).json({
+        success: false,
+        message: result.message || "Bad request",
+        allowedStatuses: ALLOWED_COMMENT_STATUSES,
+      });
     }
 
     return res.status(200).json({
       success: true,
-      count: all.length,
-      comments: all,
+      count: result.comments.length,
+      comments: result.comments,
+      allowedStatuses: ALLOWED_COMMENT_STATUSES,
     });
-  } catch (err) {
-    return res.status(500).json({
-      success: false,
-      message: "Internal server error",
-    });
-  }
-});
-
-/**
- * ADMIN: delete one comment
- * DELETE /api/admin/comments/:id
- */
-router.delete("/:id", (req, res) => {
-  try {
-    const id = String(req.params.id);
-    const deleted = commentsStore.remove(id);
-
-    if (!deleted) {
-      return res.status(404).json({ success: false, message: "Comment not found" });
-    }
-
-    return res.status(200).json({ success: true, message: "Comment deleted successfully", deleted });
-  } catch (err) {
+  } catch (e) {
     return res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
-/**
- * ADMIN: bulk update moderation status
- * POST /api/admin/comments/bulk-status
- * Body: { ids: ["1","2"], status: "approved"|"rejected"|"pending", moderatedBy?: "Captain" }
- */
-router.post("/bulk-status", (req, res) => {
+// POST /api/admin/comments/bulk-status
+router.post("/comments/bulk-status", (req, res) => {
   try {
-    const { ids, status, moderatedBy } = req.body || {};
+    const { ids, status, moderatedBy } = req.body ?? {};
+    const result = commentsStore.bulkUpdateStatus({ ids, status, moderatedBy });
 
-    if (!Array.isArray(ids) || ids.length === 0) {
-      return res.status(400).json({ success: false, message: "ids must be a non-empty array" });
-    }
-
-    if (!ALLOWED_COMMENT_STATUSES.includes(String(status))) {
-      return res.status(400).json({
+    if (!result.success) {
+      return res.status(result.status || 400).json({
         success: false,
-        message: `Invalid status value. Allowed: ${ALLOWED_COMMENT_STATUSES.join(", ")}`,
+        message: result.message || "Bad request",
+        allowedStatuses: ALLOWED_COMMENT_STATUSES,
       });
     }
 
-    const result = commentsStore.bulkSetStatus(ids.map(String), String(status), moderatedBy ? String(moderatedBy) : null);
-
     return res.status(200).json({
       success: true,
-      status: String(status),
+      status: result.statusSetTo,
       updatedCount: result.updatedCount,
-      notFoundIds: result.notFoundIds,
-      updated: result.updated,
+      moderatedBy: result.moderatedBy,
     });
-  } catch (err) {
+  } catch (e) {
     return res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
