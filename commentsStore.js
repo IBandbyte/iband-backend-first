@@ -1,145 +1,162 @@
 // commentsStore.js
-// In-memory comment store (Phase 2 hardened):
-// - Never throws for "no results" cases
-// - Always returns arrays (even empty)
-// - Central source of truth for status validation
+// In-memory comment storage (safe + defensive, never throws on empty/unknown cases)
 
 export const ALLOWED_COMMENT_STATUSES = ["pending", "approved", "rejected"];
 
-const nowIso = () => new Date().toISOString();
-
-const normalizeId = (val) => String(val ?? "").trim();
-
-class CommentsStore {
-  constructor() {
-    /** @type {Array<{
-     *  id: string,
-     *  artistId: string,
-     *  author: string,
-     *  text: string,
-     *  status: "pending"|"approved"|"rejected",
-     *  createdAt: string,
-     *  moderatedAt?: string,
-     *  moderatedBy?: string
-     * }>} */
-    this.comments = [];
-    this.nextId = 1;
-  }
-
-  isValidStatus(status) {
-    return ALLOWED_COMMENT_STATUSES.includes(status);
-  }
-
-  /**
-   * Creates a new comment (defaults to pending)
-   */
-  create({ artistId, author, text }) {
-    const aId = normalizeId(artistId);
-    const a = String(author ?? "").trim();
-    const t = String(text ?? "").trim();
-
-    if (!aId) {
-      return { ok: false, error: "artistId is required" };
-    }
-    if (!a) {
-      return { ok: false, error: "author is required" };
-    }
-    if (!t) {
-      return { ok: false, error: "text is required" };
-    }
-
-    const id = String(this.nextId++);
-    const comment = {
-      id,
-      artistId: aId,
-      author: a,
-      text: t,
-      status: "pending",
-      createdAt: nowIso(),
-    };
-
-    this.comments.unshift(comment);
-    return { ok: true, comment };
-  }
-
-  /**
-   * Returns all comments (optionally filtered)
-   * Always returns an array (possibly empty)
-   */
-  list({ artistId, status } = {}) {
-    const aId = artistId ? normalizeId(artistId) : null;
-
-    let result = this.comments;
-
-    if (aId) result = result.filter((c) => c.artistId === aId);
-    if (status) result = result.filter((c) => c.status === status);
-
-    // Always safe:
-    return Array.isArray(result) ? result : [];
-  }
-
-  /**
-   * Public-safe: only approved comments by artistId.
-   * Never throws. Returns [] if none exist.
-   */
-  listApprovedByArtist(artistId) {
-    const aId = normalizeId(artistId);
-    if (!aId) return [];
-    return this.list({ artistId: aId, status: "approved" });
-  }
-
-  /**
-   * Admin bulk update comment status
-   */
-  bulkUpdateStatus({ ids, status, moderatedBy }) {
-    const safeIds = Array.isArray(ids)
-      ? ids.map(normalizeId).filter(Boolean)
-      : [];
-
-    const st = String(status ?? "").trim();
-    const modBy = String(moderatedBy ?? "").trim();
-
-    if (!safeIds.length) {
-      return { ok: false, error: "ids must be a non-empty array of strings" };
-    }
-    if (!this.isValidStatus(st)) {
-      return { ok: false, error: `Invalid status value: ${st}` };
-    }
-    if (!modBy) {
-      return { ok: false, error: "moderatedBy is required" };
-    }
-
-    const updated = [];
-    const notFound = [];
-
-    for (const id of safeIds) {
-      const idx = this.comments.findIndex((c) => c.id === id);
-      if (idx === -1) {
-        notFound.push(id);
-        continue;
-      }
-
-      const existing = this.comments[idx];
-      const next = {
-        ...existing,
-        status: st,
-        moderatedBy: modBy,
-        moderatedAt: nowIso(),
-      };
-
-      this.comments[idx] = next;
-      updated.push(next);
-    }
-
-    return {
-      ok: true,
-      status: st,
-      updatedCount: updated.length,
-      notFound,
-      updated,
-    };
-  }
+function nowISO() {
+  return new Date().toISOString();
 }
 
-const commentsStore = new CommentsStore();
+function toSafeStringId(value) {
+  // We store comment IDs as strings for consistency
+  if (value === null || value === undefined) return "";
+  return String(value).trim();
+}
+
+function toSafeArtistId(value) {
+  // Artist IDs are stored as strings (e.g. "1")
+  if (value === null || value === undefined) return "";
+  return String(value).trim();
+}
+
+function isAllowedStatus(status) {
+  return ALLOWED_COMMENT_STATUSES.includes(status);
+}
+
+let comments = []; // [{ id, artistId, author, text, status, createdAt, updatedAt, moderatedBy, moderatedAt }]
+
+function generateId() {
+  // Simple unique-ish id for in-memory use
+  return `c_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+}
+
+const commentsStore = {
+  reset() {
+    comments = [];
+    return { success: true };
+  },
+
+  create({ artistId, author, text }) {
+    const safeArtistId = toSafeArtistId(artistId);
+    const safeAuthor = (author ?? "").toString().trim();
+    const safeText = (text ?? "").toString().trim();
+
+    if (!safeArtistId) {
+      return { success: false, status: 400, message: "artistId is required" };
+    }
+    if (!safeAuthor) {
+      return { success: false, status: 400, message: "author is required" };
+    }
+    if (!safeText) {
+      return { success: false, status: 400, message: "text is required" };
+    }
+
+    const newComment = {
+      id: generateId(),
+      artistId: safeArtistId,
+      author: safeAuthor,
+      text: safeText,
+      status: "pending",
+      createdAt: nowISO(),
+      updatedAt: nowISO(),
+      moderatedBy: null,
+      moderatedAt: null,
+    };
+
+    comments.unshift(newComment);
+
+    return { success: true, status: 201, comment: newComment };
+  },
+
+  getAll({ status } = {}) {
+    const safeStatus = (status ?? "").toString().trim();
+    if (safeStatus && !isAllowedStatus(safeStatus)) {
+      return {
+        success: false,
+        status: 400,
+        message: `Invalid status. Allowed: ${ALLOWED_COMMENT_STATUSES.join(", ")}`,
+      };
+    }
+
+    const filtered = safeStatus
+      ? comments.filter((c) => c.status === safeStatus)
+      : [...comments];
+
+    return { success: true, status: 200, comments: filtered };
+  },
+
+  getByArtist({ artistId, status } = {}) {
+    const safeArtistId = toSafeArtistId(artistId);
+    const safeStatus = (status ?? "").toString().trim();
+
+    if (!safeArtistId) {
+      return { success: false, status: 400, message: "artistId is required" };
+    }
+    if (safeStatus && !isAllowedStatus(safeStatus)) {
+      return {
+        success: false,
+        status: 400,
+        message: `Invalid status. Allowed: ${ALLOWED_COMMENT_STATUSES.join(", ")}`,
+      };
+    }
+
+    const filtered = comments.filter((c) => {
+      if (c.artistId !== safeArtistId) return false;
+      if (safeStatus && c.status !== safeStatus) return false;
+      return true;
+    });
+
+    // IMPORTANT: Empty arrays are OK, never an error
+    return { success: true, status: 200, comments: filtered };
+  },
+
+  getApprovedByArtist({ artistId } = {}) {
+    // Public endpoint should only show approved, and return [] when none
+    return this.getByArtist({ artistId, status: "approved" });
+  },
+
+  bulkUpdateStatus({ ids, status, moderatedBy } = {}) {
+    const safeStatus = (status ?? "").toString().trim();
+    const safeModerator = (moderatedBy ?? "").toString().trim();
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return { success: false, status: 400, message: "ids must be a non-empty array" };
+    }
+    if (!isAllowedStatus(safeStatus)) {
+      return {
+        success: false,
+        status: 400,
+        message: `Invalid status. Allowed: ${ALLOWED_COMMENT_STATUSES.join(", ")}`,
+      };
+    }
+    if (!safeModerator) {
+      return { success: false, status: 400, message: "moderatedBy is required" };
+    }
+
+    const idSet = new Set(ids.map(toSafeStringId).filter(Boolean));
+    let updatedCount = 0;
+
+    comments = comments.map((c) => {
+      if (!idSet.has(toSafeStringId(c.id))) return c;
+
+      updatedCount += 1;
+      return {
+        ...c,
+        status: safeStatus,
+        updatedAt: nowISO(),
+        moderatedBy: safeModerator,
+        moderatedAt: nowISO(),
+      };
+    });
+
+    return {
+      success: true,
+      status: 200,
+      updatedCount,
+      statusSetTo: safeStatus,
+      moderatedBy: safeModerator,
+    };
+  },
+};
+
 export default commentsStore;
