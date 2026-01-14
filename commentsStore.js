@@ -1,115 +1,145 @@
+// commentsStore.js
+// In-memory comment store (Phase 2 hardened):
+// - Never throws for "no results" cases
+// - Always returns arrays (even empty)
+// - Central source of truth for status validation
+
 export const ALLOWED_COMMENT_STATUSES = ["pending", "approved", "rejected"];
 
-// In-memory store (safe + normalized)
-const state = {
-  comments: [],
-  nextId: 1,
-};
+const nowIso = () => new Date().toISOString();
 
-function nowISO() {
-  return new Date().toISOString();
-}
+const normalizeId = (val) => String(val ?? "").trim();
 
-function normalize(raw) {
-  const createdAt = raw?.createdAt ? String(raw.createdAt) : nowISO();
-  const updatedAt = raw?.updatedAt ? String(raw.updatedAt) : createdAt;
+class CommentsStore {
+  constructor() {
+    /** @type {Array<{
+     *  id: string,
+     *  artistId: string,
+     *  author: string,
+     *  text: string,
+     *  status: "pending"|"approved"|"rejected",
+     *  createdAt: string,
+     *  moderatedAt?: string,
+     *  moderatedBy?: string
+     * }>} */
+    this.comments = [];
+    this.nextId = 1;
+  }
 
-  const status = ALLOWED_COMMENT_STATUSES.includes(String(raw?.status))
-    ? String(raw.status)
-    : "pending";
+  isValidStatus(status) {
+    return ALLOWED_COMMENT_STATUSES.includes(status);
+  }
 
-  return {
-    id: raw?.id !== undefined ? String(raw.id) : String(state.nextId++),
-    artistId: raw?.artistId !== undefined ? String(raw.artistId) : "0",
-    author: raw?.author !== undefined && String(raw.author).trim() ? String(raw.author) : "Anonymous",
-    text: raw?.text !== undefined ? String(raw.text) : "",
-    status,
-    moderatedBy: raw?.moderatedBy !== undefined ? raw.moderatedBy : null,
-    createdAt,
-    updatedAt,
-  };
-}
-
-const commentsStore = {
-  // Always returns an array, always normalized, never throws.
-  getAll() {
-    if (!Array.isArray(state.comments)) state.comments = [];
-    state.comments = state.comments.map(normalize);
-    // newest first
-    return [...state.comments].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
-  },
-
-  getByArtistId(artistId) {
-    const all = this.getAll();
-    return all.filter((c) => String(c.artistId) === String(artistId));
-  },
-
+  /**
+   * Creates a new comment (defaults to pending)
+   */
   create({ artistId, author, text }) {
-    const comment = normalize({
-      id: String(state.nextId++),
-      artistId,
-      author,
-      text,
-      status: "pending",
-      moderatedBy: null,
-      createdAt: nowISO(),
-      updatedAt: nowISO(),
-    });
+    const aId = normalizeId(artistId);
+    const a = String(author ?? "").trim();
+    const t = String(text ?? "").trim();
 
-    state.comments.unshift(comment);
-    return comment;
-  },
-
-  findById(id) {
-    const all = this.getAll();
-    return all.find((c) => String(c.id) === String(id)) || null;
-  },
-
-  remove(id) {
-    const before = state.comments.length;
-    const found = this.findById(id);
-    state.comments = state.comments.filter((c) => String(c.id) !== String(id));
-    return before !== state.comments.length ? found : null;
-  },
-
-  setStatus(id, status, moderatedBy = null) {
-    const allowed = ALLOWED_COMMENT_STATUSES.includes(String(status));
-    if (!allowed) return { ok: false, reason: "invalid_status" };
-
-    const idx = state.comments.findIndex((c) => String(c.id) === String(id));
-    if (idx === -1) return { ok: false, reason: "not_found" };
-
-    const existing = normalize(state.comments[idx]);
-    const updated = normalize({
-      ...existing,
-      status: String(status),
-      moderatedBy: moderatedBy ? String(moderatedBy) : existing.moderatedBy,
-      updatedAt: nowISO(),
-    });
-
-    state.comments[idx] = updated;
-    return { ok: true, updated };
-  },
-
-  bulkSetStatus(ids, status, moderatedBy = null) {
-    const updated = [];
-    const notFoundIds = [];
-
-    for (const id of ids) {
-      const r = this.setStatus(id, status, moderatedBy);
-      if (r.ok) updated.push(r.updated);
-      else if (r.reason === "not_found") notFoundIds.push(String(id));
+    if (!aId) {
+      return { ok: false, error: "artistId is required" };
+    }
+    if (!a) {
+      return { ok: false, error: "author is required" };
+    }
+    if (!t) {
+      return { ok: false, error: "text is required" };
     }
 
-    return { updatedCount: updated.length, notFoundIds, updated };
-  },
+    const id = String(this.nextId++);
+    const comment = {
+      id,
+      artistId: aId,
+      author: a,
+      text: t,
+      status: "pending",
+      createdAt: nowIso(),
+    };
 
-  reset() {
-    state.comments = [];
-    state.nextId = 1;
-    return true;
-  },
-};
+    this.comments.unshift(comment);
+    return { ok: true, comment };
+  }
 
+  /**
+   * Returns all comments (optionally filtered)
+   * Always returns an array (possibly empty)
+   */
+  list({ artistId, status } = {}) {
+    const aId = artistId ? normalizeId(artistId) : null;
+
+    let result = this.comments;
+
+    if (aId) result = result.filter((c) => c.artistId === aId);
+    if (status) result = result.filter((c) => c.status === status);
+
+    // Always safe:
+    return Array.isArray(result) ? result : [];
+  }
+
+  /**
+   * Public-safe: only approved comments by artistId.
+   * Never throws. Returns [] if none exist.
+   */
+  listApprovedByArtist(artistId) {
+    const aId = normalizeId(artistId);
+    if (!aId) return [];
+    return this.list({ artistId: aId, status: "approved" });
+  }
+
+  /**
+   * Admin bulk update comment status
+   */
+  bulkUpdateStatus({ ids, status, moderatedBy }) {
+    const safeIds = Array.isArray(ids)
+      ? ids.map(normalizeId).filter(Boolean)
+      : [];
+
+    const st = String(status ?? "").trim();
+    const modBy = String(moderatedBy ?? "").trim();
+
+    if (!safeIds.length) {
+      return { ok: false, error: "ids must be a non-empty array of strings" };
+    }
+    if (!this.isValidStatus(st)) {
+      return { ok: false, error: `Invalid status value: ${st}` };
+    }
+    if (!modBy) {
+      return { ok: false, error: "moderatedBy is required" };
+    }
+
+    const updated = [];
+    const notFound = [];
+
+    for (const id of safeIds) {
+      const idx = this.comments.findIndex((c) => c.id === id);
+      if (idx === -1) {
+        notFound.push(id);
+        continue;
+      }
+
+      const existing = this.comments[idx];
+      const next = {
+        ...existing,
+        status: st,
+        moderatedBy: modBy,
+        moderatedAt: nowIso(),
+      };
+
+      this.comments[idx] = next;
+      updated.push(next);
+    }
+
+    return {
+      ok: true,
+      status: st,
+      updatedCount: updated.length,
+      notFound,
+      updated,
+    };
+  }
+}
+
+const commentsStore = new CommentsStore();
 export default commentsStore;
-export { commentsStore };
