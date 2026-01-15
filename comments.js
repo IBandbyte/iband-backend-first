@@ -1,98 +1,70 @@
+// comments.js
+// Public comments router (ESM)
+// - POST /api/comments            -> create comment (pending)
+// - GET  /api/comments/by-artist/:artistId -> list APPROVED comments for artist (never 500)
+
 import express from "express";
-import commentsStore, { ALLOWED_COMMENT_STATUSES } from "./commentsStore.js";
+import {
+  createComment,
+  getApprovedCommentsByArtist,
+} from "./commentsStore.js";
 
 const router = express.Router();
 
-/**
- * Helpers
- */
-function jsonError(res, statusCode, message, extra = {}) {
-  return res.status(statusCode).json({
-    success: false,
-    message,
-    ...extra,
-  });
-}
-
-function normalizeId(value) {
-  if (value === undefined || value === null) return null;
-  return String(value).trim();
-}
-
-function isNonEmptyString(v) {
-  return typeof v === "string" && v.trim().length > 0;
-}
-
-/**
- * POST /api/comments
- * Create a comment (public)
- */
+// --------------------
+// POST /api/comments
+// Body: { artistId, author, text }
+// Creates a PENDING comment.
+// --------------------
 router.post("/", (req, res) => {
   try {
-    const artistId = normalizeId(req.body?.artistId);
-    const author = typeof req.body?.author === "string" ? req.body.author.trim() : "";
-    const text = typeof req.body?.text === "string" ? req.body.text.trim() : "";
+    const { artistId, author, text } = req.body ?? {};
 
-    if (!artistId) return jsonError(res, 400, "artistId is required");
-    if (!isNonEmptyString(author)) return jsonError(res, 400, "author is required");
-    if (!isNonEmptyString(text)) return jsonError(res, 400, "text is required");
+    const result = createComment({ artistId, author, text });
 
-    const created = commentsStore.create({
-      artistId,
-      author,
-      text,
-      // IMPORTANT: in Option B, new comments are NOT public until approved
-      status: "pending",
-    });
+    if (!result.ok) {
+      return res.status(result.statusCode || 400).json({
+        success: false,
+        message: result.error || "Bad request",
+      });
+    }
 
     return res.status(201).json({
       success: true,
-      message: "Comment created successfully",
-      comment: created,
+      comment: result.comment,
     });
   } catch (err) {
-    console.error("POST /api/comments error:", err);
-    return jsonError(res, 500, "Internal server error");
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
   }
 });
 
-/**
- * GET /api/comments/by-artist/:artistId
- * Public list for an artist.
- *
- * Option B rule:
- * - Only return comments with status === "approved"
- *
- * FIX:
- * - If there are ZERO approved comments, return 200 with [] (NOT 500).
- */
+// --------------------
+// GET /api/comments/by-artist/:artistId
+// Returns APPROVED comments only.
+// MUST return 200 + [] when none exist.
+// --------------------
 router.get("/by-artist/:artistId", (req, res) => {
   try {
-    const artistId = normalizeId(req.params.artistId);
-    if (!artistId) return jsonError(res, 400, "artistId is required");
+    const { artistId } = req.params;
 
-    // Pull everything we have for artist, then filter public-approved
-    const allForArtist = commentsStore.listByArtist(artistId) || [];
+    const comments = getApprovedCommentsByArtist(artistId);
 
-    const approved = allForArtist.filter((c) => {
-      const status = String(c?.status || "").toLowerCase();
-      return status === "approved";
-    });
+    // Defensive: always coerce to array
+    const safe = Array.isArray(comments) ? comments : [];
 
-    // ✅ THE FIX: Always return success true, even if approved is empty
     return res.status(200).json({
       success: true,
-      artistId,
-      count: approved.length,
-      comments: approved,
-      publicRule: "approved_only",
-      allowedStatuses: Array.isArray(ALLOWED_COMMENT_STATUSES)
-        ? ALLOWED_COMMENT_STATUSES
-        : ["pending", "approved", "rejected"],
+      count: safe.length,
+      comments: safe,
     });
   } catch (err) {
-    console.error("GET /api/comments/by-artist/:artistId error:", err);
-    return jsonError(res, 500, "Internal server error");
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
   }
 });
 
