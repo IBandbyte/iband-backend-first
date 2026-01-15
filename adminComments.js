@@ -8,9 +8,8 @@ import commentsStore from "./commentsStore.js";
 
 const router = express.Router();
 
-const FALLBACK_ALLOWED = ["pending", "approved", "rejected"];
-const allowedStatuses =
-  (commentsStore && commentsStore.ALLOWED_COMMENT_STATUSES) || FALLBACK_ALLOWED;
+// Hard-safe allowed statuses (avoids boot crashes if any export changes)
+const ALLOWED_COMMENT_STATUSES = ["pending", "approved", "rejected"];
 
 // --------------------
 // GET /api/admin/comments?status=pending|approved|rejected&artistId=1&q=hello&limit=200&offset=0
@@ -35,7 +34,7 @@ router.get("/comments", (req, res) => {
       return res.status(result?.status || 400).json({
         success: false,
         message: result?.message || "Bad request",
-        allowedStatuses,
+        allowedStatuses: ALLOWED_COMMENT_STATUSES,
       });
     }
 
@@ -45,7 +44,7 @@ router.get("/comments", (req, res) => {
       limit: result.limit,
       offset: result.offset,
       comments: Array.isArray(result.comments) ? result.comments : [],
-      allowedStatuses,
+      allowedStatuses: ALLOWED_COMMENT_STATUSES,
     });
   } catch (e) {
     console.error("ADMIN_COMMENTS_LIST_ERROR", e?.message || e);
@@ -72,7 +71,7 @@ router.post("/comments/bulk-status", (req, res) => {
       return res.status(result?.status || 400).json({
         success: false,
         message: result?.message || "Bad request",
-        allowedStatuses,
+        allowedStatuses: ALLOWED_COMMENT_STATUSES,
       });
     }
 
