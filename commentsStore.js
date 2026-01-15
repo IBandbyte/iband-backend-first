@@ -1,255 +1,222 @@
 // commentsStore.js
-// iBand Backend — In-memory comments store (authoritative)
-// ES Module
+// In-memory comment store (Phase 1/2)
+// ES Module compatible
 
 import crypto from "crypto";
 
-/**
- * Comment shape (canonical)
- * {
- *   id: string,
- *   artistId: string,
- *   author: string,
- *   text: string,
- *   status: "pending" | "approved" | "rejected",
- *   createdAt: string (ISO),
- *   updatedAt: string (ISO),
- *   moderatedBy: string | null,
- *   moderatedAt: string | null
- * }
- */
+export const ALLOWED_COMMENT_STATUSES = ["pending", "approved", "rejected"];
 
-const STATUS = Object.freeze({
-  PENDING: "pending",
-  APPROVED: "approved",
-  REJECTED: "rejected",
-});
-
-function nowIso() {
-  return new Date().toISOString();
-}
-
-function makeId() {
-  // randomUUID exists in modern Node; fallback for safety
-  return crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString("hex");
-}
-
-function normalizeString(value) {
-  if (value === undefined || value === null) return "";
-  return String(value).trim();
-}
-
-function sanitizeArtistId(artistId) {
-  // Always treat IDs as strings to match frontend routing expectations
-  const v = normalizeString(artistId);
-  return v;
-}
-
-function isValidStatus(status) {
-  return status === STATUS.PENDING || status === STATUS.APPROVED || status === STATUS.REJECTED;
-}
-
-// Single in-memory source of truth for this running instance
-// (Render restarts reset memory — expected for Phase 1/2)
-const state = {
-  comments: [],
+const normalizeStatus = (status) => {
+  const s = String(status || "").trim().toLowerCase();
+  return ALLOWED_COMMENT_STATUSES.includes(s) ? s : null;
 };
 
-// ---------- Core getters ----------
-export function getAllComments() {
-  // Always return an array (never undefined)
-  return Array.isArray(state.comments) ? state.comments : [];
-}
+const nowIso = () => new Date().toISOString();
 
-export function getCommentById(id) {
-  const safeId = normalizeString(id);
-  if (!safeId) return null;
-  return getAllComments().find((c) => c.id === safeId) || null;
-}
+const toStr = (v) => String(v ?? "").trim();
 
-// ---------- Public-facing retrieval ----------
-export function getApprovedCommentsByArtist(artistId) {
-  const aId = sanitizeArtistId(artistId);
-  if (!aId) return [];
+const isPositiveIntString = (v) => /^\d+$/.test(String(v));
 
-  return getAllComments()
-    .filter((c) => c.artistId === aId && c.status === STATUS.APPROVED)
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-}
+const makeId = () => {
+  // Node 21 supports randomUUID
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  // fallback
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+};
 
-// Optional helper if you ever need “all statuses by artist”
-export function getAllCommentsByArtist(artistId) {
-  const aId = sanitizeArtistId(artistId);
-  if (!aId) return [];
+const store = {
+  comments: [],
 
-  return getAllComments()
-    .filter((c) => c.artistId === aId)
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-}
+  // ---------- Core helpers ----------
+  listAll() {
+    return [...this.comments].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+  },
 
-// ---------- Admin-facing retrieval ----------
-export function adminListComments({ status } = {}) {
-  const s = normalizeString(status);
-  const list = getAllComments();
+  getById(id) {
+    const key = toStr(id);
+    return this.comments.find((c) => c.id === key) || null;
+  },
 
-  if (!s) {
-    // default admin list is everything
-    return list
-      .slice()
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }
+  // ---------- Create ----------
+  create({ artistId, author, text }) {
+    const aId = toStr(artistId);
+    const a = toStr(author);
+    const t = toStr(text);
 
-  if (!isValidStatus(s)) return [];
-
-  return list
-    .filter((c) => c.status === s)
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-}
-
-// ---------- Create ----------
-export function createComment({ artistId, author, text }) {
-  const aId = sanitizeArtistId(artistId);
-  const a = normalizeString(author);
-  const t = normalizeString(text);
-
-  // Hard validation — prevents “empty approved comments” and junk
-  if (!aId) {
-    return {
-      ok: false,
-      error: "artistId is required",
-      statusCode: 400,
-    };
-  }
-
-  if (!a) {
-    return {
-      ok: false,
-      error: "author is required",
-      statusCode: 400,
-    };
-  }
-
-  if (!t) {
-    return {
-      ok: false,
-      error: "text is required",
-      statusCode: 400,
-    };
-  }
-
-  const ts = nowIso();
-
-  const newComment = {
-    id: makeId(),
-    artistId: aId,
-    author: a,
-    text: t,
-    status: STATUS.PENDING, // default: pending moderation
-    createdAt: ts,
-    updatedAt: ts,
-    moderatedBy: null,
-    moderatedAt: null,
-  };
-
-  state.comments = getAllComments();
-  state.comments.push(newComment);
-
-  return {
-    ok: true,
-    comment: newComment,
-  };
-}
-
-// ---------- Moderation ----------
-export function setCommentStatus({ id, status, moderatedBy }) {
-  const safeId = normalizeString(id);
-  const s = normalizeString(status);
-  const modBy = normalizeString(moderatedBy) || "admin";
-
-  if (!safeId) {
-    return { ok: false, error: "id is required", statusCode: 400 };
-  }
-  if (!isValidStatus(s)) {
-    return { ok: false, error: "status must be pending|approved|rejected", statusCode: 400 };
-  }
-
-  const existing = getCommentById(safeId);
-  if (!existing) {
-    return { ok: false, error: "comment not found", statusCode: 404 };
-  }
-
-  // Prevent “approved empty comment” even if a bad record exists
-  if (s === STATUS.APPROVED) {
-    const cleanedText = normalizeString(existing.text);
-    const cleanedAuthor = normalizeString(existing.author);
-    const cleanedArtistId = normalizeString(existing.artistId);
-
-    if (!cleanedText || !cleanedAuthor || !cleanedArtistId) {
+    if (!isPositiveIntString(aId)) {
       return {
         ok: false,
-        error: "cannot approve an empty/invalid comment",
-        statusCode: 400,
+        status: 400,
+        message: "artistId must be a positive integer string.",
       };
     }
-  }
 
-  const ts = nowIso();
+    if (!a) {
+      return { ok: false, status: 400, message: "author is required." };
+    }
 
-  existing.status = s;
-  existing.updatedAt = ts;
-  existing.moderatedBy = modBy;
-  existing.moderatedAt = ts;
+    if (!t) {
+      return { ok: false, status: 400, message: "text is required." };
+    }
 
-  return { ok: true, comment: existing };
-}
+    const comment = {
+      id: makeId(),
+      artistId: aId,
+      author: a,
+      text: t,
+      status: "pending",
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+      moderatedAt: null,
+      moderatedBy: null,
+      moderationNote: null,
+    };
 
-export function bulkSetCommentStatus({ ids, status, moderatedBy }) {
-  const list = Array.isArray(ids) ? ids.map(normalizeString).filter(Boolean) : [];
-  const s = normalizeString(status);
-  const modBy = normalizeString(moderatedBy) || "admin";
+    this.comments.push(comment);
 
-  if (list.length === 0) {
-    return { ok: false, error: "ids must be a non-empty array", statusCode: 400 };
-  }
-  if (!isValidStatus(s)) {
-    return { ok: false, error: "status must be pending|approved|rejected", statusCode: 400 };
-  }
+    return { ok: true, comment };
+  },
 
-  const updatedIds = [];
-  const skipped = [];
+  // ---------- Public query ----------
+  listByArtist(artistId, { onlyApproved = true } = {}) {
+    const aId = toStr(artistId);
+    if (!isPositiveIntString(aId)) {
+      return {
+        ok: false,
+        status: 400,
+        message: "artistId must be a positive integer string.",
+      };
+    }
 
-  for (const id of list) {
-    const res = setCommentStatus({ id, status: s, moderatedBy: modBy });
-    if (res.ok) updatedIds.push(id);
-    else skipped.push({ id, reason: res.error });
-  }
+    const filtered = this.comments.filter((c) => c.artistId === aId);
 
-  return {
-    ok: true,
-    status: s,
-    updatedCount: updatedIds.length,
-    updatedIds,
-    skippedCount: skipped.length,
-    skipped,
-  };
-}
+    const visible = onlyApproved
+      ? filtered.filter((c) => c.status === "approved")
+      : filtered;
 
-// ---------- Utilities (optional for future testing/admin tools) ----------
-export function deleteCommentById(id) {
-  const safeId = normalizeString(id);
-  if (!safeId) return { ok: false, error: "id is required", statusCode: 400 };
+    return {
+      ok: true,
+      artistId: aId,
+      count: visible.length,
+      comments: [...visible].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      ),
+    };
+  },
 
-  const before = getAllComments().length;
-  state.comments = getAllComments().filter((c) => c.id !== safeId);
-  const after = state.comments.length;
+  // ---------- Admin query ----------
+  listAdmin({
+    status = null,
+    artistId = null,
+    q = null,
+    limit = 200,
+    offset = 0,
+  } = {}) {
+    let rows = this.listAll();
 
-  if (after === before) return { ok: false, error: "comment not found", statusCode: 404 };
-  return { ok: true };
-}
+    const s = status ? normalizeStatus(status) : null;
+    if (status && !s) {
+      return {
+        ok: false,
+        status: 400,
+        message: `Invalid status. Allowed: ${ALLOWED_COMMENT_STATUSES.join(", ")}`,
+      };
+    }
 
-export function clearAllComments() {
-  state.comments = [];
-  return { ok: true };
-}
+    if (s) rows = rows.filter((c) => c.status === s);
 
-export { STATUS as COMMENT_STATUS };
+    if (artistId != null) {
+      const aId = toStr(artistId);
+      if (!isPositiveIntString(aId)) {
+        return {
+          ok: false,
+          status: 400,
+          message: "artistId filter must be a positive integer string.",
+        };
+      }
+      rows = rows.filter((c) => c.artistId === aId);
+    }
+
+    if (q) {
+      const needle = toStr(q).toLowerCase();
+      rows = rows.filter((c) => {
+        return (
+          String(c.author || "").toLowerCase().includes(needle) ||
+          String(c.text || "").toLowerCase().includes(needle) ||
+          String(c.artistId || "").toLowerCase().includes(needle) ||
+          String(c.status || "").toLowerCase().includes(needle) ||
+          String(c.id || "").toLowerCase().includes(needle)
+        );
+      });
+    }
+
+    const safeLimit = Math.max(1, Math.min(Number(limit) || 200, 500));
+    const safeOffset = Math.max(0, Number(offset) || 0);
+
+    const page = rows.slice(safeOffset, safeOffset + safeLimit);
+
+    return {
+      ok: true,
+      count: rows.length,
+      limit: safeLimit,
+      offset: safeOffset,
+      comments: page,
+    };
+  },
+
+  // ---------- Moderation ----------
+  bulkUpdateStatus({ ids, status, moderatedBy = null, moderationNote = null }) {
+    const s = normalizeStatus(status);
+    if (!s) {
+      return {
+        ok: false,
+        status: 400,
+        message: `Invalid status. Allowed: ${ALLOWED_COMMENT_STATUSES.join(", ")}`,
+      };
+    }
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return { ok: false, status: 400, message: "ids must be a non-empty array." };
+    }
+
+    const by = moderatedBy ? toStr(moderatedBy) : null;
+    const note = moderationNote ? toStr(moderationNote) : null;
+
+    const uniqueIds = [...new Set(ids.map((x) => toStr(x)).filter(Boolean))];
+
+    let updated = 0;
+    const updatedIds = [];
+    const missingIds = [];
+
+    for (const id of uniqueIds) {
+      const c = this.getById(id);
+      if (!c) {
+        missingIds.push(id);
+        continue;
+      }
+
+      c.status = s;
+      c.updatedAt = nowIso();
+      c.moderatedAt = nowIso();
+      c.moderatedBy = by;
+      c.moderationNote = note;
+
+      updated += 1;
+      updatedIds.push(id);
+    }
+
+    return {
+      ok: true,
+      status: s,
+      updated,
+      updatedIds,
+      missing: missingIds.length,
+      missingIds,
+    };
+  },
+};
+
+const commentsStore = store;
+export default commentsStore;
