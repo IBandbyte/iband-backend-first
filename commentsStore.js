@@ -1,45 +1,66 @@
 // commentsStore.js
 // In-memory comment store (Phase 1/2)
-// ES Module compatible
+// ES Module compatible (Render / Node 18+)
+// - Future-proofed exports to avoid deploy/import mismatches
 
 import crypto from "crypto";
 
+/**
+ * Named export REQUIRED by:
+ * - comments.js
+ * - adminComments.js
+ */
 export const ALLOWED_COMMENT_STATUSES = ["pending", "approved", "rejected"];
+export const ALLOWED_COMMENT_STATUSES_SET = new Set(ALLOWED_COMMENT_STATUSES);
 
-const normalizeStatus = (status) => {
+export function normalizeStatus(status) {
   const s = String(status || "").trim().toLowerCase();
-  return ALLOWED_COMMENT_STATUSES.includes(s) ? s : null;
-};
+  return ALLOWED_COMMENT_STATUSES_SET.has(s) ? s : null;
+}
 
 const nowIso = () => new Date().toISOString();
-
 const toStr = (v) => String(v ?? "").trim();
-
 const isPositiveIntString = (v) => /^\d+$/.test(String(v));
 
 const makeId = () => {
-  // Node 21 supports randomUUID
+  // Node 18+ supports randomUUID in crypto
   if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
-  // fallback
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 };
+
+// Internal version marker to confirm Render is running the latest code
+const STORE_VERSION = "commentsStore-v3-2026-01-15";
 
 const store = {
   comments: [],
 
-  // ---------- Core helpers ----------
+  // -------- Meta (debug / sanity) --------
+  __meta() {
+    return {
+      ok: true,
+      store: "commentsStore",
+      version: STORE_VERSION,
+      allowedStatuses: [...ALLOWED_COMMENT_STATUSES],
+      count: this.comments.length,
+      timestamp: nowIso(),
+    };
+  },
+
+  // -------- Core helpers --------
   listAll() {
     return [...this.comments].sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
   },
 
   getById(id) {
     const key = toStr(id);
+    if (!key) return null;
     return this.comments.find((c) => c.id === key) || null;
   },
 
-  // ---------- Create ----------
+  // -------- Create --------
   create({ artistId, author, text }) {
     const aId = toStr(artistId);
     const a = toStr(author);
@@ -61,14 +82,16 @@ const store = {
       return { ok: false, status: 400, message: "text is required." };
     }
 
+    const ts = nowIso();
+
     const comment = {
       id: makeId(),
       artistId: aId,
       author: a,
       text: t,
       status: "pending",
-      createdAt: nowIso(),
-      updatedAt: nowIso(),
+      createdAt: ts,
+      updatedAt: ts,
       moderatedAt: null,
       moderatedBy: null,
       moderationNote: null,
@@ -79,9 +102,10 @@ const store = {
     return { ok: true, comment };
   },
 
-  // ---------- Public query ----------
+  // -------- Public query --------
   listByArtist(artistId, { onlyApproved = true } = {}) {
     const aId = toStr(artistId);
+
     if (!isPositiveIntString(aId)) {
       return {
         ok: false,
@@ -101,12 +125,13 @@ const store = {
       artistId: aId,
       count: visible.length,
       comments: [...visible].sort(
-        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       ),
     };
   },
 
-  // ---------- Admin query ----------
+  // -------- Admin query --------
   listAdmin({
     status = null,
     artistId = null,
@@ -141,15 +166,17 @@ const store = {
 
     if (q) {
       const needle = toStr(q).toLowerCase();
-      rows = rows.filter((c) => {
-        return (
-          String(c.author || "").toLowerCase().includes(needle) ||
-          String(c.text || "").toLowerCase().includes(needle) ||
-          String(c.artistId || "").toLowerCase().includes(needle) ||
-          String(c.status || "").toLowerCase().includes(needle) ||
-          String(c.id || "").toLowerCase().includes(needle)
-        );
-      });
+      if (needle) {
+        rows = rows.filter((c) => {
+          return (
+            String(c.author || "").toLowerCase().includes(needle) ||
+            String(c.text || "").toLowerCase().includes(needle) ||
+            String(c.artistId || "").toLowerCase().includes(needle) ||
+            String(c.status || "").toLowerCase().includes(needle) ||
+            String(c.id || "").toLowerCase().includes(needle)
+          );
+        });
+      }
     }
 
     const safeLimit = Math.max(1, Math.min(Number(limit) || 200, 500));
@@ -166,7 +193,7 @@ const store = {
     };
   },
 
-  // ---------- Moderation ----------
+  // -------- Moderation --------
   bulkUpdateStatus({ ids, status, moderatedBy = null, moderationNote = null }) {
     const s = normalizeStatus(status);
     if (!s) {
@@ -178,7 +205,11 @@ const store = {
     }
 
     if (!Array.isArray(ids) || ids.length === 0) {
-      return { ok: false, status: 400, message: "ids must be a non-empty array." };
+      return {
+        ok: false,
+        status: 400,
+        message: "ids must be a non-empty array.",
+      };
     }
 
     const by = moderatedBy ? toStr(moderatedBy) : null;
@@ -197,9 +228,10 @@ const store = {
         continue;
       }
 
+      const ts = nowIso();
       c.status = s;
-      c.updatedAt = nowIso();
-      c.moderatedAt = nowIso();
+      c.updatedAt = ts;
+      c.moderatedAt = ts;
       c.moderatedBy = by;
       c.moderationNote = note;
 
