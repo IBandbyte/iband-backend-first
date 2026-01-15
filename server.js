@@ -1,5 +1,6 @@
 // server.js
 // iBand Backend — ES Module entrypoint (authoritative)
+// Hardened for Render + consistent JSON errors
 
 import express from "express";
 import cors from "cors";
@@ -13,16 +14,23 @@ const app = express();
 
 // ---------- Middleware ----------
 app.disable("x-powered-by");
+app.set("trust proxy", 1);
 
 app.use(
   cors({
     origin: "*",
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: ["Content-Type", "Authorization", "x-admin-key"],
   })
 );
 
 app.use(express.json({ limit: "1mb" }));
+
+// Request id (simple + Render-safe)
+app.use((req, _res, next) => {
+  req._rid = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  next();
+});
 
 // ---------- Health ----------
 app.get("/", (_req, res) => {
@@ -56,16 +64,23 @@ app.use((req, res) => {
   });
 });
 
-// ---------- Error handler ----------
+// ---------- Error handler (always JSON, always logs with request id) ----------
 app.use((err, req, res, _next) => {
+  const code = Number(err?.status || err?.statusCode || 500);
+  const safeCode = code >= 400 && code <= 599 ? code : 500;
+
   console.error("API_ERROR", {
-    path: req.originalUrl,
+    rid: req?._rid,
+    method: req?.method,
+    path: req?.originalUrl,
     message: err?.message,
+    stack: err?.stack,
   });
 
-  res.status(500).json({
+  res.status(safeCode).json({
     success: false,
-    message: "Internal server error",
+    message: safeCode === 500 ? "Internal server error" : err?.message || "Error",
+    rid: req?._rid,
   });
 });
 
