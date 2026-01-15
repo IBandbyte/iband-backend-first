@@ -1,349 +1,255 @@
 // commentsStore.js
-// iBand Backend — In-memory comments store (ESM)
-// Goal: NEVER throw for "no data" cases. Always return safe arrays/objects.
-// This store is intentionally defensive to prevent 500s on public endpoints.
+// iBand Backend — In-memory comments store (authoritative)
+// ES Module
 
 import crypto from "crypto";
 
-// -------------------- Constants --------------------
-export const ALLOWED_COMMENT_STATUSES = Object.freeze([
-  "pending",
-  "approved",
-  "rejected",
-]);
-
-export const DEFAULT_COMMENT_STATUS = "pending";
-
-// -------------------- Internal State --------------------
 /**
- * @typedef {Object} Comment
- * @property {string} id
- * @property {string} artistId
- * @property {string} author
- * @property {string} text
- * @property {"pending"|"approved"|"rejected"} status
- * @property {string} createdAt
- * @property {string} updatedAt
- * @property {string|null} moderatedAt
- * @property {string|null} moderatedBy
+ * Comment shape (canonical)
+ * {
+ *   id: string,
+ *   artistId: string,
+ *   author: string,
+ *   text: string,
+ *   status: "pending" | "approved" | "rejected",
+ *   createdAt: string (ISO),
+ *   updatedAt: string (ISO),
+ *   moderatedBy: string | null,
+ *   moderatedAt: string | null
+ * }
  */
 
-const _comments = [];
+const STATUS = Object.freeze({
+  PENDING: "pending",
+  APPROVED: "approved",
+  REJECTED: "rejected",
+});
 
-// -------------------- Helpers --------------------
-function nowISO() {
+function nowIso() {
   return new Date().toISOString();
 }
 
-function safeString(v) {
-  if (v === null || v === undefined) return "";
-  return String(v);
+function makeId() {
+  // randomUUID exists in modern Node; fallback for safety
+  return crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString("hex");
 }
 
-function normalizeId(v) {
-  const s = safeString(v).trim();
-  return s;
+function normalizeString(value) {
+  if (value === undefined || value === null) return "";
+  return String(value).trim();
 }
 
-function normalizeArtistId(v) {
-  // Always treat artistId as a STRING (important for "1" vs 1).
-  const s = safeString(v).trim();
-  return s;
-}
-
-function sanitizeText(v, maxLen = 1000) {
-  const s = safeString(v).trim();
-  if (!s) return "";
-  return s.length > maxLen ? s.slice(0, maxLen) : s;
+function sanitizeArtistId(artistId) {
+  // Always treat IDs as strings to match frontend routing expectations
+  const v = normalizeString(artistId);
+  return v;
 }
 
 function isValidStatus(status) {
-  return ALLOWED_COMMENT_STATUSES.includes(status);
+  return status === STATUS.PENDING || status === STATUS.APPROVED || status === STATUS.REJECTED;
 }
 
-function makeId() {
-  // Stable unique IDs without external deps
-  if (crypto.randomUUID) return crypto.randomUUID();
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-function cloneComment(c) {
-  return { ...c };
-}
-
-function sortNewestFirst(a, b) {
-  // ISO strings sort lexicographically, but we’ll be explicit
-  return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-}
-
-// -------------------- Public API (Store) --------------------
-const commentsStore = {
-  /**
-   * Create a new comment (defaults to "pending")
-   * Never throws; returns a result object
-   */
-  create(input = {}) {
-    const artistId = normalizeArtistId(input.artistId);
-    const author = sanitizeText(input.author, 80);
-    const text = sanitizeText(input.text, 1000);
-
-    const errors = [];
-
-    if (!artistId) errors.push("artistId is required");
-    if (!author) errors.push("author is required");
-    if (!text) errors.push("text is required");
-
-    if (errors.length) {
-      return {
-        success: false,
-        message: "Validation failed",
-        errors,
-      };
-    }
-
-    const createdAt = nowISO();
-
-    /** @type {Comment} */
-    const comment = {
-      id: makeId(),
-      artistId,
-      author,
-      text,
-      status: DEFAULT_COMMENT_STATUS,
-      createdAt,
-      updatedAt: createdAt,
-      moderatedAt: null,
-      moderatedBy: null,
-    };
-
-    _comments.push(comment);
-
-    return {
-      success: true,
-      comment: cloneComment(comment),
-    };
-  },
-
-  /**
-   * List ALL comments (admin)
-   * Supports optional filters (status, artistId, search)
-   * Never throws.
-   */
-  listAll(filters = {}) {
-    const status = normalizeId(filters.status);
-    const artistId = normalizeArtistId(filters.artistId);
-    const search = sanitizeText(filters.search, 200).toLowerCase();
-
-    let items = _comments;
-
-    if (status) {
-      // If invalid status filter is passed, return empty list (not 500)
-      if (!isValidStatus(status)) {
-        return { success: true, count: 0, comments: [] };
-      }
-      items = items.filter((c) => c.status === status);
-    }
-
-    if (artistId) {
-      items = items.filter((c) => c.artistId === artistId);
-    }
-
-    if (search) {
-      items = items.filter((c) => {
-        return (
-          c.author.toLowerCase().includes(search) ||
-          c.text.toLowerCase().includes(search) ||
-          c.id.toLowerCase().includes(search)
-        );
-      });
-    }
-
-    const out = items.slice().sort(sortNewestFirst).map(cloneComment);
-
-    return {
-      success: true,
-      count: out.length,
-      comments: out,
-    };
-  },
-
-  /**
-   * Public endpoint: get comments by artist (ONLY approved)
-   * IMPORTANT: if artist has no comments, returns empty list (not 500)
-   */
-  getByArtist(artistIdInput) {
-    const artistId = normalizeArtistId(artistIdInput);
-
-    if (!artistId) {
-      // Treat missing artistId as empty, not error, to prevent accidental 500s
-      return { success: true, count: 0, comments: [] };
-    }
-
-    const out = _comments
-      .filter((c) => c.artistId === artistId && c.status === "approved")
-      .slice()
-      .sort(sortNewestFirst)
-      .map(cloneComment);
-
-    return {
-      success: true,
-      count: out.length,
-      comments: out,
-    };
-  },
-
-  /**
-   * Find a comment by id (admin or internal)
-   */
-  findById(idInput) {
-    const id = normalizeId(idInput);
-    if (!id) return { success: true, comment: null };
-
-    const found = _comments.find((c) => c.id === id) || null;
-
-    return {
-      success: true,
-      comment: found ? cloneComment(found) : null,
-    };
-  },
-
-  /**
-   * Update status for ONE comment
-   * Never throws.
-   */
-  setStatus(idInput, statusInput, moderatedByInput = null) {
-    const id = normalizeId(idInput);
-    const status = normalizeId(statusInput);
-    const moderatedBy = moderatedByInput ? sanitizeText(moderatedByInput, 80) : null;
-
-    if (!id) {
-      return { success: false, message: "id is required" };
-    }
-    if (!isValidStatus(status)) {
-      return {
-        success: false,
-        message: `Invalid status. Allowed: ${ALLOWED_COMMENT_STATUSES.join(", ")}`,
-      };
-    }
-
-    const idx = _comments.findIndex((c) => c.id === id);
-
-    if (idx === -1) {
-      return { success: false, message: "Comment not found", id };
-    }
-
-    const now = nowISO();
-    _comments[idx] = {
-      ..._comments[idx],
-      status,
-      updatedAt: now,
-      moderatedAt: now,
-      moderatedBy: moderatedBy || _comments[idx].moderatedBy || null,
-    };
-
-    return {
-      success: true,
-      status,
-      comment: cloneComment(_comments[idx]),
-    };
-  },
-
-  /**
-   * Bulk update statuses (admin bulk approve/reject)
-   * Returns updatedCount and arrays for clarity. Never throws.
-   */
-  setStatusBulk(idsInput, statusInput, moderatedByInput = null) {
-    const status = normalizeId(statusInput);
-    const moderatedBy = moderatedByInput ? sanitizeText(moderatedByInput, 80) : null;
-
-    const ids = Array.isArray(idsInput)
-      ? idsInput.map(normalizeId).filter(Boolean)
-      : [];
-
-    if (!ids.length) {
-      return { success: false, message: "ids[] is required" };
-    }
-    if (!isValidStatus(status)) {
-      return {
-        success: false,
-        message: `Invalid status. Allowed: ${ALLOWED_COMMENT_STATUSES.join(", ")}`,
-      };
-    }
-
-    const now = nowISO();
-    const updatedIds = [];
-    const notFoundIds = [];
-
-    for (const id of ids) {
-      const idx = _comments.findIndex((c) => c.id === id);
-      if (idx === -1) {
-        notFoundIds.push(id);
-        continue;
-      }
-
-      _comments[idx] = {
-        ..._comments[idx],
-        status,
-        updatedAt: now,
-        moderatedAt: now,
-        moderatedBy: moderatedBy || _comments[idx].moderatedBy || null,
-      };
-
-      updatedIds.push(id);
-    }
-
-    return {
-      success: true,
-      status,
-      updatedCount: updatedIds.length,
-      updatedIds,
-      notFoundCount: notFoundIds.length,
-      notFoundIds,
-    };
-  },
-
-  /**
-   * Delete a comment by id (future-proof admin tool)
-   * Never throws.
-   */
-  deleteById(idInput) {
-    const id = normalizeId(idInput);
-    if (!id) return { success: false, message: "id is required" };
-
-    const idx = _comments.findIndex((c) => c.id === id);
-    if (idx === -1) return { success: false, message: "Comment not found", id };
-
-    const [removed] = _comments.splice(idx, 1);
-
-    return { success: true, removed: cloneComment(removed) };
-  },
-
-  /**
-   * Utility: clear store (useful in dev/tests)
-   */
-  _dangerouslyClearAll() {
-    _comments.length = 0;
-    return { success: true };
-  },
-
-  /**
-   * Utility: expose raw count (debug)
-   */
-  _count() {
-    return _comments.length;
-  },
-
-  // -------------------- Backwards-compatible aliases --------------------
-  // These protect us if older route files call different method names.
-  addComment(input) {
-    return this.create(input);
-  },
-  getCommentsByArtist(artistId) {
-    return this.getByArtist(artistId);
-  },
-  bulkUpdateStatus(ids, status, moderatedBy) {
-    return this.setStatusBulk(ids, status, moderatedBy);
-  },
+// Single in-memory source of truth for this running instance
+// (Render restarts reset memory — expected for Phase 1/2)
+const state = {
+  comments: [],
 };
 
-export default commentsStore;
+// ---------- Core getters ----------
+export function getAllComments() {
+  // Always return an array (never undefined)
+  return Array.isArray(state.comments) ? state.comments : [];
+}
+
+export function getCommentById(id) {
+  const safeId = normalizeString(id);
+  if (!safeId) return null;
+  return getAllComments().find((c) => c.id === safeId) || null;
+}
+
+// ---------- Public-facing retrieval ----------
+export function getApprovedCommentsByArtist(artistId) {
+  const aId = sanitizeArtistId(artistId);
+  if (!aId) return [];
+
+  return getAllComments()
+    .filter((c) => c.artistId === aId && c.status === STATUS.APPROVED)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
+
+// Optional helper if you ever need “all statuses by artist”
+export function getAllCommentsByArtist(artistId) {
+  const aId = sanitizeArtistId(artistId);
+  if (!aId) return [];
+
+  return getAllComments()
+    .filter((c) => c.artistId === aId)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
+
+// ---------- Admin-facing retrieval ----------
+export function adminListComments({ status } = {}) {
+  const s = normalizeString(status);
+  const list = getAllComments();
+
+  if (!s) {
+    // default admin list is everything
+    return list
+      .slice()
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  if (!isValidStatus(s)) return [];
+
+  return list
+    .filter((c) => c.status === s)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
+
+// ---------- Create ----------
+export function createComment({ artistId, author, text }) {
+  const aId = sanitizeArtistId(artistId);
+  const a = normalizeString(author);
+  const t = normalizeString(text);
+
+  // Hard validation — prevents “empty approved comments” and junk
+  if (!aId) {
+    return {
+      ok: false,
+      error: "artistId is required",
+      statusCode: 400,
+    };
+  }
+
+  if (!a) {
+    return {
+      ok: false,
+      error: "author is required",
+      statusCode: 400,
+    };
+  }
+
+  if (!t) {
+    return {
+      ok: false,
+      error: "text is required",
+      statusCode: 400,
+    };
+  }
+
+  const ts = nowIso();
+
+  const newComment = {
+    id: makeId(),
+    artistId: aId,
+    author: a,
+    text: t,
+    status: STATUS.PENDING, // default: pending moderation
+    createdAt: ts,
+    updatedAt: ts,
+    moderatedBy: null,
+    moderatedAt: null,
+  };
+
+  state.comments = getAllComments();
+  state.comments.push(newComment);
+
+  return {
+    ok: true,
+    comment: newComment,
+  };
+}
+
+// ---------- Moderation ----------
+export function setCommentStatus({ id, status, moderatedBy }) {
+  const safeId = normalizeString(id);
+  const s = normalizeString(status);
+  const modBy = normalizeString(moderatedBy) || "admin";
+
+  if (!safeId) {
+    return { ok: false, error: "id is required", statusCode: 400 };
+  }
+  if (!isValidStatus(s)) {
+    return { ok: false, error: "status must be pending|approved|rejected", statusCode: 400 };
+  }
+
+  const existing = getCommentById(safeId);
+  if (!existing) {
+    return { ok: false, error: "comment not found", statusCode: 404 };
+  }
+
+  // Prevent “approved empty comment” even if a bad record exists
+  if (s === STATUS.APPROVED) {
+    const cleanedText = normalizeString(existing.text);
+    const cleanedAuthor = normalizeString(existing.author);
+    const cleanedArtistId = normalizeString(existing.artistId);
+
+    if (!cleanedText || !cleanedAuthor || !cleanedArtistId) {
+      return {
+        ok: false,
+        error: "cannot approve an empty/invalid comment",
+        statusCode: 400,
+      };
+    }
+  }
+
+  const ts = nowIso();
+
+  existing.status = s;
+  existing.updatedAt = ts;
+  existing.moderatedBy = modBy;
+  existing.moderatedAt = ts;
+
+  return { ok: true, comment: existing };
+}
+
+export function bulkSetCommentStatus({ ids, status, moderatedBy }) {
+  const list = Array.isArray(ids) ? ids.map(normalizeString).filter(Boolean) : [];
+  const s = normalizeString(status);
+  const modBy = normalizeString(moderatedBy) || "admin";
+
+  if (list.length === 0) {
+    return { ok: false, error: "ids must be a non-empty array", statusCode: 400 };
+  }
+  if (!isValidStatus(s)) {
+    return { ok: false, error: "status must be pending|approved|rejected", statusCode: 400 };
+  }
+
+  const updatedIds = [];
+  const skipped = [];
+
+  for (const id of list) {
+    const res = setCommentStatus({ id, status: s, moderatedBy: modBy });
+    if (res.ok) updatedIds.push(id);
+    else skipped.push({ id, reason: res.error });
+  }
+
+  return {
+    ok: true,
+    status: s,
+    updatedCount: updatedIds.length,
+    updatedIds,
+    skippedCount: skipped.length,
+    skipped,
+  };
+}
+
+// ---------- Utilities (optional for future testing/admin tools) ----------
+export function deleteCommentById(id) {
+  const safeId = normalizeString(id);
+  if (!safeId) return { ok: false, error: "id is required", statusCode: 400 };
+
+  const before = getAllComments().length;
+  state.comments = getAllComments().filter((c) => c.id !== safeId);
+  const after = state.comments.length;
+
+  if (after === before) return { ok: false, error: "comment not found", statusCode: 404 };
+  return { ok: true };
+}
+
+export function clearAllComments() {
+  state.comments = [];
+  return { ok: true };
+}
+
+export { STATUS as COMMENT_STATUS };
