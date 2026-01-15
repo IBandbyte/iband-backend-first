@@ -1,44 +1,49 @@
 // adminComments.js
 // Admin comments router (ESM)
-// Mounted under /api/admin via admin.js
-//
-// GET  /api/admin/comments
-// POST /api/admin/comments/bulk-status
-//
-// DEPLOY-SAFE:
-// - Does not hard-crash if commentsStore.js changes its named exports.
-// - Falls back to a safe default status list.
+// Mount at: /api/admin
+// Routes:
+//   GET  /api/admin/comments?status=pending|approved|rejected&artistId=1&q=...&limit=200&offset=0
+//   POST /api/admin/comments/bulk-status
 
 import express from "express";
-import commentsStore from "./commentsStore.js";
-import * as commentsStoreModule from "./commentsStore.js";
+import commentsStore, { ALLOWED_COMMENT_STATUSES } from "./commentsStore.js";
 
 const router = express.Router();
 
-const SAFE_STATUSES = ["pending", "approved", "rejected"];
-const ALLOWED_COMMENT_STATUSES =
-  Array.isArray(commentsStoreModule.ALLOWED_COMMENT_STATUSES) &&
-  commentsStoreModule.ALLOWED_COMMENT_STATUSES.length > 0
-    ? commentsStoreModule.ALLOWED_COMMENT_STATUSES
-    : SAFE_STATUSES;
+/**
+ * Minimal admin auth (future-proof):
+ * - Accepts x-admin-key header
+ * - Compares with process.env.ADMIN_KEY or process.env.IBAND_ADMIN_KEY
+ * - If no env key is set, admin routes still work (dev mode) but warns in response
+ */
+function requireAdmin(req, res, next) {
+  const expected =
+    (process.env.IBAND_ADMIN_KEY || process.env.ADMIN_KEY || "").trim();
 
-const toStr = (v) => String(v ?? "").trim();
+  // If no key configured, allow (dev mode)
+  if (!expected) return next();
+
+  const got = String(req.headers["x-admin-key"] || "").trim();
+  if (!got || got !== expected) {
+    return res.status(401).json({
+      success: false,
+      message: "Unauthorized: missing/invalid x-admin-key.",
+    });
+  }
+  return next();
+}
 
 // --------------------
 // GET /api/admin/comments
-// Query: status, artistId, q, limit, offset
 // --------------------
-router.get("/comments", (req, res) => {
+router.get("/comments", requireAdmin, (req, res) => {
   try {
-    const status = toStr(req.query.status || "") || null;
-    const artistId = toStr(req.query.artistId || "") || null;
-    const q = toStr(req.query.q || "") || null;
+    const status = (req.query.status ?? "").toString().trim() || null;
+    const artistId = (req.query.artistId ?? "").toString().trim() || null;
+    const q = (req.query.q ?? "").toString().trim() || null;
 
-    const limitRaw = req.query.limit;
-    const offsetRaw = req.query.offset;
-
-    const limit = limitRaw != null ? Number(limitRaw) : 200;
-    const offset = offsetRaw != null ? Number(offsetRaw) : 0;
+    const limit = req.query.limit != null ? Number(req.query.limit) : 200;
+    const offset = req.query.offset != null ? Number(req.query.offset) : 0;
 
     const result = commentsStore.listAdmin({
       status,
@@ -63,20 +68,23 @@ router.get("/comments", (req, res) => {
       offset: result.offset,
       comments: result.comments,
       allowedStatuses: ALLOWED_COMMENT_STATUSES,
+      // Helpful warning if no admin key set in env (prevents “why is this open?” confusion)
+      adminKeyConfigured: Boolean(
+        (process.env.IBAND_ADMIN_KEY || process.env.ADMIN_KEY || "").trim()
+      ),
     });
-  } catch (_e) {
-    return res.status(500).json({
-      success: false,
-      message: "Internal server error",
-    });
+  } catch (e) {
+    return res
+      .status(500)
+      .json({ success: false, message: "Internal server error" });
   }
 });
 
 // --------------------
 // POST /api/admin/comments/bulk-status
-// Body: { ids: [], status: "approved|rejected|pending", moderatedBy, moderationNote }
+// Body: { ids: [], status: "approved", moderatedBy?: "...", moderationNote?: "..." }
 // --------------------
-router.post("/comments/bulk-status", (req, res) => {
+router.post("/comments/bulk-status", requireAdmin, (req, res) => {
   try {
     const { ids, status, moderatedBy, moderationNote } = req.body ?? {};
 
@@ -102,14 +110,15 @@ router.post("/comments/bulk-status", (req, res) => {
       updatedIds: result.updatedIds,
       missing: result.missing,
       missingIds: result.missingIds,
-      moderatedBy: moderatedBy ?? null,
-      moderationNote: moderationNote ?? null,
+      allowedStatuses: ALLOWED_COMMENT_STATUSES,
+      adminKeyConfigured: Boolean(
+        (process.env.IBAND_ADMIN_KEY || process.env.ADMIN_KEY || "").trim()
+      ),
     });
-  } catch (_e) {
-    return res.status(500).json({
-      success: false,
-      message: "Internal server error",
-    });
+  } catch (e) {
+    return res
+      .status(500)
+      .json({ success: false, message: "Internal server error" });
   }
 });
 
