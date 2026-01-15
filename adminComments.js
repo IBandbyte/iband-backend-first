@@ -1,55 +1,93 @@
 // adminComments.js
+// Admin comments router (ESM)
+// - GET  /api/admin/comments?status=... -> list comments (supports filters)
+// - POST /api/admin/comments/bulk-status -> bulk moderation
+
 import express from "express";
-import commentsStore, { ALLOWED_COMMENT_STATUSES } from "./commentsStore.js";
+import commentsStore from "./commentsStore.js";
 
 const router = express.Router();
 
-// GET /api/admin/comments?status=pending|approved|rejected
+const FALLBACK_ALLOWED = ["pending", "approved", "rejected"];
+const allowedStatuses =
+  (commentsStore && commentsStore.ALLOWED_COMMENT_STATUSES) || FALLBACK_ALLOWED;
+
+// --------------------
+// GET /api/admin/comments?status=pending|approved|rejected&artistId=1&q=hello&limit=200&offset=0
+// --------------------
 router.get("/comments", (req, res) => {
   try {
-    const status = (req.query.status ?? "").toString().trim();
-    const result = commentsStore.getAll({ status });
+    const status = (req.query.status ?? "").toString().trim() || null;
+    const artistId = (req.query.artistId ?? "").toString().trim() || null;
+    const q = (req.query.q ?? "").toString().trim() || null;
+    const limit = req.query.limit;
+    const offset = req.query.offset;
 
-    if (!result.success) {
-      return res.status(result.status || 400).json({
+    const result = commentsStore.listAdmin({
+      status,
+      artistId,
+      q,
+      limit,
+      offset,
+    });
+
+    if (!result?.ok) {
+      return res.status(result?.status || 400).json({
         success: false,
-        message: result.message || "Bad request",
-        allowedStatuses: ALLOWED_COMMENT_STATUSES,
+        message: result?.message || "Bad request",
+        allowedStatuses,
       });
     }
 
     return res.status(200).json({
       success: true,
-      count: result.comments.length,
-      comments: result.comments,
-      allowedStatuses: ALLOWED_COMMENT_STATUSES,
+      count: result.count,
+      limit: result.limit,
+      offset: result.offset,
+      comments: Array.isArray(result.comments) ? result.comments : [],
+      allowedStatuses,
     });
   } catch (e) {
+    console.error("ADMIN_COMMENTS_LIST_ERROR", e?.message || e);
     return res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
+// --------------------
 // POST /api/admin/comments/bulk-status
+// Body: { ids: ["..."], status: "approved|rejected|pending", moderatedBy?: "Captain", moderationNote?: "..." }
+// --------------------
 router.post("/comments/bulk-status", (req, res) => {
   try {
-    const { ids, status, moderatedBy } = req.body ?? {};
-    const result = commentsStore.bulkUpdateStatus({ ids, status, moderatedBy });
+    const { ids, status, moderatedBy, moderationNote } = req.body ?? {};
 
-    if (!result.success) {
-      return res.status(result.status || 400).json({
+    const result = commentsStore.bulkUpdateStatus({
+      ids,
+      status,
+      moderatedBy,
+      moderationNote,
+    });
+
+    if (!result?.ok) {
+      return res.status(result?.status || 400).json({
         success: false,
-        message: result.message || "Bad request",
-        allowedStatuses: ALLOWED_COMMENT_STATUSES,
+        message: result?.message || "Bad request",
+        allowedStatuses,
       });
     }
 
     return res.status(200).json({
       success: true,
-      status: result.statusSetTo,
-      updatedCount: result.updatedCount,
-      moderatedBy: result.moderatedBy,
+      status: result.status,
+      updated: result.updated,
+      updatedIds: result.updatedIds,
+      missing: result.missing,
+      missingIds: result.missingIds,
+      moderatedBy: moderatedBy || null,
+      moderationNote: moderationNote || null,
     });
   } catch (e) {
+    console.error("ADMIN_COMMENTS_BULK_STATUS_ERROR", e?.message || e);
     return res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
