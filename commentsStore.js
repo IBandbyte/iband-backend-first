@@ -1,254 +1,136 @@
 // commentsStore.js
 // In-memory comment store (Phase 1/2)
-// ES Module compatible (Render / Node 18+)
-// - Future-proofed exports to avoid deploy/import mismatches
+// ES Module — Render-safe, Node 18–21 compatible
 
 import crypto from "crypto";
 
-/**
- * Named export REQUIRED by:
- * - comments.js
- * - adminComments.js
- */
-export const ALLOWED_COMMENT_STATUSES = ["pending", "approved", "rejected"];
-export const ALLOWED_COMMENT_STATUSES_SET = new Set(ALLOWED_COMMENT_STATUSES);
+const ALLOWED_COMMENT_STATUSES = ["pending", "approved", "rejected"];
 
-export function normalizeStatus(status) {
+const normalizeStatus = (status) => {
   const s = String(status || "").trim().toLowerCase();
-  return ALLOWED_COMMENT_STATUSES_SET.has(s) ? s : null;
-}
+  return ALLOWED_COMMENT_STATUSES.includes(s) ? s : null;
+};
 
 const nowIso = () => new Date().toISOString();
 const toStr = (v) => String(v ?? "").trim();
 const isPositiveIntString = (v) => /^\d+$/.test(String(v));
 
-const makeId = () => {
-  // Node 18+ supports randomUUID in crypto
-  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-};
+const makeId = () =>
+  typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-// Internal version marker to confirm Render is running the latest code
-const STORE_VERSION = "commentsStore-v3-2026-01-15";
+const commentsStore = {
+  ALLOWED_COMMENT_STATUSES,
 
-const store = {
   comments: [],
 
-  // -------- Meta (debug / sanity) --------
-  __meta() {
-    return {
-      ok: true,
-      store: "commentsStore",
-      version: STORE_VERSION,
-      allowedStatuses: [...ALLOWED_COMMENT_STATUSES],
-      count: this.comments.length,
-      timestamp: nowIso(),
-    };
-  },
-
-  // -------- Core helpers --------
   listAll() {
     return [...this.comments].sort(
-      (a, b) =>
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
     );
   },
 
   getById(id) {
-    const key = toStr(id);
-    if (!key) return null;
-    return this.comments.find((c) => c.id === key) || null;
+    return this.comments.find((c) => c.id === toStr(id)) || null;
   },
 
-  // -------- Create --------
   create({ artistId, author, text }) {
-    const aId = toStr(artistId);
-    const a = toStr(author);
-    const t = toStr(text);
+    if (!isPositiveIntString(artistId))
+      return { ok: false, status: 400, message: "artistId must be numeric." };
 
-    if (!isPositiveIntString(aId)) {
-      return {
-        ok: false,
-        status: 400,
-        message: "artistId must be a positive integer string.",
-      };
-    }
-
-    if (!a) {
+    if (!toStr(author))
       return { ok: false, status: 400, message: "author is required." };
-    }
 
-    if (!t) {
+    if (!toStr(text))
       return { ok: false, status: 400, message: "text is required." };
-    }
-
-    const ts = nowIso();
 
     const comment = {
       id: makeId(),
-      artistId: aId,
-      author: a,
-      text: t,
+      artistId: toStr(artistId),
+      author: toStr(author),
+      text: toStr(text),
       status: "pending",
-      createdAt: ts,
-      updatedAt: ts,
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
       moderatedAt: null,
       moderatedBy: null,
       moderationNote: null,
     };
 
     this.comments.push(comment);
-
     return { ok: true, comment };
   },
 
-  // -------- Public query --------
   listByArtist(artistId, { onlyApproved = true } = {}) {
-    const aId = toStr(artistId);
+    if (!isPositiveIntString(artistId))
+      return { ok: false, status: 400, message: "Invalid artistId." };
 
-    if (!isPositiveIntString(aId)) {
-      return {
-        ok: false,
-        status: 400,
-        message: "artistId must be a positive integer string.",
-      };
-    }
-
-    const filtered = this.comments.filter((c) => c.artistId === aId);
-
-    const visible = onlyApproved
-      ? filtered.filter((c) => c.status === "approved")
-      : filtered;
+    const rows = this.comments.filter(
+      (c) =>
+        c.artistId === toStr(artistId) &&
+        (!onlyApproved || c.status === "approved")
+    );
 
     return {
       ok: true,
-      artistId: aId,
-      count: visible.length,
-      comments: [...visible].sort(
-        (a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      artistId: toStr(artistId),
+      count: rows.length,
+      comments: rows.sort(
+        (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
       ),
     };
   },
 
-  // -------- Admin query --------
-  listAdmin({
-    status = null,
-    artistId = null,
-    q = null,
-    limit = 200,
-    offset = 0,
-  } = {}) {
+  listAdmin({ status, artistId } = {}) {
     let rows = this.listAll();
 
-    const s = status ? normalizeStatus(status) : null;
-    if (status && !s) {
-      return {
-        ok: false,
-        status: 400,
-        message: `Invalid status. Allowed: ${ALLOWED_COMMENT_STATUSES.join(", ")}`,
-      };
-    }
-
-    if (s) rows = rows.filter((c) => c.status === s);
-
-    if (artistId != null) {
-      const aId = toStr(artistId);
-      if (!isPositiveIntString(aId)) {
+    if (status) {
+      const s = normalizeStatus(status);
+      if (!s)
         return {
           ok: false,
           status: 400,
-          message: "artistId filter must be a positive integer string.",
+          message: `Allowed: ${ALLOWED_COMMENT_STATUSES.join(", ")}`,
         };
-      }
-      rows = rows.filter((c) => c.artistId === aId);
+      rows = rows.filter((c) => c.status === s);
     }
 
-    if (q) {
-      const needle = toStr(q).toLowerCase();
-      if (needle) {
-        rows = rows.filter((c) => {
-          return (
-            String(c.author || "").toLowerCase().includes(needle) ||
-            String(c.text || "").toLowerCase().includes(needle) ||
-            String(c.artistId || "").toLowerCase().includes(needle) ||
-            String(c.status || "").toLowerCase().includes(needle) ||
-            String(c.id || "").toLowerCase().includes(needle)
-          );
-        });
-      }
+    if (artistId) {
+      if (!isPositiveIntString(artistId))
+        return { ok: false, status: 400, message: "Invalid artistId." };
+      rows = rows.filter((c) => c.artistId === toStr(artistId));
     }
 
-    const safeLimit = Math.max(1, Math.min(Number(limit) || 200, 500));
-    const safeOffset = Math.max(0, Number(offset) || 0);
-
-    const page = rows.slice(safeOffset, safeOffset + safeLimit);
-
-    return {
-      ok: true,
-      count: rows.length,
-      limit: safeLimit,
-      offset: safeOffset,
-      comments: page,
-    };
+    return { ok: true, count: rows.length, comments: rows };
   },
 
-  // -------- Moderation --------
-  bulkUpdateStatus({ ids, status, moderatedBy = null, moderationNote = null }) {
+  bulkUpdateStatus({ ids, status, moderatedBy, moderationNote }) {
     const s = normalizeStatus(status);
-    if (!s) {
+    if (!s)
       return {
         ok: false,
         status: 400,
-        message: `Invalid status. Allowed: ${ALLOWED_COMMENT_STATUSES.join(", ")}`,
+        message: `Allowed: ${ALLOWED_COMMENT_STATUSES.join(", ")}`,
       };
-    }
-
-    if (!Array.isArray(ids) || ids.length === 0) {
-      return {
-        ok: false,
-        status: 400,
-        message: "ids must be a non-empty array.",
-      };
-    }
-
-    const by = moderatedBy ? toStr(moderatedBy) : null;
-    const note = moderationNote ? toStr(moderationNote) : null;
-
-    const uniqueIds = [...new Set(ids.map((x) => toStr(x)).filter(Boolean))];
 
     let updated = 0;
-    const updatedIds = [];
-    const missingIds = [];
+    const missing = [];
 
-    for (const id of uniqueIds) {
+    ids.forEach((id) => {
       const c = this.getById(id);
-      if (!c) {
-        missingIds.push(id);
-        continue;
-      }
+      if (!c) return missing.push(id);
 
-      const ts = nowIso();
       c.status = s;
-      c.updatedAt = ts;
-      c.moderatedAt = ts;
-      c.moderatedBy = by;
-      c.moderationNote = note;
+      c.updatedAt = nowIso();
+      c.moderatedAt = nowIso();
+      c.moderatedBy = toStr(moderatedBy);
+      c.moderationNote = toStr(moderationNote);
+      updated++;
+    });
 
-      updated += 1;
-      updatedIds.push(id);
-    }
-
-    return {
-      ok: true,
-      status: s,
-      updated,
-      updatedIds,
-      missing: missingIds.length,
-      missingIds,
-    };
+    return { ok: true, status: s, updated, missing };
   },
 };
 
-const commentsStore = store;
 export default commentsStore;
