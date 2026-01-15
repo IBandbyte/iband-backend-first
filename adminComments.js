@@ -1,169 +1,116 @@
 // adminComments.js
-// Admin comments router (ESM) - DEPLOY-SAFE
-// Works even if commentsStore named exports change.
-// Supports BOTH mount styles:
-//  - app.use("/api/admin", adminRouter) + adminRouter.use("/", adminCommentsRouter)
-//  - adminRouter.use("/comments", adminCommentsRouter)
+// Admin comments router (ESM)
+// Mounted under /api/admin via admin.js
 //
-// Endpoints supported (both variants):
-//  GET  /api/admin/comments
-//  GET  /api/admin/comments?status=pending|approved|rejected
-//  POST /api/admin/comments/bulk-status
+// GET  /api/admin/comments
+// POST /api/admin/comments/bulk-status
 //
-// Also supports:
-//  GET  /api/admin/comments/comments (legacy mount)
-//  POST /api/admin/comments/comments/bulk-status (legacy mount)
+// DEPLOY-SAFE:
+// - Does not hard-crash if commentsStore.js changes its named exports.
+// - Falls back to a safe default status list.
 
 import express from "express";
 import commentsStore from "./commentsStore.js";
+import * as commentsStoreModule from "./commentsStore.js";
 
 const router = express.Router();
 
-// Hard fallback (never crash)
-const FALLBACK_STATUSES = ["pending", "approved", "rejected"];
+const SAFE_STATUSES = ["pending", "approved", "rejected"];
+const ALLOWED_COMMENT_STATUSES =
+  Array.isArray(commentsStoreModule.ALLOWED_COMMENT_STATUSES) &&
+  commentsStoreModule.ALLOWED_COMMENT_STATUSES.length > 0
+    ? commentsStoreModule.ALLOWED_COMMENT_STATUSES
+    : SAFE_STATUSES;
 
-function getAllowedStatuses() {
-  // If you later decide to expose statuses via store, we’ll pick it up automatically.
-  const maybe =
-    commentsStore?.ALLOWED_COMMENT_STATUSES ||
-    commentsStore?.allowedStatuses ||
-    commentsStore?.statuses;
-  return Array.isArray(maybe) && maybe.length ? maybe : FALLBACK_STATUSES;
-}
-
-// Normalize a store response into a consistent shape
-function ok(resObj) {
-  return Boolean(resObj && (resObj.ok === true || resObj.success === true));
-}
-
-function pickStatusCode(resObj, fallback = 400) {
-  return Number(resObj?.status || resObj?.statusCode || fallback);
-}
+const toStr = (v) => String(v ?? "").trim();
 
 // --------------------
-// GET handler
+// GET /api/admin/comments
+// Query: status, artistId, q, limit, offset
 // --------------------
-function handleList(req, res) {
+router.get("/comments", (req, res) => {
   try {
-    const status = String(req.query.status ?? "").trim() || null;
+    const status = toStr(req.query.status || "") || null;
+    const artistId = toStr(req.query.artistId || "") || null;
+    const q = toStr(req.query.q || "") || null;
 
-    // Prefer new API: listAdmin({ status })
-    if (typeof commentsStore?.listAdmin === "function") {
-      const result = commentsStore.listAdmin({ status });
+    const limitRaw = req.query.limit;
+    const offsetRaw = req.query.offset;
 
-      if (!ok(result)) {
-        return res.status(pickStatusCode(result, 400)).json({
-          success: false,
-          message: result.message || "Bad request",
-          allowedStatuses: getAllowedStatuses(),
-        });
-      }
+    const limit = limitRaw != null ? Number(limitRaw) : 200;
+    const offset = offsetRaw != null ? Number(offsetRaw) : 0;
 
-      return res.status(200).json({
-        success: true,
-        count: Number(result.count || 0),
-        limit: result.limit ?? 200,
-        offset: result.offset ?? 0,
-        comments: Array.isArray(result.comments) ? result.comments : [],
-        allowedStatuses: getAllowedStatuses(),
+    const result = commentsStore.listAdmin({
+      status,
+      artistId,
+      q,
+      limit,
+      offset,
+    });
+
+    if (!result?.ok) {
+      return res.status(result?.status || 400).json({
+        success: false,
+        message: result?.message || "Bad request",
+        allowedStatuses: ALLOWED_COMMENT_STATUSES,
       });
     }
 
-    // Legacy API fallback: getAll({ status })
-    if (typeof commentsStore?.getAll === "function") {
-      const result = commentsStore.getAll({ status });
-
-      if (!ok(result)) {
-        return res.status(pickStatusCode(result, 400)).json({
-          success: false,
-          message: result.message || "Bad request",
-          allowedStatuses: getAllowedStatuses(),
-        });
-      }
-
-      const comments = Array.isArray(result.comments) ? result.comments : [];
-      return res.status(200).json({
-        success: true,
-        count: comments.length,
-        comments,
-        allowedStatuses: getAllowedStatuses(),
-      });
-    }
-
-    // No API available -> safe response
     return res.status(200).json({
       success: true,
-      count: 0,
-      comments: [],
-      allowedStatuses: getAllowedStatuses(),
-      warning: "commentsStore missing listAdmin/getAll; returning empty list.",
+      count: result.count,
+      limit: result.limit,
+      offset: result.offset,
+      comments: result.comments,
+      allowedStatuses: ALLOWED_COMMENT_STATUSES,
     });
   } catch (_e) {
-    return res.status(500).json({ success: false, message: "Internal server error" });
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
   }
-}
+});
 
 // --------------------
-// POST handler
+// POST /api/admin/comments/bulk-status
+// Body: { ids: [], status: "approved|rejected|pending", moderatedBy, moderationNote }
 // --------------------
-function handleBulkStatus(req, res) {
+router.post("/comments/bulk-status", (req, res) => {
   try {
     const { ids, status, moderatedBy, moderationNote } = req.body ?? {};
 
-    if (typeof commentsStore?.bulkUpdateStatus === "function") {
-      const result = commentsStore.bulkUpdateStatus({
-        ids,
-        status,
-        moderatedBy,
-        moderationNote,
-      });
+    const result = commentsStore.bulkUpdateStatus({
+      ids,
+      status,
+      moderatedBy,
+      moderationNote,
+    });
 
-      if (!ok(result)) {
-        return res.status(pickStatusCode(result, 400)).json({
-          success: false,
-          message: result.message || "Bad request",
-          allowedStatuses: getAllowedStatuses(),
-        });
-      }
-
-      // Normalize response for both new & old shapes
-      return res.status(200).json({
-        success: true,
-        status: result.status || result.statusSetTo || String(status || ""),
-        updated: Number(result.updated ?? result.updatedCount ?? 0),
-        updatedIds: Array.isArray(result.updatedIds) ? result.updatedIds : [],
-        missing: Number(result.missing ?? 0),
-        missingIds: Array.isArray(result.missingIds) ? result.missingIds : [],
-        moderatedBy: result.moderatedBy ?? moderatedBy ?? null,
-        allowedStatuses: getAllowedStatuses(),
+    if (!result?.ok) {
+      return res.status(result?.status || 400).json({
+        success: false,
+        message: result?.message || "Bad request",
+        allowedStatuses: ALLOWED_COMMENT_STATUSES,
       });
     }
 
-    return res.status(501).json({
-      success: false,
-      message: "bulkUpdateStatus is not implemented in commentsStore.",
-      allowedStatuses: getAllowedStatuses(),
+    return res.status(200).json({
+      success: true,
+      status: result.status,
+      updated: result.updated,
+      updatedIds: result.updatedIds,
+      missing: result.missing,
+      missingIds: result.missingIds,
+      moderatedBy: moderatedBy ?? null,
+      moderationNote: moderationNote ?? null,
     });
   } catch (_e) {
-    return res.status(500).json({ success: false, message: "Internal server error" });
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
   }
-}
-
-/**
- * ROUTES
- * We register both route patterns so it works no matter how admin.js mounts this router.
- */
-
-// Common desired paths:
-router.get("/comments", handleList);
-router.post("/comments/bulk-status", handleBulkStatus);
-
-// Compatibility paths (if mounted at /api/admin/comments already):
-router.get("/", handleList);
-router.post("/bulk-status", handleBulkStatus);
-
-// Extra legacy compatibility (double /comments in path):
-router.get("/comments/comments", handleList);
-router.post("/comments/comments/bulk-status", handleBulkStatus);
+});
 
 export default router;
