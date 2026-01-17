@@ -1,15 +1,12 @@
 /**
- * artistsStore.js (ESM ONLY — LOCKED)
+ * artistsStore.js (ESM — CANONICAL + COMPAT)
  *
  * Single source of truth for artist persistence.
- * Used by:
- * - public artists routes
- * - admin moderation routes
+ * - Canonical methods (listArtists, getArtist, createArtist, updateArtist, deleteArtist)
+ * - Compatibility aliases for existing routers (getAll, getById, create, update, patch, remove)
  *
- * Node: ESM ("type":"module")
  * Storage:
- * - In-memory (always works)
- * - Optional disk persistence (Render-safe fallback)
+ * - In-memory with optional disk persistence (Render-safe)
  */
 
 import fs from "fs";
@@ -18,21 +15,17 @@ import path from "path";
 /* -------------------- Helpers -------------------- */
 
 const nowIso = () => new Date().toISOString();
-
 const safeText = (v) => (v === null || v === undefined ? "" : String(v));
-
 const toNumber = (v, fallback = 0) => {
   const n = Number(v);
   return Number.isFinite(n) ? n : fallback;
 };
-
+const ensureArray = (v) => (Array.isArray(v) ? v : []);
 const normalizeStatus = (s) => {
   const v = String(s || "").toLowerCase().trim();
   if (["pending", "active", "rejected"].includes(v)) return v;
   return "active";
 };
-
-const ensureArray = (v) => (Array.isArray(v) ? v : []);
 
 /* -------------------- Normalizer -------------------- */
 
@@ -125,19 +118,19 @@ function saveToDisk() {
 /* Load once */
 loadFromDisk();
 
-/* -------------------- Public API -------------------- */
+/* -------------------- Canonical API -------------------- */
 
-export function listArtists() {
+function listArtists() {
   return ensureArray(artists);
 }
 
-export function getArtist(id) {
+function getArtist(id) {
   const clean = safeText(id);
   if (!clean) return null;
   return artists.find((a) => a.id === clean) || null;
 }
 
-export function createArtist(data) {
+function createArtist(data) {
   const a = normalizeArtist(data);
   if (getArtist(a.id)) a.id = `${a.id}-${Date.now()}`;
   a.createdAt = nowIso();
@@ -147,13 +140,12 @@ export function createArtist(data) {
   return a;
 }
 
-export function updateArtist(id, patch) {
-  const idx = artists.findIndex((a) => a.id === id);
+function updateArtist(id, patch) {
+  const idx = artists.findIndex((a) => a.id === safeText(id));
   if (idx === -1) return null;
 
   const existing = artists[idx];
   const next = normalizeArtist({ ...existing, ...patch });
-
   next.id = existing.id;
   next.createdAt = existing.createdAt;
   next.updatedAt = nowIso();
@@ -163,8 +155,8 @@ export function updateArtist(id, patch) {
   return next;
 }
 
-export function deleteArtist(id) {
-  const idx = artists.findIndex((a) => a.id === id);
+function deleteArtist(id) {
+  const idx = artists.findIndex((a) => a.id === safeText(id));
   if (idx === -1) return false;
 
   artists.splice(idx, 1);
@@ -173,18 +165,71 @@ export function deleteArtist(id) {
   return true;
 }
 
-export function save() {
-  return saveToDisk();
+/* -------------------- Compatibility Aliases -------------------- */
+// Public + Admin routers expect these names
+
+function getAll() {
+  return listArtists();
+}
+function getById(id) {
+  return getArtist(id);
+}
+function create(data) {
+  return createArtist(data);
+}
+function update(id, patch) {
+  return updateArtist(id, patch);
+}
+function patch(id, patchObj) {
+  return updateArtist(id, patchObj);
+}
+function remove(id) {
+  const ok = deleteArtist(id);
+  return ok ? true : null;
+}
+function reset() {
+  const count = artists.length;
+  artists = [];
+  ensureDemo();
+  saveToDisk();
+  return count;
+}
+function seed() {
+  const before = artists.length;
+  ensureDemo();
+  saveToDisk();
+  return artists.length - before;
 }
 
-/* Default export for admin + legacy safety */
-export default {
+/* -------------------- Exports -------------------- */
+
+export {
   listArtists,
   getArtist,
   createArtist,
   updateArtist,
   deleteArtist,
-  save,
+};
+
+export default {
+  // Canonical
+  listArtists,
+  getArtist,
+  createArtist,
+  updateArtist,
+  deleteArtist,
+
+  // Compatibility
+  getAll,
+  getById,
+  create,
+  update,
+  patch,
+  remove,
+  reset,
+  seed,
+
+  // Debug
   get artists() {
     return artists;
   },
