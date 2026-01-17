@@ -1,39 +1,24 @@
 // comments.js (ESM)
-// Public comments API
+// Public comments API — aligned with canonical commentsStore
 //
-// Option A upgrade:
-// - Public only sees comments that are NOT hidden
-// - Default allowed statuses: visible, approved
-// - Pending is not shown publicly (but exists for moderation workflows)
+// Public rules:
+// - Anyone can POST a comment
+// - Public listing only shows APPROVED comments
 
 import express from "express";
 import commentsStore from "./commentsStore.js";
 
 const router = express.Router();
 
-/**
- * Helpers
- */
-function asString(v) {
-  return String(v ?? "").trim();
-}
+/* -------------------- Helpers -------------------- */
 
-function isPublicVisible(comment) {
-  // Public visibility rules:
-  // - show: visible, approved
-  // - hide: hidden, pending (pending is for moderation queues)
-  const s = String(comment?.status || "").toLowerCase();
-  return s === "visible" || s === "approved";
-}
+const asString = (v) => String(v ?? "").trim();
+
+/* -------------------- Routes -------------------- */
 
 /**
  * POST /api/comments
- * Create a new comment (public)
- *
- * NOTE:
- * - We create as "visible" by default in commentsStore
- * - If you later want anti-spam / moderation, you can set default status to "pending"
- *   in commentsStore.create() and the public feed will auto-hide until approved.
+ * Create a new public comment
  */
 router.post("/", (req, res) => {
   try {
@@ -41,19 +26,12 @@ router.post("/", (req, res) => {
     const author = asString(req.body?.author);
     const text = asString(req.body?.text);
 
-    if (!artistId) {
-      return res.status(400).json({ success: false, message: "artistId is required" });
-    }
-    if (!author) {
-      return res.status(400).json({ success: false, message: "author is required" });
-    }
-    if (!text) {
-      return res.status(400).json({ success: false, message: "text is required" });
-    }
+    const created = commentsStore.create({
+      artistId,
+      author,
+      text,
+    });
 
-    const created = commentsStore.create({ artistId, author, text });
-
-    // Return created comment to creator (even if later changed to pending in store)
     return res.status(201).json({
       success: true,
       message: "Comment created successfully.",
@@ -69,14 +47,14 @@ router.post("/", (req, res) => {
 
 /**
  * GET /api/comments/by-artist/:artistId
- * List comments for an artist (PUBLIC SAFE)
+ * Public-safe listing (APPROVED only)
  */
 router.get("/by-artist/:artistId", (req, res) => {
   const artistId = asString(req.params.artistId);
 
-  const comments = commentsStore
-    .getByArtistId(artistId)
-    .filter(isPublicVisible);
+  const comments = commentsStore.listByArtistId(artistId, {
+    onlyApproved: true,
+  });
 
   return res.status(200).json({
     success: true,
