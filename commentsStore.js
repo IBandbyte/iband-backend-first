@@ -1,15 +1,18 @@
-// commentsStore.js
-// In-memory comment store (Phase 1/2)
-// ES Module — Render-safe, Node 18–21 compatible
+/**
+ * commentsStore.js (ESM — CANONICAL + COMPAT)
+ *
+ * Canonical comment store with compatibility aliases
+ * for existing public + admin routers.
+ *
+ * Status lifecycle:
+ * - pending → approved / rejected
+ *
+ * Render-safe, in-memory (Phase 1)
+ */
 
 import crypto from "crypto";
 
-const ALLOWED_COMMENT_STATUSES = ["pending", "approved", "rejected"];
-
-const normalizeStatus = (status) => {
-  const s = String(status || "").trim().toLowerCase();
-  return ALLOWED_COMMENT_STATUSES.includes(s) ? s : null;
-};
+/* -------------------- Helpers -------------------- */
 
 const nowIso = () => new Date().toISOString();
 const toStr = (v) => String(v ?? "").trim();
@@ -20,117 +23,221 @@ const makeId = () =>
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-const commentsStore = {
-  ALLOWED_COMMENT_STATUSES,
+const ALLOWED_STATUSES = ["pending", "approved", "rejected"];
 
-  comments: [],
+function normalizeStatus(s) {
+  const v = String(s || "").toLowerCase().trim();
+  return ALLOWED_STATUSES.includes(v) ? v : null;
+}
 
-  listAll() {
-    return [...this.comments].sort(
-      (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
-    );
-  },
+/* -------------------- Storage -------------------- */
 
-  getById(id) {
-    return this.comments.find((c) => c.id === toStr(id)) || null;
-  },
+let comments = [];
 
-  create({ artistId, author, text }) {
-    if (!isPositiveIntString(artistId))
-      return { ok: false, status: 400, message: "artistId must be numeric." };
+/* -------------------- Canonical API -------------------- */
 
-    if (!toStr(author))
-      return { ok: false, status: 400, message: "author is required." };
+function listAll() {
+  return [...comments].sort(
+    (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+  );
+}
 
-    if (!toStr(text))
-      return { ok: false, status: 400, message: "text is required." };
+function getById(id) {
+  return comments.find((c) => c.id === toStr(id)) || null;
+}
 
-    const comment = {
-      id: makeId(),
-      artistId: toStr(artistId),
-      author: toStr(author),
-      text: toStr(text),
-      status: "pending",
-      createdAt: nowIso(),
-      updatedAt: nowIso(),
-      moderatedAt: null,
-      moderatedBy: null,
-      moderationNote: null,
-    };
+function createComment({ artistId, author, text }) {
+  if (!isPositiveIntString(artistId))
+    throw new Error("artistId must be numeric");
 
-    this.comments.push(comment);
-    return { ok: true, comment };
-  },
+  if (!toStr(author)) throw new Error("author is required");
+  if (!toStr(text)) throw new Error("text is required");
 
-  listByArtist(artistId, { onlyApproved = true } = {}) {
-    if (!isPositiveIntString(artistId))
-      return { ok: false, status: 400, message: "Invalid artistId." };
+  const comment = {
+    id: makeId(),
+    artistId: toStr(artistId),
+    author: toStr(author),
+    text: toStr(text),
+    status: "pending",
+    flags: [],
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+    moderatedAt: null,
+    moderatedBy: null,
+    moderationNote: null,
+  };
 
-    const rows = this.comments.filter(
+  comments.push(comment);
+  return comment;
+}
+
+function listByArtistId(artistId, { onlyApproved = false } = {}) {
+  if (!isPositiveIntString(artistId)) return [];
+
+  return comments
+    .filter(
       (c) =>
         c.artistId === toStr(artistId) &&
         (!onlyApproved || c.status === "approved")
-    );
+    )
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+}
 
-    return {
-      ok: true,
-      artistId: toStr(artistId),
-      count: rows.length,
-      comments: rows.sort(
-        (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
-      ),
-    };
-  },
+function updateComment(id, patch = {}) {
+  const c = getById(id);
+  if (!c) return null;
 
-  listAdmin({ status, artistId } = {}) {
-    let rows = this.listAll();
+  if (patch.artistId !== undefined) c.artistId = toStr(patch.artistId);
+  if (patch.author !== undefined) c.author = toStr(patch.author);
+  if (patch.text !== undefined) c.text = toStr(patch.text);
 
-    if (status) {
-      const s = normalizeStatus(status);
-      if (!s)
-        return {
-          ok: false,
-          status: 400,
-          message: `Allowed: ${ALLOWED_COMMENT_STATUSES.join(", ")}`,
-        };
-      rows = rows.filter((c) => c.status === s);
-    }
+  if (patch.status !== undefined) {
+    const s = normalizeStatus(patch.status);
+    if (!s) return null;
+    c.status = s;
+    c.moderatedAt = nowIso();
+    c.moderatedBy = toStr(patch.moderatedBy);
+    c.moderationNote = toStr(patch.moderationNote);
+  }
 
-    if (artistId) {
-      if (!isPositiveIntString(artistId))
-        return { ok: false, status: 400, message: "Invalid artistId." };
-      rows = rows.filter((c) => c.artistId === toStr(artistId));
-    }
+  c.updatedAt = nowIso();
+  return c;
+}
 
-    return { ok: true, count: rows.length, comments: rows };
-  },
+function removeComment(id) {
+  const idx = comments.findIndex((c) => c.id === toStr(id));
+  if (idx === -1) return false;
+  comments.splice(idx, 1);
+  return true;
+}
 
-  bulkUpdateStatus({ ids, status, moderatedBy, moderationNote }) {
-    const s = normalizeStatus(status);
-    if (!s)
-      return {
-        ok: false,
-        status: 400,
-        message: `Allowed: ${ALLOWED_COMMENT_STATUSES.join(", ")}`,
-      };
+/* -------------------- Admin helpers -------------------- */
 
-    let updated = 0;
-    const missing = [];
+function addFlag(id, { code = "flag", reason = "" } = {}) {
+  const c = getById(id);
+  if (!c) return null;
 
-    ids.forEach((id) => {
-      const c = this.getById(id);
-      if (!c) return missing.push(id);
+  c.flags.push({
+    code: toStr(code),
+    reason: toStr(reason),
+    at: nowIso(),
+  });
+  c.updatedAt = nowIso();
+  return c;
+}
 
-      c.status = s;
-      c.updatedAt = nowIso();
-      c.moderatedAt = nowIso();
-      c.moderatedBy = toStr(moderatedBy);
-      c.moderationNote = toStr(moderationNote);
-      updated++;
-    });
+function clearFlags(id) {
+  const c = getById(id);
+  if (!c) return null;
+  c.flags = [];
+  c.updatedAt = nowIso();
+  return c;
+}
 
-    return { ok: true, status: s, updated, missing };
-  },
+function bulkRemove(ids = []) {
+  const deletedIds = [];
+  const notFoundIds = [];
+
+  ids.forEach((id) => {
+    const ok = removeComment(id);
+    if (ok) deletedIds.push(id);
+    else notFoundIds.push(id);
+  });
+
+  return { deletedIds, notFoundIds };
+}
+
+function bulkSetStatus(ids = [], status, moderatedBy) {
+  const s = normalizeStatus(status);
+  if (!s) return null;
+
+  const updatedIds = [];
+  const notFoundIds = [];
+
+  ids.forEach((id) => {
+    const c = getById(id);
+    if (!c) return notFoundIds.push(id);
+
+    c.status = s;
+    c.moderatedBy = toStr(moderatedBy);
+    c.moderatedAt = nowIso();
+    c.updatedAt = nowIso();
+    updatedIds.push(id);
+  });
+
+  return { status: s, updatedIds, notFoundIds };
+}
+
+function reset() {
+  const count = comments.length;
+  comments = [];
+  return count;
+}
+
+function seed() {
+  const before = comments.length;
+  comments.push(
+    createComment({
+      artistId: "1",
+      author: "Demo Fan",
+      text: "Love this artist 🔥",
+    })
+  );
+  return comments.length - before;
+}
+
+/* -------------------- Compatibility Aliases -------------------- */
+
+function getAll() {
+  return listAll();
+}
+
+function getByArtistId(id) {
+  return listByArtistId(id);
+}
+
+function update(id, patch) {
+  return updateComment(id, patch);
+}
+
+function patch(id, patchObj) {
+  return updateComment(id, patchObj);
+}
+
+/* -------------------- Exports -------------------- */
+
+export {
+  listAll,
+  getById,
+  createComment,
+  listByArtistId,
+  updateComment,
+  removeComment,
 };
 
-export default commentsStore;
+export default {
+  // Canonical
+  listAll,
+  getById,
+  create: createComment,
+  listByArtistId,
+  updateComment,
+  removeComment,
+
+  // Compatibility
+  getAll,
+  getByArtistId,
+  update,
+  patch,
+  addFlag,
+  clearFlags,
+  bulkRemove,
+  bulkSetStatus,
+  reset,
+  seed,
+
+  // Debug
+  get comments() {
+    return comments;
+  },
+};
