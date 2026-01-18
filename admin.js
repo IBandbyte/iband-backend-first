@@ -2,18 +2,16 @@
 // Admin root router
 // Mounted at /api/admin
 //
-// Responsibilities:
-// - Admin auth gate (x-admin-key)
-// - Health / root
-// - Mount admin sub-routers cleanly
+// - Protects admin routes with x-admin-key if ADMIN_KEY is set
+// - Mounts:
+//   /api/admin/artists  -> adminArtists.js
+//   /api/admin/comments -> adminComments.js
 
 import express from "express";
 import adminArtistsRouter from "./adminArtists.js";
 import adminCommentsRouter from "./adminComments.js";
 
 const router = express.Router();
-
-/* -------------------- Admin Auth -------------------- */
 
 const ADMIN_KEY = (process.env.ADMIN_KEY || "").trim();
 
@@ -31,8 +29,6 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-/* -------------------- Admin Root -------------------- */
-
 /**
  * GET /api/admin
  */
@@ -47,13 +43,7 @@ router.get("/", requireAdmin, (_req, res) => {
   });
 });
 
-/* -------------------- Sub-routes -------------------- */
-
-// IMPORTANT:
-// - artists mounted at /api/admin/artists
-// - comments mounted at /api/admin/comments
-// - NOT mounted at "/" to avoid route collisions
-
+// Mount admin routers
 router.use("/artists", requireAdmin, adminArtistsRouter);
 router.use("/comments", requireAdmin, adminCommentsRouter);
 
