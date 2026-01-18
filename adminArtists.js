@@ -1,29 +1,65 @@
+// adminArtists.js (ESM)
+// Admin artists control API — aligned with artistsStore.js
+//
+// Mounted at: /api/admin/artists
+//
+// Supports:
+// - list
+// - get by id
+// - create
+// - put (replace)
+// - patch (partial)
+// - delete
+
 import express from "express";
 import artistsStore from "./artistsStore.js";
 
 const router = express.Router();
 
-/**
- * Helpers
- */
+/* -------------------- Helpers -------------------- */
+
+const asString = (v) => String(v ?? "").trim();
+
 function isNonEmptyString(v) {
   return typeof v === "string" && v.trim().length > 0;
 }
 
 function normalizeArtistPayload(body = {}) {
+  const socials = body.socials && typeof body.socials === "object" ? body.socials : {};
+  const tracks = Array.isArray(body.tracks) ? body.tracks : undefined;
+
   return {
+    id: isNonEmptyString(body.id) ? body.id.trim() : undefined,
     name: isNonEmptyString(body.name) ? body.name.trim() : undefined,
     genre: isNonEmptyString(body.genre) ? body.genre.trim() : undefined,
+    location: isNonEmptyString(body.location) ? body.location.trim() : undefined,
     bio: isNonEmptyString(body.bio) ? body.bio.trim() : undefined,
     imageUrl: isNonEmptyString(body.imageUrl) ? body.imageUrl.trim() : undefined,
+    socials: {
+      instagram: isNonEmptyString(socials.instagram) ? socials.instagram.trim() : undefined,
+      tiktok: isNonEmptyString(socials.tiktok) ? socials.tiktok.trim() : undefined,
+      youtube: isNonEmptyString(socials.youtube) ? socials.youtube.trim() : undefined,
+      spotify: isNonEmptyString(socials.spotify) ? socials.spotify.trim() : undefined,
+      soundcloud: isNonEmptyString(socials.soundcloud) ? socials.soundcloud.trim() : undefined,
+      website: isNonEmptyString(socials.website) ? socials.website.trim() : undefined,
+    },
+    tracks,
+    status: isNonEmptyString(body.status) ? body.status.trim() : undefined,
+    votes: body.votes !== undefined ? Number(body.votes) : undefined,
   };
 }
+
+function stripUndefined(obj) {
+  return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined));
+}
+
+/* -------------------- Routes -------------------- */
 
 /**
  * GET /api/admin/artists
  */
-router.get("/", (req, res) => {
-  const artists = artistsStore.getAll();
+router.get("/", (_req, res) => {
+  const artists = artistsStore.listArtists();
   return res.status(200).json({
     success: true,
     count: artists.length,
@@ -35,7 +71,7 @@ router.get("/", (req, res) => {
  * GET /api/admin/artists/:id
  */
 router.get("/:id", (req, res) => {
-  const artist = artistsStore.getById(req.params.id);
+  const artist = artistsStore.getArtist(req.params.id);
   if (!artist) {
     return res.status(404).json({ success: false, message: "Artist not found." });
   }
@@ -44,7 +80,7 @@ router.get("/:id", (req, res) => {
 
 /**
  * POST /api/admin/artists
- * Create new artist
+ * Create new artist (requires name)
  */
 router.post("/", (req, res) => {
   const payload = normalizeArtistPayload(req.body);
@@ -56,12 +92,20 @@ router.post("/", (req, res) => {
     });
   }
 
-  const created = artistsStore.create({
-    name: payload.name,
-    genre: payload.genre ?? "Unknown",
-    bio: payload.bio ?? "",
-    imageUrl: payload.imageUrl ?? "",
-  });
+  const created = artistsStore.createArtist(
+    stripUndefined({
+      id: payload.id,
+      name: payload.name,
+      genre: payload.genre ?? "Unknown",
+      location: payload.location ?? "",
+      bio: payload.bio ?? "",
+      imageUrl: payload.imageUrl ?? "",
+      socials: payload.socials,
+      tracks: payload.tracks ?? [],
+      status: payload.status ?? "active",
+      votes: Number.isFinite(payload.votes) ? payload.votes : 0,
+    })
+  );
 
   return res.status(201).json({
     success: true,
@@ -75,7 +119,7 @@ router.post("/", (req, res) => {
  * Replace full artist (requires name)
  */
 router.put("/:id", (req, res) => {
-  const existing = artistsStore.getById(req.params.id);
+  const existing = artistsStore.getArtist(req.params.id);
   if (!existing) {
     return res.status(404).json({ success: false, message: "Artist not found." });
   }
@@ -89,11 +133,16 @@ router.put("/:id", (req, res) => {
     });
   }
 
-  const updated = artistsStore.update(req.params.id, {
+  const updated = artistsStore.updateArtist(req.params.id, {
     name: payload.name,
     genre: payload.genre ?? "Unknown",
+    location: payload.location ?? "",
     bio: payload.bio ?? "",
     imageUrl: payload.imageUrl ?? "",
+    socials: payload.socials,
+    tracks: payload.tracks ?? [],
+    status: payload.status ?? existing.status,
+    votes: Number.isFinite(payload.votes) ? payload.votes : existing.votes,
   });
 
   return res.status(200).json({
@@ -108,27 +157,37 @@ router.put("/:id", (req, res) => {
  * Partial update
  */
 router.patch("/:id", (req, res) => {
-  const existing = artistsStore.getById(req.params.id);
+  const existing = artistsStore.getArtist(req.params.id);
   if (!existing) {
     return res.status(404).json({ success: false, message: "Artist not found." });
   }
 
   const payload = normalizeArtistPayload(req.body);
 
-  // No valid fields
-  if (
-    payload.name === undefined &&
-    payload.genre === undefined &&
-    payload.bio === undefined &&
-    payload.imageUrl === undefined
-  ) {
+  // If nothing valid provided, reject
+  const patch = stripUndefined({
+    name: payload.name,
+    genre: payload.genre,
+    location: payload.location,
+    bio: payload.bio,
+    imageUrl: payload.imageUrl,
+    socials: payload.socials,
+    tracks: payload.tracks,
+    status: payload.status,
+    votes: Number.isFinite(payload.votes) ? payload.votes : undefined,
+  });
+
+  if (Object.keys(patch).length === 0) {
     return res.status(400).json({
       success: false,
       message: "No valid fields provided to update.",
     });
   }
 
-  const updated = artistsStore.patch(req.params.id, payload);
+  const updated = artistsStore.updateArtist(req.params.id, {
+    ...existing,
+    ...patch,
+  });
 
   return res.status(200).json({
     success: true,
@@ -141,48 +200,18 @@ router.patch("/:id", (req, res) => {
  * DELETE /api/admin/artists/:id
  */
 router.delete("/:id", (req, res) => {
-  const existing = artistsStore.getById(req.params.id);
+  const existing = artistsStore.getArtist(req.params.id);
   if (!existing) {
     return res.status(404).json({ success: false, message: "Artist not found." });
   }
 
-  const deleted = artistsStore.remove(req.params.id);
+  const ok = artistsStore.deleteArtist(req.params.id);
 
   return res.status(200).json({
     success: true,
     message: "Artist deleted successfully.",
-    artist: deleted,
+    deleted: ok,
   });
 });
 
-/**
- * POST /api/admin/artists/reset
- * Delete all artists
- */
-router.post("/reset", (req, res) => {
-  const deleted = artistsStore.reset();
-  return res.status(200).json({
-    success: true,
-    deleted,
-    message: "All artists have been deleted.",
-  });
-});
-
-/**
- * POST /api/admin/artists/seed
- * Seed demo artists
- */
-router.post("/seed", (req, res) => {
-  const seeded = artistsStore.seed();
-  return res.status(200).json({
-    success: true,
-    seeded,
-    message: "Demo artists seeded successfully.",
-  });
-});
-
-/**
- * ✅ CRITICAL FIX:
- * Provide default export so admin.js can import it as default.
- */
 export default router;
