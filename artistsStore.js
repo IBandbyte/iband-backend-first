@@ -1,12 +1,19 @@
 /**
- * artistsStore.js (ESM — CANONICAL + COMPAT)
+ * artistsStore.js (ESM)
  *
  * Single source of truth for artist persistence.
- * - Canonical methods (listArtists, getArtist, createArtist, updateArtist, deleteArtist)
- * - Compatibility aliases for existing routers (getAll, getById, create, update, patch, remove)
+ * Used by:
+ * - public artists routes (artists.js)
+ * - admin moderation routes (adminArtists.js)
  *
  * Storage:
- * - In-memory with optional disk persistence (Render-safe)
+ * - Disk persistence to ./db/artists.json (Render-safe best effort)
+ * - In-memory fallback always works
+ *
+ * IMPORTANT:
+ * This store intentionally supports BOTH:
+ * - modern method names (listArtists/getArtist/createArtist/updateArtist/deleteArtist)
+ * - legacy/router-friendly aliases (getAll/getById/create/update/patch/remove/reset/seed)
  */
 
 import fs from "fs";
@@ -15,26 +22,26 @@ import path from "path";
 /* -------------------- Helpers -------------------- */
 
 const nowIso = () => new Date().toISOString();
-const safeText = (v) => (v === null || v === undefined ? "" : String(v));
+const safeText = (v) => (v === null || v === undefined ? "" : String(v)).trim();
+const ensureArray = (v) => (Array.isArray(v) ? v : []);
+
 const toNumber = (v, fallback = 0) => {
   const n = Number(v);
   return Number.isFinite(n) ? n : fallback;
 };
-const ensureArray = (v) => (Array.isArray(v) ? v : []);
+
 const normalizeStatus = (s) => {
   const v = String(s || "").toLowerCase().trim();
   if (["pending", "active", "rejected"].includes(v)) return v;
   return "active";
 };
 
-/* -------------------- Normalizer -------------------- */
-
 function normalizeArtist(raw = {}) {
   const socials = raw.socials && typeof raw.socials === "object" ? raw.socials : {};
   const tracks = ensureArray(raw.tracks);
 
   return {
-    id: safeText(raw.id || raw._id || raw.slug || "demo"),
+    id: safeText(raw.id || raw._id || raw.slug || `artist-${Date.now()}`),
     name: safeText(raw.name || "Unnamed Artist"),
     genre: safeText(raw.genre || ""),
     location: safeText(raw.location || ""),
@@ -61,7 +68,7 @@ function normalizeArtist(raw = {}) {
   };
 }
 
-/* -------------------- Storage -------------------- */
+/* -------------------- Persistence -------------------- */
 
 const ROOT = process.cwd();
 const DB_DIR = path.join(ROOT, "db");
@@ -104,48 +111,49 @@ function loadFromDisk() {
 function saveToDisk() {
   try {
     if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true });
-    fs.writeFileSync(
-      DB_FILE,
-      JSON.stringify({ updatedAt: nowIso(), data: artists }, null, 2),
-      "utf8"
-    );
+    fs.writeFileSync(DB_FILE, JSON.stringify({ updatedAt: nowIso(), data: artists }, null, 2), "utf8");
     return true;
   } catch {
     return false;
   }
 }
 
-/* Load once */
 loadFromDisk();
 
-/* -------------------- Canonical API -------------------- */
+/* -------------------- Core CRUD (modern) -------------------- */
 
-function listArtists() {
+export function listArtists() {
   return ensureArray(artists);
 }
 
-function getArtist(id) {
+export function getArtist(id) {
   const clean = safeText(id);
   if (!clean) return null;
   return artists.find((a) => a.id === clean) || null;
 }
 
-function createArtist(data) {
+export function createArtist(data) {
   const a = normalizeArtist(data);
+
+  // ensure unique id
   if (getArtist(a.id)) a.id = `${a.id}-${Date.now()}`;
+
   a.createdAt = nowIso();
   a.updatedAt = nowIso();
+
   artists.unshift(a);
   saveToDisk();
   return a;
 }
 
-function updateArtist(id, patch) {
-  const idx = artists.findIndex((a) => a.id === safeText(id));
+export function updateArtist(id, patch) {
+  const clean = safeText(id);
+  const idx = artists.findIndex((a) => a.id === clean);
   if (idx === -1) return null;
 
   const existing = artists[idx];
   const next = normalizeArtist({ ...existing, ...patch });
+
   next.id = existing.id;
   next.createdAt = existing.createdAt;
   next.updatedAt = nowIso();
@@ -155,71 +163,131 @@ function updateArtist(id, patch) {
   return next;
 }
 
-function deleteArtist(id) {
-  const idx = artists.findIndex((a) => a.id === safeText(id));
-  if (idx === -1) return false;
+export function patchArtist(id, patch) {
+  // partial update helper
+  const clean = safeText(id);
+  const existing = getArtist(clean);
+  if (!existing) return null;
 
-  artists.splice(idx, 1);
-  if (!artists.length) ensureDemo();
-  saveToDisk();
-  return true;
+  const merged = {
+    ...existing,
+    ...patch,
+    socials: patch?.socials ? { ...existing.socials, ...patch.socials } : existing.socials,
+    tracks: patch?.tracks !== undefined ? patch.tracks : existing.tracks,
+  };
+
+  return updateArtist(clean, merged);
 }
 
-/* -------------------- Compatibility Aliases -------------------- */
-// Public + Admin routers expect these names
+export function deleteArtist(id) {
+  const clean = safeText(id);
+  const idx = artists.findIndex((a) => a.id === clean);
+  if (idx === -1) return null;
+
+  const removed = artists.splice(idx, 1)[0] || null;
+
+  if (!artists.length) ensureDemo();
+  saveToDisk();
+
+  return removed;
+}
+
+export function resetArtists() {
+  const deleted = artists.length;
+  artists = [];
+  ensureDemo();
+  saveToDisk();
+  return deleted;
+}
+
+export function seedArtists() {
+  const before = artists.length;
+
+  const demoArtists = [
+    {
+      id: `demo-${Date.now()}-a`,
+      name: "Aria Nova",
+      genre: "Pop",
+      bio: "Rising star blending electro-pop with dreamy vocals.",
+      imageUrl: "",
+      votes: 12,
+      status: "active",
+    },
+    {
+      id: `demo-${Date.now()}-b`,
+      name: "Neon Harbor",
+      genre: "Synthwave",
+      bio: "Retro-futuristic vibes, heavy synth, 80s nostalgia.",
+      imageUrl: "",
+      votes: 8,
+      status: "active",
+    },
+    {
+      id: `demo-${Date.now()}-c`,
+      name: "Stone & Sparrow",
+      genre: "Indie Folk",
+      bio: "Acoustic harmonies, storytelling, and soulful strings.",
+      imageUrl: "",
+      votes: 20,
+      status: "active",
+    },
+  ];
+
+  demoArtists.forEach((a) => createArtist(a));
+  return artists.length - before;
+}
+
+/* -------------------- Router-friendly aliases -------------------- */
+/**
+ * These aliases make artists.js + adminArtists.js work no matter which names they call.
+ */
 
 function getAll() {
   return listArtists();
 }
+
 function getById(id) {
   return getArtist(id);
 }
-function create(data) {
-  return createArtist(data);
+
+function create(payload) {
+  return createArtist(payload);
 }
-function update(id, patch) {
-  return updateArtist(id, patch);
+
+function update(id, payload) {
+  return updateArtist(id, payload);
 }
-function patch(id, patchObj) {
-  return updateArtist(id, patchObj);
+
+function patch(id, payload) {
+  return patchArtist(id, payload);
 }
+
 function remove(id) {
-  const ok = deleteArtist(id);
-  return ok ? true : null;
+  return deleteArtist(id);
 }
+
 function reset() {
-  const count = artists.length;
-  artists = [];
-  ensureDemo();
-  saveToDisk();
-  return count;
+  return resetArtists();
 }
+
 function seed() {
-  const before = artists.length;
-  ensureDemo();
-  saveToDisk();
-  return artists.length - before;
+  return seedArtists();
 }
 
-/* -------------------- Exports -------------------- */
-
-export {
-  listArtists,
-  getArtist,
-  createArtist,
-  updateArtist,
-  deleteArtist,
-};
+/* -------------------- Default export (one object) -------------------- */
 
 export default {
-  // Canonical
+  // modern
   listArtists,
   getArtist,
   createArtist,
   updateArtist,
+  patchArtist,
   deleteArtist,
+  resetArtists,
+  seedArtists,
 
-  // Compatibility
+  // aliases
   getAll,
   getById,
   create,
@@ -229,7 +297,8 @@ export default {
   reset,
   seed,
 
-  // Debug
+  // debugging
+  save: saveToDisk,
   get artists() {
     return artists;
   },
