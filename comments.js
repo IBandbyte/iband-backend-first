@@ -1,30 +1,35 @@
 // comments.js (ESM)
-// Public comments API — Option A (aligned with commentsStore.js)
+// Public comments API (Option A - LOCKED)
 //
-// Public rules:
-// - Anyone can POST a comment (defaults to "pending")
-// - Public feed shows ONLY: approved OR visible
-// - Pending / hidden / rejected are NOT shown publicly
+// Canonical statuses (from commentsStore.js):
+// - pending   (NOT public)
+// - approved  (public)
+// - hidden    (NOT public)
+// - rejected  (NOT public)
+//
+// Public endpoints:
+// - POST /api/comments
+// - GET  /api/comments/by-artist/:artistId
 
 import express from "express";
 import commentsStore from "./commentsStore.js";
 
 const router = express.Router();
 
-/* -------------------- Helpers -------------------- */
-
 const asString = (v) => String(v ?? "").trim();
 
 function isPublicVisible(comment) {
-  const s = String(comment?.status || "").toLowerCase();
-  return s === "approved" || s === "visible";
+  // Option A rule: ONLY approved comments are public
+  return String(comment?.status ?? "").toLowerCase() === "approved";
 }
-
-/* -------------------- Routes -------------------- */
 
 /**
  * POST /api/comments
- * Create comment (public)
+ * Create a comment (public)
+ *
+ * Option A:
+ * - Always creates as "pending" (store default)
+ * - Public list hides pending until admin approves
  */
 router.post("/", (req, res) => {
   try {
@@ -32,6 +37,17 @@ router.post("/", (req, res) => {
     const author = asString(req.body?.author);
     const text = asString(req.body?.text);
 
+    if (!artistId) {
+      return res.status(400).json({ success: false, message: "artistId is required" });
+    }
+    if (!author) {
+      return res.status(400).json({ success: false, message: "author is required" });
+    }
+    if (!text) {
+      return res.status(400).json({ success: false, message: "text is required" });
+    }
+
+    // store.create throws on invalid input (Step A1)
     const created = commentsStore.create({ artistId, author, text });
 
     return res.status(201).json({
@@ -49,7 +65,9 @@ router.post("/", (req, res) => {
 
 /**
  * GET /api/comments/by-artist/:artistId
- * List comments for artist (public-safe)
+ * List public comments for a given artist
+ *
+ * Option A: only approved comments show
  */
 router.get("/by-artist/:artistId", (req, res) => {
   const artistId = asString(req.params.artistId);
