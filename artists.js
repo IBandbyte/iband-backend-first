@@ -1,15 +1,14 @@
-// artists.js (root)
+// artists.js (root) — ESM (default export)
 // iBand Backend - Artists Router (HARDENED)
-// Goals:
-// - Public POST creates PENDING (requires admin approval)
-// - Admin can create ACTIVE and approve/reject artists
+// - Public POST creates PENDING by default (admin can override)
+// - Admin can list/approve/reject/update status
 // - Public GET /api/artists?status=active returns ACTIVE artists
-// - Consistent response shape: { success, count, artists } and { success, artist }
-// - Optional lightweight persistence to a JSON file (best-effort)
+// - Consistent response shapes: { success, count, artists } and { success, artist }
+// - Best-effort persistence to JSON file
 
-const express = require("express");
-const fs = require("fs");
-const path = require("path");
+import express from "express";
+import fs from "fs";
+import path from "path";
 
 const router = express.Router();
 
@@ -33,12 +32,26 @@ function normalizeStatus(s) {
 function makeId() {
   try {
     // Node 18+ supports crypto.randomUUID
-    const crypto = require("crypto");
-    if (crypto.randomUUID) return crypto.randomUUID();
+    // Node 21 definitely supports it
+    // eslint-disable-next-line node/no-unsupported-features/node-builtins
+    const { randomUUID } = await import("crypto");
+    if (randomUUID) return randomUUID();
   } catch {
     // ignore
   }
-  // fallback
+  return `id_${Math.random().toString(16).slice(2)}_${Date.now()}`;
+}
+
+// NOTE: since we used await import above, we need a non-async fallback ID generator too.
+// We'll use a simpler generator in normal flow.
+function makeIdSync() {
+  try {
+    // eslint-disable-next-line node/no-unsupported-features/node-builtins
+    const crypto = require("crypto");
+    if (crypto?.randomUUID) return crypto.randomUUID();
+  } catch {
+    // ignore
+  }
   return `id_${Math.random().toString(16).slice(2)}_${Date.now()}`;
 }
 
@@ -68,8 +81,6 @@ function bestEffortWriteDb(artists) {
 }
 
 function seedArtists() {
-  // Seed a demo artist so public is never empty after a fresh start.
-  // (This DOES NOT replace your real database later — it's a starter scaffold.)
   const t = nowIso();
   return [
     {
@@ -81,7 +92,7 @@ function seedArtists() {
       imageUrl: "",
       socials: {},
       tracks: [],
-      votes: 0,
+      votes: 42,
       status: "active",
       createdAt: t,
       updatedAt: t,
@@ -102,8 +113,7 @@ function persist() {
 }
 
 function isAdmin(req) {
-  // If ADMIN_KEY is not set, we allow admin actions (dev mode).
-  // If ADMIN_KEY is set, require matching x-admin-key header.
+  // If ADMIN_KEY not set, allow admin actions (dev mode)
   const required = safeText(process.env.ADMIN_KEY).trim();
   if (!required) return true;
 
@@ -201,25 +211,20 @@ router.get("/artists/:id", (req, res) => {
   res.json({ success: true, artist });
 });
 
-// POST /api/artists  (Public: creates PENDING)
+// POST /api/artists (Public creates pending; admin can override)
 router.post("/artists", (req, res) => {
   const input = sanitizeArtistInput(req.body || {});
-
   if (!input.name) {
-    return res
-      .status(400)
-      .json({ success: false, message: "Name is required." });
+    return res.status(400).json({ success: false, message: "Name is required." });
   }
 
   const t = nowIso();
-
-  // Public always creates pending. Admin can override status if they want.
   const admin = isAdmin(req);
   const requested = normalizeStatus(req.body?.status);
   const status = admin && requested ? requested : "pending";
 
   const artist = {
-    id: makeId(),
+    id: makeIdSync(),
     name: input.name,
     genre: input.genre,
     location: input.location,
@@ -286,13 +291,11 @@ router.patch("/admin/artists/:id", (req, res) => {
   artist.status = next;
   artist.updatedAt = nowIso();
 
-  // Optional moderation fields (safe if backend later ignores)
   if (req.body?.moderationNote !== undefined) {
     artist.moderationNote = safeText(req.body.moderationNote).trim();
   }
 
   persist();
-
   res.json({ success: true, message: "Artist updated.", artist });
 });
 
@@ -300,31 +303,57 @@ router.patch("/admin/artists/:id", (req, res) => {
 router.post("/admin/artists/:id/approve", (req, res) => {
   if (!requireAdmin(req, res)) return;
 
-  req.body = { ...(req.body || {}), status: "active" };
-  return router.handle(req, res, () => {});
+  const id = safeText(req.params.id).trim();
+  const artist = ARTISTS.find((a) => safeText(a.id) === id);
+
+  if (!artist) {
+    return res.status(404).json({ success: false, message: "Artist not found." });
+  }
+
+  artist.status = "active";
+  artist.updatedAt = nowIso();
+
+  if (req.body?.moderationNote !== undefined) {
+    artist.moderationNote = safeText(req.body.moderationNote).trim();
+  }
+
+  persist();
+  res.json({ success: true, message: "Artist approved.", artist });
 });
 
 // POST /api/admin/artists/:id/reject
 router.post("/admin/artists/:id/reject", (req, res) => {
   if (!requireAdmin(req, res)) return;
 
-  req.body = { ...(req.body || {}), status: "rejected" };
-  return router.handle(req, res, () => {});
+  const id = safeText(req.params.id).trim();
+  const artist = ARTISTS.find((a) => safeText(a.id) === id);
+
+  if (!artist) {
+    return res.status(404).json({ success: false, message: "Artist not found." });
+  }
+
+  artist.status = "rejected";
+  artist.updatedAt = nowIso();
+
+  if (req.body?.moderationNote !== undefined) {
+    artist.moderationNote = safeText(req.body.moderationNote).trim();
+  }
+
+  persist();
+  res.json({ success: true, message: "Artist rejected.", artist });
 });
 
-// Dev helper: POST /api/admin/seed (re-seed demo if needed)
+// POST /api/admin/seed (ensure demo exists)
 router.post("/admin/seed", (req, res) => {
   if (!requireAdmin(req, res)) return;
 
-  const seeded = seedArtists();
-  // Keep existing but ensure demo exists
   const hasDemo = ARTISTS.some((a) => safeText(a.id) === "demo");
   if (!hasDemo) {
-    ARTISTS = ARTISTS.concat(seeded);
+    ARTISTS = ARTISTS.concat(seedArtists());
     persist();
   }
 
   res.json({ success: true, message: "Seed ensured.", count: ARTISTS.length });
 });
 
-module.exports = router;
+export default router;
