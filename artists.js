@@ -1,82 +1,51 @@
-// artists.js
-// iBand Backend — Artists Router (LOCKED)
-// - Default export for ESM
-// - No await import('crypto')
-// - Public list correctly returns active/pending/rejected
-// - Submit always pending
+// artists.js (ESM)
+// Public Artists Router
+// - Canonical list:   GET  /api/artists?status=active&q=&page=&limit=
+// - Canonical detail: GET  /api/artists/:id  -> { success:true, artist }
+// - Submit artist:    POST /api/artists      -> pending by default
+//
+// IMPORTANT:
+// - MUST default export router (Render ESM import expects default)
+// - MUST NOT use top-level await
 
 import express from "express";
-import { randomUUID } from "node:crypto";
+import { randomUUID } from "crypto";
+import artistsStore from "./artistsStore.js";
 
 const router = express.Router();
 
-/**
- * In-memory store shared across routers.
- * Note: Render free tier resets memory on redeploy/sleep.
- */
-const store = globalThis.__IBAND_STORE__ || { artists: [] };
-globalThis.__IBAND_STORE__ = store;
+/* -----------------------------
+   Helpers
+----------------------------- */
 
 function safeText(v) {
   if (v === null || v === undefined) return "";
-  return String(v);
+  return String(v).trim();
 }
 
-function normalizeStatus(v, fallback = "active") {
-  const s = safeText(v).trim().toLowerCase();
-  if (!s) return fallback;
-  if (s === "approved") return "active";
-  if (s === "rejected" || s === "reject") return "rejected";
-  if (["active", "pending", "rejected"].includes(s)) return s;
-  return fallback;
+function toNumber(v, fallback) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
 }
 
-function normalizeArtist(raw = {}) {
-  const socials = raw.socials && typeof raw.socials === "object" ? raw.socials : {};
-  const tracks = Array.isArray(raw.tracks) ? raw.tracks : [];
-
-  const now = new Date().toISOString();
-
-  return {
-    id: safeText(raw.id || "").trim(),
-    name: safeText(raw.name || "").trim(),
-    genre: safeText(raw.genre || "").trim(),
-    location: safeText(raw.location || "").trim(),
-    bio: safeText(raw.bio || "").trim(),
-    imageUrl: safeText(raw.imageUrl || "").trim(),
-    socials: {
-      instagram: safeText(socials.instagram || "").trim(),
-      tiktok: safeText(socials.tiktok || "").trim(),
-      youtube: safeText(socials.youtube || "").trim(),
-      spotify: safeText(socials.spotify || "").trim(),
-      soundcloud: safeText(socials.soundcloud || "").trim(),
-      website: safeText(socials.website || "").trim(),
-    },
-    tracks: tracks
-      .map((t) => ({
-        title: safeText(t?.title || "").trim(),
-        url: safeText(t?.url || "").trim(),
-        platform: safeText(t?.platform || "").trim(),
-      }))
-      .filter((t) => t.title || t.url),
-    votes: Number.isFinite(Number(raw.votes)) ? Number(raw.votes) : 0,
-    status: normalizeStatus(raw.status, "active"),
-    createdAt: safeText(raw.createdAt || now),
-    updatedAt: safeText(raw.updatedAt || now),
-  };
+function normalizeStatus(s) {
+  const v = safeText(s).toLowerCase();
+  if (!v) return "";
+  if (["active", "pending", "rejected"].includes(v)) return v;
+  if (v === "all" || v === "*") return "all";
+  return "";
 }
 
-function matchesQuery(a, q) {
-  const needle = safeText(q).trim().toLowerCase();
+function matchesQ(artist, q) {
+  const needle = safeText(q).toLowerCase();
   if (!needle) return true;
 
   const hay = [
-    a.id,
-    a.name,
-    a.genre,
-    a.location,
-    a.bio,
-    a.status,
+    artist?.name,
+    artist?.genre,
+    artist?.location,
+    artist?.bio,
+    artist?.id,
   ]
     .map((x) => safeText(x).toLowerCase())
     .join(" ");
@@ -84,90 +53,118 @@ function matchesQuery(a, q) {
   return hay.includes(needle);
 }
 
-/**
- * GET /api/artists
- * Query:
- * - status=active|pending|rejected (default active)
- * - q=search text
- * - page, limit
- */
+function publicSanitizeArtist(a) {
+  // Keep permissive for now; later we can hide certain fields if desired.
+  return a;
+}
+
+function storeList() {
+  if (typeof artistsStore.getAll === "function") return artistsStore.getAll();
+  if (typeof artistsStore.listArtists === "function") return artistsStore.listArtists();
+  return [];
+}
+
+function storeGetById(id) {
+  if (typeof artistsStore.getById === "function") return artistsStore.getById(id);
+  if (typeof artistsStore.getArtist === "function") return artistsStore.getArtist(id);
+  return null;
+}
+
+function storeCreate(payload) {
+  if (typeof artistsStore.create === "function") return artistsStore.create(payload);
+  if (typeof artistsStore.createArtist === "function") return artistsStore.createArtist(payload);
+  return null;
+}
+
+/* -----------------------------
+   Routes
+----------------------------- */
+
+// GET /api/artists
 router.get("/", (req, res) => {
-  const status = normalizeStatus(req.query.status, "active");
-  const q = safeText(req.query.q || "");
-  const page = Math.max(1, Number(req.query.page || 1));
-  const limit = Math.min(100, Math.max(1, Number(req.query.limit || 50)));
+  const status = normalizeStatus(req.query?.status) || "active"; // public default
+  const q = safeText(req.query?.q);
+  const page = Math.max(1, toNumber(req.query?.page, 1));
+  const limit = Math.min(100, Math.max(1, toNumber(req.query?.limit, 50)));
 
-  const filtered = store.artists
-    .map((x) => normalizeArtist(x))
-    .filter((a) => normalizeStatus(a.status, "active") === status)
-    .filter((a) => matchesQuery(a, q));
+  const all = storeList();
+  let filtered = Array.isArray(all) ? all : [];
 
+  // status filter
+  if (status !== "all") {
+    filtered = filtered.filter((a) => safeText(a?.status).toLowerCase() === status);
+  }
+
+  // search filter
+  filtered = filtered.filter((a) => matchesQ(a, q));
+
+  const total = filtered.length;
+
+  // pagination
   const start = (page - 1) * limit;
-  const items = filtered.slice(start, start + limit);
+  const paged = filtered.slice(start, start + limit).map(publicSanitizeArtist);
 
   return res.json({
     success: true,
-    count: items.length,
-    artists: items,
+    count: paged.length,
+    artists: paged,
     page,
     limit,
-    total: filtered.length,
+    total,
     status,
     q,
   });
 });
 
-/**
- * GET /api/artists/:id
- */
+// GET /api/artists/:id  (CANONICAL DETAIL)
 router.get("/:id", (req, res) => {
-  const id = safeText(req.params.id).trim();
-  const found = store.artists.find((a) => safeText(a.id).trim() === id);
+  const id = safeText(req.params?.id);
+  const artist = storeGetById(id);
 
-  if (!found) {
+  if (!artist) {
     return res.status(404).json({
       success: false,
       message: "Artist not found",
+      id,
     });
   }
 
   return res.json({
     success: true,
-    artist: normalizeArtist(found),
+    artist: publicSanitizeArtist(artist),
   });
 });
 
-/**
- * POST /api/artists
- * Public submit: always pending
- */
+// POST /api/artists (SUBMIT)
 router.post("/", (req, res) => {
   const body = req.body && typeof req.body === "object" ? req.body : {};
 
-  const now = new Date().toISOString();
-
-  const artist = normalizeArtist({
-    ...body,
-    id: randomUUID(),
-    status: "pending",
+  const payload = {
+    id: safeText(body.id) || randomUUID(),
+    name: safeText(body.name),
+    genre: safeText(body.genre),
+    location: safeText(body.location),
+    bio: safeText(body.bio),
+    imageUrl: safeText(body.imageUrl),
+    socials: body.socials && typeof body.socials === "object" ? body.socials : {},
+    tracks: Array.isArray(body.tracks) ? body.tracks : [],
     votes: 0,
-    createdAt: now,
-    updatedAt: now,
-  });
+    status: "pending", // ALWAYS pending for public submit
+  };
 
-  if (artist.name.length < 2 || artist.bio.length < 10) {
+  if (!payload.name) {
     return res.status(400).json({
       success: false,
-      message: "Validation failed: name (>=2) and bio (>=10) are required.",
+      message: "Name is required",
     });
   }
 
-  store.artists.unshift(artist);
+  const created = storeCreate(payload);
 
   return res.status(201).json({
     success: true,
     message: "Artist submitted successfully (pending approval).",
-    artist,
+    artist: created,
   });
 });
 
