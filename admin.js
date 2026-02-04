@@ -1,8 +1,9 @@
 // admin.js (ESM)
-// Admin router
-// Mounts admin sub-routers under /api/admin/*
+// Admin Router (authoritative)
+// Mounted at: /api/admin
 //
-// Requires x-admin-key header if ADMIN_KEY is set
+// Protects admin routes using x-admin-key header.
+// If ADMIN_KEY is NOT set, it runs in "dev-open" mode (no auth) to avoid blocking testing.
 
 import express from "express";
 
@@ -11,38 +12,43 @@ import adminCommentsRouter from "./adminComments.js";
 
 const router = express.Router();
 
-const ADMIN_KEY = (process.env.ADMIN_KEY || "").trim();
+/* -------------------- Admin Key Guard -------------------- */
 
-function requireAdmin(req, res, next) {
-  // If no admin key is configured, allow (dev-friendly)
-  if (!ADMIN_KEY) return next();
-
-  const key = String(req.headers["x-admin-key"] || "").trim();
-  if (!key || key !== ADMIN_KEY) {
-    return res.status(403).json({
-      success: false,
-      message: "Forbidden (bad or missing x-admin-key)",
-    });
-  }
-  next();
+function safeText(v) {
+  if (v === null || v === undefined) return "";
+  return String(v).trim();
 }
 
-// Admin root
-router.get("/", requireAdmin, (_req, res) => {
+router.use((req, res, next) => {
+  const configuredKey = safeText(process.env.ADMIN_KEY);
+  if (!configuredKey) {
+    // Dev-open mode (no key configured)
+    return next();
+  }
+
+  const provided = safeText(req.headers["x-admin-key"]);
+  if (!provided || provided !== configuredKey) {
+    return res.status(401).json({
+      success: false,
+      message: "Unauthorized (missing or invalid x-admin-key).",
+    });
+  }
+
+  next();
+});
+
+/* -------------------- Health -------------------- */
+
+router.get("/", (_req, res) => {
   res.json({
     success: true,
-    message: "iBand admin API is running.",
-    routes: {
-      artists: "/api/admin/artists",
-      comments: "/api/admin/comments",
-    },
+    message: "iBand admin API is running",
   });
 });
 
-// Mount: /api/admin/artists/*
-router.use("/artists", requireAdmin, adminArtistsRouter);
+/* -------------------- Routes -------------------- */
 
-// ✅ CRITICAL: Mount: /api/admin/comments/*
-router.use("/comments", requireAdmin, adminCommentsRouter);
+router.use("/artists", adminArtistsRouter);
+router.use("/comments", adminCommentsRouter);
 
 export default router;
