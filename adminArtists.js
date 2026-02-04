@@ -1,17 +1,16 @@
 // adminArtists.js (ESM)
-// Admin artists control API — aligned with artistsStore.js
+// Admin artists control API — authoritative
 //
 // Mounted at: /api/admin/artists
 //
-// ✅ Adds filtering so Admin Inbox tabs work properly:
-//    GET /api/admin/artists?status=pending&q=&page=&limit=
-//
-// ✅ Adds canonical approve/reject endpoints:
-//    POST  /api/admin/artists/:id/approve
-//    POST  /api/admin/artists/:id/reject
-//    PATCH /api/admin/artists/:id  (still supported)
-//
-// ✅ Keeps CRUD endpoints (create/put/patch/delete)
+// Supports:
+// - list (with status/q/page/limit)
+// - get by id
+// - create
+// - put (replace)
+// - patch (partial)
+// - approve / reject (workflow endpoints)
+// - delete
 
 import express from "express";
 import artistsStore from "./artistsStore.js";
@@ -20,23 +19,20 @@ const router = express.Router();
 
 /* -------------------- Helpers -------------------- */
 
-function safeText(v) {
-  if (v === null || v === undefined) return "";
-  return String(v).trim();
-}
+const safeText = (v) => (v === null || v === undefined ? "" : String(v)).trim();
 
-function toNumber(v, fallback) {
+const toNumber = (v, fallback) => {
   const n = Number(v);
   return Number.isFinite(n) ? n : fallback;
-}
+};
 
-function normalizeStatus(s) {
+const normalizeStatus = (s) => {
   const v = safeText(s).toLowerCase();
   if (!v) return "";
-  if (["pending", "active", "rejected"].includes(v)) return v;
+  if (["active", "pending", "rejected"].includes(v)) return v;
   if (v === "all" || v === "*") return "all";
   return "";
-}
+};
 
 function matchesQ(artist, q) {
   const needle = safeText(q).toLowerCase();
@@ -48,7 +44,6 @@ function matchesQ(artist, q) {
     artist?.location,
     artist?.bio,
     artist?.id,
-    artist?.status,
   ]
     .map((x) => safeText(x).toLowerCase())
     .join(" ");
@@ -56,46 +51,8 @@ function matchesQ(artist, q) {
   return hay.includes(needle);
 }
 
-function storeList() {
-  if (typeof artistsStore.getAll === "function") return artistsStore.getAll();
-  if (typeof artistsStore.listArtists === "function") return artistsStore.listArtists();
-  return [];
-}
-
-function storeGetById(id) {
-  if (typeof artistsStore.getById === "function") return artistsStore.getById(id);
-  if (typeof artistsStore.getArtist === "function") return artistsStore.getArtist(id);
-  return null;
-}
-
-function storeCreate(payload) {
-  if (typeof artistsStore.create === "function") return artistsStore.create(payload);
-  if (typeof artistsStore.createArtist === "function") return artistsStore.createArtist(payload);
-  return null;
-}
-
-function storePatch(id, patch) {
-  if (typeof artistsStore.patch === "function") return artistsStore.patch(id, patch);
-  if (typeof artistsStore.patchArtist === "function") return artistsStore.patchArtist(id, patch);
-
-  // fallback: updateArtist exists but expects full object sometimes
-  if (typeof artistsStore.updateArtist === "function") {
-    const existing = storeGetById(id);
-    if (!existing) return null;
-    return artistsStore.updateArtist(id, { ...existing, ...patch });
-  }
-
-  return null;
-}
-
-function storeDelete(id) {
-  if (typeof artistsStore.remove === "function") return artistsStore.remove(id);
-  if (typeof artistsStore.deleteArtist === "function") return artistsStore.deleteArtist(id);
-  return null;
-}
-
-function stripUndefined(obj) {
-  return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined));
+function isNonEmptyString(v) {
+  return typeof v === "string" && v.trim().length > 0;
 }
 
 function normalizeArtistPayload(body = {}) {
@@ -103,55 +60,53 @@ function normalizeArtistPayload(body = {}) {
   const tracks = Array.isArray(body.tracks) ? body.tracks : undefined;
 
   return {
-    id: safeText(body.id) || undefined,
-    name: safeText(body.name) || undefined,
-    genre: safeText(body.genre) || undefined,
-    location: safeText(body.location) || undefined,
-    bio: safeText(body.bio) || undefined,
-    imageUrl: safeText(body.imageUrl) || undefined,
+    id: isNonEmptyString(body.id) ? body.id.trim() : undefined,
+    name: isNonEmptyString(body.name) ? body.name.trim() : undefined,
+    genre: isNonEmptyString(body.genre) ? body.genre.trim() : undefined,
+    location: isNonEmptyString(body.location) ? body.location.trim() : undefined,
+    bio: isNonEmptyString(body.bio) ? body.bio.trim() : undefined,
+    imageUrl: isNonEmptyString(body.imageUrl) ? body.imageUrl.trim() : undefined,
     socials: {
-      instagram: safeText(socials.instagram) || undefined,
-      tiktok: safeText(socials.tiktok) || undefined,
-      youtube: safeText(socials.youtube) || undefined,
-      spotify: safeText(socials.spotify) || undefined,
-      soundcloud: safeText(socials.soundcloud) || undefined,
-      website: safeText(socials.website) || undefined,
+      instagram: isNonEmptyString(socials.instagram) ? socials.instagram.trim() : undefined,
+      tiktok: isNonEmptyString(socials.tiktok) ? socials.tiktok.trim() : undefined,
+      youtube: isNonEmptyString(socials.youtube) ? socials.youtube.trim() : undefined,
+      spotify: isNonEmptyString(socials.spotify) ? socials.spotify.trim() : undefined,
+      soundcloud: isNonEmptyString(socials.soundcloud) ? socials.soundcloud.trim() : undefined,
+      website: isNonEmptyString(socials.website) ? socials.website.trim() : undefined,
     },
     tracks,
-    status: safeText(body.status) || undefined,
+    status: isNonEmptyString(body.status) ? body.status.trim() : undefined,
     votes: body.votes !== undefined ? Number(body.votes) : undefined,
-    moderationNote: safeText(body.moderationNote) || undefined,
   };
+}
+
+function stripUndefined(obj) {
+  return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined));
 }
 
 /* -------------------- Routes -------------------- */
 
 /**
- * ✅ GET /api/admin/artists
- * Supports:
- *   ?status=pending|active|rejected|all
- *   ?q=
- *   ?page=
- *   ?limit=
+ * GET /api/admin/artists?status=pending&q=&page=&limit=
  */
 router.get("/", (req, res) => {
-  const status = normalizeStatus(req.query?.status) || "pending";
-  const q = safeText(req.query?.q || req.query?.query);
+  const status = normalizeStatus(req.query?.status) || "all";
+  const q = safeText(req.query?.q);
   const page = Math.max(1, toNumber(req.query?.page, 1));
   const limit = Math.min(100, Math.max(1, toNumber(req.query?.limit, 50)));
 
-  let list = storeList();
-  list = Array.isArray(list) ? list : [];
+  const all = artistsStore.listArtists();
+  let filtered = Array.isArray(all) ? all : [];
 
   if (status !== "all") {
-    list = list.filter((a) => safeText(a?.status).toLowerCase() === status);
+    filtered = filtered.filter((a) => safeText(a?.status).toLowerCase() === status);
   }
 
-  list = list.filter((a) => matchesQ(a, q));
+  filtered = filtered.filter((a) => matchesQ(a, q));
 
-  const total = list.length;
+  const total = filtered.length;
   const start = (page - 1) * limit;
-  const paged = list.slice(start, start + limit);
+  const paged = filtered.slice(start, start + limit);
 
   return res.status(200).json({
     success: true,
@@ -169,10 +124,9 @@ router.get("/", (req, res) => {
  * GET /api/admin/artists/:id
  */
 router.get("/:id", (req, res) => {
-  const artist = storeGetById(req.params.id);
-  if (!artist) {
-    return res.status(404).json({ success: false, message: "Artist not found." });
-  }
+  const id = safeText(req.params.id);
+  const artist = artistsStore.getArtist(id);
+  if (!artist) return res.status(404).json({ success: false, message: "Artist not found." });
   return res.status(200).json({ success: true, artist });
 });
 
@@ -190,7 +144,7 @@ router.post("/", (req, res) => {
     });
   }
 
-  const created = storeCreate(
+  const created = artistsStore.createArtist(
     stripUndefined({
       id: payload.id,
       name: payload.name,
@@ -200,7 +154,7 @@ router.post("/", (req, res) => {
       imageUrl: payload.imageUrl ?? "",
       socials: payload.socials,
       tracks: payload.tracks ?? [],
-      status: normalizeStatus(payload.status) || "active",
+      status: payload.status ?? "active",
       votes: Number.isFinite(payload.votes) ? payload.votes : 0,
     })
   );
@@ -213,63 +167,15 @@ router.post("/", (req, res) => {
 });
 
 /**
- * ✅ POST /api/admin/artists/:id/approve
- * Sets status to active
- */
-router.post("/:id/approve", (req, res) => {
-  const id = safeText(req.params.id);
-  const existing = storeGetById(id);
-  if (!existing) return res.status(404).json({ success: false, message: "Artist not found." });
-
-  const note = safeText(req.body?.moderationNote || "Approved via admin");
-
-  const updated = storePatch(id, {
-    status: "active",
-    moderationNote: note,
-  });
-
-  return res.status(200).json({
-    success: true,
-    message: "Artist approved.",
-    artist: updated,
-  });
-});
-
-/**
- * ✅ POST /api/admin/artists/:id/reject
- * Sets status to rejected
- */
-router.post("/:id/reject", (req, res) => {
-  const id = safeText(req.params.id);
-  const existing = storeGetById(id);
-  if (!existing) return res.status(404).json({ success: false, message: "Artist not found." });
-
-  const note = safeText(req.body?.moderationNote || "Rejected via admin");
-
-  const updated = storePatch(id, {
-    status: "rejected",
-    moderationNote: note,
-  });
-
-  return res.status(200).json({
-    success: true,
-    message: "Artist rejected.",
-    artist: updated,
-  });
-});
-
-/**
  * PUT /api/admin/artists/:id
  * Replace full artist (requires name)
  */
 router.put("/:id", (req, res) => {
-  const existing = storeGetById(req.params.id);
-  if (!existing) {
-    return res.status(404).json({ success: false, message: "Artist not found." });
-  }
+  const id = safeText(req.params.id);
+  const existing = artistsStore.getArtist(id);
+  if (!existing) return res.status(404).json({ success: false, message: "Artist not found." });
 
   const payload = normalizeArtistPayload(req.body);
-
   if (!payload.name) {
     return res.status(400).json({
       success: false,
@@ -277,7 +183,7 @@ router.put("/:id", (req, res) => {
     });
   }
 
-  const updated = storePatch(req.params.id, {
+  const updated = artistsStore.updateArtist(id, {
     name: payload.name,
     genre: payload.genre ?? "Unknown",
     location: payload.location ?? "",
@@ -285,7 +191,7 @@ router.put("/:id", (req, res) => {
     imageUrl: payload.imageUrl ?? "",
     socials: payload.socials,
     tracks: payload.tracks ?? [],
-    status: normalizeStatus(payload.status) || existing.status,
+    status: payload.status ?? existing.status,
     votes: Number.isFinite(payload.votes) ? payload.votes : existing.votes,
   });
 
@@ -298,13 +204,12 @@ router.put("/:id", (req, res) => {
 
 /**
  * PATCH /api/admin/artists/:id
- * Partial update (canonical)
+ * Partial update
  */
 router.patch("/:id", (req, res) => {
-  const existing = storeGetById(req.params.id);
-  if (!existing) {
-    return res.status(404).json({ success: false, message: "Artist not found." });
-  }
+  const id = safeText(req.params.id);
+  const existing = artistsStore.getArtist(id);
+  if (!existing) return res.status(404).json({ success: false, message: "Artist not found." });
 
   const payload = normalizeArtistPayload(req.body);
 
@@ -316,9 +221,8 @@ router.patch("/:id", (req, res) => {
     imageUrl: payload.imageUrl,
     socials: payload.socials,
     tracks: payload.tracks,
-    status: normalizeStatus(payload.status) || undefined,
+    status: payload.status,
     votes: Number.isFinite(payload.votes) ? payload.votes : undefined,
-    moderationNote: payload.moderationNote,
   });
 
   if (Object.keys(patch).length === 0) {
@@ -328,7 +232,7 @@ router.patch("/:id", (req, res) => {
     });
   }
 
-  const updated = storePatch(req.params.id, patch);
+  const updated = artistsStore.patchArtist(id, patch);
 
   return res.status(200).json({
     success: true,
@@ -338,15 +242,50 @@ router.patch("/:id", (req, res) => {
 });
 
 /**
+ * PATCH /api/admin/artists/:id/approve
+ * Sets status=active
+ */
+router.patch("/:id/approve", (req, res) => {
+  const id = safeText(req.params.id);
+  const existing = artistsStore.getArtist(id);
+  if (!existing) return res.status(404).json({ success: false, message: "Artist not found." });
+
+  const updated = artistsStore.patchArtist(id, { status: "active" });
+
+  return res.status(200).json({
+    success: true,
+    message: "Artist approved.",
+    artist: updated,
+  });
+});
+
+/**
+ * PATCH /api/admin/artists/:id/reject
+ * Sets status=rejected
+ */
+router.patch("/:id/reject", (req, res) => {
+  const id = safeText(req.params.id);
+  const existing = artistsStore.getArtist(id);
+  if (!existing) return res.status(404).json({ success: false, message: "Artist not found." });
+
+  const updated = artistsStore.patchArtist(id, { status: "rejected" });
+
+  return res.status(200).json({
+    success: true,
+    message: "Artist rejected.",
+    artist: updated,
+  });
+});
+
+/**
  * DELETE /api/admin/artists/:id
  */
 router.delete("/:id", (req, res) => {
-  const existing = storeGetById(req.params.id);
-  if (!existing) {
-    return res.status(404).json({ success: false, message: "Artist not found." });
-  }
+  const id = safeText(req.params.id);
+  const existing = artistsStore.getArtist(id);
+  if (!existing) return res.status(404).json({ success: false, message: "Artist not found." });
 
-  const removed = storeDelete(req.params.id);
+  const removed = artistsStore.deleteArtist(id);
 
   return res.status(200).json({
     success: true,
