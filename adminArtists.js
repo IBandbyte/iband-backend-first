@@ -4,13 +4,13 @@
 // Mounted at: /api/admin/artists
 //
 // Supports:
-// - list (with status/q/page/limit like public API)
-// - get by id
-// - create
-// - put (replace)
-// - patch (partial, safe nested merge)
-// - delete
-// - approve / reject (routes used by frontend Admin UI)
+// - list with filters/pagination: GET /?status=&q=&page=&limit=
+// - get by id: GET /:id
+// - create: POST /
+// - put (replace): PUT /:id
+// - patch (partial): PATCH /:id  ✅ uses artistsStore.patchArtist
+// - approve/reject convenience: PATCH /:id/approve , PATCH /:id/reject
+// - delete: DELETE /:id
 
 import express from "express";
 import artistsStore from "./artistsStore.js";
@@ -19,20 +19,20 @@ const router = express.Router();
 
 /* -------------------- Helpers -------------------- */
 
-const safeText = (v) => (v === null || v === undefined ? "" : String(v)).trim();
+const safeText = (v) => String(v ?? "").trim();
 
-const toNumber = (v, fallback = 0) => {
+function toNumber(v, fallback = 0) {
   const n = Number(v);
   return Number.isFinite(n) ? n : fallback;
-};
+}
 
-const normalizeStatus = (s) => {
-  const v = safeText(s).toLowerCase();
-  if (!v) return "";
-  if (["active", "pending", "rejected"].includes(v)) return v;
-  if (v === "all" || v === "*") return "all";
+function normalizeStatus(v) {
+  const s = safeText(v).toLowerCase();
+  if (!s) return "";
+  if (["pending", "active", "rejected"].includes(s)) return s;
+  if (s === "all" || s === "*") return "all";
   return "";
-};
+}
 
 function matchesQ(artist, q) {
   const needle = safeText(q).toLowerCase();
@@ -51,49 +51,99 @@ function matchesQ(artist, q) {
   return hay.includes(needle);
 }
 
+function isNonEmptyString(v) {
+  return typeof v === "string" && v.trim().length > 0;
+}
+
 function stripUndefined(obj) {
   return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined));
 }
 
-function buildSocialsPatch(rawSocials) {
-  if (!rawSocials || typeof rawSocials !== "object") return undefined;
+function normalizeArtistPayload(body = {}) {
+  const socials = body.socials && typeof body.socials === "object" ? body.socials : {};
+  const tracks = Array.isArray(body.tracks) ? body.tracks : undefined;
 
-  const next = stripUndefined({
-    instagram: rawSocials.instagram !== undefined ? safeText(rawSocials.instagram) : undefined,
-    tiktok: rawSocials.tiktok !== undefined ? safeText(rawSocials.tiktok) : undefined,
-    youtube: rawSocials.youtube !== undefined ? safeText(rawSocials.youtube) : undefined,
-    spotify: rawSocials.spotify !== undefined ? safeText(rawSocials.spotify) : undefined,
-    soundcloud: rawSocials.soundcloud !== undefined ? safeText(rawSocials.soundcloud) : undefined,
-    website: rawSocials.website !== undefined ? safeText(rawSocials.website) : undefined,
-  });
+  return {
+    id: isNonEmptyString(body.id) ? body.id.trim() : undefined,
+    name: isNonEmptyString(body.name) ? body.name.trim() : undefined,
+    genre: isNonEmptyString(body.genre) ? body.genre.trim() : undefined,
+    location: isNonEmptyString(body.location) ? body.location.trim() : undefined,
+    bio: isNonEmptyString(body.bio) ? body.bio.trim() : undefined,
+    imageUrl: isNonEmptyString(body.imageUrl) ? body.imageUrl.trim() : undefined,
+    socials: {
+      instagram: isNonEmptyString(socials.instagram) ? socials.instagram.trim() : undefined,
+      tiktok: isNonEmptyString(socials.tiktok) ? socials.tiktok.trim() : undefined,
+      youtube: isNonEmptyString(socials.youtube) ? socials.youtube.trim() : undefined,
+      spotify: isNonEmptyString(socials.spotify) ? socials.spotify.trim() : undefined,
+      soundcloud: isNonEmptyString(socials.soundcloud) ? socials.soundcloud.trim() : undefined,
+      website: isNonEmptyString(socials.website) ? socials.website.trim() : undefined,
+    },
+    tracks,
+    status: isNonEmptyString(body.status) ? body.status.trim() : undefined,
+    votes: body.votes !== undefined ? Number(body.votes) : undefined,
+  };
+}
 
-  return Object.keys(next).length ? next : undefined;
+function storeList() {
+  if (typeof artistsStore.listArtists === "function") return artistsStore.listArtists();
+  if (typeof artistsStore.getAll === "function") return artistsStore.getAll();
+  return [];
+}
+
+function storeGet(id) {
+  if (typeof artistsStore.getArtist === "function") return artistsStore.getArtist(id);
+  if (typeof artistsStore.getById === "function") return artistsStore.getById(id);
+  return null;
+}
+
+function storeCreate(payload) {
+  if (typeof artistsStore.createArtist === "function") return artistsStore.createArtist(payload);
+  if (typeof artistsStore.create === "function") return artistsStore.create(payload);
+  return null;
+}
+
+function storeUpdate(id, payload) {
+  if (typeof artistsStore.updateArtist === "function") return artistsStore.updateArtist(id, payload);
+  if (typeof artistsStore.update === "function") return artistsStore.update(id, payload);
+  return null;
+}
+
+function storePatch(id, payload) {
+  if (typeof artistsStore.patchArtist === "function") return artistsStore.patchArtist(id, payload);
+  if (typeof artistsStore.patch === "function") return artistsStore.patch(id, payload);
+  // last resort:
+  return storeUpdate(id, { ...(storeGet(id) || {}), ...(payload || {}) });
+}
+
+function storeDelete(id) {
+  if (typeof artistsStore.deleteArtist === "function") return artistsStore.deleteArtist(id);
+  if (typeof artistsStore.remove === "function") return artistsStore.remove(id);
+  return null;
 }
 
 /* -------------------- Routes -------------------- */
 
 /**
- * GET /api/admin/artists?status=all|active|pending|rejected&q=&page=&limit=
- * (Admin list supports filters + pagination)
+ * GET /api/admin/artists?status=&q=&page=&limit=
+ * ✅ NOW supports filters/pagination so Admin UI tabs work correctly
  */
 router.get("/", (req, res) => {
   const status = normalizeStatus(req.query?.status) || "all";
-  const q = safeText(req.query?.q || req.query?.query || "");
+  const q = safeText(req.query?.q);
   const page = Math.max(1, toNumber(req.query?.page, 1));
   const limit = Math.min(100, Math.max(1, toNumber(req.query?.limit, 50)));
 
-  const all = artistsStore.listArtists();
-  let filtered = Array.isArray(all) ? all : [];
+  let list = storeList();
 
   if (status !== "all") {
-    filtered = filtered.filter((a) => safeText(a?.status).toLowerCase() === status);
+    list = list.filter((a) => safeText(a?.status).toLowerCase() === status);
   }
 
-  filtered = filtered.filter((a) => matchesQ(a, q));
+  list = list.filter((a) => matchesQ(a, q));
 
-  const total = filtered.length;
+  const total = list.length;
   const start = (page - 1) * limit;
-  const paged = filtered.slice(start, start + limit);
+  const paged = list.slice(start, start + limit);
 
   return res.status(200).json({
     success: true,
@@ -112,10 +162,12 @@ router.get("/", (req, res) => {
  */
 router.get("/:id", (req, res) => {
   const id = safeText(req.params?.id);
-  const artist = artistsStore.getArtist(id);
+  const artist = storeGet(id);
+
   if (!artist) {
-    return res.status(404).json({ success: false, message: "Artist not found." });
+    return res.status(404).json({ success: false, message: "Artist not found.", id });
   }
+
   return res.status(200).json({ success: true, artist });
 });
 
@@ -124,29 +176,27 @@ router.get("/:id", (req, res) => {
  * Create new artist (requires name)
  */
 router.post("/", (req, res) => {
-  const body = req.body && typeof req.body === "object" ? req.body : {};
+  const payload = normalizeArtistPayload(req.body);
 
-  const name = safeText(body.name);
-  if (!name) {
+  if (!payload.name) {
     return res.status(400).json({
       success: false,
       message: "Validation error: 'name' is required.",
     });
   }
 
-  const created = artistsStore.createArtist(
+  const created = storeCreate(
     stripUndefined({
-      id: body.id !== undefined ? safeText(body.id) : undefined,
-      name,
-      genre: body.genre !== undefined ? safeText(body.genre) : "Unknown",
-      location: body.location !== undefined ? safeText(body.location) : "",
-      bio: body.bio !== undefined ? safeText(body.bio) : "",
-      imageUrl: body.imageUrl !== undefined ? safeText(body.imageUrl) : "",
-      socials: buildSocialsPatch(body.socials) || {},
-      tracks: Array.isArray(body.tracks) ? body.tracks : [],
-      status: body.status !== undefined ? safeText(body.status) : "active",
-      votes: body.votes !== undefined ? toNumber(body.votes, 0) : 0,
-      source: body.source !== undefined ? safeText(body.source) : "admin",
+      id: payload.id,
+      name: payload.name,
+      genre: payload.genre ?? "Unknown",
+      location: payload.location ?? "",
+      bio: payload.bio ?? "",
+      imageUrl: payload.imageUrl ?? "",
+      socials: payload.socials,
+      tracks: payload.tracks ?? [],
+      status: payload.status ?? "active",
+      votes: Number.isFinite(payload.votes) ? payload.votes : 0,
     })
   );
 
@@ -163,31 +213,31 @@ router.post("/", (req, res) => {
  */
 router.put("/:id", (req, res) => {
   const id = safeText(req.params?.id);
-  const existing = artistsStore.getArtist(id);
+  const existing = storeGet(id);
+
   if (!existing) {
-    return res.status(404).json({ success: false, message: "Artist not found." });
+    return res.status(404).json({ success: false, message: "Artist not found.", id });
   }
 
-  const body = req.body && typeof req.body === "object" ? req.body : {};
-  const name = safeText(body.name);
+  const payload = normalizeArtistPayload(req.body);
 
-  if (!name) {
+  if (!payload.name) {
     return res.status(400).json({
       success: false,
       message: "Validation error: 'name' is required.",
     });
   }
 
-  const updated = artistsStore.updateArtist(id, {
-    name,
-    genre: body.genre !== undefined ? safeText(body.genre) : "Unknown",
-    location: body.location !== undefined ? safeText(body.location) : "",
-    bio: body.bio !== undefined ? safeText(body.bio) : "",
-    imageUrl: body.imageUrl !== undefined ? safeText(body.imageUrl) : "",
-    socials: buildSocialsPatch(body.socials) || {},
-    tracks: Array.isArray(body.tracks) ? body.tracks : [],
-    status: body.status !== undefined ? safeText(body.status) : existing.status,
-    votes: body.votes !== undefined ? toNumber(body.votes, existing.votes) : existing.votes,
+  const updated = storeUpdate(id, {
+    name: payload.name,
+    genre: payload.genre ?? "Unknown",
+    location: payload.location ?? "",
+    bio: payload.bio ?? "",
+    imageUrl: payload.imageUrl ?? "",
+    socials: payload.socials,
+    tracks: payload.tracks ?? [],
+    status: payload.status ?? existing.status,
+    votes: Number.isFinite(payload.votes) ? payload.votes : existing.votes,
   });
 
   return res.status(200).json({
@@ -199,27 +249,28 @@ router.put("/:id", (req, res) => {
 
 /**
  * PATCH /api/admin/artists/:id
- * Partial update (safe nested merge)
+ * ✅ Partial update uses storePatch() (patchArtist) so status flips are safe
  */
 router.patch("/:id", (req, res) => {
   const id = safeText(req.params?.id);
-  const existing = artistsStore.getArtist(id);
+  const existing = storeGet(id);
+
   if (!existing) {
-    return res.status(404).json({ success: false, message: "Artist not found." });
+    return res.status(404).json({ success: false, message: "Artist not found.", id });
   }
 
-  const body = req.body && typeof req.body === "object" ? req.body : {};
+  const payload = normalizeArtistPayload(req.body);
 
   const patch = stripUndefined({
-    name: body.name !== undefined ? safeText(body.name) : undefined,
-    genre: body.genre !== undefined ? safeText(body.genre) : undefined,
-    location: body.location !== undefined ? safeText(body.location) : undefined,
-    bio: body.bio !== undefined ? safeText(body.bio) : undefined,
-    imageUrl: body.imageUrl !== undefined ? safeText(body.imageUrl) : undefined,
-    socials: buildSocialsPatch(body.socials),
-    tracks: body.tracks !== undefined ? (Array.isArray(body.tracks) ? body.tracks : undefined) : undefined,
-    status: body.status !== undefined ? safeText(body.status) : undefined,
-    votes: body.votes !== undefined ? toNumber(body.votes, existing.votes) : undefined,
+    name: payload.name,
+    genre: payload.genre,
+    location: payload.location,
+    bio: payload.bio,
+    imageUrl: payload.imageUrl,
+    socials: payload.socials,
+    tracks: payload.tracks,
+    status: payload.status,
+    votes: Number.isFinite(payload.votes) ? payload.votes : undefined,
   });
 
   if (Object.keys(patch).length === 0) {
@@ -229,11 +280,7 @@ router.patch("/:id", (req, res) => {
     });
   }
 
-  // Prefer patchArtist if store supports it (preserves nested socials properly)
-  const updated =
-    typeof artistsStore.patchArtist === "function"
-      ? artistsStore.patchArtist(id, patch)
-      : artistsStore.updateArtist(id, { ...existing, ...patch });
+  const updated = storePatch(id, patch);
 
   return res.status(200).json({
     success: true,
@@ -244,21 +291,16 @@ router.patch("/:id", (req, res) => {
 
 /**
  * PATCH /api/admin/artists/:id/approve
- * Sets status = active
  */
 router.patch("/:id/approve", (req, res) => {
   const id = safeText(req.params?.id);
-  const existing = artistsStore.getArtist(id);
+  const existing = storeGet(id);
+
   if (!existing) {
-    return res.status(404).json({ success: false, message: "Artist not found." });
+    return res.status(404).json({ success: false, message: "Artist not found.", id });
   }
 
-  const note = safeText(req.body?.note || req.query?.note || "");
-
-  const updated =
-    typeof artistsStore.patchArtist === "function"
-      ? artistsStore.patchArtist(id, { status: "active", adminNote: note })
-      : artistsStore.updateArtist(id, { ...existing, status: "active", adminNote: note });
+  const updated = storePatch(id, { status: "active" });
 
   return res.status(200).json({
     success: true,
@@ -269,21 +311,16 @@ router.patch("/:id/approve", (req, res) => {
 
 /**
  * PATCH /api/admin/artists/:id/reject
- * Sets status = rejected
  */
 router.patch("/:id/reject", (req, res) => {
   const id = safeText(req.params?.id);
-  const existing = artistsStore.getArtist(id);
+  const existing = storeGet(id);
+
   if (!existing) {
-    return res.status(404).json({ success: false, message: "Artist not found." });
+    return res.status(404).json({ success: false, message: "Artist not found.", id });
   }
 
-  const note = safeText(req.body?.note || req.query?.note || "");
-
-  const updated =
-    typeof artistsStore.patchArtist === "function"
-      ? artistsStore.patchArtist(id, { status: "rejected", adminNote: note })
-      : artistsStore.updateArtist(id, { ...existing, status: "rejected", adminNote: note });
+  const updated = storePatch(id, { status: "rejected" });
 
   return res.status(200).json({
     success: true,
@@ -297,12 +334,13 @@ router.patch("/:id/reject", (req, res) => {
  */
 router.delete("/:id", (req, res) => {
   const id = safeText(req.params?.id);
-  const existing = artistsStore.getArtist(id);
+  const existing = storeGet(id);
+
   if (!existing) {
-    return res.status(404).json({ success: false, message: "Artist not found." });
+    return res.status(404).json({ success: false, message: "Artist not found.", id });
   }
 
-  const deleted = artistsStore.deleteArtist(id);
+  const deleted = storeDelete(id);
 
   return res.status(200).json({
     success: true,
