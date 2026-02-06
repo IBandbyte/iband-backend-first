@@ -1,5 +1,5 @@
 /**
- * artistsStore.js (ESM) — PERSISTENCE HARDENED
+ * artistsStore.js (ESM)
  *
  * Single source of truth for artist persistence.
  * Used by:
@@ -7,14 +7,13 @@
  * - admin moderation routes (adminArtists.js)
  *
  * Storage:
- * - Disk persistence to IBAND_DATA_DIR (recommended: /var/data on Render persistent disk)
- * - Falls back to ./db for local dev
- * - In-memory fallback always works
+ * - Prefer Render persistent disk: /var/data (or process.env.IBAND_DATA_DIR)
+ * - Fallback to local ./db (works locally, but may reset on redeploy without disk)
  *
  * IMPORTANT:
- * This store intentionally supports BOTH:
- * - modern method names (listArtists/getArtist/createArtist/updateArtist/patchArtist/deleteArtist/resetArtists/seedArtists)
- * - legacy/router-friendly aliases (getAll/getById/create/update/patch/remove/reset/seed)
+ * Supports BOTH:
+ * - modern names (listArtists/getArtist/createArtist/updateArtist/patchArtist/deleteArtist)
+ * - aliases (getAll/getById/create/update/patch/remove/reset/seed)
  */
 
 import fs from "fs";
@@ -69,29 +68,53 @@ function normalizeArtist(raw = {}) {
   };
 }
 
-/* -------------------- Persistence -------------------- */
+/* -------------------- Persistence Paths -------------------- */
 
-// ✅ If you set IBAND_DATA_DIR=/var/data on Render (persistent disk), data survives deploys.
-const DATA_DIR = safeText(process.env.IBAND_DATA_DIR);
-const ROOT = process.cwd();
+// Render persistent disk conventional mount:
+const RENDER_DISK_DEFAULT = "/var/data";
 
-// Default local dev path
-const FALLBACK_DB_DIR = path.join(ROOT, "db");
+// Allow override (future-proof)
+const DATA_DIR =
+  safeText(process.env.IBAND_DATA_DIR) ||
+  safeText(process.env.DATA_DIR) ||
+  RENDER_DISK_DEFAULT;
 
-// Use persistent disk if provided, else fallback to local folder
-const DB_DIR = DATA_DIR || FALLBACK_DB_DIR;
+const LOCAL_FALLBACK_DIR = path.join(process.cwd(), "db");
+
+// Prefer disk dir if it exists or can be created, else fallback local
+function resolveDbDir() {
+  // If /var/data exists (or custom), use it
+  try {
+    if (DATA_DIR) {
+      if (!fs.existsSync(DATA_DIR)) {
+        // attempt to create (will fail if not mounted/allowed)
+        fs.mkdirSync(DATA_DIR, { recursive: true });
+      }
+      // write test folder inside data dir
+      const test = path.join(DATA_DIR, ".iband_write_test");
+      fs.writeFileSync(test, "ok", "utf8");
+      fs.unlinkSync(test);
+      return DATA_DIR;
+    }
+  } catch {
+    // ignore
+  }
+
+  // fallback local ./db
+  try {
+    if (!fs.existsSync(LOCAL_FALLBACK_DIR)) fs.mkdirSync(LOCAL_FALLBACK_DIR, { recursive: true });
+  } catch {
+    // ignore
+  }
+  return LOCAL_FALLBACK_DIR;
+}
+
+const DB_DIR = resolveDbDir();
 const DB_FILE = path.join(DB_DIR, "artists.json");
 
 let artists = [];
 
-// Persistence diagnostics (so we stop guessing)
-let lastSaveOk = false;
-let lastSaveError = "";
-let lastLoadedOk = false;
-let lastLoadedError = "";
-let lastIoAt = "";
-
-/* -------------------- Seed -------------------- */
+/* -------------------- Seed Demo -------------------- */
 
 function ensureDemo() {
   if (artists.length) return;
@@ -109,54 +132,30 @@ function ensureDemo() {
   ];
 }
 
-/* -------------------- IO -------------------- */
+/* -------------------- Load / Save -------------------- */
 
 function loadFromDisk() {
-  lastLoadedOk = false;
-  lastLoadedError = "";
-  lastIoAt = nowIso();
-
   try {
     if (!fs.existsSync(DB_FILE)) {
       ensureDemo();
-      lastLoadedOk = true;
       return;
     }
-
     const raw = fs.readFileSync(DB_FILE, "utf8");
     const parsed = JSON.parse(raw);
-
-    // Supports either { data: [...] } or raw array
     const list = ensureArray(parsed?.data || parsed);
     artists = list.map(normalizeArtist);
-
     if (!artists.length) ensureDemo();
-
-    lastLoadedOk = true;
-  } catch (e) {
-    lastLoadedError = safeText(e?.message) || "loadFromDisk failed";
+  } catch {
     ensureDemo();
   }
 }
 
 function saveToDisk() {
-  lastSaveOk = false;
-  lastSaveError = "";
-  lastIoAt = nowIso();
-
   try {
     if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true });
-
-    const payload = {
-      updatedAt: nowIso(),
-      data: artists,
-    };
-
-    fs.writeFileSync(DB_FILE, JSON.stringify(payload, null, 2), "utf8");
-    lastSaveOk = true;
+    fs.writeFileSync(DB_FILE, JSON.stringify({ updatedAt: nowIso(), data: artists }, null, 2), "utf8");
     return true;
-  } catch (e) {
-    lastSaveError = safeText(e?.message) || "saveToDisk failed";
+  } catch {
     return false;
   }
 }
@@ -251,6 +250,7 @@ export function seedArtists() {
       name: "Aria Nova",
       genre: "Pop",
       bio: "Rising star blending electro-pop with dreamy vocals.",
+      imageUrl: "",
       votes: 12,
       status: "active",
     },
@@ -259,6 +259,7 @@ export function seedArtists() {
       name: "Neon Harbor",
       genre: "Synthwave",
       bio: "Retro-futuristic vibes, heavy synth, 80s nostalgia.",
+      imageUrl: "",
       votes: 8,
       status: "active",
     },
@@ -267,6 +268,7 @@ export function seedArtists() {
       name: "Stone & Sparrow",
       genre: "Indie Folk",
       bio: "Acoustic harmonies, storytelling, and soulful strings.",
+      imageUrl: "",
       votes: 20,
       status: "active",
     },
@@ -276,53 +278,31 @@ export function seedArtists() {
   return artists.length - before;
 }
 
-/* -------------------- Router-friendly aliases -------------------- */
+/* -------------------- Aliases -------------------- */
 
 function getAll() {
   return listArtists();
 }
-
 function getById(id) {
   return getArtist(id);
 }
-
 function create(payload) {
   return createArtist(payload);
 }
-
 function update(id, payload) {
   return updateArtist(id, payload);
 }
-
 function patch(id, payload) {
   return patchArtist(id, payload);
 }
-
 function remove(id) {
   return deleteArtist(id);
 }
-
 function reset() {
   return resetArtists();
 }
-
 function seed() {
   return seedArtists();
-}
-
-/* -------------------- Diagnostics -------------------- */
-
-export function getPersistenceStatus() {
-  return {
-    dbDir: DB_DIR,
-    dbFile: DB_FILE,
-    lastSaveOk,
-    lastSaveError,
-    lastLoadedOk,
-    lastLoadedError,
-    lastIoAt,
-    count: artists.length,
-  };
 }
 
 /* -------------------- Default export -------------------- */
@@ -348,12 +328,13 @@ export default {
   reset,
   seed,
 
-  // diagnostics
-  getPersistenceStatus,
-
-  // debugging (kept)
+  // debugging
   save: saveToDisk,
   get artists() {
     return artists;
   },
+
+  // extra visibility
+  dbFile: DB_FILE,
+  dbDir: DB_DIR,
 };
