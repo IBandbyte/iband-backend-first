@@ -1,5 +1,5 @@
 /**
- * artistsStore.js (ESM)
+ * artistsStore.js (ESM) — PERSISTENCE HARDENED
  *
  * Single source of truth for artist persistence.
  * Used by:
@@ -7,12 +7,13 @@
  * - admin moderation routes (adminArtists.js)
  *
  * Storage:
- * - Disk persistence to ./db/artists.json (Render-safe best effort)
+ * - Disk persistence to IBAND_DATA_DIR (recommended: /var/data on Render persistent disk)
+ * - Falls back to ./db for local dev
  * - In-memory fallback always works
  *
  * IMPORTANT:
  * This store intentionally supports BOTH:
- * - modern method names (listArtists/getArtist/createArtist/updateArtist/deleteArtist)
+ * - modern method names (listArtists/getArtist/createArtist/updateArtist/patchArtist/deleteArtist/resetArtists/seedArtists)
  * - legacy/router-friendly aliases (getAll/getById/create/update/patch/remove/reset/seed)
  */
 
@@ -70,11 +71,27 @@ function normalizeArtist(raw = {}) {
 
 /* -------------------- Persistence -------------------- */
 
+// ✅ If you set IBAND_DATA_DIR=/var/data on Render (persistent disk), data survives deploys.
+const DATA_DIR = safeText(process.env.IBAND_DATA_DIR);
 const ROOT = process.cwd();
-const DB_DIR = path.join(ROOT, "db");
+
+// Default local dev path
+const FALLBACK_DB_DIR = path.join(ROOT, "db");
+
+// Use persistent disk if provided, else fallback to local folder
+const DB_DIR = DATA_DIR || FALLBACK_DB_DIR;
 const DB_FILE = path.join(DB_DIR, "artists.json");
 
 let artists = [];
+
+// Persistence diagnostics (so we stop guessing)
+let lastSaveOk = false;
+let lastSaveError = "";
+let lastLoadedOk = false;
+let lastLoadedError = "";
+let lastIoAt = "";
+
+/* -------------------- Seed -------------------- */
 
 function ensureDemo() {
   if (artists.length) return;
@@ -92,28 +109,54 @@ function ensureDemo() {
   ];
 }
 
+/* -------------------- IO -------------------- */
+
 function loadFromDisk() {
+  lastLoadedOk = false;
+  lastLoadedError = "";
+  lastIoAt = nowIso();
+
   try {
     if (!fs.existsSync(DB_FILE)) {
       ensureDemo();
+      lastLoadedOk = true;
       return;
     }
+
     const raw = fs.readFileSync(DB_FILE, "utf8");
     const parsed = JSON.parse(raw);
+
+    // Supports either { data: [...] } or raw array
     const list = ensureArray(parsed?.data || parsed);
     artists = list.map(normalizeArtist);
+
     if (!artists.length) ensureDemo();
-  } catch {
+
+    lastLoadedOk = true;
+  } catch (e) {
+    lastLoadedError = safeText(e?.message) || "loadFromDisk failed";
     ensureDemo();
   }
 }
 
 function saveToDisk() {
+  lastSaveOk = false;
+  lastSaveError = "";
+  lastIoAt = nowIso();
+
   try {
     if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true });
-    fs.writeFileSync(DB_FILE, JSON.stringify({ updatedAt: nowIso(), data: artists }, null, 2), "utf8");
+
+    const payload = {
+      updatedAt: nowIso(),
+      data: artists,
+    };
+
+    fs.writeFileSync(DB_FILE, JSON.stringify(payload, null, 2), "utf8");
+    lastSaveOk = true;
     return true;
-  } catch {
+  } catch (e) {
+    lastSaveError = safeText(e?.message) || "saveToDisk failed";
     return false;
   }
 }
@@ -164,7 +207,6 @@ export function updateArtist(id, patch) {
 }
 
 export function patchArtist(id, patch) {
-  // partial update helper
   const clean = safeText(id);
   const existing = getArtist(clean);
   if (!existing) return null;
@@ -209,7 +251,6 @@ export function seedArtists() {
       name: "Aria Nova",
       genre: "Pop",
       bio: "Rising star blending electro-pop with dreamy vocals.",
-      imageUrl: "",
       votes: 12,
       status: "active",
     },
@@ -218,7 +259,6 @@ export function seedArtists() {
       name: "Neon Harbor",
       genre: "Synthwave",
       bio: "Retro-futuristic vibes, heavy synth, 80s nostalgia.",
-      imageUrl: "",
       votes: 8,
       status: "active",
     },
@@ -227,7 +267,6 @@ export function seedArtists() {
       name: "Stone & Sparrow",
       genre: "Indie Folk",
       bio: "Acoustic harmonies, storytelling, and soulful strings.",
-      imageUrl: "",
       votes: 20,
       status: "active",
     },
@@ -238,9 +277,6 @@ export function seedArtists() {
 }
 
 /* -------------------- Router-friendly aliases -------------------- */
-/**
- * These aliases make artists.js + adminArtists.js work no matter which names they call.
- */
 
 function getAll() {
   return listArtists();
@@ -274,7 +310,22 @@ function seed() {
   return seedArtists();
 }
 
-/* -------------------- Default export (one object) -------------------- */
+/* -------------------- Diagnostics -------------------- */
+
+export function getPersistenceStatus() {
+  return {
+    dbDir: DB_DIR,
+    dbFile: DB_FILE,
+    lastSaveOk,
+    lastSaveError,
+    lastLoadedOk,
+    lastLoadedError,
+    lastIoAt,
+    count: artists.length,
+  };
+}
+
+/* -------------------- Default export -------------------- */
 
 export default {
   // modern
@@ -297,7 +348,10 @@ export default {
   reset,
   seed,
 
-  // debugging
+  // diagnostics
+  getPersistenceStatus,
+
+  // debugging (kept)
   save: saveToDisk,
   get artists() {
     return artists;
