@@ -1,127 +1,192 @@
 // votes.js (ESM)
-// Public votes API for iBand
-// In-memory voting with simple anti-spam options (future-ready)
+// Votes API — updates artistsStore (single source of truth) so votes persist across deploys.
+//
+// Mounted at: /api/votes
+//
+// Supports:
+// - GET  /api/votes/:id              -> get current votes for artist
+// - POST /api/votes/:id              -> increment votes (body optional: { delta })
+// - POST /api/votes                  -> increment votes (body: { id, delta })
+// - GET  /api/votes/leaderboard      -> basic leaderboard (top N, optional ?limit=10&status=active)
+// - POST /api/votes/:id/reset        -> reset votes to 0 (admin only header x-admin-key)
+//
+// Notes:
+// - Uses artistsStore.patchArtist() so updates persist to ./db/artists.json and stay consistent in memory.
 
 import express from "express";
+import artistsStore from "./artistsStore.js";
 
 const router = express.Router();
 
-// In-memory votes map: artistId -> votes
-const votesByArtistId = new Map();
+/* -------------------- Helpers -------------------- */
+
+const safeText = (v) => (v === null || v === undefined ? "" : String(v)).trim();
+
+function toInt(v, fallback = 0) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.trunc(n);
+}
+
+function isAdmin(req) {
+  // Optional: set ADMIN_KEY in Render env later.
+  const adminKey = safeText(process.env.ADMIN_KEY);
+  if (!adminKey) return false; // if not configured, no one is admin
+  const provided = safeText(req.headers["x-admin-key"]);
+  return provided && provided === adminKey;
+}
+
+function getArtistIdFromReq(req) {
+  return safeText(req.params.id || req.body?.id);
+}
+
+function clampDelta(delta) {
+  // Allow negative for future undo, but clamp to prevent abuse
+  // Range: -50..+50
+  const d = toInt(delta, 1);
+  if (d > 50) return 50;
+  if (d < -50) return -50;
+  return d;
+}
+
+function notFound(res, id) {
+  return res.status(404).json({ success: false, message: "Artist not found.", id });
+}
+
+/* -------------------- Routes -------------------- */
 
 /**
- * Helpers
+ * GET /api/votes/leaderboard?limit=10&status=active
  */
-function asArtistId(v) {
-  return String(v).trim();
-}
+router.get("/leaderboard", (req, res) => {
+  const limit = Math.max(1, Math.min(50, toInt(req.query.limit, 10)));
+  const status = safeText(req.query.status || "active").toLowerCase();
 
-function getVotes(artistId) {
-  const id = asArtistId(artistId);
-  return votesByArtistId.get(id) || 0;
-}
+  const list = artistsStore.listArtists();
 
-function setVotes(artistId, value) {
-  const id = asArtistId(artistId);
-  const n = Number(value);
-  votesByArtistId.set(id, Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0);
-  return votesByArtistId.get(id);
-}
+  const filtered =
+    status === "all"
+      ? list
+      : list.filter((a) => safeText(a?.status).toLowerCase() === status);
 
-function incVotes(artistId, amount = 1) {
-  const id = asArtistId(artistId);
-  const curr = getVotes(id);
-  const a = Number(amount);
-  const inc = Number.isFinite(a) ? Math.floor(a) : 1;
-  const next = Math.max(0, curr + inc);
-  votesByArtistId.set(id, next);
-  return next;
-}
-
-/**
- * GET /api/votes
- * List all vote totals
- */
-router.get("/", (req, res) => {
-  const all = Array.from(votesByArtistId.entries()).map(([artistId, votes]) => ({
-    artistId,
-    votes,
-  }));
+  const top = [...filtered]
+    .sort((a, b) => (Number(b?.votes) || 0) - (Number(a?.votes) || 0))
+    .slice(0, limit)
+    .map((a) => ({
+      id: a.id,
+      name: a.name,
+      votes: Number(a.votes) || 0,
+      status: a.status,
+    }));
 
   return res.status(200).json({
     success: true,
-    count: all.length,
-    votes: all,
+    count: top.length,
+    limit,
+    status,
+    leaderboard: top,
   });
 });
 
 /**
- * GET /api/votes/:artistId
- * Get votes for an artist
+ * GET /api/votes/:id
+ * Get current votes for an artist.
  */
-router.get("/:artistId", (req, res) => {
-  const { artistId } = req.params;
+router.get("/:id", (req, res) => {
+  const id = getArtistIdFromReq(req);
+  if (!id) return res.status(400).json({ success: false, message: "Artist id is required." });
+
+  const artist = artistsStore.getArtist(id);
+  if (!artist) return notFound(res, id);
+
   return res.status(200).json({
     success: true,
-    artistId: asArtistId(artistId),
-    votes: getVotes(artistId),
+    id: artist.id,
+    votes: Number(artist.votes) || 0,
+    status: artist.status,
+    updatedAt: artist.updatedAt,
   });
 });
 
 /**
- * POST /api/votes/:artistId
- * Increment votes by 1 (default) or by { amount }
- * Body optional: { amount: 1 }
+ * POST /api/votes
+ * Body: { id, delta }
  */
-router.post("/:artistId", (req, res) => {
-  const { artistId } = req.params;
-  const { amount } = req.body || {};
+router.post("/", (req, res) => {
+  const id = getArtistIdFromReq(req);
+  if (!id) return res.status(400).json({ success: false, message: "Artist id is required." });
 
-  const next = incVotes(artistId, amount ?? 1);
+  const artist = artistsStore.getArtist(id);
+  if (!artist) return notFound(res, id);
+
+  const delta = clampDelta(req.body?.delta);
+  const nextVotes = Math.max(0, (Number(artist.votes) || 0) + delta);
+
+  const updated = artistsStore.patchArtist(id, { votes: nextVotes });
+  if (!updated) return notFound(res, id);
 
   return res.status(200).json({
     success: true,
-    message: "Vote recorded.",
-    artistId: asArtistId(artistId),
-    votes: next,
+    message: "Vote applied.",
+    id: updated.id,
+    delta,
+    votes: Number(updated.votes) || 0,
+    updatedAt: updated.updatedAt,
   });
 });
 
 /**
- * PUT /api/votes/:artistId
- * Set votes to an absolute number
- * Body: { votes: number }
+ * POST /api/votes/:id
+ * Body optional: { delta }
+ * Defaults to +1 if no delta provided.
  */
-router.put("/:artistId", (req, res) => {
-  const { artistId } = req.params;
-  const { votes } = req.body || {};
+router.post("/:id", (req, res) => {
+  const id = getArtistIdFromReq(req);
+  if (!id) return res.status(400).json({ success: false, message: "Artist id is required." });
 
-  if (votes === undefined) {
-    return res.status(400).json({
-      success: false,
-      message: "votes is required",
-    });
+  const artist = artistsStore.getArtist(id);
+  if (!artist) return notFound(res, id);
+
+  const delta = clampDelta(req.body?.delta);
+  const nextVotes = Math.max(0, (Number(artist.votes) || 0) + delta);
+
+  const updated = artistsStore.patchArtist(id, { votes: nextVotes });
+  if (!updated) return notFound(res, id);
+
+  return res.status(200).json({
+    success: true,
+    message: "Vote applied.",
+    id: updated.id,
+    delta,
+    votes: Number(updated.votes) || 0,
+    updatedAt: updated.updatedAt,
+  });
+});
+
+/**
+ * POST /api/votes/:id/reset
+ * Admin only (x-admin-key must match ADMIN_KEY).
+ */
+router.post("/:id/reset", (req, res) => {
+  const id = getArtistIdFromReq(req);
+  if (!id) return res.status(400).json({ success: false, message: "Artist id is required." });
+
+  if (!isAdmin(req)) {
+    return res.status(401).json({ success: false, message: "Unauthorized (admin key required)." });
   }
 
-  const next = setVotes(artistId, votes);
+  const artist = artistsStore.getArtist(id);
+  if (!artist) return notFound(res, id);
+
+  const updated = artistsStore.patchArtist(id, { votes: 0 });
+  if (!updated) return notFound(res, id);
 
   return res.status(200).json({
     success: true,
-    message: "Votes set.",
-    artistId: asArtistId(artistId),
-    votes: next,
-  });
-});
-
-/**
- * POST /api/votes/reset
- * Reset all votes
- */
-router.post("/reset", (req, res) => {
-  votesByArtistId.clear();
-  return res.status(200).json({
-    success: true,
-    message: "All votes reset.",
+    message: "Votes reset.",
+    id: updated.id,
+    votes: 0,
+    updatedAt: updated.updatedAt,
   });
 });
 
