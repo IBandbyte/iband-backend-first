@@ -1,15 +1,13 @@
 /**
- * votes.js (ESM)
+ * votes.js — iBand Backend
  *
- * Votes API
- * - Must always read/write via the SAME artistsStore reference used by artists.js + adminArtists.js
- * - Must survive Render cold starts by forcing store hydration from disk on router load
+ * CRITICAL RULE:
+ * Votes MUST operate on the SAME in-memory artist objects
+ * as artists.js and admin.js.
  *
- * Routes:
- *   GET    /api/votes/:id                 -> get current votes for artist
- *   POST   /api/votes/:id                 -> add votes (body: { delta } or { amount })
- *   POST   /api/votes/:id/plus-one        -> add +1
- *   POST   /api/votes/:id/plus-five       -> add +5
+ * No rehydration tricks.
+ * No detached helpers.
+ * One store. One truth.
  */
 
 import express from "express";
@@ -17,65 +15,33 @@ import artistsStore from "./artistsStore.js";
 
 const router = express.Router();
 
-/* -------------------------------------------------------
-   CRITICAL (Winning Pattern)
-   Force store hydration from disk on cold start.
-   This prevents: votes route saying "Artist not found"
-   while artists/admin routes can see the artist.
--------------------------------------------------------- */
+/* -------------------------------------------------
+   HARD GUARANTEE STORE IS LOADED (cold start safe)
+-------------------------------------------------- */
 artistsStore.listArtists();
 
-/* -------------------- Helpers -------------------- */
+/* ---------------- Utilities ---------------- */
 
-function safeText(v) {
-  return v === null || v === undefined ? "" : String(v).trim();
+const clean = (v) => (v === null || v === undefined ? "" : String(v).trim());
+const toInt = (v, f = 0) => (Number.isFinite(+v) ? Math.trunc(+v) : f);
+
+/* ---------------- Core Lookup ---------------- */
+
+function findArtist(id) {
+  const cid = clean(id);
+  if (!cid) return null;
+
+  // IMPORTANT:
+  // Access the SAME array reference used everywhere else
+  return artistsStore.artists.find((a) => a.id === cid) || null;
 }
 
-function toInt(v, fallback = 0) {
-  const n = Number(v);
-  if (!Number.isFinite(n)) return fallback;
-  return Math.trunc(n);
-}
-
-function clampVotesDelta(delta) {
-  // Safety: prevent crazy values, but still allow reasonable boosts
-  const d = toInt(delta, 0);
-  if (d > 1000) return 1000;
-  if (d < -1000) return -1000;
-  return d;
-}
-
-function findArtistOrNull(id) {
-  const clean = safeText(id);
-  if (!clean) return null;
-
-  // Support both store styles:
-  // - modern: getArtist
-  // - alias: getById
-  return (
-    (typeof artistsStore.getArtist === "function" ? artistsStore.getArtist(clean) : null) ||
-    (typeof artistsStore.getById === "function" ? artistsStore.getById(clean) : null)
-  );
-}
-
-function patchArtistOrNull(id, patch) {
-  const clean = safeText(id);
-  if (!clean) return null;
-
-  // Support both store styles:
-  // - modern: patchArtist
-  // - alias: patch
-  if (typeof artistsStore.patchArtist === "function") return artistsStore.patchArtist(clean, patch);
-  if (typeof artistsStore.patch === "function") return artistsStore.patch(clean, patch);
-  return null;
-}
-
-/* -------------------- Routes -------------------- */
+/* ---------------- Routes ---------------- */
 
 // GET /api/votes/:id
 router.get("/:id", (req, res) => {
-  const id = safeText(req.params.id);
-  const artist = findArtistOrNull(id);
+  const id = clean(req.params.id);
+  const artist = findArtist(id);
 
   if (!artist) {
     return res.status(404).json({
@@ -89,15 +55,15 @@ router.get("/:id", (req, res) => {
     success: true,
     id: artist.id,
     votes: toInt(artist.votes, 0),
-    status: safeText(artist.status),
-    updatedAt: safeText(artist.updatedAt),
+    status: artist.status,
+    updatedAt: artist.updatedAt,
   });
 });
 
-// POST /api/votes/:id  (body: { delta } or { amount })
+// POST /api/votes/:id
 router.post("/:id", (req, res) => {
-  const id = safeText(req.params.id);
-  const artist = findArtistOrNull(id);
+  const id = clean(req.params.id);
+  const artist = findArtist(id);
 
   if (!artist) {
     return res.status(404).json({
@@ -107,49 +73,43 @@ router.post("/:id", (req, res) => {
     });
   }
 
-  const deltaRaw = req.body?.delta ?? req.body?.amount ?? req.query?.delta ?? req.query?.amount;
-  const delta = clampVotesDelta(deltaRaw);
+  const deltaRaw = req.body?.delta ?? req.body?.amount;
+  const delta = toInt(deltaRaw, 0);
 
-  if (delta === 0) {
+  if (!delta) {
     return res.status(400).json({
       success: false,
-      message: "Vote delta is required (non-zero).",
-      id,
-      hint: "Send JSON body like { \"delta\": 1 } or { \"amount\": 5 }",
+      message: "Vote delta required.",
+      example: { delta: 1 },
     });
   }
 
-  const nextVotes = Math.max(0, toInt(artist.votes, 0) + delta);
-  const updated = patchArtistOrNull(id, { votes: nextVotes });
+  artist.votes = Math.max(0, toInt(artist.votes, 0) + delta);
+  artist.updatedAt = new Date().toISOString();
 
-  if (!updated) {
-    return res.status(500).json({
-      success: false,
-      message: "Failed to persist vote update.",
-      id,
-    });
-  }
+  artistsStore.save();
 
   return res.json({
     success: true,
     message: "Vote recorded.",
-    id: updated.id,
-    delta,
-    votes: toInt(updated.votes, 0),
-    updatedAt: safeText(updated.updatedAt),
+    id: artist.id,
+    votes: artist.votes,
+    updatedAt: artist.updatedAt,
   });
 });
 
 // POST /api/votes/:id/plus-one
 router.post("/:id/plus-one", (req, res) => {
-  req.body = { ...(req.body || {}), delta: 1 };
-  return router.handle({ ...req, url: `/${req.params.id}`, method: "POST" }, res);
+  req.body = { delta: 1 };
+  req.url = `/${req.params.id}`;
+  return router.handle(req, res);
 });
 
 // POST /api/votes/:id/plus-five
 router.post("/:id/plus-five", (req, res) => {
-  req.body = { ...(req.body || {}), delta: 5 };
-  return router.handle({ ...req, url: `/${req.params.id}`, method: "POST" }, res);
+  req.body = { delta: 5 };
+  req.url = `/${req.params.id}`;
+  return router.handle(req, res);
 });
 
 export default router;
