@@ -4,13 +4,16 @@
 // Mounted at: /api/admin/artists
 //
 // Supports:
-// - list with filters/pagination: GET /?status=&q=&page=&limit=
-// - get by id: GET /:id
-// - create: POST /
-// - put (replace): PUT /:id
-// - patch (partial): PATCH /:id  ✅ uses artistsStore.patchArtist
-// - approve/reject convenience: PATCH /:id/approve , PATCH /:id/reject
-// - delete: DELETE /:id
+// - list (with status filtering)
+// - get by id
+// - create
+// - put (replace)
+// - patch (partial)  ✅ uses patchArtist() for true partial updates
+// - delete
+// - seed endpoints (MVP momentum):
+//    POST /api/admin/artists/seed/demo
+//    POST /api/admin/artists/seed/bad-bunny
+//    POST /api/admin/artists/seed/reset-demo-only
 
 import express from "express";
 import artistsStore from "./artistsStore.js";
@@ -19,44 +22,10 @@ const router = express.Router();
 
 /* -------------------- Helpers -------------------- */
 
-const safeText = (v) => String(v ?? "").trim();
-
-function toNumber(v, fallback = 0) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : fallback;
-}
-
-function normalizeStatus(v) {
-  const s = safeText(v).toLowerCase();
-  if (!s) return "";
-  if (["pending", "active", "rejected"].includes(s)) return s;
-  if (s === "all" || s === "*") return "all";
-  return "";
-}
-
-function matchesQ(artist, q) {
-  const needle = safeText(q).toLowerCase();
-  if (!needle) return true;
-
-  const hay = [
-    artist?.name,
-    artist?.genre,
-    artist?.location,
-    artist?.bio,
-    artist?.id,
-  ]
-    .map((x) => safeText(x).toLowerCase())
-    .join(" ");
-
-  return hay.includes(needle);
-}
+const asString = (v) => String(v ?? "").trim();
 
 function isNonEmptyString(v) {
   return typeof v === "string" && v.trim().length > 0;
-}
-
-function stripUndefined(obj) {
-  return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined));
 }
 
 function normalizeArtistPayload(body = {}) {
@@ -79,81 +48,192 @@ function normalizeArtistPayload(body = {}) {
       website: isNonEmptyString(socials.website) ? socials.website.trim() : undefined,
     },
     tracks,
-    status: isNonEmptyString(body.status) ? body.status.trim() : undefined,
+    status: isNonEmptyString(body.status) ? body.status.trim().toLowerCase() : undefined,
     votes: body.votes !== undefined ? Number(body.votes) : undefined,
   };
 }
 
-function storeList() {
-  if (typeof artistsStore.listArtists === "function") return artistsStore.listArtists();
-  if (typeof artistsStore.getAll === "function") return artistsStore.getAll();
-  return [];
+function stripUndefined(obj) {
+  return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined));
 }
 
-function storeGet(id) {
-  if (typeof artistsStore.getArtist === "function") return artistsStore.getArtist(id);
-  if (typeof artistsStore.getById === "function") return artistsStore.getById(id);
+function normalizeStatusQuery(v) {
+  const s = asString(v).toLowerCase();
+  if (!s) return "";
+  if (["pending", "active", "rejected"].includes(s)) return s;
+  if (["all", "*"].includes(s)) return "all";
+  return "";
+}
+
+function pickStoreFn(name, fallbackName) {
+  if (artistsStore && typeof artistsStore[name] === "function") return artistsStore[name].bind(artistsStore);
+  if (artistsStore && typeof artistsStore[fallbackName] === "function") return artistsStore[fallbackName].bind(artistsStore);
   return null;
 }
 
-function storeCreate(payload) {
-  if (typeof artistsStore.createArtist === "function") return artistsStore.createArtist(payload);
-  if (typeof artistsStore.create === "function") return artistsStore.create(payload);
-  return null;
-}
+// Store functions (supports both object default and named exports in artistsStore.js)
+const storeList =
+  pickStoreFn("listArtists", "getAll") ||
+  (() => []);
 
-function storeUpdate(id, payload) {
-  if (typeof artistsStore.updateArtist === "function") return artistsStore.updateArtist(id, payload);
-  if (typeof artistsStore.update === "function") return artistsStore.update(id, payload);
-  return null;
-}
+const storeGet =
+  pickStoreFn("getArtist", "getById") ||
+  (() => null);
 
-function storePatch(id, payload) {
-  if (typeof artistsStore.patchArtist === "function") return artistsStore.patchArtist(id, payload);
-  if (typeof artistsStore.patch === "function") return artistsStore.patch(id, payload);
-  // last resort:
-  return storeUpdate(id, { ...(storeGet(id) || {}), ...(payload || {}) });
-}
+const storeCreate =
+  pickStoreFn("createArtist", "create") ||
+  (() => null);
 
-function storeDelete(id) {
-  if (typeof artistsStore.deleteArtist === "function") return artistsStore.deleteArtist(id);
-  if (typeof artistsStore.remove === "function") return artistsStore.remove(id);
-  return null;
-}
+const storeUpdate =
+  pickStoreFn("updateArtist", "update") ||
+  (() => null);
+
+const storePatch =
+  pickStoreFn("patchArtist", "patch") ||
+  null;
+
+const storeDelete =
+  pickStoreFn("deleteArtist", "remove") ||
+  (() => null);
 
 /* -------------------- Routes -------------------- */
 
 /**
- * GET /api/admin/artists?status=&q=&page=&limit=
- * ✅ NOW supports filters/pagination so Admin UI tabs work correctly
+ * POST /api/admin/artists/seed/demo
+ * Ensures demo exists (id="demo") without duplicating it.
  */
-router.get("/", (req, res) => {
-  const status = normalizeStatus(req.query?.status) || "all";
-  const q = safeText(req.query?.q);
-  const page = Math.max(1, toNumber(req.query?.page, 1));
-  const limit = Math.min(100, Math.max(1, toNumber(req.query?.limit, 50)));
+router.post("/seed/demo", (_req, res) => {
+  const all = storeList();
+  const existing = Array.isArray(all) ? all.find((a) => asString(a?.id) === "demo") : null;
 
-  let list = storeList();
-
-  if (status !== "all") {
-    list = list.filter((a) => safeText(a?.status).toLowerCase() === status);
+  if (existing) {
+    return res.status(200).json({
+      success: true,
+      message: "Demo already exists.",
+      artist: existing,
+    });
   }
 
-  list = list.filter((a) => matchesQ(a, q));
+  const created = storeCreate({
+    id: "demo",
+    name: "Demo Artist",
+    genre: "Pop / Urban",
+    location: "London, UK",
+    bio: "Demo artist used for initial platform validation.",
+    imageUrl: "",
+    socials: { instagram: "", tiktok: "", youtube: "", spotify: "", soundcloud: "", website: "" },
+    tracks: [{ title: "Demo Track", url: "", platform: "mp3", durationSec: 30 }],
+    votes: 42,
+    status: "active",
+    source: "seed",
+  });
 
-  const total = list.length;
-  const start = (page - 1) * limit;
-  const paged = list.slice(start, start + limit);
+  return res.status(201).json({
+    success: true,
+    message: "Demo seeded.",
+    artist: created,
+  });
+});
+
+/**
+ * POST /api/admin/artists/seed/bad-bunny
+ * One-click invite/seed for MVP.
+ * This is NOT identity verification — it’s just demo data to validate flow.
+ */
+router.post("/seed/bad-bunny", (_req, res) => {
+  const id = "bad-bunny";
+  const all = storeList();
+  const existing = Array.isArray(all) ? all.find((a) => asString(a?.id) === id) : null;
+
+  if (existing) {
+    return res.status(200).json({
+      success: true,
+      message: "Bad Bunny already exists.",
+      artist: existing,
+    });
+  }
+
+  const created = storeCreate({
+    id,
+    name: "Bad Bunny",
+    genre: "Latin / Reggaeton",
+    location: "Puerto Rico",
+    bio: "Global superstar ready for signing.",
+    imageUrl: "",
+    socials: {
+      instagram: "https://www.instagram.com/badbunnypr/",
+      tiktok: "",
+      youtube: "",
+      spotify: "",
+      soundcloud: "",
+      website: "",
+    },
+    tracks: [
+      {
+        title: "Tití Me Preguntó",
+        url: "https://www.youtube.com/watch?v=Cr8K88UcO0s",
+        platform: "YouTube",
+        durationSec: 210,
+      },
+    ],
+    votes: 0,
+    status: "active",
+    source: "seed",
+  });
+
+  return res.status(201).json({
+    success: true,
+    message: "Bad Bunny seeded.",
+    artist: created,
+  });
+});
+
+/**
+ * POST /api/admin/artists/seed/reset-demo-only
+ * MVP helper: wipes everything then re-seeds demo only.
+ */
+router.post("/seed/reset-demo-only", (_req, res) => {
+  const reset = pickStoreFn("resetArtists", "reset");
+  if (!reset) {
+    return res.status(501).json({
+      success: false,
+      message: "Reset not supported by store.",
+    });
+  }
+
+  const deletedCount = reset();
+  const all = storeList();
+  const demo = Array.isArray(all) ? all.find((a) => asString(a?.id) === "demo") : null;
 
   return res.status(200).json({
     success: true,
-    count: paged.length,
-    artists: paged,
-    page,
-    limit,
-    total,
+    message: "Reset complete (demo only).",
+    deletedCount,
+    demo,
+  });
+});
+
+/**
+ * GET /api/admin/artists
+ * Optional query:
+ *  - status=pending|active|rejected|all
+ */
+router.get("/", (req, res) => {
+  const status = normalizeStatusQuery(req.query?.status) || "all";
+
+  const artists = storeList();
+  const list = Array.isArray(artists) ? artists : [];
+
+  const filtered =
+    status === "all"
+      ? list
+      : list.filter((a) => asString(a?.status).toLowerCase() === status);
+
+  return res.status(200).json({
+    success: true,
+    count: filtered.length,
+    artists: filtered,
     status,
-    q,
   });
 });
 
@@ -161,13 +241,10 @@ router.get("/", (req, res) => {
  * GET /api/admin/artists/:id
  */
 router.get("/:id", (req, res) => {
-  const id = safeText(req.params?.id);
-  const artist = storeGet(id);
-
+  const artist = storeGet(req.params.id);
   if (!artist) {
-    return res.status(404).json({ success: false, message: "Artist not found.", id });
+    return res.status(404).json({ success: false, message: "Artist not found." });
   }
-
   return res.status(200).json({ success: true, artist });
 });
 
@@ -212,11 +289,9 @@ router.post("/", (req, res) => {
  * Replace full artist (requires name)
  */
 router.put("/:id", (req, res) => {
-  const id = safeText(req.params?.id);
-  const existing = storeGet(id);
-
+  const existing = storeGet(req.params.id);
   if (!existing) {
-    return res.status(404).json({ success: false, message: "Artist not found.", id });
+    return res.status(404).json({ success: false, message: "Artist not found." });
   }
 
   const payload = normalizeArtistPayload(req.body);
@@ -228,7 +303,7 @@ router.put("/:id", (req, res) => {
     });
   }
 
-  const updated = storeUpdate(id, {
+  const updated = storeUpdate(req.params.id, {
     name: payload.name,
     genre: payload.genre ?? "Unknown",
     location: payload.location ?? "",
@@ -249,14 +324,12 @@ router.put("/:id", (req, res) => {
 
 /**
  * PATCH /api/admin/artists/:id
- * ✅ Partial update uses storePatch() (patchArtist) so status flips are safe
+ * Partial update ✅ uses patchArtist() so status changes persist cleanly
  */
 router.patch("/:id", (req, res) => {
-  const id = safeText(req.params?.id);
-  const existing = storeGet(id);
-
+  const existing = storeGet(req.params.id);
   if (!existing) {
-    return res.status(404).json({ success: false, message: "Artist not found.", id });
+    return res.status(404).json({ success: false, message: "Artist not found." });
   }
 
   const payload = normalizeArtistPayload(req.body);
@@ -280,7 +353,10 @@ router.patch("/:id", (req, res) => {
     });
   }
 
-  const updated = storePatch(id, patch);
+  // Prefer storePatch (true partial). Fallback to storeUpdate if needed.
+  const updated = storePatch
+    ? storePatch(req.params.id, patch)
+    : storeUpdate(req.params.id, { ...existing, ...patch });
 
   return res.status(200).json({
     success: true,
@@ -290,57 +366,15 @@ router.patch("/:id", (req, res) => {
 });
 
 /**
- * PATCH /api/admin/artists/:id/approve
- */
-router.patch("/:id/approve", (req, res) => {
-  const id = safeText(req.params?.id);
-  const existing = storeGet(id);
-
-  if (!existing) {
-    return res.status(404).json({ success: false, message: "Artist not found.", id });
-  }
-
-  const updated = storePatch(id, { status: "active" });
-
-  return res.status(200).json({
-    success: true,
-    message: "Artist approved.",
-    artist: updated,
-  });
-});
-
-/**
- * PATCH /api/admin/artists/:id/reject
- */
-router.patch("/:id/reject", (req, res) => {
-  const id = safeText(req.params?.id);
-  const existing = storeGet(id);
-
-  if (!existing) {
-    return res.status(404).json({ success: false, message: "Artist not found.", id });
-  }
-
-  const updated = storePatch(id, { status: "rejected" });
-
-  return res.status(200).json({
-    success: true,
-    message: "Artist rejected.",
-    artist: updated,
-  });
-});
-
-/**
  * DELETE /api/admin/artists/:id
  */
 router.delete("/:id", (req, res) => {
-  const id = safeText(req.params?.id);
-  const existing = storeGet(id);
-
+  const existing = storeGet(req.params.id);
   if (!existing) {
-    return res.status(404).json({ success: false, message: "Artist not found.", id });
+    return res.status(404).json({ success: false, message: "Artist not found." });
   }
 
-  const deleted = storeDelete(id);
+  const deleted = storeDelete(req.params.id);
 
   return res.status(200).json({
     success: true,
