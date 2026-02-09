@@ -1,7 +1,6 @@
 // votes.js
-// iBand Votes API — canonical implementation (ESM)
-// SINGLE SOURCE OF TRUTH: artistsStore
-// Purpose: get votes, increment votes, set/reset votes safely.
+// iBand Backend — Votes Routes (ESM)
+// Winning pattern/formula: single source of truth via artistsStore + consistent JSON + future-proof endpoints
 
 import express from "express";
 import artistsStore from "./artistsStore.js";
@@ -10,169 +9,197 @@ const router = express.Router();
 
 /* -------------------- Helpers -------------------- */
 
-function safeText(v) {
-  if (v === null || v === undefined) return "";
-  return String(v).trim();
-}
+const safeText = (v) => (v === null || v === undefined ? "" : String(v)).trim();
 
-function toNumber(v, fallback = 0) {
-  const n = Number(v);
+const toInt = (v, fallback = 0) => {
+  const n = Number.parseInt(String(v), 10);
   return Number.isFinite(n) ? n : fallback;
+};
+
+function getStoreFns(store) {
+  // supports BOTH:
+  // - modern: getArtist/patchArtist
+  // - alias: getById/patch
+  const getArtist =
+    typeof store.getArtist === "function"
+      ? store.getArtist.bind(store)
+      : typeof store.getById === "function"
+      ? store.getById.bind(store)
+      : null;
+
+  const patchArtist =
+    typeof store.patchArtist === "function"
+      ? store.patchArtist.bind(store)
+      : typeof store.patch === "function"
+      ? store.patch.bind(store)
+      : null;
+
+  return { getArtist, patchArtist };
 }
 
-function ensureNonNegativeInt(n) {
-  if (!Number.isFinite(n)) return null;
-  const i = Math.floor(n);
-  if (i < 0) return null;
-  return i;
-}
+const { getArtist, patchArtist } = getStoreFns(artistsStore);
 
-function findArtistOr404(res, id) {
-  const clean = safeText(id);
-  const artist = artistsStore.getArtist(clean);
+/* -------------------- Guards -------------------- */
 
-  if (!artist) {
-    res.status(404).json({
+router.use((req, res, next) => {
+  if (!getArtist || !patchArtist) {
+    return res.status(500).json({
       success: false,
-      message: "Artist not found.",
-      id: clean,
+      message:
+        "Votes API misconfigured: artistsStore is missing getArtist/getById or patchArtist/patch.",
     });
-    return null;
   }
-
-  return artist;
-}
+  next();
+});
 
 /* -------------------- Routes -------------------- */
-
 /**
  * GET /api/votes/:id
- * Returns votes for an artist
+ * Returns vote info for a given artist id.
  */
 router.get("/:id", (req, res) => {
-  const { id } = req.params;
-  const artist = findArtistOr404(res, id);
-  if (!artist) return;
+  const id = safeText(req.params.id);
 
-  res.json({
+  if (!id) {
+    return res.status(400).json({ success: false, message: "Artist id is required." });
+  }
+
+  const artist = getArtist(id);
+
+  if (!artist) {
+    return res.status(404).json({ success: false, message: "Artist not found.", id });
+  }
+
+  return res.json({
     success: true,
     id: artist.id,
-    votes: toNumber(artist.votes, 0),
+    votes: toInt(artist.votes, 0),
+    status: artist.status,
+    artist: {
+      id: artist.id,
+      name: artist.name,
+      votes: toInt(artist.votes, 0),
+      status: artist.status,
+      updatedAt: artist.updatedAt,
+    },
   });
 });
 
 /**
  * POST /api/votes/:id
- * Body: { amount?: number }  (default 1)
- * Increments votes (amount must be positive)
+ * Increments votes for an artist.
+ *
+ * Body accepted:
+ * - { "delta": 1 } or { "amount": 1 } or { "value": 1 }
+ * If omitted, defaults to +1.
+ * Safety:
+ * - clamps delta to [-100, 100]
  */
 router.post("/:id", (req, res) => {
-  const { id } = req.params;
-  const amountRaw = req.body?.amount ?? 1;
-  const amount = toNumber(amountRaw, NaN);
+  const id = safeText(req.params.id);
 
-  if (!Number.isFinite(amount) || amount <= 0) {
-    return res.status(400).json({
-      success: false,
-      message: "Invalid vote amount. Use a positive number.",
-      received: amountRaw,
-    });
+  if (!id) {
+    return res.status(400).json({ success: false, message: "Artist id is required." });
   }
 
-  const artist = findArtistOr404(res, id);
-  if (!artist) return;
+  const artist = getArtist(id);
 
-  const currentVotes = toNumber(artist.votes, 0);
-  const nextVotes = ensureNonNegativeInt(currentVotes + amount);
-
-  if (nextVotes === null) {
-    return res.status(400).json({
-      success: false,
-      message: "Vote total would become invalid.",
-      currentVotes,
-      amount,
-    });
+  if (!artist) {
+    return res.status(404).json({ success: false, message: "Artist not found.", id });
   }
 
-  const updated = artistsStore.patchArtist(artist.id, { votes: nextVotes });
+  const rawDelta =
+    req.body?.delta !== undefined
+      ? req.body.delta
+      : req.body?.amount !== undefined
+      ? req.body.amount
+      : req.body?.value !== undefined
+      ? req.body.value
+      : 1;
+
+  let delta = toInt(rawDelta, 1);
+  if (delta > 100) delta = 100;
+  if (delta < -100) delta = -100;
+
+  const current = toInt(artist.votes, 0);
+  const nextVotes = current + delta;
+
+  const updated = patchArtist(id, { votes: nextVotes });
+
+  if (!updated) {
+    // ultra-rare: store failed mid-flight
+    return res.status(500).json({
+      success: false,
+      message: "Failed to apply vote update.",
+      id,
+    });
+  }
 
   return res.json({
     success: true,
     message: "Vote recorded.",
     id: updated.id,
-    votes: toNumber(updated.votes, 0),
-    artist: updated,
+    delta,
+    votes: toInt(updated.votes, 0),
+    artist: {
+      id: updated.id,
+      name: updated.name,
+      votes: toInt(updated.votes, 0),
+      status: updated.status,
+      updatedAt: updated.updatedAt,
+    },
   });
 });
 
 /**
- * POST /api/votes/:id/plus1
- * Convenience for UI buttons
+ * POST /api/votes/:id/quick
+ * Convenience voting endpoint for UI buttons.
+ *
+ * Body accepted:
+ * - { "type": "plus1" | "plus5" | "minus1" | "minus5" }
+ * Defaults to "plus1"
  */
-router.post("/:id/plus1", (req, res) => {
-  req.body = { amount: 1 };
-  return router.handle(req, res, () => {});
-});
+router.post("/:id/quick", (req, res) => {
+  const id = safeText(req.params.id);
 
-/**
- * POST /api/votes/:id/plus5
- * Convenience for UI buttons
- */
-router.post("/:id/plus5", (req, res) => {
-  req.body = { amount: 5 };
-  return router.handle(req, res, () => {});
-});
+  if (!id) {
+    return res.status(400).json({ success: false, message: "Artist id is required." });
+  }
 
-/**
- * PATCH /api/votes/:id
- * Body: { votes: number }  (sets votes exactly; must be >= 0 integer)
- * Useful for admin/debug tools
- */
-router.patch("/:id", (req, res) => {
-  const { id } = req.params;
-  const votesRaw = req.body?.votes;
-  const votesNum = toNumber(votesRaw, NaN);
-  const votes = ensureNonNegativeInt(votesNum);
+  const artist = getArtist(id);
 
-  if (votes === null) {
-    return res.status(400).json({
+  if (!artist) {
+    return res.status(404).json({ success: false, message: "Artist not found.", id });
+  }
+
+  const type = safeText(req.body?.type || "plus1").toLowerCase();
+
+  const map = {
+    plus1: 1,
+    plus5: 5,
+    minus1: -1,
+    minus5: -5,
+  };
+
+  const delta = map[type] ?? 1;
+  const current = toInt(artist.votes, 0);
+  const updated = patchArtist(id, { votes: current + delta });
+
+  if (!updated) {
+    return res.status(500).json({
       success: false,
-      message: "Invalid votes value. Must be an integer >= 0.",
-      received: votesRaw,
+      message: "Failed to apply vote update.",
+      id,
     });
   }
 
-  const artist = findArtistOr404(res, id);
-  if (!artist) return;
-
-  const updated = artistsStore.patchArtist(artist.id, { votes });
-
   return res.json({
     success: true,
-    message: "Votes set successfully.",
+    message: "Vote recorded.",
     id: updated.id,
-    votes: toNumber(updated.votes, 0),
-    artist: updated,
-  });
-});
-
-/**
- * DELETE /api/votes/:id
- * Resets votes back to 0 (admin/debug)
- */
-router.delete("/:id", (req, res) => {
-  const { id } = req.params;
-  const artist = findArtistOr404(res, id);
-  if (!artist) return;
-
-  const updated = artistsStore.patchArtist(artist.id, { votes: 0 });
-
-  return res.json({
-    success: true,
-    message: "Votes reset successfully.",
-    id: updated.id,
-    votes: toNumber(updated.votes, 0),
-    artist: updated,
+    type,
+    delta,
+    votes: toInt(updated.votes, 0),
   });
 });
 
