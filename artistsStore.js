@@ -1,19 +1,23 @@
 /**
- * artistsStore.js (ESM)
+ * artistsStore.js (ESM) — WINNING PATTERN (canonical)
  *
  * Single source of truth for artist persistence.
  * Used by:
  * - public artists routes (artists.js)
  * - admin moderation routes (adminArtists.js)
+ * - votes routes (votes.js)
  *
  * Storage:
- * - Prefer Render persistent disk: /var/data (or process.env.IBAND_DATA_DIR)
- * - Fallback to local ./db (works locally, but may reset on redeploy without disk)
+ * - Disk persistence to <DATA_DIR>/artists.json (Render persistent disk compatible)
+ * - In-memory fallback always works
  *
  * IMPORTANT:
- * Supports BOTH:
- * - modern names (listArtists/getArtist/createArtist/updateArtist/patchArtist/deleteArtist)
- * - aliases (getAll/getById/create/update/patch/remove/reset/seed)
+ * - If running on Render WITHOUT a Persistent Disk, filesystem is ephemeral and may reset on redeploy/restart.
+ *   Docs: Persistent disks preserve filesystem changes across deploys; without one, changes are lost. (Render docs)
+ *
+ * This store intentionally supports BOTH:
+ * - modern method names (listArtists/getArtist/createArtist/updateArtist/patchArtist/deleteArtist)
+ * - legacy/router-friendly aliases (getAll/getById/create/update/patch/remove/reset/seed)
  */
 
 import fs from "fs";
@@ -68,54 +72,25 @@ function normalizeArtist(raw = {}) {
   };
 }
 
-/* -------------------- Persistence Paths -------------------- */
+/* -------------------- Persistence (Render disk-ready) -------------------- */
 
-// Render persistent disk conventional mount:
-const RENDER_DISK_DEFAULT = "/var/data";
+/**
+ * If you attach a Render Persistent Disk, set:
+ *   DATA_DIR=/var/data
+ * and mount your disk at /var/data (Render dashboard).
+ *
+ * Without a persistent disk, this still “works” but can reset after redeploy/restart.
+ */
+const ROOT = process.cwd();
+const DATA_DIR = safeText(process.env.DATA_DIR) || path.join(ROOT, "db");
+const DB_FILE = path.join(DATA_DIR, "artists.json");
 
-// Allow override (future-proof)
-const DATA_DIR =
-  safeText(process.env.IBAND_DATA_DIR) ||
-  safeText(process.env.DATA_DIR) ||
-  RENDER_DISK_DEFAULT;
-
-const LOCAL_FALLBACK_DIR = path.join(process.cwd(), "db");
-
-// Prefer disk dir if it exists or can be created, else fallback local
-function resolveDbDir() {
-  // If /var/data exists (or custom), use it
-  try {
-    if (DATA_DIR) {
-      if (!fs.existsSync(DATA_DIR)) {
-        // attempt to create (will fail if not mounted/allowed)
-        fs.mkdirSync(DATA_DIR, { recursive: true });
-      }
-      // write test folder inside data dir
-      const test = path.join(DATA_DIR, ".iband_write_test");
-      fs.writeFileSync(test, "ok", "utf8");
-      fs.unlinkSync(test);
-      return DATA_DIR;
-    }
-  } catch {
-    // ignore
-  }
-
-  // fallback local ./db
-  try {
-    if (!fs.existsSync(LOCAL_FALLBACK_DIR)) fs.mkdirSync(LOCAL_FALLBACK_DIR, { recursive: true });
-  } catch {
-    // ignore
-  }
-  return LOCAL_FALLBACK_DIR;
-}
-
-const DB_DIR = resolveDbDir();
-const DB_FILE = path.join(DB_DIR, "artists.json");
-
+// In-memory store always exists
 let artists = [];
 
-/* -------------------- Seed Demo -------------------- */
-
+/**
+ * Ensure at least one demo artist exists so UI never looks “dead”.
+ */
 function ensureDemo() {
   if (artists.length) return;
   artists = [
@@ -132,7 +107,18 @@ function ensureDemo() {
   ];
 }
 
-/* -------------------- Load / Save -------------------- */
+/**
+ * Atomic write to avoid partial/corrupt files.
+ */
+function atomicWriteJson(filepath, obj) {
+  const dir = path.dirname(filepath);
+  const tmp = `${filepath}.tmp`;
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+  fs.writeFileSync(tmp, JSON.stringify(obj, null, 2), "utf8");
+  fs.renameSync(tmp, filepath);
+  return true;
+}
 
 function loadFromDisk() {
   try {
@@ -140,26 +126,29 @@ function loadFromDisk() {
       ensureDemo();
       return;
     }
+
     const raw = fs.readFileSync(DB_FILE, "utf8");
     const parsed = JSON.parse(raw);
     const list = ensureArray(parsed?.data || parsed);
+
     artists = list.map(normalizeArtist);
+
     if (!artists.length) ensureDemo();
   } catch {
+    // If JSON corrupted or read fails, fall back safely.
     ensureDemo();
   }
 }
 
 function saveToDisk() {
   try {
-    if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true });
-    fs.writeFileSync(DB_FILE, JSON.stringify({ updatedAt: nowIso(), data: artists }, null, 2), "utf8");
-    return true;
+    return atomicWriteJson(DB_FILE, { updatedAt: nowIso(), data: artists });
   } catch {
     return false;
   }
 }
 
+// Load once at startup
 loadFromDisk();
 
 /* -------------------- Core CRUD (modern) -------------------- */
@@ -206,6 +195,7 @@ export function updateArtist(id, patch) {
 }
 
 export function patchArtist(id, patch) {
+  // partial update helper (this is what votes + admin PATCH should use)
   const clean = safeText(id);
   const existing = getArtist(clean);
   if (!existing) return null;
@@ -278,34 +268,41 @@ export function seedArtists() {
   return artists.length - before;
 }
 
-/* -------------------- Aliases -------------------- */
+/* -------------------- Router-friendly aliases -------------------- */
 
 function getAll() {
   return listArtists();
 }
+
 function getById(id) {
   return getArtist(id);
 }
+
 function create(payload) {
   return createArtist(payload);
 }
+
 function update(id, payload) {
   return updateArtist(id, payload);
 }
+
 function patch(id, payload) {
   return patchArtist(id, payload);
 }
+
 function remove(id) {
   return deleteArtist(id);
 }
+
 function reset() {
   return resetArtists();
 }
+
 function seed() {
   return seedArtists();
 }
 
-/* -------------------- Default export -------------------- */
+/* -------------------- Default export (one object) -------------------- */
 
 export default {
   // modern
@@ -328,13 +325,18 @@ export default {
   reset,
   seed,
 
-  // debugging
+  // persistence helpers
   save: saveToDisk,
+  reload: loadFromDisk,
+
+  // debugging
   get artists() {
     return artists;
   },
 
-  // extra visibility
-  dbFile: DB_FILE,
-  dbDir: DB_DIR,
+  // where we’re writing (useful for debugging Render disk mount)
+  storage: {
+    dataDir: DATA_DIR,
+    file: DB_FILE,
+  },
 };
