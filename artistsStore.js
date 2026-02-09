@@ -1,23 +1,15 @@
 /**
- * artistsStore.js (ESM) — WINNING PATTERN (canonical)
+ * artistsStore.js (ESM) — CANONICAL STORE
  *
- * Single source of truth for artist persistence.
- * Used by:
- * - public artists routes (artists.js)
- * - admin moderation routes (adminArtists.js)
- * - votes routes (votes.js)
+ * Winning pattern/formula:
+ * - One single source of truth for artists across public + admin + votes
+ * - Render-safe persistence:
+ *    - Uses Render Persistent Disk if available (RENDER_DISK_PATH or DATA_DIR)
+ *    - Falls back to ./db/artists.json (best effort) + in-memory always works
  *
- * Storage:
- * - Disk persistence to <DATA_DIR>/artists.json (Render persistent disk compatible)
- * - In-memory fallback always works
- *
- * IMPORTANT:
- * - If running on Render WITHOUT a Persistent Disk, filesystem is ephemeral and may reset on redeploy/restart.
- *   Docs: Persistent disks preserve filesystem changes across deploys; without one, changes are lost. (Render docs)
- *
- * This store intentionally supports BOTH:
- * - modern method names (listArtists/getArtist/createArtist/updateArtist/patchArtist/deleteArtist)
- * - legacy/router-friendly aliases (getAll/getById/create/update/patch/remove/reset/seed)
+ * ENV:
+ * - DATA_DIR: preferred override (e.g. /var/data)
+ * - RENDER_DISK_PATH: common Render disk mount path (often /var/data)
  */
 
 import fs from "fs";
@@ -72,25 +64,20 @@ function normalizeArtist(raw = {}) {
   };
 }
 
-/* -------------------- Persistence (Render disk-ready) -------------------- */
+/* -------------------- Persistence -------------------- */
 
-/**
- * If you attach a Render Persistent Disk, set:
- *   DATA_DIR=/var/data
- * and mount your disk at /var/data (Render dashboard).
- *
- * Without a persistent disk, this still “works” but can reset after redeploy/restart.
- */
+// Prefer Render disk if present; otherwise local project dir.
 const ROOT = process.cwd();
-const DATA_DIR = safeText(process.env.DATA_DIR) || path.join(ROOT, "db");
-const DB_FILE = path.join(DATA_DIR, "artists.json");
+const DATA_DIR =
+  safeText(process.env.DATA_DIR) ||
+  safeText(process.env.RENDER_DISK_PATH) || // Render common
+  ""; // empty means fallback to ROOT/db
 
-// In-memory store always exists
+const DB_DIR = DATA_DIR ? path.join(DATA_DIR, "db") : path.join(ROOT, "db");
+const DB_FILE = path.join(DB_DIR, "artists.json");
+
 let artists = [];
 
-/**
- * Ensure at least one demo artist exists so UI never looks “dead”.
- */
 function ensureDemo() {
   if (artists.length) return;
   artists = [
@@ -107,48 +94,37 @@ function ensureDemo() {
   ];
 }
 
-/**
- * Atomic write to avoid partial/corrupt files.
- */
-function atomicWriteJson(filepath, obj) {
-  const dir = path.dirname(filepath);
-  const tmp = `${filepath}.tmp`;
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-
-  fs.writeFileSync(tmp, JSON.stringify(obj, null, 2), "utf8");
-  fs.renameSync(tmp, filepath);
-  return true;
-}
-
 function loadFromDisk() {
   try {
     if (!fs.existsSync(DB_FILE)) {
       ensureDemo();
       return;
     }
-
     const raw = fs.readFileSync(DB_FILE, "utf8");
     const parsed = JSON.parse(raw);
     const list = ensureArray(parsed?.data || parsed);
-
     artists = list.map(normalizeArtist);
-
     if (!artists.length) ensureDemo();
   } catch {
-    // If JSON corrupted or read fails, fall back safely.
     ensureDemo();
   }
 }
 
 function saveToDisk() {
   try {
-    return atomicWriteJson(DB_FILE, { updatedAt: nowIso(), data: artists });
+    if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true });
+    fs.writeFileSync(
+      DB_FILE,
+      JSON.stringify({ updatedAt: nowIso(), data: artists }, null, 2),
+      "utf8"
+    );
+    return true;
   } catch {
+    // On free Render, this may fail or be wiped later — but in-memory still works.
     return false;
   }
 }
 
-// Load once at startup
 loadFromDisk();
 
 /* -------------------- Core CRUD (modern) -------------------- */
@@ -195,7 +171,6 @@ export function updateArtist(id, patch) {
 }
 
 export function patchArtist(id, patch) {
-  // partial update helper (this is what votes + admin PATCH should use)
   const clean = safeText(id);
   const existing = getArtist(clean);
   if (!existing) return null;
@@ -203,7 +178,9 @@ export function patchArtist(id, patch) {
   const merged = {
     ...existing,
     ...patch,
-    socials: patch?.socials ? { ...existing.socials, ...patch.socials } : existing.socials,
+    socials: patch?.socials
+      ? { ...existing.socials, ...patch.socials }
+      : existing.socials,
     tracks: patch?.tracks !== undefined ? patch.tracks : existing.tracks,
   };
 
@@ -325,18 +302,15 @@ export default {
   reset,
   seed,
 
-  // persistence helpers
+  // persistence/debug
   save: saveToDisk,
-  reload: loadFromDisk,
-
-  // debugging
+  get dbFile() {
+    return DB_FILE;
+  },
+  get dbDir() {
+    return DB_DIR;
+  },
   get artists() {
     return artists;
-  },
-
-  // where we’re writing (useful for debugging Render disk mount)
-  storage: {
-    dataDir: DATA_DIR,
-    file: DB_FILE,
   },
 };
