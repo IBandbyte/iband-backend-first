@@ -3,13 +3,19 @@
 //
 // Mounted at: /api/admin/artists
 //
-// Supports:
+// Supports (future-proof, winning pattern):
 // - list (with status filtering)
 // - get by id
 // - create
 // - put (replace)
-// - patch (partial)  ✅ uses patchArtist() for true partial updates
+// - patch (partial) ✅ uses patchArtist() for true partial updates when available
 // - delete
+// - admin actions (the missing part you hit):
+//    PATCH /api/admin/artists/:id/approve   (pending -> active)
+//    PATCH /api/admin/artists/:id/reject    (pending -> rejected)
+//    PATCH /api/admin/artists/:id/suspend   (active -> suspended)
+//    PATCH /api/admin/artists/:id/unsuspend (suspended -> active)
+//    PATCH /api/admin/artists/:id/status    (set status safely)
 // - seed endpoints (MVP momentum):
 //    POST /api/admin/artists/seed/demo
 //    POST /api/admin/artists/seed/bad-bunny
@@ -26,6 +32,29 @@ const asString = (v) => String(v ?? "").trim();
 
 function isNonEmptyString(v) {
   return typeof v === "string" && v.trim().length > 0;
+}
+
+function toInt(v, fallback = 0) {
+  const n = Number.parseInt(String(v), 10);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function stripUndefined(obj) {
+  return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined));
+}
+
+function normalizeStatus(v) {
+  const s = asString(v).toLowerCase();
+  if (!s) return undefined;
+  return s;
+}
+
+function normalizeStatusQuery(v) {
+  const s = asString(v).toLowerCase();
+  if (!s) return "";
+  if (["pending", "active", "rejected", "suspended"].includes(s)) return s;
+  if (["all", "*"].includes(s)) return "all";
+  return "";
 }
 
 function normalizeArtistPayload(body = {}) {
@@ -53,18 +82,6 @@ function normalizeArtistPayload(body = {}) {
   };
 }
 
-function stripUndefined(obj) {
-  return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined));
-}
-
-function normalizeStatusQuery(v) {
-  const s = asString(v).toLowerCase();
-  if (!s) return "";
-  if (["pending", "active", "rejected"].includes(s)) return s;
-  if (["all", "*"].includes(s)) return "all";
-  return "";
-}
-
 function pickStoreFn(name, fallbackName) {
   if (artistsStore && typeof artistsStore[name] === "function") return artistsStore[name].bind(artistsStore);
   if (artistsStore && typeof artistsStore[fallbackName] === "function") return artistsStore[fallbackName].bind(artistsStore);
@@ -72,31 +89,48 @@ function pickStoreFn(name, fallbackName) {
 }
 
 // Store functions (supports both object default and named exports in artistsStore.js)
-const storeList =
-  pickStoreFn("listArtists", "getAll") ||
-  (() => []);
+const storeList = pickStoreFn("listArtists", "getAll") || (() => []);
+const storeGet = pickStoreFn("getArtist", "getById") || (() => null);
+const storeCreate = pickStoreFn("createArtist", "create") || (() => null);
+const storeUpdate = pickStoreFn("updateArtist", "update") || (() => null);
+const storePatch = pickStoreFn("patchArtist", "patch") || null;
+const storeDelete = pickStoreFn("deleteArtist", "remove") || (() => null);
 
-const storeGet =
-  pickStoreFn("getArtist", "getById") ||
-  (() => null);
+function applyPatch(id, patch) {
+  // Prefer true partial patch
+  if (storePatch) return storePatch(id, patch);
 
-const storeCreate =
-  pickStoreFn("createArtist", "create") ||
-  (() => null);
+  // Fallback: merge then update
+  const existing = storeGet(id);
+  if (!existing) return null;
+  return storeUpdate(id, { ...existing, ...patch });
+}
 
-const storeUpdate =
-  pickStoreFn("updateArtist", "update") ||
-  (() => null);
+function notFound(res, id) {
+  return res.status(404).json({
+    success: false,
+    message: "Artist not found.",
+    id: asString(id),
+  });
+}
 
-const storePatch =
-  pickStoreFn("patchArtist", "patch") ||
-  null;
+function badRequest(res, message, extra = {}) {
+  return res.status(400).json({
+    success: false,
+    message,
+    ...extra,
+  });
+}
 
-const storeDelete =
-  pickStoreFn("deleteArtist", "remove") ||
-  (() => null);
+function ok(res, payload) {
+  return res.status(200).json(payload);
+}
 
-/* -------------------- Routes -------------------- */
+function created(res, payload) {
+  return res.status(201).json(payload);
+}
+
+/* -------------------- Seed Routes -------------------- */
 
 /**
  * POST /api/admin/artists/seed/demo
@@ -107,14 +141,14 @@ router.post("/seed/demo", (_req, res) => {
   const existing = Array.isArray(all) ? all.find((a) => asString(a?.id) === "demo") : null;
 
   if (existing) {
-    return res.status(200).json({
+    return ok(res, {
       success: true,
       message: "Demo already exists.",
       artist: existing,
     });
   }
 
-  const created = storeCreate({
+  const createdArtist = storeCreate({
     id: "demo",
     name: "Demo Artist",
     genre: "Pop / Urban",
@@ -128,17 +162,16 @@ router.post("/seed/demo", (_req, res) => {
     source: "seed",
   });
 
-  return res.status(201).json({
+  return created(res, {
     success: true,
     message: "Demo seeded.",
-    artist: created,
+    artist: createdArtist,
   });
 });
 
 /**
  * POST /api/admin/artists/seed/bad-bunny
- * One-click invite/seed for MVP.
- * This is NOT identity verification — it’s just demo data to validate flow.
+ * One-click seed for MVP validation.
  */
 router.post("/seed/bad-bunny", (_req, res) => {
   const id = "bad-bunny";
@@ -146,14 +179,14 @@ router.post("/seed/bad-bunny", (_req, res) => {
   const existing = Array.isArray(all) ? all.find((a) => asString(a?.id) === id) : null;
 
   if (existing) {
-    return res.status(200).json({
+    return ok(res, {
       success: true,
       message: "Bad Bunny already exists.",
       artist: existing,
     });
   }
 
-  const created = storeCreate({
+  const createdArtist = storeCreate({
     id,
     name: "Bad Bunny",
     genre: "Latin / Reggaeton",
@@ -181,16 +214,16 @@ router.post("/seed/bad-bunny", (_req, res) => {
     source: "seed",
   });
 
-  return res.status(201).json({
+  return created(res, {
     success: true,
     message: "Bad Bunny seeded.",
-    artist: created,
+    artist: createdArtist,
   });
 });
 
 /**
  * POST /api/admin/artists/seed/reset-demo-only
- * MVP helper: wipes everything then re-seeds demo only.
+ * MVP helper: wipes everything then re-seeds demo only (if the store supports reset)
  */
 router.post("/seed/reset-demo-only", (_req, res) => {
   const reset = pickStoreFn("resetArtists", "reset");
@@ -202,10 +235,11 @@ router.post("/seed/reset-demo-only", (_req, res) => {
   }
 
   const deletedCount = reset();
+
   const all = storeList();
   const demo = Array.isArray(all) ? all.find((a) => asString(a?.id) === "demo") : null;
 
-  return res.status(200).json({
+  return ok(res, {
     success: true,
     message: "Reset complete (demo only).",
     deletedCount,
@@ -213,10 +247,12 @@ router.post("/seed/reset-demo-only", (_req, res) => {
   });
 });
 
+/* -------------------- List / Get -------------------- */
+
 /**
  * GET /api/admin/artists
  * Optional query:
- *  - status=pending|active|rejected|all
+ *  - status=pending|active|rejected|suspended|all
  */
 router.get("/", (req, res) => {
   const status = normalizeStatusQuery(req.query?.status) || "all";
@@ -229,7 +265,7 @@ router.get("/", (req, res) => {
       ? list
       : list.filter((a) => asString(a?.status).toLowerCase() === status);
 
-  return res.status(200).json({
+  return ok(res, {
     success: true,
     count: filtered.length,
     artists: filtered,
@@ -241,12 +277,185 @@ router.get("/", (req, res) => {
  * GET /api/admin/artists/:id
  */
 router.get("/:id", (req, res) => {
-  const artist = storeGet(req.params.id);
-  if (!artist) {
-    return res.status(404).json({ success: false, message: "Artist not found." });
-  }
-  return res.status(200).json({ success: true, artist });
+  const id = asString(req.params.id);
+  const artist = storeGet(id);
+
+  if (!artist) return notFound(res, id);
+
+  return ok(res, { success: true, artist });
 });
+
+/* -------------------- Admin Actions (the missing endpoints) -------------------- */
+
+const ALLOWED_STATUSES = new Set(["pending", "active", "rejected", "suspended"]);
+
+function canTransition(from, to) {
+  // Safe defaults. We can loosen later if needed.
+  if (from === to) return true;
+
+  const allowed = new Set([
+    "pending->active",
+    "pending->rejected",
+    "active->suspended",
+    "suspended->active",
+    // admin override route /status can still set other transitions if we allow it later
+  ]);
+
+  return allowed.has(`${from}->${to}`);
+}
+
+/**
+ * PATCH /api/admin/artists/:id/approve
+ * pending -> active
+ */
+router.patch("/:id/approve", (req, res) => {
+  const id = asString(req.params.id);
+  const existing = storeGet(id);
+  if (!existing) return notFound(res, id);
+
+  const from = asString(existing.status).toLowerCase() || "active";
+  const to = "active";
+
+  if (!canTransition(from, to)) {
+    return badRequest(res, "Invalid status transition.", { id, from, to });
+  }
+
+  const updated = applyPatch(id, { status: to });
+
+  return ok(res, {
+    success: true,
+    message: "Artist approved.",
+    id,
+    from,
+    to,
+    artist: updated,
+  });
+});
+
+/**
+ * PATCH /api/admin/artists/:id/reject
+ * pending -> rejected
+ */
+router.patch("/:id/reject", (req, res) => {
+  const id = asString(req.params.id);
+  const existing = storeGet(id);
+  if (!existing) return notFound(res, id);
+
+  const from = asString(existing.status).toLowerCase() || "active";
+  const to = "rejected";
+
+  if (!canTransition(from, to)) {
+    return badRequest(res, "Invalid status transition.", { id, from, to });
+  }
+
+  const updated = applyPatch(id, { status: to });
+
+  return ok(res, {
+    success: true,
+    message: "Artist rejected.",
+    id,
+    from,
+    to,
+    artist: updated,
+  });
+});
+
+/**
+ * PATCH /api/admin/artists/:id/suspend
+ * active -> suspended
+ */
+router.patch("/:id/suspend", (req, res) => {
+  const id = asString(req.params.id);
+  const existing = storeGet(id);
+  if (!existing) return notFound(res, id);
+
+  const from = asString(existing.status).toLowerCase() || "active";
+  const to = "suspended";
+
+  if (!canTransition(from, to)) {
+    return badRequest(res, "Invalid status transition.", { id, from, to });
+  }
+
+  const updated = applyPatch(id, { status: to });
+
+  return ok(res, {
+    success: true,
+    message: "Artist suspended.",
+    id,
+    from,
+    to,
+    artist: updated,
+  });
+});
+
+/**
+ * PATCH /api/admin/artists/:id/unsuspend
+ * suspended -> active
+ */
+router.patch("/:id/unsuspend", (req, res) => {
+  const id = asString(req.params.id);
+  const existing = storeGet(id);
+  if (!existing) return notFound(res, id);
+
+  const from = asString(existing.status).toLowerCase() || "active";
+  const to = "active";
+
+  if (!canTransition(from, to)) {
+    return badRequest(res, "Invalid status transition.", { id, from, to });
+  }
+
+  const updated = applyPatch(id, { status: to });
+
+  return ok(res, {
+    success: true,
+    message: "Artist unsuspended.",
+    id,
+    from,
+    to,
+    artist: updated,
+  });
+});
+
+/**
+ * PATCH /api/admin/artists/:id/status
+ * Admin-safe status setter (future-proof).
+ * Body: { "status": "pending|active|rejected|suspended" }
+ */
+router.patch("/:id/status", (req, res) => {
+  const id = asString(req.params.id);
+  const existing = storeGet(id);
+  if (!existing) return notFound(res, id);
+
+  const requested = normalizeStatus(req.body?.status);
+
+  if (!requested || !ALLOWED_STATUSES.has(requested)) {
+    return badRequest(res, "Invalid status. Allowed: pending, active, rejected, suspended.", {
+      id,
+      allowed: Array.from(ALLOWED_STATUSES),
+    });
+  }
+
+  const from = asString(existing.status).toLowerCase() || "active";
+  const to = requested;
+
+  // Keep it safe by default; if you want full admin override later, we can add ?force=1
+  if (!canTransition(from, to)) {
+    return badRequest(res, "Invalid status transition.", { id, from, to });
+  }
+
+  const updated = applyPatch(id, { status: to });
+
+  return ok(res, {
+    success: true,
+    message: "Status updated.",
+    id,
+    from,
+    to,
+    artist: updated,
+  });
+});
+
+/* -------------------- CRUD -------------------- */
 
 /**
  * POST /api/admin/artists
@@ -256,13 +465,10 @@ router.post("/", (req, res) => {
   const payload = normalizeArtistPayload(req.body);
 
   if (!payload.name) {
-    return res.status(400).json({
-      success: false,
-      message: "Validation error: 'name' is required.",
-    });
+    return badRequest(res, "Validation error: 'name' is required.");
   }
 
-  const created = storeCreate(
+  const createdArtist = storeCreate(
     stripUndefined({
       id: payload.id,
       name: payload.name,
@@ -273,14 +479,14 @@ router.post("/", (req, res) => {
       socials: payload.socials,
       tracks: payload.tracks ?? [],
       status: payload.status ?? "active",
-      votes: Number.isFinite(payload.votes) ? payload.votes : 0,
+      votes: Number.isFinite(payload.votes) ? toInt(payload.votes, 0) : 0,
     })
   );
 
-  return res.status(201).json({
+  return created(res, {
     success: true,
     message: "Artist created successfully.",
-    artist: created,
+    artist: createdArtist,
   });
 });
 
@@ -289,21 +495,17 @@ router.post("/", (req, res) => {
  * Replace full artist (requires name)
  */
 router.put("/:id", (req, res) => {
-  const existing = storeGet(req.params.id);
-  if (!existing) {
-    return res.status(404).json({ success: false, message: "Artist not found." });
-  }
+  const id = asString(req.params.id);
+  const existing = storeGet(id);
+  if (!existing) return notFound(res, id);
 
   const payload = normalizeArtistPayload(req.body);
 
   if (!payload.name) {
-    return res.status(400).json({
-      success: false,
-      message: "Validation error: 'name' is required.",
-    });
+    return badRequest(res, "Validation error: 'name' is required.");
   }
 
-  const updated = storeUpdate(req.params.id, {
+  const updated = storeUpdate(id, {
     name: payload.name,
     genre: payload.genre ?? "Unknown",
     location: payload.location ?? "",
@@ -312,10 +514,10 @@ router.put("/:id", (req, res) => {
     socials: payload.socials,
     tracks: payload.tracks ?? [],
     status: payload.status ?? existing.status,
-    votes: Number.isFinite(payload.votes) ? payload.votes : existing.votes,
+    votes: Number.isFinite(payload.votes) ? toInt(payload.votes, existing.votes ?? 0) : existing.votes,
   });
 
-  return res.status(200).json({
+  return ok(res, {
     success: true,
     message: "Artist updated successfully.",
     artist: updated,
@@ -324,13 +526,12 @@ router.put("/:id", (req, res) => {
 
 /**
  * PATCH /api/admin/artists/:id
- * Partial update ✅ uses patchArtist() so status changes persist cleanly
+ * Partial update ✅ uses patchArtist() so changes persist cleanly
  */
 router.patch("/:id", (req, res) => {
-  const existing = storeGet(req.params.id);
-  if (!existing) {
-    return res.status(404).json({ success: false, message: "Artist not found." });
-  }
+  const id = asString(req.params.id);
+  const existing = storeGet(id);
+  if (!existing) return notFound(res, id);
 
   const payload = normalizeArtistPayload(req.body);
 
@@ -343,22 +544,31 @@ router.patch("/:id", (req, res) => {
     socials: payload.socials,
     tracks: payload.tracks,
     status: payload.status,
-    votes: Number.isFinite(payload.votes) ? payload.votes : undefined,
+    votes: Number.isFinite(payload.votes) ? toInt(payload.votes, 0) : undefined,
   });
 
   if (Object.keys(patch).length === 0) {
-    return res.status(400).json({
-      success: false,
-      message: "No valid fields provided to update.",
-    });
+    return badRequest(res, "No valid fields provided to update.");
   }
 
-  // Prefer storePatch (true partial). Fallback to storeUpdate if needed.
-  const updated = storePatch
-    ? storePatch(req.params.id, patch)
-    : storeUpdate(req.params.id, { ...existing, ...patch });
+  // If they try setting status here, keep it safe/consistent with admin rules
+  if (patch.status) {
+    const from = asString(existing.status).toLowerCase() || "active";
+    const to = asString(patch.status).toLowerCase();
+    if (!ALLOWED_STATUSES.has(to)) {
+      return badRequest(res, "Invalid status. Allowed: pending, active, rejected, suspended.", {
+        id,
+        allowed: Array.from(ALLOWED_STATUSES),
+      });
+    }
+    if (!canTransition(from, to)) {
+      return badRequest(res, "Invalid status transition.", { id, from, to });
+    }
+  }
 
-  return res.status(200).json({
+  const updated = applyPatch(id, patch);
+
+  return ok(res, {
     success: true,
     message: "Artist patched successfully.",
     artist: updated,
@@ -369,14 +579,13 @@ router.patch("/:id", (req, res) => {
  * DELETE /api/admin/artists/:id
  */
 router.delete("/:id", (req, res) => {
-  const existing = storeGet(req.params.id);
-  if (!existing) {
-    return res.status(404).json({ success: false, message: "Artist not found." });
-  }
+  const id = asString(req.params.id);
+  const existing = storeGet(id);
+  if (!existing) return notFound(res, id);
 
-  const deleted = storeDelete(req.params.id);
+  const deleted = storeDelete(id);
 
-  return res.status(200).json({
+  return ok(res, {
     success: true,
     message: "Artist deleted successfully.",
     deleted,
