@@ -108,6 +108,14 @@ const STORAGE_META = {
     : "No Persistent Disk detected. Data may reset on redeploy/restart (free Render behavior).",
 };
 
+/**
+ * Public getter so routers/tests can prove disk status.
+ * This is read-only and safe.
+ */
+export function getStorageMeta() {
+  return { ...STORAGE_META };
+}
+
 /* -------------------- In-memory state -------------------- */
 
 let artists = [];
@@ -324,6 +332,7 @@ export default {
   deleteArtist,
   resetArtists,
   seedArtists,
+  getStorageMeta,
 
   // aliases
   getAll,
