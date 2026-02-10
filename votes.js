@@ -4,6 +4,7 @@
 // - single source of truth via artistsStore
 // - consistent JSON responses
 // - future-proof endpoints (leaderboard, bulk vote)
+// - route-order safe (static routes BEFORE param routes)
 // - Render-safe ESM default export
 
 import express from "express";
@@ -96,7 +97,6 @@ function patchVotes(id, nextVotes) {
 }
 
 function persistenceHint() {
-  // Keep wording simple & action-oriented
   return "If this worked before a redeploy and fails after, your Render filesystem/in-memory store likely reset. Use a seed endpoint or add persistent storage (Render Disk / database).";
 }
 
@@ -110,12 +110,13 @@ router.use((req, res, next) => {
       message:
         "Votes API misconfigured: artistsStore is missing getArtist/getById and/or patchArtist/patch.",
       ts: nowIso(),
+      path: req.originalUrl,
     });
   }
   next();
 });
 
-/* -------------------- Routes -------------------- */
+/* -------------------- Routes (STATIC FIRST) -------------------- */
 
 // GET /api/votes/health
 router.get("/health", (_req, res) => {
@@ -128,6 +129,92 @@ router.get("/health", (_req, res) => {
     ts: nowIso(),
   });
 });
+
+/**
+ * GET /api/votes/leaderboard
+ * Query:
+ * - status=active (default)
+ * - limit=20 (max 100)
+ */
+router.get("/leaderboard", (req, res) => {
+  const { listArtists } = getStoreFns();
+  const status = safeText(req.query?.status || "active").toLowerCase();
+  const limit = Math.min(100, Math.max(1, toInt(req.query?.limit, 20)));
+
+  const all = Array.isArray(listArtists?.()) ? listArtists() : [];
+  const filtered = all.filter((a) => {
+    const s = safeText(a?.status).toLowerCase();
+    if (status === "all") return true;
+    return s === status;
+  });
+
+  const sorted = filtered
+    .slice()
+    .sort((a, b) => toInt(b?.votes, 0) - toInt(a?.votes, 0))
+    .slice(0, limit)
+    .map((a) => ({
+      id: safeText(a?.id),
+      name: safeText(a?.name),
+      votes: toInt(a?.votes, 0),
+      status: safeText(a?.status),
+      updatedAt: safeText(a?.updatedAt),
+    }));
+
+  return res.json({
+    success: true,
+    count: sorted.length,
+    status,
+    limit,
+    leaderboard: sorted,
+  });
+});
+
+/**
+ * POST /api/votes/bulk
+ * Batch votes update (future-proof for campaigns, imports, etc.)
+ *
+ * Body:
+ * { "items": [ { "id": "bad-bunny", "delta": 1 }, ... ] }
+ *
+ * Safety:
+ * - delta clamped [-100, 100] per item
+ * - max 200 items
+ */
+router.post("/bulk", (req, res) => {
+  const items = Array.isArray(req.body?.items) ? req.body.items : [];
+
+  if (!items.length) {
+    return res.status(400).json({
+      success: false,
+      message: "Body must include items: [{ id, delta }].",
+    });
+  }
+
+  const results = items.slice(0, 200).map((it) => {
+    const id = safeText(it?.id);
+    const delta = clampInt(it?.delta ?? 1, -100, 100);
+
+    if (!id) return { ok: false, id: "", message: "Missing id." };
+
+    const { artist } = findArtistByAnyId(id);
+    if (!artist) return { ok: false, id, message: "Artist not found." };
+
+    const current = toInt(artist.votes, 0);
+    const updated = patchVotes(artist.id, current + delta);
+
+    if (!updated) return { ok: false, id: artist.id, message: "Update failed." };
+
+    return { ok: true, id: updated.id, delta, votes: toInt(updated.votes, 0) };
+  });
+
+  return res.json({
+    success: true,
+    count: results.length,
+    results,
+  });
+});
+
+/* -------------------- Routes (PARAM LAST) -------------------- */
 
 /**
  * GET /api/votes/:id
@@ -282,90 +369,6 @@ router.post("/:id/quick", (req, res) => {
     type,
     delta,
     votes: toInt(updated.votes, 0),
-  });
-});
-
-/**
- * POST /api/votes/bulk
- * Batch votes update (future-proof for campaigns, imports, etc.)
- *
- * Body:
- * { "items": [ { "id": "bad-bunny", "delta": 1 }, ... ] }
- *
- * Safety:
- * - delta clamped [-100, 100] per item
- * - returns per-item results
- */
-router.post("/bulk", (req, res) => {
-  const items = Array.isArray(req.body?.items) ? req.body.items : [];
-
-  if (!items.length) {
-    return res.status(400).json({
-      success: false,
-      message: "Body must include items: [{ id, delta }].",
-    });
-  }
-
-  const results = items.slice(0, 200).map((it) => {
-    const id = safeText(it?.id);
-    const delta = clampInt(it?.delta ?? 1, -100, 100);
-
-    if (!id) return { ok: false, id: "", message: "Missing id." };
-
-    const { artist } = findArtistByAnyId(id);
-    if (!artist) return { ok: false, id, message: "Artist not found." };
-
-    const current = toInt(artist.votes, 0);
-    const updated = patchVotes(artist.id, current + delta);
-
-    if (!updated) return { ok: false, id: artist.id, message: "Update failed." };
-
-    return { ok: true, id: updated.id, delta, votes: toInt(updated.votes, 0) };
-  });
-
-  return res.json({
-    success: true,
-    count: results.length,
-    results,
-  });
-});
-
-/**
- * GET /api/votes/leaderboard
- * Query:
- * - status=active (default)
- * - limit=20 (max 100)
- */
-router.get("/leaderboard", (req, res) => {
-  const { listArtists } = getStoreFns();
-  const status = safeText(req.query?.status || "active").toLowerCase();
-  const limit = Math.min(100, Math.max(1, toInt(req.query?.limit, 20)));
-
-  const all = Array.isArray(listArtists?.()) ? listArtists() : [];
-  const filtered = all.filter((a) => {
-    const s = safeText(a?.status).toLowerCase();
-    if (status === "all") return true;
-    return s === status;
-  });
-
-  const sorted = filtered
-    .slice()
-    .sort((a, b) => toInt(b?.votes, 0) - toInt(a?.votes, 0))
-    .slice(0, limit)
-    .map((a) => ({
-      id: safeText(a?.id),
-      name: safeText(a?.name),
-      votes: toInt(a?.votes, 0),
-      status: safeText(a?.status),
-      updatedAt: safeText(a?.updatedAt),
-    }));
-
-  return res.json({
-    success: true,
-    count: sorted.length,
-    status,
-    limit,
-    leaderboard: sorted,
   });
 });
 
