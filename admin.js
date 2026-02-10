@@ -4,9 +4,10 @@
 //
 // Winning pattern/formula:
 // - consistent JSON responses
-// - store-compat (getArtist/getById + patchArtist/patch)
 // - safe admin auth (dev-open if ADMIN_KEY not set)
-// - includes fallback admin artist routes even if adminArtists.js is incomplete
+// - store-compat (getArtist/getById + patchArtist/patch + listArtists/list)
+// - NO route collisions with adminArtists.js
+// - includes non-colliding "core" admin fallback routes at /api/admin/core/*
 
 import express from "express";
 
@@ -24,14 +25,17 @@ function safeText(v) {
   return String(v).trim();
 }
 
-const toInt = (v, fallback = 0) => {
-  const n = Number.parseInt(String(v), 10);
-  return Number.isFinite(n) ? n : fallback;
-};
-
 function isValidStatus(s) {
   const v = safeText(s).toLowerCase();
   return v === "pending" || v === "active" || v === "rejected";
+}
+
+function normalizeStatusQuery(v) {
+  const s = safeText(v).toLowerCase();
+  if (!s) return "all";
+  if (["pending", "active", "rejected"].includes(s)) return s;
+  if (["all", "*"].includes(s)) return "all";
+  return "all";
 }
 
 function getStoreFns(store) {
@@ -79,18 +83,22 @@ function storeMisconfigured(res) {
   });
 }
 
+function getAdminMode() {
+  const configuredKey = safeText(process.env.ADMIN_KEY);
+  return configuredKey ? "locked" : "dev-open";
+}
+
 /* -------------------- Admin Key Guard -------------------- */
 // Protects admin routes using x-admin-key header.
 // If ADMIN_KEY is NOT set, it runs in "dev-open" mode (no auth) to avoid blocking testing.
 
 router.use((req, res, next) => {
-  // If store is broken, fail fast (consistent errors).
+  // Fail fast if store is broken (consistent errors)
   if (!getArtist || !patchArtist) return storeMisconfigured(res);
 
   const configuredKey = safeText(process.env.ADMIN_KEY);
 
   if (!configuredKey) {
-    // Dev-open mode (no key configured)
     req._adminMode = "dev-open";
     return next();
   }
@@ -100,10 +108,11 @@ router.use((req, res, next) => {
     return res.status(401).json({
       success: false,
       message: "Unauthorized (missing or invalid x-admin-key).",
+      mode: "locked",
     });
   }
 
-  req._adminMode = "secured";
+  req._adminMode = "locked";
   next();
 });
 
@@ -113,44 +122,22 @@ router.get("/", (req, res) => {
   res.json({
     success: true,
     message: "iBand admin API is running",
-    mode: req._adminMode || "unknown",
+    mode: req._adminMode || getAdminMode(),
   });
 });
 
-/* -------------------- Fallback Admin Artist Routes -------------------- */
+/* -------------------- Core Fallback Routes (NON-colliding) -------------------- */
 /**
- * These routes exist here to guarantee core admin actions work
- * even if adminArtists.js is missing/incomplete.
+ * These exist to guarantee core admin actions work even if adminArtists.js is incomplete.
+ * IMPORTANT: We do NOT use /artists here to avoid collisions with adminArtistsRouter.
  *
- * NOTE: If adminArtistsRouter defines the same routes, it can still work.
- * We keep these minimal, predictable, and store-based.
+ * Namespace:
+ *   /api/admin/core/artists
  */
 
-/**
- * GET /api/admin/artists/:id
- * Admin fetch of a single artist (any status).
- */
-router.get("/artists/:id", (req, res) => {
-  const id = safeText(req.params.id);
-  if (!id) {
-    return res.status(400).json({ success: false, message: "Artist id is required." });
-  }
+router.get("/core/artists", (req, res) => {
+  const status = normalizeStatusQuery(req.query?.status);
 
-  const artist = getArtist(id);
-  if (!artist) return res.status(404).json(notFoundHint(id));
-
-  return res.json({ success: true, artist });
-});
-
-/**
- * GET /api/admin/artists
- * Optional list (all) for admin debugging.
- * Supports ?status=pending|active|rejected|all
- */
-router.get("/artists", (req, res) => {
-  const status = safeText(req.query.status || "all").toLowerCase();
-
-  // If store has no list, we still return a helpful response
   if (!listArtists) {
     return res.json({
       success: true,
@@ -158,29 +145,48 @@ router.get("/artists", (req, res) => {
       count: 0,
       status,
       note:
-        "artistsStore.listArtists/list not available. Admin listing is disabled in this build.",
+        "artistsStore.listArtists/list not available. Core listing disabled in this build.",
+      mode: req._adminMode || getAdminMode(),
     });
   }
 
   const all = listArtists();
+  const list = Array.isArray(all) ? all : [];
+
   const filtered =
-    status === "all" || !status
-      ? all
-      : all.filter((a) => safeText(a?.status).toLowerCase() === status);
+    status === "all"
+      ? list
+      : list.filter((a) => safeText(a?.status).toLowerCase() === status);
 
   return res.json({
     success: true,
     count: filtered.length,
     artists: filtered,
     status,
+    mode: req._adminMode || getAdminMode(),
   });
 });
 
-/**
- * PATCH /api/admin/artists/:id/approve
- * Sets status -> active
- */
-router.patch("/artists/:id/approve", (req, res) => {
+router.get("/core/artists/:id", (req, res) => {
+  const id = safeText(req.params.id);
+  if (!id) {
+    return res.status(400).json({
+      success: false,
+      message: "Artist id is required.",
+    });
+  }
+
+  const artist = getArtist(id);
+  if (!artist) return res.status(404).json(notFoundHint(id));
+
+  return res.json({
+    success: true,
+    artist,
+    mode: req._adminMode || getAdminMode(),
+  });
+});
+
+router.patch("/core/artists/:id/approve", (req, res) => {
   const id = safeText(req.params.id);
   if (!id) {
     return res.status(400).json({ success: false, message: "Artist id is required." });
@@ -202,15 +208,11 @@ router.patch("/artists/:id/approve", (req, res) => {
     success: true,
     message: "Artist approved.",
     artist: updated,
+    mode: req._adminMode || getAdminMode(),
   });
 });
 
-/**
- * PATCH /api/admin/artists/:id/reject
- * Sets status -> rejected
- * Body optional: { reason: "..." }
- */
-router.patch("/artists/:id/reject", (req, res) => {
+router.patch("/core/artists/:id/reject", (req, res) => {
   const id = safeText(req.params.id);
   if (!id) {
     return res.status(400).json({ success: false, message: "Artist id is required." });
@@ -220,7 +222,9 @@ router.patch("/artists/:id/reject", (req, res) => {
   if (!artist) return res.status(404).json(notFoundHint(id));
 
   const reason = safeText(req.body?.reason);
-  const payload = reason ? { status: "rejected", rejectReason: reason } : { status: "rejected" };
+  const payload = reason
+    ? { status: "rejected", rejectReason: reason }
+    : { status: "rejected" };
 
   const updated = patchArtist(id, payload);
   if (!updated) {
@@ -235,15 +239,11 @@ router.patch("/artists/:id/reject", (req, res) => {
     success: true,
     message: "Artist rejected.",
     artist: updated,
+    mode: req._adminMode || getAdminMode(),
   });
 });
 
-/**
- * PATCH /api/admin/artists/:id/status
- * Sets status -> pending|active|rejected
- * Body: { status: "pending" | "active" | "rejected" }
- */
-router.patch("/artists/:id/status", (req, res) => {
+router.patch("/core/artists/:id/status", (req, res) => {
   const id = safeText(req.params.id);
   const nextStatus = safeText(req.body?.status).toLowerCase();
 
@@ -275,10 +275,11 @@ router.patch("/artists/:id/status", (req, res) => {
     success: true,
     message: "Artist status updated.",
     artist: updated,
+    mode: req._adminMode || getAdminMode(),
   });
 });
 
-/* -------------------- Sub Routers (kept) -------------------- */
+/* -------------------- Sub Routers (authoritative modules) -------------------- */
 
 router.use("/artists", adminArtistsRouter);
 router.use("/comments", adminCommentsRouter);
