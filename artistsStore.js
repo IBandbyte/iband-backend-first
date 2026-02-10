@@ -1,15 +1,21 @@
 /**
- * artistsStore.js (ESM) — CANONICAL STORE
+ * artistsStore.js (ESM)
  *
- * Winning pattern/formula:
- * - One single source of truth for artists across public + admin + votes
- * - Render-safe persistence:
- *    - Uses Render Persistent Disk if available (RENDER_DISK_PATH or DATA_DIR)
- *    - Falls back to ./db/artists.json (best effort) + in-memory always works
+ * Single source of truth for artist persistence.
+ * Used by:
+ * - public artists routes (artists.js)
+ * - admin moderation routes (adminArtists.js / admin.js)
+ * - votes routes (votes.js)
  *
- * ENV:
- * - DATA_DIR: preferred override (e.g. /var/data)
- * - RENDER_DISK_PATH: common Render disk mount path (often /var/data)
+ * Storage strategy:
+ * - If a Render Persistent Disk is attached, Render typically mounts it at /var/data
+ *   -> we auto-detect and store inside /var/data/iband/db/artists.json
+ * - Otherwise we fall back to local ./db/artists.json (ephemeral on free Render)
+ *
+ * IMPORTANT:
+ * This store intentionally supports BOTH:
+ * - modern method names (listArtists/getArtist/createArtist/updateArtist/deleteArtist)
+ * - legacy/router-friendly aliases (getAll/getById/create/update/patch/remove/reset/seed)
  */
 
 import fs from "fs";
@@ -64,19 +70,49 @@ function normalizeArtist(raw = {}) {
   };
 }
 
-/* -------------------- Persistence -------------------- */
+/* -------------------- Storage location (Disk-aware) -------------------- */
 
-// Prefer Render disk if present; otherwise local project dir.
+/**
+ * Render Disk typical mount: /var/data
+ * We’ll store under: /var/data/iband/db/artists.json
+ *
+ * If no disk exists or is not writable, fallback: <project>/db/artists.json
+ */
+
 const ROOT = process.cwd();
-const DATA_DIR =
-  safeText(process.env.DATA_DIR) ||
-  safeText(process.env.RENDER_DISK_PATH) || // Render common
-  ""; // empty means fallback to ROOT/db
 
-const DB_DIR = DATA_DIR ? path.join(DATA_DIR, "db") : path.join(ROOT, "db");
+function dirWritable(dirPath) {
+  try {
+    fs.mkdirSync(dirPath, { recursive: true });
+    fs.accessSync(dirPath, fs.constants.W_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const DISK_MOUNT = "/var/data";
+const DISK_BASE = path.join(DISK_MOUNT, "iband", "db");
+const LOCAL_BASE = path.join(ROOT, "db");
+
+const USE_DISK = dirWritable(DISK_BASE);
+const DB_DIR = USE_DISK ? DISK_BASE : LOCAL_BASE;
 const DB_FILE = path.join(DB_DIR, "artists.json");
 
+const STORAGE_META = {
+  mode: USE_DISK ? "render-disk" : "ephemeral-local",
+  dbDir: DB_DIR,
+  dbFile: DB_FILE,
+  note: USE_DISK
+    ? "Persistent Disk detected (/var/data). Data should survive redeploys."
+    : "No Persistent Disk detected. Data may reset on redeploy/restart (free Render behavior).",
+};
+
+/* -------------------- In-memory state -------------------- */
+
 let artists = [];
+
+/* -------------------- Seed / Demo -------------------- */
 
 function ensureDemo() {
   if (artists.length) return;
@@ -93,6 +129,8 @@ function ensureDemo() {
     }),
   ];
 }
+
+/* -------------------- Disk I/O (atomic write) -------------------- */
 
 function loadFromDisk() {
   try {
@@ -111,16 +149,19 @@ function loadFromDisk() {
 }
 
 function saveToDisk() {
+  // best-effort persistence
   try {
     if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true });
-    fs.writeFileSync(
-      DB_FILE,
-      JSON.stringify({ updatedAt: nowIso(), data: artists }, null, 2),
-      "utf8"
-    );
+
+    const payload = JSON.stringify({ updatedAt: nowIso(), data: artists }, null, 2);
+
+    // atomic write: write temp then rename
+    const tmp = `${DB_FILE}.tmp`;
+    fs.writeFileSync(tmp, payload, "utf8");
+    fs.renameSync(tmp, DB_FILE);
+
     return true;
   } catch {
-    // On free Render, this may fail or be wiped later — but in-memory still works.
     return false;
   }
 }
@@ -171,6 +212,7 @@ export function updateArtist(id, patch) {
 }
 
 export function patchArtist(id, patch) {
+  // partial update helper
   const clean = safeText(id);
   const existing = getArtist(clean);
   if (!existing) return null;
@@ -178,9 +220,7 @@ export function patchArtist(id, patch) {
   const merged = {
     ...existing,
     ...patch,
-    socials: patch?.socials
-      ? { ...existing.socials, ...patch.socials }
-      : existing.socials,
+    socials: patch?.socials ? { ...existing.socials, ...patch.socials } : existing.socials,
     tracks: patch?.tracks !== undefined ? patch.tracks : existing.tracks,
   };
 
@@ -250,36 +290,29 @@ export function seedArtists() {
 function getAll() {
   return listArtists();
 }
-
 function getById(id) {
   return getArtist(id);
 }
-
 function create(payload) {
   return createArtist(payload);
 }
-
 function update(id, payload) {
   return updateArtist(id, payload);
 }
-
 function patch(id, payload) {
   return patchArtist(id, payload);
 }
-
 function remove(id) {
   return deleteArtist(id);
 }
-
 function reset() {
   return resetArtists();
 }
-
 function seed() {
   return seedArtists();
 }
 
-/* -------------------- Default export (one object) -------------------- */
+/* -------------------- Default export -------------------- */
 
 export default {
   // modern
@@ -302,14 +335,9 @@ export default {
   reset,
   seed,
 
-  // persistence/debug
+  // persistence + debug
   save: saveToDisk,
-  get dbFile() {
-    return DB_FILE;
-  },
-  get dbDir() {
-    return DB_DIR;
-  },
+  storage: STORAGE_META,
   get artists() {
     return artists;
   },
