@@ -8,14 +8,9 @@
 // - store-compat (getArtist/getById + patchArtist/patch + listArtists/list)
 // - NO route collisions with adminArtists.js
 // - includes non-colliding "core" admin fallback routes at /api/admin/core/*
-// - exposes storage introspection endpoint (Render Disk / local / ephemeral) ✅
-//
-// NOTE:
-// - /api/admin/core/* is intentionally "core + stable" for debugging and ops.
-// - adminArtistsRouter stays authoritative for artist admin features.
+// - exposes storage metadata at GET /api/admin/core/storage (Render Disk verification)
 
 import express from "express";
-import fs from "fs";
 
 import artistsStore from "./artistsStore.js";
 
@@ -64,6 +59,8 @@ function getStoreFns(store) {
       ? store.listArtists.bind(store)
       : typeof store.list === "function"
       ? store.list.bind(store)
+      : typeof store.getAll === "function"
+      ? store.getAll.bind(store)
       : null;
 
   return { getArtist, patchArtist, listArtists };
@@ -77,7 +74,7 @@ function notFoundHint(id) {
     message: "Artist not found.",
     id,
     hint:
-      "If this worked before a redeploy and fails after, your Render filesystem/in-memory store likely reset. Use a seed endpoint or add persistent storage (Render Disk / database).",
+      "If this worked before a redeploy and fails after, your Render store likely reset. Confirm Render Disk is attached and use /api/admin/core/storage.",
   };
 }
 
@@ -94,43 +91,8 @@ function getAdminMode() {
   return configuredKey ? "locked" : "dev-open";
 }
 
-function getSafeStorageMeta() {
-  // artistsStore.storage is the single source of truth for persistence mode
-  const meta =
-    artistsStore && typeof artistsStore === "object" && artistsStore.storage
-      ? artistsStore.storage
-      : null;
-
-  const dbFile = safeText(meta?.dbFile);
-  const dbDir = safeText(meta?.dbDir);
-
-  // Best-effort checks — never throw
-  let fileExists = false;
-  let dirExists = false;
-
-  try {
-    if (dbDir) dirExists = fs.existsSync(dbDir);
-  } catch {
-    dirExists = false;
-  }
-
-  try {
-    if (dbFile) fileExists = fs.existsSync(dbFile);
-  } catch {
-    fileExists = false;
-  }
-
-  return {
-    available: !!meta,
-    mode: safeText(meta?.mode) || "unknown",
-    dbDir: dbDir || "",
-    dbFile: dbFile || "",
-    note: safeText(meta?.note) || "",
-    checks: {
-      dirExists,
-      fileExists,
-    },
-  };
+function nowIso() {
+  return new Date().toISOString();
 }
 
 /* -------------------- Admin Key Guard -------------------- */
@@ -168,6 +130,7 @@ router.get("/", (req, res) => {
     success: true,
     message: "iBand admin API is running",
     mode: req._adminMode || getAdminMode(),
+    timestamp: nowIso(),
   });
 });
 
@@ -180,12 +143,32 @@ router.get("/", (req, res) => {
  *   /api/admin/core/*
  */
 
-router.get("/core/storage", (req, res) => {
-  return res.json({
+/**
+ * GET /api/admin/core/storage
+ * Exposes artistsStore storage metadata so we can confirm Render Disk persistence.
+ * Locked behind x-admin-key (unless dev-open).
+ */
+router.get("/core/storage", (_req, res) => {
+  const storage =
+    artistsStore && typeof artistsStore === "object"
+      ? artistsStore.storage || null
+      : null;
+
+  return res.status(200).json({
     success: true,
-    message: "Storage introspection (artistsStore)",
-    mode: req._adminMode || getAdminMode(),
-    storage: getSafeStorageMeta(),
+    mode: _req._adminMode || getAdminMode(),
+    timestamp: nowIso(),
+    storage: storage || {
+      mode: "unknown",
+      note:
+        "artistsStore.storage not available. Ensure artistsStore.js exports default with storage: STORAGE_META.",
+    },
+    runtime: {
+      node: process.version,
+      platform: process.platform,
+      cwd: process.cwd(),
+      uptimeSec: Math.round(process.uptime()),
+    },
   });
 });
 
@@ -199,7 +182,7 @@ router.get("/core/artists", (req, res) => {
       count: 0,
       status,
       note:
-        "artistsStore.listArtists/list not available. Core listing disabled in this build.",
+        "artistsStore.listArtists/list/getAll not available. Core listing disabled in this build.",
       mode: req._adminMode || getAdminMode(),
     });
   }
