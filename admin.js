@@ -8,8 +8,14 @@
 // - store-compat (getArtist/getById + patchArtist/patch + listArtists/list)
 // - NO route collisions with adminArtists.js
 // - includes non-colliding "core" admin fallback routes at /api/admin/core/*
+// - exposes storage introspection endpoint (Render Disk / local / ephemeral) ✅
+//
+// NOTE:
+// - /api/admin/core/* is intentionally "core + stable" for debugging and ops.
+// - adminArtistsRouter stays authoritative for artist admin features.
 
 import express from "express";
+import fs from "fs";
 
 import artistsStore from "./artistsStore.js";
 
@@ -88,7 +94,48 @@ function getAdminMode() {
   return configuredKey ? "locked" : "dev-open";
 }
 
+function getSafeStorageMeta() {
+  // artistsStore.storage is the single source of truth for persistence mode
+  const meta =
+    artistsStore && typeof artistsStore === "object" && artistsStore.storage
+      ? artistsStore.storage
+      : null;
+
+  const dbFile = safeText(meta?.dbFile);
+  const dbDir = safeText(meta?.dbDir);
+
+  // Best-effort checks — never throw
+  let fileExists = false;
+  let dirExists = false;
+
+  try {
+    if (dbDir) dirExists = fs.existsSync(dbDir);
+  } catch {
+    dirExists = false;
+  }
+
+  try {
+    if (dbFile) fileExists = fs.existsSync(dbFile);
+  } catch {
+    fileExists = false;
+  }
+
+  return {
+    available: !!meta,
+    mode: safeText(meta?.mode) || "unknown",
+    dbDir: dbDir || "",
+    dbFile: dbFile || "",
+    note: safeText(meta?.note) || "",
+    checks: {
+      dirExists,
+      fileExists,
+    },
+  };
+}
+
 /* -------------------- Admin Key Guard -------------------- */
+// Protects admin routes using x-admin-key header.
+// If ADMIN_KEY is NOT set, it runs in "dev-open" mode (no auth) to avoid blocking testing.
 
 router.use((req, res, next) => {
   // Fail fast if store is broken (consistent errors)
@@ -126,23 +173,19 @@ router.get("/", (req, res) => {
 
 /* -------------------- Core Fallback Routes (NON-colliding) -------------------- */
 /**
+ * These exist to guarantee core admin actions work even if adminArtists.js is incomplete.
+ * IMPORTANT: We do NOT use /artists here to avoid collisions with adminArtistsRouter.
+ *
  * Namespace:
  *   /api/admin/core/*
  */
 
 router.get("/core/storage", (req, res) => {
-  const meta =
-    typeof artistsStore.getStorageMeta === "function"
-      ? artistsStore.getStorageMeta()
-      : artistsStore?.storage || null;
-
   return res.json({
     success: true,
+    message: "Storage introspection (artistsStore)",
     mode: req._adminMode || getAdminMode(),
-    storage: meta || {
-      mode: "unknown",
-      note: "artistsStore storage metadata not available in this build.",
-    },
+    storage: getSafeStorageMeta(),
   });
 });
 
