@@ -89,8 +89,6 @@ function getAdminMode() {
 }
 
 /* -------------------- Admin Key Guard -------------------- */
-// Protects admin routes using x-admin-key header.
-// If ADMIN_KEY is NOT set, it runs in "dev-open" mode (no auth) to avoid blocking testing.
 
 router.use((req, res, next) => {
   // Fail fast if store is broken (consistent errors)
@@ -128,12 +126,25 @@ router.get("/", (req, res) => {
 
 /* -------------------- Core Fallback Routes (NON-colliding) -------------------- */
 /**
- * These exist to guarantee core admin actions work even if adminArtists.js is incomplete.
- * IMPORTANT: We do NOT use /artists here to avoid collisions with adminArtistsRouter.
- *
  * Namespace:
- *   /api/admin/core/artists
+ *   /api/admin/core/*
  */
+
+router.get("/core/storage", (req, res) => {
+  const meta =
+    typeof artistsStore.getStorageMeta === "function"
+      ? artistsStore.getStorageMeta()
+      : artistsStore?.storage || null;
+
+  return res.json({
+    success: true,
+    mode: req._adminMode || getAdminMode(),
+    storage: meta || {
+      mode: "unknown",
+      note: "artistsStore storage metadata not available in this build.",
+    },
+  });
+});
 
 router.get("/core/artists", (req, res) => {
   const status = normalizeStatusQuery(req.query?.status);
