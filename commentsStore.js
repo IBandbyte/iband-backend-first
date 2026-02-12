@@ -1,278 +1,406 @@
-// commentsStore.js (ESM)
-// Canonical comment persistence (Phase 1: in-memory, Render-safe)
-//
-// Canonical statuses (Option A):
-// - pending   (created by public, awaiting moderation)
-// - approved  (public can see)
-// - hidden    (admin hides from public but keeps record)
-// - rejected  (spam/abuse)
-//
-// This store is written to match the routers exactly:
-// Used by:
-// - comments.js (public)
-// - adminComments.js (admin)
+/**
+ * commentsStore.js (ESM)
+ *
+ * Persistent, disk-aware comments store (Render Disk compatible).
+ * Used by:
+ * - public comments routes (comments.js)
+ * - admin moderation routes (adminComments.js)
+ *
+ * Storage strategy:
+ * - If Render Persistent Disk mounted at /var/data:
+ *   -> store at /var/data/iband/db/comments.json
+ * - Otherwise fallback to local ./db/comments.json (ephemeral)
+ *
+ * Canonical statuses:
+ * - pending | approved | hidden | rejected
+ *
+ * Supports both modern + legacy aliases to avoid router breakage.
+ */
 
-import crypto from "crypto";
+import fs from "fs";
+import path from "path";
+import { randomUUID } from "crypto";
 
-/* -------------------- Constants -------------------- */
-
-export const ALLOWED_COMMENT_STATUSES = ["pending", "approved", "hidden", "rejected"];
+/* -------------------- Helpers -------------------- */
 
 const nowIso = () => new Date().toISOString();
+const safeText = (v) => (v === null || v === undefined ? "" : String(v)).trim();
+const ensureArray = (v) => (Array.isArray(v) ? v : []);
 
-const toStr = (v) => String(v ?? "").trim();
+const CANONICAL_STATUSES = ["pending", "approved", "hidden", "rejected"];
 
-const isNonEmpty = (v) => toStr(v).length > 0;
-
-const normalizeStatus = (status) => {
-  const s = String(status ?? "").trim().toLowerCase();
-  return ALLOWED_COMMENT_STATUSES.includes(s) ? s : null;
+const normalizeStatus = (s) => {
+  const v = safeText(s).toLowerCase();
+  return CANONICAL_STATUSES.includes(v) ? v : "pending";
 };
 
-const makeId = () =>
-  typeof crypto.randomUUID === "function"
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+function dirWritable(dirPath) {
+  try {
+    fs.mkdirSync(dirPath, { recursive: true });
+    fs.accessSync(dirPath, fs.constants.W_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
-/* -------------------- Store -------------------- */
+/* -------------------- Storage location (Disk-aware) -------------------- */
 
-const store = {
-  ALLOWED_COMMENT_STATUSES,
-  comments: [],
+const ROOT = process.cwd();
 
-  /* ---------- Query ---------- */
+const DISK_MOUNT = "/var/data";
+const DISK_BASE = path.join(DISK_MOUNT, "iband", "db");
+const LOCAL_BASE = path.join(ROOT, "db");
 
-  getAll() {
-    return [...this.comments].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  },
+const USE_DISK = dirWritable(DISK_BASE);
+const DB_DIR = USE_DISK ? DISK_BASE : LOCAL_BASE;
+const DB_FILE = path.join(DB_DIR, "comments.json");
 
-  getById(id) {
-    const clean = toStr(id);
-    return this.comments.find((c) => c.id === clean) || null;
-  },
+const STORAGE_META = {
+  mode: USE_DISK ? "render-disk" : "ephemeral-local",
+  dbDir: DB_DIR,
+  dbFile: DB_FILE,
+  note: USE_DISK
+    ? "Persistent Disk detected (/var/data). Data should survive redeploys."
+    : "No Persistent Disk detected. Data may reset on redeploy/restart (free Render behavior).",
+};
 
-  getByArtistId(artistId) {
-    const aid = toStr(artistId);
-    return this.getAll().filter((c) => c.artistId === aid);
-  },
+/* -------------------- In-memory state -------------------- */
 
-  /* ---------- Create ---------- */
+let comments = [];
 
-  create({ artistId, author, text, status } = {}) {
-    const aid = toStr(artistId);
-    const a = toStr(author);
-    const t = toStr(text);
+/* -------------------- Normalization -------------------- */
 
-    if (!isNonEmpty(aid)) {
-      throw new Error("artistId is required.");
+function normalizeFlag(f = {}) {
+  return {
+    code: safeText(f.code || "flag"),
+    reason: safeText(f.reason || ""),
+    at: safeText(f.at || nowIso()),
+  };
+}
+
+function normalizeComment(raw = {}) {
+  const flags = ensureArray(raw.flags);
+
+  return {
+    id: safeText(raw.id) || randomUUID(),
+    artistId: safeText(raw.artistId),
+    author: safeText(raw.author || "anon"),
+    text: safeText(raw.text || "").slice(0, 2000),
+    status: normalizeStatus(raw.status),
+    flags: flags.map(normalizeFlag),
+
+    createdAt: safeText(raw.createdAt || nowIso()),
+    updatedAt: safeText(raw.updatedAt || nowIso()),
+
+    moderatedAt: raw.moderatedAt === null ? null : safeText(raw.moderatedAt || null),
+    moderatedBy: raw.moderatedBy === null ? null : safeText(raw.moderatedBy || null),
+    moderationNote: raw.moderationNote === null ? null : safeText(raw.moderationNote || null),
+  };
+}
+
+/* -------------------- Disk I/O (atomic write) -------------------- */
+
+function loadFromDisk() {
+  try {
+    if (!fs.existsSync(DB_FILE)) {
+      comments = [];
+      return;
     }
-    if (!isNonEmpty(a)) {
-      throw new Error("author is required.");
-    }
-    if (!isNonEmpty(t)) {
-      throw new Error("text is required.");
-    }
+    const raw = fs.readFileSync(DB_FILE, "utf8");
+    const parsed = JSON.parse(raw);
+    const list = ensureArray(parsed?.data || parsed);
+    comments = list.map(normalizeComment);
+  } catch {
+    comments = [];
+  }
+}
 
-    const s = status ? normalizeStatus(status) : "pending";
-    if (!s) {
-      throw new Error(`Invalid status. Allowed: ${ALLOWED_COMMENT_STATUSES.join(", ")}`);
-    }
+function saveToDisk() {
+  try {
+    if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true });
 
-    const comment = {
-      id: makeId(),
-      artistId: aid,
-      author: a,
-      text: t,
-      status: s,
-      flags: [],
-      createdAt: nowIso(),
-      updatedAt: nowIso(),
-      moderatedAt: null,
-      moderatedBy: null,
-      moderationNote: null,
-    };
+    const payload = JSON.stringify({ updatedAt: nowIso(), data: comments }, null, 2);
+    const tmp = `${DB_FILE}.tmp`;
+    fs.writeFileSync(tmp, payload, "utf8");
+    fs.renameSync(tmp, DB_FILE);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
-    this.comments.push(comment);
-    return comment;
-  },
+loadFromDisk();
 
-  /* ---------- Update (PUT semantics) ---------- */
+/* -------------------- Core API -------------------- */
 
-  update(id, { artistId, author, text, status, moderatedBy, moderationNote } = {}) {
-    const existing = this.getById(id);
-    if (!existing) return null;
+export function listAdmin({ status, artistId, flagged } = {}) {
+  let arr = ensureArray(comments);
 
-    const aid = toStr(artistId);
-    const a = toStr(author);
-    const t = toStr(text);
+  if (artistId) {
+    const a = safeText(artistId);
+    arr = arr.filter((c) => safeText(c.artistId) === a);
+  }
 
-    if (!isNonEmpty(aid) || !isNonEmpty(a) || !isNonEmpty(t)) return null;
-
-    const nextStatus = status !== undefined ? normalizeStatus(status) : existing.status;
-    if (!nextStatus) return null;
-
-    existing.artistId = aid;
-    existing.author = a;
-    existing.text = t;
-    existing.status = nextStatus;
-
-    // moderation fields (optional)
-    if (moderatedBy !== undefined) existing.moderatedBy = toStr(moderatedBy);
-    if (moderationNote !== undefined) existing.moderationNote = toStr(moderationNote);
-
-    if (status !== undefined || moderatedBy !== undefined || moderationNote !== undefined) {
-      existing.moderatedAt = nowIso();
-    }
-
-    existing.updatedAt = nowIso();
-    return existing;
-  },
-
-  /* ---------- Patch (PATCH semantics) ---------- */
-
-  patch(id, patch = {}) {
-    const existing = this.getById(id);
-    if (!existing) return null;
-
-    if (patch.artistId !== undefined) {
-      const aid = toStr(patch.artistId);
-      if (!isNonEmpty(aid)) return null;
-      existing.artistId = aid;
-    }
-
-    if (patch.author !== undefined) {
-      const a = toStr(patch.author);
-      if (!isNonEmpty(a)) return null;
-      existing.author = a;
-    }
-
-    if (patch.text !== undefined) {
-      const t = toStr(patch.text);
-      if (!isNonEmpty(t)) return null;
-      existing.text = t;
-    }
-
-    if (patch.status !== undefined) {
-      const s = normalizeStatus(patch.status);
-      if (!s) return null;
-      existing.status = s;
-      existing.moderatedAt = nowIso();
-    }
-
-    if (patch.moderatedBy !== undefined) {
-      existing.moderatedBy = toStr(patch.moderatedBy);
-      existing.moderatedAt = nowIso();
-    }
-
-    if (patch.moderationNote !== undefined) {
-      existing.moderationNote = toStr(patch.moderationNote);
-      existing.moderatedAt = nowIso();
-    }
-
-    existing.updatedAt = nowIso();
-    return existing;
-  },
-
-  /* ---------- Flags ---------- */
-
-  addFlag(id, { code, reason } = {}) {
-    const existing = this.getById(id);
-    if (!existing) return null;
-
-    const flag = {
-      code: toStr(code) || "flag",
-      reason: toStr(reason) || "",
-      at: nowIso(),
-    };
-
-    if (!Array.isArray(existing.flags)) existing.flags = [];
-    existing.flags.push(flag);
-
-    existing.updatedAt = nowIso();
-    return existing;
-  },
-
-  clearFlags(id) {
-    const existing = this.getById(id);
-    if (!existing) return null;
-
-    existing.flags = [];
-    existing.updatedAt = nowIso();
-    return existing;
-  },
-
-  /* ---------- Bulk ops ---------- */
-
-  bulkRemove(ids = []) {
-    const list = Array.isArray(ids) ? ids.map(toStr).filter(Boolean) : [];
-    const deletedIds = [];
-    const notFoundIds = [];
-
-    list.forEach((id) => {
-      const idx = this.comments.findIndex((c) => c.id === id);
-      if (idx === -1) {
-        notFoundIds.push(id);
-        return;
-      }
-      this.comments.splice(idx, 1);
-      deletedIds.push(id);
-    });
-
-    return { deletedIds, notFoundIds };
-  },
-
-  bulkSetStatus(ids = [], status, moderatedBy = "", moderationNote = "") {
+  if (status) {
     const s = normalizeStatus(status);
-    if (!s) return null;
+    arr = arr.filter((c) => safeText(c.status).toLowerCase() === s);
+  }
 
-    const list = Array.isArray(ids) ? ids.map(toStr).filter(Boolean) : [];
-    const updatedIds = [];
-    const notFoundIds = [];
+  if (flagged) {
+    arr = arr.filter((c) => Array.isArray(c.flags) && c.flags.length > 0);
+  }
 
-    list.forEach((id) => {
-      const c = this.getById(id);
-      if (!c) {
-        notFoundIds.push(id);
-        return;
-      }
-      c.status = s;
-      c.moderatedBy = toStr(moderatedBy);
-      c.moderationNote = toStr(moderationNote);
-      c.moderatedAt = nowIso();
-      c.updatedAt = nowIso();
-      updatedIds.push(id);
+  arr = arr
+    .slice()
+    .sort((x, y) => new Date(y.createdAt) - new Date(x.createdAt));
+
+  return { ok: true, count: arr.length, comments: arr };
+}
+
+export function listPublic({ artistId, limit = 50, offset = 0 } = {}) {
+  const a = safeText(artistId);
+  let arr = ensureArray(comments);
+
+  if (a) arr = arr.filter((c) => safeText(c.artistId) === a);
+
+  // Public only sees approved by default
+  arr = arr.filter((c) => safeText(c.status).toLowerCase() === "approved");
+
+  arr = arr
+    .slice()
+    .sort((x, y) => new Date(y.createdAt) - new Date(x.createdAt));
+
+  const off = Math.max(0, Number(offset) || 0);
+  const lim = Math.min(200, Math.max(1, Number(limit) || 50));
+
+  return {
+    ok: true,
+    count: Math.max(0, arr.length - off),
+    comments: arr.slice(off, off + lim),
+    artistId: a,
+    limit: lim,
+    offset: off,
+  };
+}
+
+export function getById(id) {
+  const clean = safeText(id);
+  if (!clean) return null;
+  return comments.find((c) => c.id === clean) || null;
+}
+
+export function create({ artistId, author, text }) {
+  const a = safeText(artistId);
+  const au = safeText(author || "anon");
+  const t = safeText(text);
+
+  if (!a) return { ok: false, status: 400, message: "artistId is required." };
+  if (!t) return { ok: false, status: 400, message: "text is required." };
+
+  const rec = normalizeComment({
+    id: randomUUID(),
+    artistId: a,
+    author: au,
+    text: t,
+    status: "pending",
+    flags: [],
+    moderatedAt: null,
+    moderatedBy: null,
+    moderationNote: null,
+  });
+
+  rec.createdAt = nowIso();
+  rec.updatedAt = nowIso();
+
+  comments.unshift(rec);
+  saveToDisk();
+
+  return { ok: true, comment: rec };
+}
+
+export function patch(id, patchObj = {}) {
+  const clean = safeText(id);
+  const idx = comments.findIndex((c) => c.id === clean);
+  if (idx === -1) return null;
+
+  const existing = comments[idx];
+
+  const next = normalizeComment({
+    ...existing,
+    ...patchObj,
+    id: existing.id,
+    flags:
+      patchObj.flags !== undefined
+        ? ensureArray(patchObj.flags).map(normalizeFlag)
+        : existing.flags,
+  });
+
+  // moderation timestamps if status changed or moderation fields provided
+  const statusChanged =
+    patchObj.status !== undefined &&
+    normalizeStatus(patchObj.status) !== safeText(existing.status).toLowerCase();
+
+  const moderationTouched =
+    patchObj.moderatedBy !== undefined ||
+    patchObj.moderationNote !== undefined ||
+    patchObj.status !== undefined;
+
+  if (statusChanged || moderationTouched) {
+    next.moderatedAt = nowIso();
+    if (patchObj.moderatedBy !== undefined) next.moderatedBy = safeText(patchObj.moderatedBy) || null;
+    if (patchObj.moderationNote !== undefined) next.moderationNote = safeText(patchObj.moderationNote) || "";
+  }
+
+  next.updatedAt = nowIso();
+
+  comments[idx] = next;
+  saveToDisk();
+
+  return next;
+}
+
+export function remove(id) {
+  const clean = safeText(id);
+  const idx = comments.findIndex((c) => c.id === clean);
+  if (idx === -1) return false;
+
+  comments.splice(idx, 1);
+  saveToDisk();
+  return true;
+}
+
+export function addFlag(id, { code, reason } = {}) {
+  const existing = getById(id);
+  if (!existing) return null;
+
+  const flags = ensureArray(existing.flags).slice();
+  flags.push(normalizeFlag({ code, reason }));
+
+  return patch(existing.id, { flags });
+}
+
+export function clearFlags(id) {
+  const existing = getById(id);
+  if (!existing) return null;
+  return patch(existing.id, { flags: [] });
+}
+
+export function bulkUpdateStatus({ ids, status, moderatedBy, moderationNote } = {}) {
+  const list = ensureArray(ids).map(safeText).filter(Boolean);
+  if (!list.length) return { ok: false, status: 400, message: "ids is required." };
+
+  const s = normalizeStatus(status);
+  const updatedIds = [];
+  const notFoundIds = [];
+
+  for (const id of list) {
+    const existing = getById(id);
+    if (!existing) {
+      notFoundIds.push(id);
+      continue;
+    }
+    const updated = patch(id, {
+      status: s,
+      moderatedBy: moderatedBy ?? existing.moderatedBy ?? null,
+      moderationNote: moderationNote ?? existing.moderationNote ?? "",
     });
+    if (updated) updatedIds.push(id);
+  }
 
-    return { status: s, updatedIds, notFoundIds };
-  },
+  return {
+    ok: true,
+    status: s,
+    updated: updatedIds.length,
+    updatedIds,
+    notFoundIds,
+  };
+}
 
-  /* ---------- Admin utilities ---------- */
+export function bulkRemove(ids = []) {
+  const list = ensureArray(ids).map(safeText).filter(Boolean);
+  const deletedIds = [];
+  const notFoundIds = [];
 
-  reset() {
-    const deleted = this.comments.length;
-    this.comments = [];
-    return deleted;
-  },
+  for (const id of list) {
+    const ok = remove(id);
+    if (ok) deletedIds.push(id);
+    else notFoundIds.push(id);
+  }
 
-  seed() {
-    const before = this.comments.length;
+  return { deletedIds, notFoundIds };
+}
 
-    this.create({
+export function reset() {
+  const deleted = comments.length;
+  comments = [];
+  saveToDisk();
+  return deleted;
+}
+
+export function seed() {
+  const before = comments.length;
+
+  const demo = [
+    {
       artistId: "demo",
-      author: "System",
-      text: "Welcome to iBand comments.",
+      author: "iBand System",
+      text: "Welcome to iBand — fans decide who rises. 🔥",
       status: "approved",
-    });
+      moderatedBy: "system",
+      moderationNote: "seed",
+    },
+  ];
 
-    this.create({
-      artistId: "demo",
-      author: "System",
-      text: "This is a pending comment (needs approval).",
-      status: "pending",
-    });
+  for (const c of demo) {
+    const created = create(c);
+    if (created?.ok) {
+      patch(created.comment.id, {
+        status: "approved",
+        moderatedBy: "system",
+        moderationNote: "seed",
+      });
+    }
+  }
 
-    return this.comments.length - before;
+  return comments.length - before;
+}
+
+/* -------------------- Aliases (back-compat) -------------------- */
+
+function listAll() {
+  return { ok: true, count: comments.length, comments: ensureArray(comments) };
+}
+function getAll() {
+  return ensureArray(comments);
+}
+
+/* -------------------- Default export -------------------- */
+
+export default {
+  storage: STORAGE_META,
+
+  // canonical
+  listAdmin,
+  listPublic,
+  getById,
+  create,
+  patch,
+  remove,
+  addFlag,
+  clearFlags,
+  bulkUpdateStatus,
+  bulkRemove,
+  reset,
+  seed,
+
+  // aliases
+  listAll,
+  getAll,
+
+  // debug
+  save: saveToDisk,
+  get comments() {
+    return comments;
   },
 };
-
-export default store;
