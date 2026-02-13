@@ -1,28 +1,23 @@
 /**
- * artists.js (root)
+ * artists.js (root) — ESM default export
  * Public Artists API
  * - GET  /api/artists
  * - GET  /api/artists/:id
  * - POST /api/artists/submit
- * - POST /api/artists/:id/vote   <-- added + hardened + persistent
- *
- * Notes:
- * - Storage auto-detects Render Disk at /var/data and uses: /var/data/iband/db
- * - Votes are rate-limited per artist per "voter fingerprint" (IP + UA) with cooldown window
+ * - POST /api/artists/:id/vote   (public, hardened, persistent)
  */
 
-const express = require("express");
-const fs = require("fs");
-const fsp = require("fs/promises");
-const path = require("path");
-const crypto = require("crypto");
+import express from "express";
+import fs from "fs";
+import fsp from "fs/promises";
+import path from "path";
+import crypto from "crypto";
 
 const router = express.Router();
 
 /* ----------------------------- Storage paths ----------------------------- */
 
 function hasRenderDisk() {
-  // Render persistent disk mounts at /var/data (your setup)
   try {
     return fs.existsSync("/var/data") && fs.statSync("/var/data").isDirectory();
   } catch {
@@ -32,7 +27,6 @@ function hasRenderDisk() {
 
 function getDbDir() {
   if (hasRenderDisk()) return path.join("/var/data", "iband", "db");
-  // Ephemeral fallback (Render free / local dev)
   return path.join(process.cwd(), "db");
 }
 
@@ -85,12 +79,6 @@ async function ensureDb() {
   try {
     await fsp.access(votesFile);
   } catch {
-    // votes.json structure:
-    // {
-    //   "artistId": {
-    //     "voterHash": lastVoteISO
-    //   }
-    // }
     await fsp.writeFile(votesFile, JSON.stringify({}, null, 2), "utf8");
   }
 }
@@ -114,8 +102,6 @@ function nowISO() {
   return new Date().toISOString();
 }
 
-/* ------------------------------ Helpers -------------------------------- */
-
 function safeStr(v) {
   return typeof v === "string" ? v.trim() : "";
 }
@@ -130,7 +116,6 @@ function makeId() {
 }
 
 function getClientIp(req) {
-  // Render / proxies usually set x-forwarded-for
   const xff = safeStr(req.headers["x-forwarded-for"]);
   if (xff) return xff.split(",")[0].trim();
   return safeStr(req.ip) || "unknown";
@@ -148,17 +133,16 @@ function voterFingerprint(req) {
 
 /**
  * Vote cooldown window (ms)
- * Default: 6 hours (21600000 ms)
- * You can override via env: VOTE_COOLDOWN_MINUTES
+ * Default: 6 hours
+ * Optional env: VOTE_COOLDOWN_MINUTES
  */
 function getVoteCooldownMs() {
-  const mins = toInt(process.env.VOTE_COOLDOWN_MINUTES, 360); // 6h default
+  const mins = toInt(process.env.VOTE_COOLDOWN_MINUTES, 360);
   return Math.max(1, mins) * 60 * 1000;
 }
 
 /* ------------------------------- Routes -------------------------------- */
 
-// Health-ish endpoint for quick sanity (optional, harmless)
 router.get("/health", async (req, res) => {
   await ensureDb();
   return res.json({ success: true, message: "artists ok", ts: nowISO() });
@@ -169,8 +153,8 @@ router.get("/health", async (req, res) => {
  * Query:
  *  - status=active|pending|hidden|all (default active)
  *  - q=search name/genre/location
- *  - page=1..n (default 1)
- *  - limit=1..100 (default 50)
+ *  - page (default 1)
+ *  - limit (default 50, max 100)
  */
 router.get("/", async (req, res) => {
   await ensureDb();
@@ -183,9 +167,7 @@ router.get("/", async (req, res) => {
   const artists = await readJson(getArtistsFile(), []);
   let filtered = Array.isArray(artists) ? artists : [];
 
-  if (status !== "all") {
-    filtered = filtered.filter((a) => (a.status || "active") === status);
-  }
+  if (status !== "all") filtered = filtered.filter((a) => (a.status || "active") === status);
 
   if (q) {
     filtered = filtered.filter((a) => {
@@ -220,9 +202,7 @@ router.get("/:id", async (req, res) => {
   const artists = await readJson(getArtistsFile(), []);
   const artist = (Array.isArray(artists) ? artists : []).find((a) => a.id === id);
 
-  if (!artist) {
-    return res.status(404).json({ success: false, message: "Artist not found." });
-  }
+  if (!artist) return res.status(404).json({ success: false, message: "Artist not found." });
 
   return res.json({ success: true, artist });
 });
@@ -287,19 +267,18 @@ router.post("/submit", async (req, res) => {
 
 /**
  * POST /api/artists/:id/vote
- * Public vote endpoint (NO admin key)
+ * Public vote endpoint (NO x-admin-key)
+ * - Only active artists
+ * - Cooldown per voter per artist
+ * - Persisted in votes.json
  *
- * Hardening:
- * - Only allows voting on active artists
- * - Cooldown per artist per voter fingerprint (IP + UA hash) default 6 hours
- * - Persists vote ledger to votes.json on Render Disk (/var/data/iband/db)
- *
- * Body: NONE (leave empty). Content-Type header is fine.
+ * Body: leave empty (no {})
  */
 router.post("/:id/vote", async (req, res) => {
   await ensureDb();
 
   const id = safeStr(req.params.id);
+
   const artists = await readJson(getArtistsFile(), []);
   const list = Array.isArray(artists) ? artists : [];
 
@@ -343,20 +322,13 @@ router.post("/:id/vote", async (req, res) => {
     }
   }
 
-  // Record vote
   ledger[id][voterHash] = nowISO();
   await writeJsonAtomic(getVotesFile(), ledger);
 
-  // Increment artist votes
   const currentVotes = Number.isFinite(Number(artist.votes)) ? Number(artist.votes) : 0;
   const newVotes = currentVotes + 1;
 
-  list[idx] = {
-    ...artist,
-    votes: newVotes,
-    updatedAt: nowISO(),
-  };
-
+  list[idx] = { ...artist, votes: newVotes, updatedAt: nowISO() };
   await writeJsonAtomic(getArtistsFile(), list);
 
   return res.status(201).json({
@@ -375,4 +347,4 @@ router.post("/:id/vote", async (req, res) => {
   });
 });
 
-module.exports = router;
+export default router;
