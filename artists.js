@@ -5,6 +5,10 @@
  * - GET  /api/artists/:id
  * - POST /api/artists/submit
  * - POST /api/artists/:id/vote   (public, hardened, persistent)
+ *
+ * IMPORTANT:
+ * - Uses Render Disk if available: /var/data/iband/db
+ * - Guarantees demo artist exists even after redeploys
  */
 
 import express from "express";
@@ -38,65 +42,7 @@ function getVotesFile() {
   return path.join(getDbDir(), "votes.json");
 }
 
-async function ensureDb() {
-  const dir = getDbDir();
-  await fsp.mkdir(dir, { recursive: true });
-
-  const artistsFile = getArtistsFile();
-  const votesFile = getVotesFile();
-
-  // Ensure artists.json exists
-  try {
-    await fsp.access(artistsFile);
-  } catch {
-    const seed = [
-      {
-        id: "demo",
-        name: "Demo Artist",
-        genre: "Pop / Urban",
-        location: "London, UK",
-        bio: "Demo artist used for initial platform validation.",
-        imageUrl: "",
-        socials: {
-          instagram: "",
-          tiktok: "",
-          youtube: "",
-          spotify: "",
-          soundcloud: "",
-          website: "",
-        },
-        tracks: [{ title: "Demo Track", url: "", platform: "mp3", durationSec: 30 }],
-        votes: 42,
-        status: "active",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-    ];
-    await fsp.writeFile(artistsFile, JSON.stringify(seed, null, 2), "utf8");
-  }
-
-  // Ensure votes.json exists
-  try {
-    await fsp.access(votesFile);
-  } catch {
-    await fsp.writeFile(votesFile, JSON.stringify({}, null, 2), "utf8");
-  }
-}
-
-async function readJson(file, fallback) {
-  try {
-    const raw = await fsp.readFile(file, "utf8");
-    return JSON.parse(raw);
-  } catch {
-    return fallback;
-  }
-}
-
-async function writeJsonAtomic(file, data) {
-  const tmp = `${file}.tmp`;
-  await fsp.writeFile(tmp, JSON.stringify(data, null, 2), "utf8");
-  await fsp.rename(tmp, file);
-}
+/* ----------------------------- Helpers ----------------------------- */
 
 function nowISO() {
   return new Date().toISOString();
@@ -107,7 +53,7 @@ function safeStr(v) {
 }
 
 function toInt(v, def) {
-  const n = parseInt(v, 10);
+  const n = parseInt(String(v), 10);
   return Number.isFinite(n) ? n : def;
 }
 
@@ -141,9 +87,86 @@ function getVoteCooldownMs() {
   return Math.max(1, mins) * 60 * 1000;
 }
 
+async function readJson(file, fallback) {
+  try {
+    const raw = await fsp.readFile(file, "utf8");
+    return JSON.parse(raw);
+  } catch {
+    return fallback;
+  }
+}
+
+async function writeJsonAtomic(file, data) {
+  const tmp = `${file}.tmp`;
+  await fsp.writeFile(tmp, JSON.stringify(data, null, 2), "utf8");
+  await fsp.rename(tmp, file);
+}
+
+function demoArtist() {
+  const t = nowISO();
+  return {
+    id: "demo",
+    name: "Demo Artist",
+    genre: "Pop / Urban",
+    location: "London, UK",
+    bio: "Demo artist used for initial platform validation.",
+    imageUrl: "",
+    socials: {
+      instagram: "",
+      tiktok: "",
+      youtube: "",
+      spotify: "",
+      soundcloud: "",
+      website: "",
+    },
+    tracks: [{ title: "Demo Track", url: "", platform: "mp3", durationSec: 30 }],
+    votes: 42,
+    status: "active",
+    createdAt: t,
+    updatedAt: t,
+  };
+}
+
+/**
+ * ensureDb()
+ * - creates db dir + files if missing
+ * - GUARANTEES demo artist exists, even if artists.json already exists
+ */
+async function ensureDb() {
+  const dir = getDbDir();
+  await fsp.mkdir(dir, { recursive: true });
+
+  const artistsFile = getArtistsFile();
+  const votesFile = getVotesFile();
+
+  // Ensure artists.json exists
+  try {
+    await fsp.access(artistsFile);
+  } catch {
+    await fsp.writeFile(artistsFile, JSON.stringify([], null, 2), "utf8");
+  }
+
+  // Ensure votes.json exists
+  try {
+    await fsp.access(votesFile);
+  } catch {
+    await fsp.writeFile(votesFile, JSON.stringify({}, null, 2), "utf8");
+  }
+
+  // GUARANTEE demo exists (this is the fix)
+  const artists = await readJson(artistsFile, []);
+  const list = Array.isArray(artists) ? artists : [];
+
+  const hasDemo = list.some((a) => safeStr(a?.id) === "demo");
+  if (!hasDemo) {
+    list.unshift(demoArtist());
+    await writeJsonAtomic(artistsFile, list);
+  }
+}
+
 /* ------------------------------- Routes -------------------------------- */
 
-router.get("/health", async (req, res) => {
+router.get("/health", async (_req, res) => {
   await ensureDb();
   return res.json({ success: true, message: "artists ok", ts: nowISO() });
 });
@@ -151,8 +174,8 @@ router.get("/health", async (req, res) => {
 /**
  * GET /api/artists
  * Query:
- *  - status=active|pending|hidden|all (default active)
- *  - q=search name/genre/location
+ *  - status=active|pending|hidden|rejected|all (default active)
+ *  - q=search name/genre/location/bio/id
  *  - page (default 1)
  *  - limit (default 50, max 100)
  */
@@ -160,18 +183,21 @@ router.get("/", async (req, res) => {
   await ensureDb();
 
   const status = safeStr(req.query.status) || "active";
-  const q = (safeStr(req.query.q) || "").toLowerCase();
+  const qRaw = safeStr(req.query.q);
+  const q = qRaw.toLowerCase();
   const page = Math.max(1, toInt(req.query.page, 1));
   const limit = Math.min(100, Math.max(1, toInt(req.query.limit, 50)));
 
   const artists = await readJson(getArtistsFile(), []);
   let filtered = Array.isArray(artists) ? artists : [];
 
-  if (status !== "all") filtered = filtered.filter((a) => (a.status || "active") === status);
+  if (status !== "all") {
+    filtered = filtered.filter((a) => safeStr(a?.status || "active") === status);
+  }
 
   if (q) {
     filtered = filtered.filter((a) => {
-      const hay = `${a.name || ""} ${a.genre || ""} ${a.location || ""}`.toLowerCase();
+      const hay = `${safeStr(a?.name)} ${safeStr(a?.genre)} ${safeStr(a?.location)} ${safeStr(a?.bio)} ${safeStr(a?.id)}`.toLowerCase();
       return hay.includes(q);
     });
   }
@@ -188,7 +214,7 @@ router.get("/", async (req, res) => {
     limit,
     total,
     status,
-    q: safeStr(req.query.q) || "",
+    q: qRaw,
   });
 });
 
@@ -200,9 +226,11 @@ router.get("/:id", async (req, res) => {
 
   const id = safeStr(req.params.id);
   const artists = await readJson(getArtistsFile(), []);
-  const artist = (Array.isArray(artists) ? artists : []).find((a) => a.id === id);
+  const artist = (Array.isArray(artists) ? artists : []).find((a) => safeStr(a?.id) === id);
 
-  if (!artist) return res.status(404).json({ success: false, message: "Artist not found." });
+  if (!artist) {
+    return res.status(404).json({ success: false, message: "Artist not found.", id });
+  }
 
   return res.json({ success: true, artist });
 });
@@ -214,7 +242,7 @@ router.get("/:id", async (req, res) => {
 router.post("/submit", async (req, res) => {
   await ensureDb();
 
-  const body = req.body || {};
+  const body = req.body && typeof req.body === "object" ? req.body : {};
   const name = safeStr(body.name);
   const genre = safeStr(body.genre);
   const location = safeStr(body.location);
@@ -229,7 +257,7 @@ router.post("/submit", async (req, res) => {
   const list = Array.isArray(artists) ? artists : [];
 
   const artist = {
-    id: makeId(),
+    id: safeStr(body.id) || makeId(),
     name,
     genre: genre || "",
     location: location || "",
@@ -244,10 +272,10 @@ router.post("/submit", async (req, res) => {
       website: safeStr(socials.website) || "",
     },
     tracks: tracks.map((t) => ({
-      title: safeStr(t.title) || "",
-      url: safeStr(t.url) || "",
-      platform: safeStr(t.platform) || "mp3",
-      durationSec: Math.max(0, toInt(t.durationSec, 0)),
+      title: safeStr(t?.title) || "",
+      url: safeStr(t?.url) || "",
+      platform: safeStr(t?.platform) || "mp3",
+      durationSec: Math.max(0, toInt(t?.durationSec, 0)),
     })),
     votes: 0,
     status: "pending",
@@ -272,7 +300,7 @@ router.post("/submit", async (req, res) => {
  * - Cooldown per voter per artist
  * - Persisted in votes.json
  *
- * Body: leave empty (no {})
+ * Body: {}
  */
 router.post("/:id/vote", async (req, res) => {
   await ensureDb();
@@ -282,11 +310,11 @@ router.post("/:id/vote", async (req, res) => {
   const artists = await readJson(getArtistsFile(), []);
   const list = Array.isArray(artists) ? artists : [];
 
-  const idx = list.findIndex((a) => a.id === id);
-  if (idx === -1) return res.status(404).json({ success: false, message: "Artist not found." });
+  const idx = list.findIndex((a) => safeStr(a?.id) === id);
+  if (idx === -1) return res.status(404).json({ success: false, message: "Artist not found.", id });
 
   const artist = list[idx];
-  const status = artist.status || "active";
+  const status = safeStr(artist.status || "active");
   if (status !== "active") {
     return res.status(409).json({
       success: false,
