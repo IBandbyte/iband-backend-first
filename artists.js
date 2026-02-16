@@ -1,18 +1,10 @@
 /**
  * artists.js (root) — ESM default export
- * Canonical Artists Router (v1)
+ * Canonical Artists Router (v2 — migration safe)
  *
- * Storage:
- * - Persistent disk on Render
- * - /var/data/iband/db/artists.json
- *
- * Features:
- * - GET list, GET by id
- * - POST create
- * - PUT replace
- * - PATCH partial update
- * - DELETE remove
- * - Seeds a demo artist if file is empty/missing
+ * Fix:
+ * - Support legacy artists.json being an ARRAY at top-level
+ * - Normalize and rewrite into canonical object store { artists: [...] }
  */
 
 import express from "express";
@@ -21,18 +13,12 @@ import path from "path";
 
 const router = express.Router();
 
-/* -----------------------------
- * Config
- * ----------------------------- */
 const DATA_DIR = process.env.DATA_DIR || "/var/data/iband/db";
 const ARTISTS_FILE = process.env.ARTISTS_FILE || path.join(DATA_DIR, "artists.json");
 
 const MAX_BODY_KB = parseInt(process.env.ARTISTS_MAX_BODY_KB || "64", 10);
-const routerVersion = 1;
+const routerVersion = 2;
 
-/* -----------------------------
- * Helpers
- * ----------------------------- */
 function nowIso() {
   return new Date().toISOString();
 }
@@ -56,7 +42,6 @@ function normalizeId(v, maxLen = 80) {
 function cleanUrl(v, maxLen = 500) {
   const s = safeString(v, maxLen);
   if (!s) return null;
-  // allow http(s) only; keep it simple
   if (!/^https?:\/\//i.test(s)) return null;
   return s;
 }
@@ -81,11 +66,7 @@ async function writeJsonAtomic(filePath, obj) {
 }
 
 function makeStoreSkeleton() {
-  return {
-    version: 1,
-    updatedAt: null,
-    artists: [],
-  };
+  return { version: 1, updatedAt: null, artists: [] };
 }
 
 function seedDemoArtist() {
@@ -104,13 +85,27 @@ function seedDemoArtist() {
       soundcloud: null,
       website: null,
     },
-    tracks: [
-      { title: "Demo Track", url: null, platform: "mp3", durationSec: 30 }
-    ],
+    tracks: [{ title: "Demo Track", url: null, platform: "mp3", durationSec: 30 }],
     status: "active",
     createdAt: nowIso(),
     updatedAt: nowIso(),
   };
+}
+
+function normalizeStoreShape(raw) {
+  // Legacy: top-level array
+  if (Array.isArray(raw)) {
+    return { ...makeStoreSkeleton(), artists: raw };
+  }
+
+  // Canonical: object store
+  if (raw && typeof raw === "object") {
+    const store = { ...makeStoreSkeleton(), ...raw };
+    if (!Array.isArray(store.artists)) store.artists = [];
+    return store;
+  }
+
+  return makeStoreSkeleton();
 }
 
 function normalizeArtistPayload(body, { requireId = false } = {}) {
@@ -124,23 +119,26 @@ function normalizeArtistPayload(body, { requireId = false } = {}) {
 
   const imageUrl = body?.imageUrl !== undefined ? cleanUrl(body.imageUrl) : undefined;
 
-  const socials = body?.socials && typeof body.socials === "object" && !Array.isArray(body.socials)
-    ? {
-        instagram: body.socials.instagram ? cleanUrl(body.socials.instagram) : null,
-        tiktok: body.socials.tiktok ? cleanUrl(body.socials.tiktok) : null,
-        youtube: body.socials.youtube ? cleanUrl(body.socials.youtube) : null,
-        spotify: body.socials.spotify ? cleanUrl(body.socials.spotify) : null,
-        soundcloud: body.socials.soundcloud ? cleanUrl(body.socials.soundcloud) : null,
-        website: body.socials.website ? cleanUrl(body.socials.website) : null,
-      }
-    : undefined;
+  const socials =
+    body?.socials && typeof body.socials === "object" && !Array.isArray(body.socials)
+      ? {
+          instagram: body.socials.instagram ? cleanUrl(body.socials.instagram) : null,
+          tiktok: body.socials.tiktok ? cleanUrl(body.socials.tiktok) : null,
+          youtube: body.socials.youtube ? cleanUrl(body.socials.youtube) : null,
+          spotify: body.socials.spotify ? cleanUrl(body.socials.spotify) : null,
+          soundcloud: body.socials.soundcloud ? cleanUrl(body.socials.soundcloud) : null,
+          website: body.socials.website ? cleanUrl(body.socials.website) : null,
+        }
+      : undefined;
 
   const tracks = Array.isArray(body?.tracks)
     ? body.tracks.slice(0, 20).map((t) => ({
         title: safeString(t?.title, 120) || "Untitled",
         url: t?.url ? cleanUrl(t.url) : null,
         platform: safeString(t?.platform, 40) || null,
-        durationSec: Number.isFinite(Number(t?.durationSec)) ? Math.max(0, Math.trunc(Number(t.durationSec))) : null,
+        durationSec: Number.isFinite(Number(t?.durationSec))
+          ? Math.max(0, Math.trunc(Number(t.durationSec)))
+          : null,
       }))
     : undefined;
 
@@ -164,15 +162,22 @@ function normalizeArtistPayload(body, { requireId = false } = {}) {
 
 async function loadStore() {
   await ensureDataDir();
-  const base = makeStoreSkeleton();
-  const store = await readJsonSafe(ARTISTS_FILE, base);
+  const raw = await readJsonSafe(ARTISTS_FILE, makeStoreSkeleton());
+  const store = normalizeStoreShape(raw);
 
-  if (!store || typeof store !== "object") return base;
-  if (!Array.isArray(store.artists)) store.artists = [];
+  // Migration: if legacy array was detected, rewrite into canonical
+  const wasLegacyArray = Array.isArray(raw);
+  const needsRewrite =
+    wasLegacyArray ||
+    !raw ||
+    typeof raw !== "object" ||
+    (raw && typeof raw === "object" && !("artists" in raw));
 
-  // Seed demo if empty
   if (store.artists.length === 0) {
     store.artists = [seedDemoArtist()];
+  }
+
+  if (needsRewrite) {
     store.updatedAt = nowIso();
     await writeJsonAtomic(ARTISTS_FILE, store);
   }
@@ -185,14 +190,8 @@ async function saveStore(store) {
   await writeJsonAtomic(ARTISTS_FILE, store);
 }
 
-/* -----------------------------
- * Middleware
- * ----------------------------- */
 router.use(express.json({ limit: `${MAX_BODY_KB}kb` }));
 
-/* -----------------------------
- * Health
- * ----------------------------- */
 router.get("/health", async (_req, res) => {
   const store = await loadStore();
   res.json({
@@ -206,9 +205,6 @@ router.get("/health", async (_req, res) => {
   });
 });
 
-/* -----------------------------
- * GET endpoints
- * ----------------------------- */
 router.get("/", async (_req, res) => {
   const store = await loadStore();
   res.json({
@@ -230,16 +226,14 @@ router.get("/:id", async (req, res) => {
   res.json({ success: true, artist, updatedAt: store.updatedAt });
 });
 
-/* -----------------------------
- * POST endpoints
- * ----------------------------- */
 router.post("/", async (req, res) => {
   const parsed = normalizeArtistPayload(req.body, { requireId: true });
   if (!parsed.ok) return res.status(400).json({ success: false, message: parsed.error });
 
   const store = await loadStore();
-  const exists = store.artists.some((a) => a.id === parsed.artist.id);
-  if (exists) return res.status(409).json({ success: false, message: "Artist id already exists." });
+  if (store.artists.some((a) => a.id === parsed.artist.id)) {
+    return res.status(409).json({ success: false, message: "Artist id already exists." });
+  }
 
   const artist = {
     id: parsed.artist.id,
@@ -248,14 +242,9 @@ router.post("/", async (req, res) => {
     location: parsed.artist.location || null,
     bio: parsed.artist.bio || null,
     imageUrl: parsed.artist.imageUrl ?? null,
-    socials: parsed.artist.socials ?? {
-      instagram: null,
-      tiktok: null,
-      youtube: null,
-      spotify: null,
-      soundcloud: null,
-      website: null,
-    },
+    socials:
+      parsed.artist.socials ??
+      { instagram: null, tiktok: null, youtube: null, spotify: null, soundcloud: null, website: null },
     tracks: parsed.artist.tracks ?? [],
     status: parsed.artist.status || "active",
     createdAt: nowIso(),
@@ -268,9 +257,6 @@ router.post("/", async (req, res) => {
   res.status(201).json({ success: true, message: "Artist created.", artist, updatedAt: store.updatedAt });
 });
 
-/* -----------------------------
- * PUT endpoints
- * ----------------------------- */
 router.put("/:id", async (req, res) => {
   const id = normalizeId(req.params.id);
   if (!id) return res.status(400).json({ success: false, message: "Invalid id." });
@@ -283,7 +269,6 @@ router.put("/:id", async (req, res) => {
   if (idx === -1) return res.status(404).json({ success: false, message: "Artist not found." });
 
   const prev = store.artists[idx];
-
   const next = {
     id,
     name: parsed.artist.name ?? null,
@@ -304,9 +289,6 @@ router.put("/:id", async (req, res) => {
   res.json({ success: true, message: "Artist replaced.", artist: next, updatedAt: store.updatedAt });
 });
 
-/* -----------------------------
- * PATCH endpoints
- * ----------------------------- */
 router.patch("/:id", async (req, res) => {
   const id = normalizeId(req.params.id);
   if (!id) return res.status(400).json({ success: false, message: "Invalid id." });
@@ -319,7 +301,6 @@ router.patch("/:id", async (req, res) => {
   if (idx === -1) return res.status(404).json({ success: false, message: "Artist not found." });
 
   const prev = store.artists[idx];
-
   const next = {
     ...prev,
     ...parsed.artist,
@@ -335,9 +316,6 @@ router.patch("/:id", async (req, res) => {
   res.json({ success: true, message: "Artist updated.", artist: next, updatedAt: store.updatedAt });
 });
 
-/* -----------------------------
- * DELETE endpoints
- * ----------------------------- */
 router.delete("/:id", async (req, res) => {
   const id = normalizeId(req.params.id);
   if (!id) return res.status(400).json({ success: false, message: "Invalid id." });
