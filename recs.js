@@ -1,11 +1,14 @@
 /**
  * recs.js (root) — ESM default export
- * iBand Feed Generator (v3 — enriched + debug-safe)
+ * iBand Feed Generator (v4 — enriched + hard diagnostics)
  *
  * Adds:
- * - Health reports which artists file is used + how many loaded
- * - Rising response includes artistsLoaded (debug-safe) so we never guess
- * - Robust artist store parsing (supports {artists:[...]} or {data:{artists:[...]}})
+ * - Reports the FULL artists path being read
+ * - Reports readOk + parseOk + file size
+ * - Attempts fallback read paths if env path is wrong
+ *
+ * Goal:
+ * - Eliminate guessing about which artists.json is being used on Render.
  */
 
 import express from "express";
@@ -20,11 +23,19 @@ const router = express.Router();
 const DATA_DIR = process.env.DATA_DIR || "/var/data/iband/db";
 const EVENTS_AGG_FILE =
   process.env.EVENTS_AGG_FILE || path.join(DATA_DIR, "events-agg.json");
-const ARTISTS_FILE =
+
+// Primary (env-driven) artists file path:
+const ARTISTS_FILE_ENV =
   process.env.ARTISTS_FILE || path.join(DATA_DIR, "artists.json");
 
+// Canonical disk path we expect on Render:
+const ARTISTS_FILE_CANON = path.join(DATA_DIR, "artists.json");
+
+// Dev fallback (repo root) if needed:
+const ARTISTS_FILE_LOCAL = path.resolve("./artists.json");
+
 const MAX_RETURN = parseInt(process.env.RECS_MAX_RETURN || "50", 10);
-const routerVersion = 3;
+const routerVersion = 4;
 
 /* -----------------------------
  * Helpers
@@ -42,53 +53,125 @@ function safeNumber(n, fallback = 0) {
   return Number.isFinite(x) ? x : fallback;
 }
 
-async function fileExists(p) {
+async function statSafe(p) {
   try {
-    await fs.access(p);
-    return true;
-  } catch {
-    return false;
+    const st = await fs.stat(p);
+    return { ok: true, size: st.size, mtimeMs: st.mtimeMs };
+  } catch (e) {
+    return { ok: false, error: e?.code || e?.message || "stat_failed" };
   }
 }
 
-async function readJsonSafe(filePath, fallback) {
+async function readFileSafe(p) {
   try {
-    const raw = await fs.readFile(filePath, "utf8");
-    return JSON.parse(raw);
-  } catch {
-    return fallback;
+    const raw = await fs.readFile(p, "utf8");
+    return { ok: true, raw };
+  } catch (e) {
+    return { ok: false, error: e?.code || e?.message || "read_failed" };
+  }
+}
+
+function parseJsonSafe(raw) {
+  try {
+    const obj = JSON.parse(raw);
+    return { ok: true, obj };
+  } catch (e) {
+    return { ok: false, error: e?.message || "parse_failed" };
   }
 }
 
 async function loadAgg() {
   const base = { updatedAt: null, byArtist: {} };
-  const agg = await readJsonSafe(EVENTS_AGG_FILE, base);
-  if (!agg || typeof agg !== "object") return base;
-  if (!agg.byArtist || typeof agg.byArtist !== "object") agg.byArtist = {};
-  return agg;
+  const r = await readFileSafe(EVENTS_AGG_FILE);
+  if (!r.ok) return base;
+
+  const p = parseJsonSafe(r.raw);
+  if (!p.ok || !p.obj || typeof p.obj !== "object") return base;
+
+  if (!p.obj.byArtist || typeof p.obj.byArtist !== "object") p.obj.byArtist = {};
+  return p.obj;
 }
 
 function extractArtistsArray(store) {
-  // supports multiple shapes safely
   if (!store || typeof store !== "object") return [];
   if (Array.isArray(store.artists)) return store.artists;
   if (store.data && Array.isArray(store.data.artists)) return store.data.artists;
   return [];
 }
 
-async function loadArtistsMap() {
-  const base = { artists: [] };
-  const store = await readJsonSafe(ARTISTS_FILE, base);
-  const arr = extractArtistsArray(store);
+async function loadArtistsMapWithDiagnostics() {
+  const candidates = [
+    { label: "env", path: ARTISTS_FILE_ENV },
+    { label: "canon", path: ARTISTS_FILE_CANON },
+    { label: "local", path: ARTISTS_FILE_LOCAL },
+  ];
 
-  const map = {};
-  for (const a of arr) {
-    if (a && typeof a === "object" && typeof a.id === "string" && a.id.trim()) {
-      map[a.id.trim()] = a;
+  const diag = {
+    selected: null,
+    attempts: [],
+    artistsLoaded: 0,
+  };
+
+  for (const c of candidates) {
+    const attempt = {
+      label: c.label,
+      path: c.path,
+      stat: await statSafe(c.path),
+      readOk: false,
+      parseOk: false,
+      topKeys: null,
+      artistsArrayLen: 0,
+      error: null,
+    };
+
+    if (!attempt.stat.ok) {
+      attempt.error = `stat:${attempt.stat.error}`;
+      diag.attempts.push(attempt);
+      continue;
     }
+
+    const r = await readFileSafe(c.path);
+    if (!r.ok) {
+      attempt.error = `read:${r.error}`;
+      diag.attempts.push(attempt);
+      continue;
+    }
+
+    attempt.readOk = true;
+
+    const p = parseJsonSafe(r.raw);
+    if (!p.ok) {
+      attempt.error = `parse:${p.error}`;
+      diag.attempts.push(attempt);
+      continue;
+    }
+
+    attempt.parseOk = true;
+
+    const obj = p.obj;
+    attempt.topKeys = obj && typeof obj === "object" ? Object.keys(obj).slice(0, 12) : null;
+
+    const arr = extractArtistsArray(obj);
+    attempt.artistsArrayLen = Array.isArray(arr) ? arr.length : 0;
+
+    if (attempt.artistsArrayLen > 0) {
+      // Build map
+      const map = {};
+      for (const a of arr) {
+        if (a && typeof a === "object" && typeof a.id === "string" && a.id.trim()) {
+          map[a.id.trim()] = a;
+        }
+      }
+      diag.selected = { label: c.label, path: c.path };
+      diag.artistsLoaded = Object.keys(map).length;
+      return { map, diag };
+    }
+
+    diag.attempts.push(attempt);
   }
 
-  return { map, count: Object.keys(map).length };
+  // No artists found in any candidate
+  return { map: {}, diag };
 }
 
 /* -----------------------------
@@ -152,8 +235,7 @@ router.use(express.json({ limit: "64kb" }));
  * Endpoints
  * ----------------------------- */
 router.get("/health", async (_req, res) => {
-  const artistsExists = await fileExists(ARTISTS_FILE);
-  const { count: artistsLoaded } = await loadArtistsMap();
+  const { diag } = await loadArtistsMapWithDiagnostics();
 
   res.json({
     success: true,
@@ -162,19 +244,17 @@ router.get("/health", async (_req, res) => {
     enriched: true,
     updatedAt: nowIso(),
     sources: {
-      eventsAgg: path.basename(EVENTS_AGG_FILE),
-      artistsFile: path.basename(ARTISTS_FILE),
-      artistsFileExists: artistsExists,
-      artistsLoaded,
+      dataDir: DATA_DIR,
+      eventsAgg: EVENTS_AGG_FILE,
+      artistsEnv: ARTISTS_FILE_ENV,
+      artistsCanon: ARTISTS_FILE_CANON,
+      artistsLocal: ARTISTS_FILE_LOCAL,
     },
+    artists: diag,
     maxReturn: MAX_RETURN,
   });
 });
 
-/**
- * GET /api/recs/rising?limit=20
- * Enriched feed
- */
 router.get("/rising", async (req, res) => {
   const limit = clamp(
     parseInt(req.query.limit || `${MAX_RETURN}`, 10) || MAX_RETURN,
@@ -183,10 +263,9 @@ router.get("/rising", async (req, res) => {
   );
 
   const agg = await loadAgg();
-  const { map: artistMap, count: artistsLoaded } = await loadArtistsMap();
+  const { map: artistMap, diag } = await loadArtistsMapWithDiagnostics();
 
   const rows = [];
-
   for (const [artistIdRaw, bucket] of Object.entries(agg.byArtist || {})) {
     const artistId = String(artistIdRaw || "").trim();
     const score = risingScoreFromBucket(bucket);
@@ -217,7 +296,8 @@ router.get("/rising", async (req, res) => {
   res.json({
     success: true,
     updatedAt: agg.updatedAt || null,
-    artistsLoaded,
+    artistsLoaded: diag.artistsLoaded,
+    artistsSelected: diag.selected,
     count: rows.length,
     results: rows.slice(0, limit),
   });
