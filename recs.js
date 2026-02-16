@@ -1,14 +1,25 @@
 /**
  * recs.js (root) — ESM default export
- * iBand Feed Generator (v4 — enriched + hard diagnostics)
+ * iBand Feed Generator (v5 — personalized)
+ *
+ * Keeps:
+ * - /api/recs/health
+ * - /api/recs/rising
  *
  * Adds:
- * - Reports the FULL artists path being read
- * - Reports readOk + parseOk + file size
- * - Attempts fallback read paths if env path is wrong
+ * - /api/recs/personalized/health
+ * - /api/recs/personalized?sessionId=...&limit=...
  *
- * Goal:
- * - Eliminate guessing about which artists.json is being used on Render.
+ * Personalization v1:
+ * - Read last chunk of events.jsonl
+ * - Build session-level engagement per artist
+ * - Apply small explainable boosts for engaged artists
+ * - Apply light fatigue penalty for repeatedly seen artists
+ *
+ * Safety:
+ * - No auth required
+ * - No code self-mutation
+ * - Deterministic + explainable output
  */
 
 import express from "express";
@@ -21,21 +32,23 @@ const router = express.Router();
  * Config
  * ----------------------------- */
 const DATA_DIR = process.env.DATA_DIR || "/var/data/iband/db";
+
 const EVENTS_AGG_FILE =
   process.env.EVENTS_AGG_FILE || path.join(DATA_DIR, "events-agg.json");
 
-// Primary (env-driven) artists file path:
-const ARTISTS_FILE_ENV =
+const EVENTS_LOG_FILE =
+  process.env.EVENTS_LOG_FILE || path.join(DATA_DIR, "events.jsonl");
+
+const ARTISTS_FILE =
   process.env.ARTISTS_FILE || path.join(DATA_DIR, "artists.json");
 
-// Canonical disk path we expect on Render:
-const ARTISTS_FILE_CANON = path.join(DATA_DIR, "artists.json");
-
-// Dev fallback (repo root) if needed:
-const ARTISTS_FILE_LOCAL = path.resolve("./artists.json");
-
 const MAX_RETURN = parseInt(process.env.RECS_MAX_RETURN || "50", 10);
-const routerVersion = 4;
+
+// Personalization scan limits (Render-safe)
+const PERSONALIZE_TAIL_KB = parseInt(process.env.PERSONALIZE_TAIL_KB || "512", 10); // read last 512KB
+const PERSONALIZE_MAX_LINES = parseInt(process.env.PERSONALIZE_MAX_LINES || "2500", 10); // cap lines parsed
+
+const routerVersion = 5;
 
 /* -----------------------------
  * Helpers
@@ -88,90 +101,38 @@ async function loadAgg() {
   const p = parseJsonSafe(r.raw);
   if (!p.ok || !p.obj || typeof p.obj !== "object") return base;
 
+  if (!p.obj.byArtist || typeof p.obj.byArtist.byArtist === "object") {
+    // ignore nested weirdness if any
+  }
   if (!p.obj.byArtist || typeof p.obj.byArtist !== "object") p.obj.byArtist = {};
   return p.obj;
 }
 
+/** Artists store supports: array legacy OR canonical { artists: [] } */
 function extractArtistsArray(store) {
+  if (Array.isArray(store)) return store;
   if (!store || typeof store !== "object") return [];
   if (Array.isArray(store.artists)) return store.artists;
   if (store.data && Array.isArray(store.data.artists)) return store.data.artists;
   return [];
 }
 
-async function loadArtistsMapWithDiagnostics() {
-  const candidates = [
-    { label: "env", path: ARTISTS_FILE_ENV },
-    { label: "canon", path: ARTISTS_FILE_CANON },
-    { label: "local", path: ARTISTS_FILE_LOCAL },
-  ];
+async function loadArtistsMap() {
+  const base = { artists: [] };
+  const r = await readFileSafe(ARTISTS_FILE);
+  if (!r.ok) return { map: {}, count: 0, readOk: false, parseOk: false };
 
-  const diag = {
-    selected: null,
-    attempts: [],
-    artistsLoaded: 0,
-  };
+  const p = parseJsonSafe(r.raw);
+  if (!p.ok) return { map: {}, count: 0, readOk: true, parseOk: false };
 
-  for (const c of candidates) {
-    const attempt = {
-      label: c.label,
-      path: c.path,
-      stat: await statSafe(c.path),
-      readOk: false,
-      parseOk: false,
-      topKeys: null,
-      artistsArrayLen: 0,
-      error: null,
-    };
-
-    if (!attempt.stat.ok) {
-      attempt.error = `stat:${attempt.stat.error}`;
-      diag.attempts.push(attempt);
-      continue;
+  const arr = extractArtistsArray(p.obj);
+  const map = {};
+  for (const a of arr) {
+    if (a && typeof a === "object" && typeof a.id === "string" && a.id.trim()) {
+      map[a.id.trim()] = a;
     }
-
-    const r = await readFileSafe(c.path);
-    if (!r.ok) {
-      attempt.error = `read:${r.error}`;
-      diag.attempts.push(attempt);
-      continue;
-    }
-
-    attempt.readOk = true;
-
-    const p = parseJsonSafe(r.raw);
-    if (!p.ok) {
-      attempt.error = `parse:${p.error}`;
-      diag.attempts.push(attempt);
-      continue;
-    }
-
-    attempt.parseOk = true;
-
-    const obj = p.obj;
-    attempt.topKeys = obj && typeof obj === "object" ? Object.keys(obj).slice(0, 12) : null;
-
-    const arr = extractArtistsArray(obj);
-    attempt.artistsArrayLen = Array.isArray(arr) ? arr.length : 0;
-
-    if (attempt.artistsArrayLen > 0) {
-      // Build map
-      const map = {};
-      for (const a of arr) {
-        if (a && typeof a === "object" && typeof a.id === "string" && a.id.trim()) {
-          map[a.id.trim()] = a;
-        }
-      }
-      diag.selected = { label: c.label, path: c.path };
-      diag.artistsLoaded = Object.keys(map).length;
-      return { map, diag };
-    }
-
-    diag.attempts.push(attempt);
   }
-
-  // No artists found in any candidate
-  return { map: {}, diag };
+  return { map, count: Object.keys(map).length, readOk: true, parseOk: true };
 }
 
 /* -----------------------------
@@ -227,6 +188,114 @@ function risingScoreFromBucket(bucket) {
 }
 
 /* -----------------------------
+ * Personalization v1 (session-based)
+ * ----------------------------- */
+function safeLineJson(line) {
+  const s = (line || "").trim();
+  if (!s) return null;
+  try {
+    return JSON.parse(s);
+  } catch {
+    return null;
+  }
+}
+
+async function readTailText(filePath, tailKb) {
+  // Reads last N KB of file as utf8 text (Render-safe)
+  const st = await statSafe(filePath);
+  if (!st.ok) return { ok: false, error: st.error, text: "" };
+  const size = st.size;
+  const tailBytes = Math.max(1024, tailKb * 1024);
+  const start = Math.max(0, size - tailBytes);
+
+  try {
+    const fh = await fs.open(filePath, "r");
+    const len = size - start;
+    const buf = Buffer.alloc(len);
+    await fh.read(buf, 0, len, start);
+    await fh.close();
+    return { ok: true, text: buf.toString("utf8") };
+  } catch (e) {
+    return { ok: false, error: e?.code || e?.message || "tail_read_failed", text: "" };
+  }
+}
+
+function buildSessionSignals(events, sessionId) {
+  const byArtist = {}; // { [artistId]: { seen, engagedPoints, watchMs, views, replays, likes, saves, shares, follows, comments, votes } }
+
+  for (const ev of events) {
+    if (!ev || typeof ev !== "object") continue;
+    if (!sessionId || ev.sessionId !== sessionId) continue;
+
+    const artistId = typeof ev.artistId === "string" ? ev.artistId.trim() : "";
+    if (!artistId) continue;
+
+    if (!byArtist[artistId]) {
+      byArtist[artistId] = {
+        seen: 0,
+        engagedPoints: 0,
+        watchMs: 0,
+        views: 0,
+        replays: 0,
+        likes: 0,
+        saves: 0,
+        shares: 0,
+        follows: 0,
+        comments: 0,
+        votes: 0,
+        lastAt: null,
+      };
+    }
+
+    const a = byArtist[artistId];
+    a.seen += 1;
+    a.watchMs += safeNumber(ev.watchMs, 0);
+
+    const t = typeof ev.type === "string" ? ev.type : "";
+    if (t === "view") a.views += 1;
+    if (t === "replay") a.replays += 1;
+    if (t === "like") a.likes += 1;
+    if (t === "save") a.saves += 1;
+    if (t === "share") a.shares += 1;
+    if (t === "follow") a.follows += 1;
+    if (t === "comment") a.comments += 1;
+    if (t === "vote") a.votes += 1;
+
+    // Engagement points (simple, explainable)
+    // watch: 1 point per 10s, replay: +4, like: +2, save: +5, share: +6, follow: +7, comment: +3, vote: +2
+    a.engagedPoints += Math.floor(safeNumber(ev.watchMs, 0) / 10000);
+    if (t === "replay") a.engagedPoints += 4;
+    if (t === "like") a.engagedPoints += 2;
+    if (t === "save") a.engagedPoints += 5;
+    if (t === "share") a.engagedPoints += 6;
+    if (t === "follow") a.engagedPoints += 7;
+    if (t === "comment") a.engagedPoints += 3;
+    if (t === "vote") a.engagedPoints += 2;
+
+    const at = typeof ev.at === "string" ? ev.at : null;
+    if (at) a.lastAt = at;
+  }
+
+  return byArtist;
+}
+
+function personalizationMultiplier(signal) {
+  // Small boosts only (safe v1)
+  // boost = 1 + clamp(log1p(points)/10, 0, 0.35)
+  // fatigue penalty if seen a lot but low engagement: multiply by 0.92..1.0
+  const points = safeNumber(signal?.engagedPoints, 0);
+  const seen = safeNumber(signal?.seen, 0);
+
+  const boost = 1 + clamp(Math.log1p(points) / 10, 0, 0.35);
+
+  const lowEngagement = points <= 1;
+  const fatigue = lowEngagement && seen >= 2 ? clamp(1 - (seen - 1) * 0.04, 0.84, 1.0) : 1.0;
+
+  const mult = boost * fatigue;
+  return Number(mult.toFixed(6));
+}
+
+/* -----------------------------
  * Middleware
  * ----------------------------- */
 router.use(express.json({ limit: "64kb" }));
@@ -235,41 +304,40 @@ router.use(express.json({ limit: "64kb" }));
  * Endpoints
  * ----------------------------- */
 router.get("/health", async (_req, res) => {
-  const { diag } = await loadArtistsMapWithDiagnostics();
+  const artists = await loadArtistsMap();
+  const logStat = await statSafe(EVENTS_LOG_FILE);
 
   res.json({
     success: true,
     service: "recs",
     version: routerVersion,
-    enriched: true,
     updatedAt: nowIso(),
     sources: {
       dataDir: DATA_DIR,
-      eventsAgg: EVENTS_AGG_FILE,
-      artistsEnv: ARTISTS_FILE_ENV,
-      artistsCanon: ARTISTS_FILE_CANON,
-      artistsLocal: ARTISTS_FILE_LOCAL,
+      eventsAgg: path.basename(EVENTS_AGG_FILE),
+      artistsFile: path.basename(ARTISTS_FILE),
+      eventsLog: path.basename(EVENTS_LOG_FILE),
+      artistsLoaded: artists.count,
+      eventsLogOk: logStat.ok,
     },
-    artists: diag,
+    endpoints: {
+      rising: "/api/recs/rising",
+      personalized: "/api/recs/personalized",
+    },
     maxReturn: MAX_RETURN,
   });
 });
 
 router.get("/rising", async (req, res) => {
-  const limit = clamp(
-    parseInt(req.query.limit || `${MAX_RETURN}`, 10) || MAX_RETURN,
-    1,
-    MAX_RETURN
-  );
+  const limit = clamp(parseInt(req.query.limit || `${MAX_RETURN}`, 10) || MAX_RETURN, 1, MAX_RETURN);
 
-  const agg = await loadAgg();
-  const { map: artistMap, diag } = await loadArtistsMapWithDiagnostics();
+  const [agg, artists] = await Promise.all([loadAgg(), loadArtistsMap()]);
 
   const rows = [];
   for (const [artistIdRaw, bucket] of Object.entries(agg.byArtist || {})) {
     const artistId = String(artistIdRaw || "").trim();
     const score = risingScoreFromBucket(bucket);
-    const artist = artistMap[artistId] || null;
+    const artist = artists.map[artistId] || null;
 
     rows.push({
       artist: artist
@@ -296,8 +364,110 @@ router.get("/rising", async (req, res) => {
   res.json({
     success: true,
     updatedAt: agg.updatedAt || null,
-    artistsLoaded: diag.artistsLoaded,
-    artistsSelected: diag.selected,
+    artistsLoaded: artists.count,
+    count: rows.length,
+    results: rows.slice(0, limit),
+  });
+});
+
+router.get("/personalized/health", async (_req, res) => {
+  const logStat = await statSafe(EVENTS_LOG_FILE);
+  res.json({
+    success: true,
+    service: "recs-personalized",
+    version: 1,
+    updatedAt: nowIso(),
+    config: {
+      tailKb: PERSONALIZE_TAIL_KB,
+      maxLines: PERSONALIZE_MAX_LINES,
+      eventLog: path.basename(EVENTS_LOG_FILE),
+      eventLogOk: logStat.ok,
+    },
+  });
+});
+
+/**
+ * GET /api/recs/personalized?sessionId=...&limit=20
+ */
+router.get("/personalized", async (req, res) => {
+  const sessionId = typeof req.query.sessionId === "string" ? req.query.sessionId.trim() : "";
+  if (!sessionId) {
+    return res.status(400).json({
+      success: false,
+      message: "sessionId query param is required.",
+      example: "/api/recs/personalized?sessionId=sess_test_1&limit=20",
+    });
+  }
+
+  const limit = clamp(parseInt(req.query.limit || `${MAX_RETURN}`, 10) || MAX_RETURN, 1, MAX_RETURN);
+
+  const [agg, artists] = await Promise.all([loadAgg(), loadArtistsMap()]);
+
+  // Build session signals from tail of jsonl
+  const tail = await readTailText(EVENTS_LOG_FILE, PERSONALIZE_TAIL_KB);
+  const lines = (tail.ok ? tail.text.split("\n") : []).slice(-PERSONALIZE_MAX_LINES);
+
+  const parsed = [];
+  for (const line of lines) {
+    const obj = safeLineJson(line);
+    if (obj) parsed.push(obj);
+  }
+
+  const signals = buildSessionSignals(parsed, sessionId);
+
+  const rows = [];
+  for (const [artistIdRaw, bucket] of Object.entries(agg.byArtist || {})) {
+    const artistId = String(artistIdRaw || "").trim();
+    const baseScore = risingScoreFromBucket(bucket);
+
+    const sig = signals[artistId] || null;
+    const mult = sig ? personalizationMultiplier(sig) : 1.0;
+
+    const finalScore = Number((baseScore * mult).toFixed(6));
+
+    const artist = artists.map[artistId] || null;
+
+    rows.push({
+      artist: artist
+        ? {
+            id: artist.id,
+            name: artist.name || null,
+            imageUrl: artist.imageUrl || null,
+            genre: artist.genre || null,
+            location: artist.location || null,
+          }
+        : { id: artistId },
+      score: finalScore,
+      baseScore,
+      multiplier: mult,
+      lastAt: bucket.lastAt || null,
+      explain: sig
+        ? {
+            sessionId,
+            seen: sig.seen,
+            engagedPoints: sig.engagedPoints,
+            watchMs: sig.watchMs,
+            views: sig.views,
+            replays: sig.replays,
+            likes: sig.likes,
+            saves: sig.saves,
+            shares: sig.shares,
+            follows: sig.follows,
+            comments: sig.comments,
+            votes: sig.votes,
+          }
+        : { sessionId, seen: 0, engagedPoints: 0 },
+    });
+  }
+
+  rows.sort((a, b) => b.score - a.score);
+
+  res.json({
+    success: true,
+    updatedAt: agg.updatedAt || null,
+    sessionId,
+    artistsLoaded: artists.count,
+    signalArtists: Object.keys(signals).length,
     count: rows.length,
     results: rows.slice(0, limit),
   });
