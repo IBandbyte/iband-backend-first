@@ -9,7 +9,8 @@ import artistsRouter from "./artists.js";
 import votesRouter from "./votes.js";
 import commentsRouter from "./comments.js";
 import adminRouter from "./admin.js";
-import eventsRouter from "./events.js"; // ✅ NEW
+import eventsRouter from "./events.js";
+import rankingRouter from "./ranking.js"; // ✅ NEW
 
 const app = express();
 
@@ -55,7 +56,8 @@ app.use("/api/artists", artistsRouter);
 app.use("/api/votes", votesRouter);
 app.use("/api/comments", commentsRouter);
 app.use("/api/admin", adminRouter);
-app.use("/api/events", eventsRouter); // ✅ NEW
+app.use("/api/events", eventsRouter);
+app.use("/api/ranking", rankingRouter); // ✅ NEW
 
 // ---------- 404 ----------
 app.use((req, res) => {
