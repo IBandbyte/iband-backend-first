@@ -1,10 +1,11 @@
 /**
  * recs.js (root) — ESM default export
- * iBand Feed Generator (v2 — enriched)
+ * iBand Feed Generator (v3 — enriched + debug-safe)
  *
  * Adds:
- * - Artist metadata hydration from artists store
- * - Safe fallback if artist profile is missing
+ * - Health reports which artists file is used + how many loaded
+ * - Rising response includes artistsLoaded (debug-safe) so we never guess
+ * - Robust artist store parsing (supports {artists:[...]} or {data:{artists:[...]}})
  */
 
 import express from "express";
@@ -23,7 +24,7 @@ const ARTISTS_FILE =
   process.env.ARTISTS_FILE || path.join(DATA_DIR, "artists.json");
 
 const MAX_RETURN = parseInt(process.env.RECS_MAX_RETURN || "50", 10);
-const routerVersion = 2;
+const routerVersion = 3;
 
 /* -----------------------------
  * Helpers
@@ -39,6 +40,15 @@ function clamp(n, min, max) {
 function safeNumber(n, fallback = 0) {
   const x = Number(n);
   return Number.isFinite(x) ? x : fallback;
+}
+
+async function fileExists(p) {
+  try {
+    await fs.access(p);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function readJsonSafe(filePath, fallback) {
@@ -58,14 +68,27 @@ async function loadAgg() {
   return agg;
 }
 
-async function loadArtists() {
+function extractArtistsArray(store) {
+  // supports multiple shapes safely
+  if (!store || typeof store !== "object") return [];
+  if (Array.isArray(store.artists)) return store.artists;
+  if (store.data && Array.isArray(store.data.artists)) return store.data.artists;
+  return [];
+}
+
+async function loadArtistsMap() {
   const base = { artists: [] };
-  const data = await readJsonSafe(ARTISTS_FILE, base);
+  const store = await readJsonSafe(ARTISTS_FILE, base);
+  const arr = extractArtistsArray(store);
+
   const map = {};
-  for (const a of data.artists || []) {
-    if (a?.id) map[a.id] = a;
+  for (const a of arr) {
+    if (a && typeof a === "object" && typeof a.id === "string" && a.id.trim()) {
+      map[a.id.trim()] = a;
+    }
   }
-  return map;
+
+  return { map, count: Object.keys(map).length };
 }
 
 /* -----------------------------
@@ -128,14 +151,22 @@ router.use(express.json({ limit: "64kb" }));
 /* -----------------------------
  * Endpoints
  * ----------------------------- */
-router.get("/health", (_req, res) => {
+router.get("/health", async (_req, res) => {
+  const artistsExists = await fileExists(ARTISTS_FILE);
+  const { count: artistsLoaded } = await loadArtistsMap();
+
   res.json({
     success: true,
     service: "recs",
     version: routerVersion,
-    source: path.basename(EVENTS_AGG_FILE),
-    updatedAt: nowIso(),
     enriched: true,
+    updatedAt: nowIso(),
+    sources: {
+      eventsAgg: path.basename(EVENTS_AGG_FILE),
+      artistsFile: path.basename(ARTISTS_FILE),
+      artistsFileExists: artistsExists,
+      artistsLoaded,
+    },
     maxReturn: MAX_RETURN,
   });
 });
@@ -151,14 +182,13 @@ router.get("/rising", async (req, res) => {
     MAX_RETURN
   );
 
-  const [agg, artistMap] = await Promise.all([
-    loadAgg(),
-    loadArtists(),
-  ]);
+  const agg = await loadAgg();
+  const { map: artistMap, count: artistsLoaded } = await loadArtistsMap();
 
   const rows = [];
 
-  for (const [artistId, bucket] of Object.entries(agg.byArtist || {})) {
+  for (const [artistIdRaw, bucket] of Object.entries(agg.byArtist || {})) {
+    const artistId = String(artistIdRaw || "").trim();
     const score = risingScoreFromBucket(bucket);
     const artist = artistMap[artistId] || null;
 
@@ -187,6 +217,7 @@ router.get("/rising", async (req, res) => {
   res.json({
     success: true,
     updatedAt: agg.updatedAt || null,
+    artistsLoaded,
     count: rows.length,
     results: rows.slice(0, limit),
   });
