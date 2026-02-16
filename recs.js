@@ -1,15 +1,10 @@
 /**
  * recs.js (root) — ESM default export
- * iBand Feed Generator (v1)
+ * iBand Feed Generator (v2 — enriched)
  *
- * Purpose:
- * - Provide stable feed endpoints the frontend can call
- * - Use ranking.js (bucket-primary) as the source of truth
- * - Keep logic simple, deterministic, and testable
- *
- * Endpoints:
- * - GET /api/recs/health
- * - GET /api/recs/rising?limit=20
+ * Adds:
+ * - Artist metadata hydration from artists store
+ * - Safe fallback if artist profile is missing
  */
 
 import express from "express";
@@ -18,19 +13,21 @@ import path from "path";
 
 const router = express.Router();
 
-/** -----------------------------
+/* -----------------------------
  * Config
- * ------------------------------*/
+ * ----------------------------- */
 const DATA_DIR = process.env.DATA_DIR || "/var/data/iband/db";
 const EVENTS_AGG_FILE =
   process.env.EVENTS_AGG_FILE || path.join(DATA_DIR, "events-agg.json");
+const ARTISTS_FILE =
+  process.env.ARTISTS_FILE || path.join(DATA_DIR, "artists.json");
 
 const MAX_RETURN = parseInt(process.env.RECS_MAX_RETURN || "50", 10);
-const routerVersion = 1;
+const routerVersion = 2;
 
-/** -----------------------------
+/* -----------------------------
  * Helpers
- * ------------------------------*/
+ * ----------------------------- */
 function nowIso() {
   return new Date().toISOString();
 }
@@ -61,12 +58,19 @@ async function loadAgg() {
   return agg;
 }
 
-/**
- * Same rising logic as ranking v2 (bucket-primary)
- * We duplicate lightly here on purpose:
- * - avoids cross-router coupling
- * - keeps recs.js independently testable
- */
+async function loadArtists() {
+  const base = { artists: [] };
+  const data = await readJsonSafe(ARTISTS_FILE, base);
+  const map = {};
+  for (const a of data.artists || []) {
+    if (a?.id) map[a.id] = a;
+  }
+  return map;
+}
+
+/* -----------------------------
+ * Rising score (same as ranking v2)
+ * ----------------------------- */
 function risingScoreFromBucket(bucket) {
   const W_VIEW = 1.0;
   const W_REPLAY = 2.5;
@@ -113,19 +117,17 @@ function risingScoreFromBucket(bucket) {
     }
   }
 
-  const score = weighted * freshness;
-
-  return Number(score.toFixed(6));
+  return Number((weighted * freshness).toFixed(6));
 }
 
-/** -----------------------------
+/* -----------------------------
  * Middleware
- * ------------------------------*/
+ * ----------------------------- */
 router.use(express.json({ limit: "64kb" }));
 
-/** -----------------------------
+/* -----------------------------
  * Endpoints
- * ------------------------------*/
+ * ----------------------------- */
 router.get("/health", (_req, res) => {
   res.json({
     success: true,
@@ -133,13 +135,14 @@ router.get("/health", (_req, res) => {
     version: routerVersion,
     source: path.basename(EVENTS_AGG_FILE),
     updatedAt: nowIso(),
+    enriched: true,
     maxReturn: MAX_RETURN,
   });
 });
 
 /**
  * GET /api/recs/rising?limit=20
- * Returns a feed ordered by rising score
+ * Enriched feed
  */
 router.get("/rising", async (req, res) => {
   const limit = clamp(
@@ -148,14 +151,27 @@ router.get("/rising", async (req, res) => {
     MAX_RETURN
   );
 
-  const agg = await loadAgg();
+  const [agg, artistMap] = await Promise.all([
+    loadAgg(),
+    loadArtists(),
+  ]);
 
   const rows = [];
+
   for (const [artistId, bucket] of Object.entries(agg.byArtist || {})) {
     const score = risingScoreFromBucket(bucket);
+    const artist = artistMap[artistId] || null;
 
     rows.push({
-      artistId,
+      artist: artist
+        ? {
+            id: artist.id,
+            name: artist.name || null,
+            imageUrl: artist.imageUrl || null,
+            genre: artist.genre || null,
+            location: artist.location || null,
+          }
+        : { id: artistId },
       score,
       lastAt: bucket.lastAt || null,
       metrics: {
