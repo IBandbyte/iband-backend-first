@@ -1,378 +1,357 @@
 /**
  * artists.js (root) — ESM default export
- * Public Artists API
- * - GET  /api/artists
- * - GET  /api/artists/:id
- * - POST /api/artists/submit
- * - POST /api/artists/:id/vote   (public, hardened, persistent)
+ * Canonical Artists Router (v1)
  *
- * IMPORTANT:
- * - Uses Render Disk if available: /var/data/iband/db
- * - Guarantees demo artist exists even after redeploys
+ * Storage:
+ * - Persistent disk on Render
+ * - /var/data/iband/db/artists.json
+ *
+ * Features:
+ * - GET list, GET by id
+ * - POST create
+ * - PUT replace
+ * - PATCH partial update
+ * - DELETE remove
+ * - Seeds a demo artist if file is empty/missing
  */
 
 import express from "express";
-import fs from "fs";
-import fsp from "fs/promises";
+import fs from "fs/promises";
 import path from "path";
-import crypto from "crypto";
 
 const router = express.Router();
 
-/* ----------------------------- Storage paths ----------------------------- */
+/* -----------------------------
+ * Config
+ * ----------------------------- */
+const DATA_DIR = process.env.DATA_DIR || "/var/data/iband/db";
+const ARTISTS_FILE = process.env.ARTISTS_FILE || path.join(DATA_DIR, "artists.json");
 
-function hasRenderDisk() {
-  try {
-    return fs.existsSync("/var/data") && fs.statSync("/var/data").isDirectory();
-  } catch {
-    return false;
-  }
-}
+const MAX_BODY_KB = parseInt(process.env.ARTISTS_MAX_BODY_KB || "64", 10);
+const routerVersion = 1;
 
-function getDbDir() {
-  if (hasRenderDisk()) return path.join("/var/data", "iband", "db");
-  return path.join(process.cwd(), "db");
-}
-
-function getArtistsFile() {
-  return path.join(getDbDir(), "artists.json");
-}
-
-function getVotesFile() {
-  return path.join(getDbDir(), "votes.json");
-}
-
-/* ----------------------------- Helpers ----------------------------- */
-
-function nowISO() {
+/* -----------------------------
+ * Helpers
+ * ----------------------------- */
+function nowIso() {
   return new Date().toISOString();
 }
 
-function safeStr(v) {
-  return typeof v === "string" ? v.trim() : "";
+function isNonEmptyString(v) {
+  return typeof v === "string" && v.trim().length > 0;
 }
 
-function toInt(v, def) {
-  const n = parseInt(String(v), 10);
-  return Number.isFinite(n) ? n : def;
+function safeString(v, maxLen = 160) {
+  if (!isNonEmptyString(v)) return null;
+  return v.trim().slice(0, maxLen);
 }
 
-function makeId() {
-  return crypto.randomUUID();
+function normalizeId(v, maxLen = 80) {
+  const s = safeString(v, maxLen);
+  if (!s) return "";
+  if (!/^[a-zA-Z0-9._:-]+$/.test(s)) return "";
+  return s;
 }
 
-function getClientIp(req) {
-  const xff = safeStr(req.headers["x-forwarded-for"]);
-  if (xff) return xff.split(",")[0].trim();
-  return safeStr(req.ip) || "unknown";
+function cleanUrl(v, maxLen = 500) {
+  const s = safeString(v, maxLen);
+  if (!s) return null;
+  // allow http(s) only; keep it simple
+  if (!/^https?:\/\//i.test(s)) return null;
+  return s;
 }
 
-function getUserAgent(req) {
-  return safeStr(req.headers["user-agent"]) || "unknown";
+async function ensureDataDir() {
+  await fs.mkdir(DATA_DIR, { recursive: true });
 }
 
-function voterFingerprint(req) {
-  const ip = getClientIp(req);
-  const ua = getUserAgent(req);
-  return crypto.createHash("sha256").update(`${ip}|${ua}`).digest("hex");
-}
-
-/**
- * Vote cooldown window (ms)
- * Default: 6 hours
- * Optional env: VOTE_COOLDOWN_MINUTES
- */
-function getVoteCooldownMs() {
-  const mins = toInt(process.env.VOTE_COOLDOWN_MINUTES, 360);
-  return Math.max(1, mins) * 60 * 1000;
-}
-
-async function readJson(file, fallback) {
+async function readJsonSafe(filePath, fallback) {
   try {
-    const raw = await fsp.readFile(file, "utf8");
+    const raw = await fs.readFile(filePath, "utf8");
     return JSON.parse(raw);
   } catch {
     return fallback;
   }
 }
 
-async function writeJsonAtomic(file, data) {
-  const tmp = `${file}.tmp`;
-  await fsp.writeFile(tmp, JSON.stringify(data, null, 2), "utf8");
-  await fsp.rename(tmp, file);
+async function writeJsonAtomic(filePath, obj) {
+  const tmp = `${filePath}.tmp`;
+  await fs.writeFile(tmp, JSON.stringify(obj, null, 2), "utf8");
+  await fs.rename(tmp, filePath);
 }
 
-function demoArtist() {
-  const t = nowISO();
+function makeStoreSkeleton() {
+  return {
+    version: 1,
+    updatedAt: null,
+    artists: [],
+  };
+}
+
+function seedDemoArtist() {
   return {
     id: "demo",
     name: "Demo Artist",
     genre: "Pop / Urban",
     location: "London, UK",
     bio: "Demo artist used for initial platform validation.",
-    imageUrl: "",
+    imageUrl: null,
     socials: {
-      instagram: "",
-      tiktok: "",
-      youtube: "",
-      spotify: "",
-      soundcloud: "",
-      website: "",
+      instagram: null,
+      tiktok: null,
+      youtube: null,
+      spotify: null,
+      soundcloud: null,
+      website: null,
     },
-    tracks: [{ title: "Demo Track", url: "", platform: "mp3", durationSec: 30 }],
-    votes: 42,
+    tracks: [
+      { title: "Demo Track", url: null, platform: "mp3", durationSec: 30 }
+    ],
     status: "active",
-    createdAt: t,
-    updatedAt: t,
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
   };
 }
 
-/**
- * ensureDb()
- * - creates db dir + files if missing
- * - GUARANTEES demo artist exists, even if artists.json already exists
- */
-async function ensureDb() {
-  const dir = getDbDir();
-  await fsp.mkdir(dir, { recursive: true });
+function normalizeArtistPayload(body, { requireId = false } = {}) {
+  const id = body?.id !== undefined ? normalizeId(body.id) : "";
+  if (requireId && !id) return { ok: false, error: "Invalid id." };
 
-  const artistsFile = getArtistsFile();
-  const votesFile = getVotesFile();
+  const name = safeString(body?.name, 120);
+  const genre = safeString(body?.genre, 80);
+  const location = safeString(body?.location, 120);
+  const bio = safeString(body?.bio, 800);
 
-  // Ensure artists.json exists
-  try {
-    await fsp.access(artistsFile);
-  } catch {
-    await fsp.writeFile(artistsFile, JSON.stringify([], null, 2), "utf8");
-  }
+  const imageUrl = body?.imageUrl !== undefined ? cleanUrl(body.imageUrl) : undefined;
 
-  // Ensure votes.json exists
-  try {
-    await fsp.access(votesFile);
-  } catch {
-    await fsp.writeFile(votesFile, JSON.stringify({}, null, 2), "utf8");
-  }
+  const socials = body?.socials && typeof body.socials === "object" && !Array.isArray(body.socials)
+    ? {
+        instagram: body.socials.instagram ? cleanUrl(body.socials.instagram) : null,
+        tiktok: body.socials.tiktok ? cleanUrl(body.socials.tiktok) : null,
+        youtube: body.socials.youtube ? cleanUrl(body.socials.youtube) : null,
+        spotify: body.socials.spotify ? cleanUrl(body.socials.spotify) : null,
+        soundcloud: body.socials.soundcloud ? cleanUrl(body.socials.soundcloud) : null,
+        website: body.socials.website ? cleanUrl(body.socials.website) : null,
+      }
+    : undefined;
 
-  // GUARANTEE demo exists (this is the fix)
-  const artists = await readJson(artistsFile, []);
-  const list = Array.isArray(artists) ? artists : [];
+  const tracks = Array.isArray(body?.tracks)
+    ? body.tracks.slice(0, 20).map((t) => ({
+        title: safeString(t?.title, 120) || "Untitled",
+        url: t?.url ? cleanUrl(t.url) : null,
+        platform: safeString(t?.platform, 40) || null,
+        durationSec: Number.isFinite(Number(t?.durationSec)) ? Math.max(0, Math.trunc(Number(t.durationSec))) : null,
+      }))
+    : undefined;
 
-  const hasDemo = list.some((a) => safeStr(a?.id) === "demo");
-  if (!hasDemo) {
-    list.unshift(demoArtist());
-    await writeJsonAtomic(artistsFile, list);
-  }
+  const status = body?.status !== undefined ? safeString(body.status, 24) : undefined;
+
+  return {
+    ok: true,
+    artist: {
+      ...(id ? { id } : {}),
+      ...(name !== null ? { name } : {}),
+      ...(genre !== null ? { genre } : {}),
+      ...(location !== null ? { location } : {}),
+      ...(bio !== null ? { bio } : {}),
+      ...(imageUrl !== undefined ? { imageUrl } : {}),
+      ...(socials !== undefined ? { socials } : {}),
+      ...(tracks !== undefined ? { tracks } : {}),
+      ...(status !== undefined ? { status } : {}),
+    },
+  };
 }
 
-/* ------------------------------- Routes -------------------------------- */
+async function loadStore() {
+  await ensureDataDir();
+  const base = makeStoreSkeleton();
+  const store = await readJsonSafe(ARTISTS_FILE, base);
 
+  if (!store || typeof store !== "object") return base;
+  if (!Array.isArray(store.artists)) store.artists = [];
+
+  // Seed demo if empty
+  if (store.artists.length === 0) {
+    store.artists = [seedDemoArtist()];
+    store.updatedAt = nowIso();
+    await writeJsonAtomic(ARTISTS_FILE, store);
+  }
+
+  return store;
+}
+
+async function saveStore(store) {
+  store.updatedAt = nowIso();
+  await writeJsonAtomic(ARTISTS_FILE, store);
+}
+
+/* -----------------------------
+ * Middleware
+ * ----------------------------- */
+router.use(express.json({ limit: `${MAX_BODY_KB}kb` }));
+
+/* -----------------------------
+ * Health
+ * ----------------------------- */
 router.get("/health", async (_req, res) => {
-  await ensureDb();
-  return res.json({ success: true, message: "artists ok", ts: nowISO() });
-});
-
-/**
- * GET /api/artists
- * Query:
- *  - status=active|pending|hidden|rejected|all (default active)
- *  - q=search name/genre/location/bio/id
- *  - page (default 1)
- *  - limit (default 50, max 100)
- */
-router.get("/", async (req, res) => {
-  await ensureDb();
-
-  const status = safeStr(req.query.status) || "active";
-  const qRaw = safeStr(req.query.q);
-  const q = qRaw.toLowerCase();
-  const page = Math.max(1, toInt(req.query.page, 1));
-  const limit = Math.min(100, Math.max(1, toInt(req.query.limit, 50)));
-
-  const artists = await readJson(getArtistsFile(), []);
-  let filtered = Array.isArray(artists) ? artists : [];
-
-  if (status !== "all") {
-    filtered = filtered.filter((a) => safeStr(a?.status || "active") === status);
-  }
-
-  if (q) {
-    filtered = filtered.filter((a) => {
-      const hay = `${safeStr(a?.name)} ${safeStr(a?.genre)} ${safeStr(a?.location)} ${safeStr(a?.bio)} ${safeStr(a?.id)}`.toLowerCase();
-      return hay.includes(q);
-    });
-  }
-
-  const total = filtered.length;
-  const start = (page - 1) * limit;
-  const slice = filtered.slice(start, start + limit);
-
-  return res.json({
+  const store = await loadStore();
+  res.json({
     success: true,
-    count: slice.length,
-    artists: slice,
-    page,
-    limit,
-    total,
-    status,
-    q: qRaw,
+    service: "artists",
+    version: routerVersion,
+    dataDir: DATA_DIR,
+    file: path.basename(ARTISTS_FILE),
+    count: store.artists.length,
+    updatedAt: store.updatedAt,
   });
 });
 
-/**
- * GET /api/artists/:id
- */
-router.get("/:id", async (req, res) => {
-  await ensureDb();
-
-  const id = safeStr(req.params.id);
-  const artists = await readJson(getArtistsFile(), []);
-  const artist = (Array.isArray(artists) ? artists : []).find((a) => safeStr(a?.id) === id);
-
-  if (!artist) {
-    return res.status(404).json({ success: false, message: "Artist not found.", id });
-  }
-
-  return res.json({ success: true, artist });
+/* -----------------------------
+ * GET endpoints
+ * ----------------------------- */
+router.get("/", async (_req, res) => {
+  const store = await loadStore();
+  res.json({
+    success: true,
+    count: store.artists.length,
+    updatedAt: store.updatedAt,
+    artists: store.artists,
+  });
 });
 
-/**
- * POST /api/artists/submit
- * Public submit (pending approval)
- */
-router.post("/submit", async (req, res) => {
-  await ensureDb();
+router.get("/:id", async (req, res) => {
+  const id = normalizeId(req.params.id);
+  if (!id) return res.status(400).json({ success: false, message: "Invalid id." });
 
-  const body = req.body && typeof req.body === "object" ? req.body : {};
-  const name = safeStr(body.name);
-  const genre = safeStr(body.genre);
-  const location = safeStr(body.location);
-  const bio = safeStr(body.bio);
+  const store = await loadStore();
+  const artist = store.artists.find((a) => a.id === id);
+  if (!artist) return res.status(404).json({ success: false, message: "Artist not found." });
 
-  if (!name) return res.status(400).json({ success: false, message: "name is required." });
+  res.json({ success: true, artist, updatedAt: store.updatedAt });
+});
 
-  const socials = body.socials && typeof body.socials === "object" ? body.socials : {};
-  const tracks = Array.isArray(body.tracks) ? body.tracks : [];
+/* -----------------------------
+ * POST endpoints
+ * ----------------------------- */
+router.post("/", async (req, res) => {
+  const parsed = normalizeArtistPayload(req.body, { requireId: true });
+  if (!parsed.ok) return res.status(400).json({ success: false, message: parsed.error });
 
-  const artists = await readJson(getArtistsFile(), []);
-  const list = Array.isArray(artists) ? artists : [];
+  const store = await loadStore();
+  const exists = store.artists.some((a) => a.id === parsed.artist.id);
+  if (exists) return res.status(409).json({ success: false, message: "Artist id already exists." });
 
   const artist = {
-    id: safeStr(body.id) || makeId(),
-    name,
-    genre: genre || "",
-    location: location || "",
-    bio: bio || "",
-    imageUrl: safeStr(body.imageUrl) || "",
-    socials: {
-      instagram: safeStr(socials.instagram) || "",
-      tiktok: safeStr(socials.tiktok) || "",
-      youtube: safeStr(socials.youtube) || "",
-      spotify: safeStr(socials.spotify) || "",
-      soundcloud: safeStr(socials.soundcloud) || "",
-      website: safeStr(socials.website) || "",
+    id: parsed.artist.id,
+    name: parsed.artist.name || null,
+    genre: parsed.artist.genre || null,
+    location: parsed.artist.location || null,
+    bio: parsed.artist.bio || null,
+    imageUrl: parsed.artist.imageUrl ?? null,
+    socials: parsed.artist.socials ?? {
+      instagram: null,
+      tiktok: null,
+      youtube: null,
+      spotify: null,
+      soundcloud: null,
+      website: null,
     },
-    tracks: tracks.map((t) => ({
-      title: safeStr(t?.title) || "",
-      url: safeStr(t?.url) || "",
-      platform: safeStr(t?.platform) || "mp3",
-      durationSec: Math.max(0, toInt(t?.durationSec, 0)),
-    })),
-    votes: 0,
-    status: "pending",
-    createdAt: nowISO(),
-    updatedAt: nowISO(),
+    tracks: parsed.artist.tracks ?? [],
+    status: parsed.artist.status || "active",
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
   };
 
-  list.unshift(artist);
-  await writeJsonAtomic(getArtistsFile(), list);
+  store.artists.push(artist);
+  await saveStore(store);
 
-  return res.status(201).json({
-    success: true,
-    message: "Artist submitted successfully (pending approval).",
-    artist,
-  });
+  res.status(201).json({ success: true, message: "Artist created.", artist, updatedAt: store.updatedAt });
 });
 
-/**
- * POST /api/artists/:id/vote
- * Public vote endpoint (NO x-admin-key)
- * - Only active artists
- * - Cooldown per voter per artist
- * - Persisted in votes.json
- *
- * Body: {}
- */
-router.post("/:id/vote", async (req, res) => {
-  await ensureDb();
+/* -----------------------------
+ * PUT endpoints
+ * ----------------------------- */
+router.put("/:id", async (req, res) => {
+  const id = normalizeId(req.params.id);
+  if (!id) return res.status(400).json({ success: false, message: "Invalid id." });
 
-  const id = safeStr(req.params.id);
+  const parsed = normalizeArtistPayload({ ...req.body, id }, { requireId: true });
+  if (!parsed.ok) return res.status(400).json({ success: false, message: parsed.error });
 
-  const artists = await readJson(getArtistsFile(), []);
-  const list = Array.isArray(artists) ? artists : [];
+  const store = await loadStore();
+  const idx = store.artists.findIndex((a) => a.id === id);
+  if (idx === -1) return res.status(404).json({ success: false, message: "Artist not found." });
 
-  const idx = list.findIndex((a) => safeStr(a?.id) === id);
-  if (idx === -1) return res.status(404).json({ success: false, message: "Artist not found.", id });
+  const prev = store.artists[idx];
 
-  const artist = list[idx];
-  const status = safeStr(artist.status || "active");
-  if (status !== "active") {
-    return res.status(409).json({
-      success: false,
-      message: "Voting is only allowed for active artists.",
-      id,
-      status,
-    });
-  }
-
-  const votesLedger = await readJson(getVotesFile(), {});
-  const ledger = votesLedger && typeof votesLedger === "object" ? votesLedger : {};
-
-  const voterHash = voterFingerprint(req);
-  const cooldownMs = getVoteCooldownMs();
-
-  ledger[id] = ledger[id] && typeof ledger[id] === "object" ? ledger[id] : {};
-  const last = ledger[id][voterHash];
-
-  if (last) {
-    const lastMs = Date.parse(last);
-    if (Number.isFinite(lastMs)) {
-      const elapsed = Date.now() - lastMs;
-      if (elapsed < cooldownMs) {
-        const retryAfterSec = Math.ceil((cooldownMs - elapsed) / 1000);
-        res.set("Retry-After", String(retryAfterSec));
-        return res.status(429).json({
-          success: false,
-          message: "Vote rate-limited. Please try again later.",
-          id,
-          retryAfterSec,
-        });
-      }
-    }
-  }
-
-  ledger[id][voterHash] = nowISO();
-  await writeJsonAtomic(getVotesFile(), ledger);
-
-  const currentVotes = Number.isFinite(Number(artist.votes)) ? Number(artist.votes) : 0;
-  const newVotes = currentVotes + 1;
-
-  list[idx] = { ...artist, votes: newVotes, updatedAt: nowISO() };
-  await writeJsonAtomic(getArtistsFile(), list);
-
-  return res.status(201).json({
-    success: true,
-    message: "Vote recorded.",
+  const next = {
     id,
-    delta: 1,
-    votes: newVotes,
-    artist: {
-      id: list[idx].id,
-      name: list[idx].name,
-      votes: list[idx].votes,
-      status: list[idx].status,
-      updatedAt: list[idx].updatedAt,
-    },
-  });
+    name: parsed.artist.name ?? null,
+    genre: parsed.artist.genre ?? null,
+    location: parsed.artist.location ?? null,
+    bio: parsed.artist.bio ?? null,
+    imageUrl: parsed.artist.imageUrl !== undefined ? (parsed.artist.imageUrl ?? null) : (prev.imageUrl ?? null),
+    socials: parsed.artist.socials !== undefined ? (parsed.artist.socials ?? prev.socials) : prev.socials,
+    tracks: parsed.artist.tracks !== undefined ? (parsed.artist.tracks ?? []) : prev.tracks,
+    status: parsed.artist.status ?? prev.status ?? "active",
+    createdAt: prev.createdAt || nowIso(),
+    updatedAt: nowIso(),
+  };
+
+  store.artists[idx] = next;
+  await saveStore(store);
+
+  res.json({ success: true, message: "Artist replaced.", artist: next, updatedAt: store.updatedAt });
+});
+
+/* -----------------------------
+ * PATCH endpoints
+ * ----------------------------- */
+router.patch("/:id", async (req, res) => {
+  const id = normalizeId(req.params.id);
+  if (!id) return res.status(400).json({ success: false, message: "Invalid id." });
+
+  const parsed = normalizeArtistPayload(req.body, { requireId: false });
+  if (!parsed.ok) return res.status(400).json({ success: false, message: parsed.error });
+
+  const store = await loadStore();
+  const idx = store.artists.findIndex((a) => a.id === id);
+  if (idx === -1) return res.status(404).json({ success: false, message: "Artist not found." });
+
+  const prev = store.artists[idx];
+
+  const next = {
+    ...prev,
+    ...parsed.artist,
+    id,
+    socials: parsed.artist.socials !== undefined ? (parsed.artist.socials ?? prev.socials) : prev.socials,
+    tracks: parsed.artist.tracks !== undefined ? (parsed.artist.tracks ?? prev.tracks) : prev.tracks,
+    updatedAt: nowIso(),
+  };
+
+  store.artists[idx] = next;
+  await saveStore(store);
+
+  res.json({ success: true, message: "Artist updated.", artist: next, updatedAt: store.updatedAt });
+});
+
+/* -----------------------------
+ * DELETE endpoints
+ * ----------------------------- */
+router.delete("/:id", async (req, res) => {
+  const id = normalizeId(req.params.id);
+  if (!id) return res.status(400).json({ success: false, message: "Invalid id." });
+
+  const store = await loadStore();
+  const before = store.artists.length;
+  store.artists = store.artists.filter((a) => a.id !== id);
+
+  if (store.artists.length === before) {
+    return res.status(404).json({ success: false, message: "Artist not found." });
+  }
+
+  await saveStore(store);
+  res.json({ success: true, message: "Artist deleted.", updatedAt: store.updatedAt });
 });
 
 export default router;
