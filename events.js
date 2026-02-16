@@ -2,8 +2,9 @@
  * events.js (root) — ESM default export
  * Canonical Event Tracking Router (learning fuel for the iBand algorithm)
  *
- * Fix included:
- * - Correctly increments totals.{type} (views, replays, etc.)
+ * Final fixes:
+ * - totals.{type} increments correctly for ALL types (including replays)
+ * - per-artist increments correctly for ALL types
  */
 
 import express from "express";
@@ -13,29 +14,19 @@ import crypto from "crypto";
 
 const router = express.Router();
 
-/** -----------------------------
- * Config
- * ------------------------------*/
 const DATA_DIR = process.env.DATA_DIR || "/var/data/iband/db";
-
 const EVENTS_LOG_FILE = process.env.EVENTS_LOG_FILE || path.join(DATA_DIR, "events.jsonl");
 const EVENTS_AGG_FILE = process.env.EVENTS_AGG_FILE || path.join(DATA_DIR, "events-agg.json");
 
 const EVENTS_ALLOW_LOG = (process.env.EVENTS_ALLOW_LOG || "true").toLowerCase() === "true";
 const EVENTS_MAX_BODY_KB = parseInt(process.env.EVENTS_MAX_BODY_KB || "32", 10);
 
-// Rate limiting
 const EVENTS_RATE_WINDOW_SEC = parseInt(process.env.EVENTS_RATE_WINDOW_SEC || "60", 10);
 const EVENTS_MAX_PER_WINDOW = parseInt(process.env.EVENTS_MAX_PER_WINDOW || "120", 10);
 
-// Aggregate caps
 const AGG_TOP_LIMIT = parseInt(process.env.EVENTS_AGG_TOP_LIMIT || "200", 10);
-
 const routerVersion = 1;
 
-/** -----------------------------
- * Helpers
- * ------------------------------*/
 function nowIso() {
   return new Date().toISOString();
 }
@@ -101,13 +92,9 @@ async function writeJsonAtomic(filePath, obj) {
 }
 
 async function appendJsonl(filePath, obj) {
-  const line = `${JSON.stringify(obj)}\n`;
-  await fs.appendFile(filePath, line, "utf8");
+  await fs.appendFile(filePath, `${JSON.stringify(obj)}\n`, "utf8");
 }
 
-/** -----------------------------
- * Rate limit (per-IP hash)
- * ------------------------------*/
 function makeRateStore() {
   return { ipWindows: {} };
 }
@@ -135,9 +122,6 @@ function pruneRateStore(rateStore) {
 
 const rateStore = makeRateStore();
 
-/** -----------------------------
- * Aggregates
- * ------------------------------*/
 function makeAggSkeleton() {
   return {
     version: 1,
@@ -185,32 +169,41 @@ function inc(obj, key, by = 1) {
   obj[key] += by;
 }
 
+// ✅ Canonical mapping: event type -> totals key
+const TOTALS_KEY = {
+  view: "views",
+  skip: "skips",
+  replay: "replays",
+  like: "likes",
+  save: "saves",
+  share: "shares",
+  follow: "follows",
+  comment: "comments",
+  vote: "votes",
+};
+
 function applyAgg(agg, evt) {
-  // Global totals
   agg.totals.events += 1;
 
-  // Per-type counts (both maps)
+  // byType always
   inc(agg.byType, evt.type, 1);
-  if (evt.type === "view") agg.totals.views += 1;
-  else if (evt.type === "skip") agg.totals.skips += 1;
-  else if (evt.type === "replay") agg.totals.replays += 1;
-  else if (evt.type === "like") agg.totals.likes += 1;
-  else if (evt.type === "save") agg.totals.saves += 1;
-  else if (evt.type === "share") agg.totals.shares += 1;
-  else if (evt.type === "follow") agg.totals.follows += 1;
-  else if (evt.type === "comment") agg.totals.comments += 1;
-  else if (evt.type === "vote") agg.totals.votes += 1;
 
-  // Per-artist
+  // totals per type (correct for ALL types)
+  const totalsKey = TOTALS_KEY[evt.type];
+  if (totalsKey) agg.totals[totalsKey] += 1;
+
+  // per-artist
   if (evt.artistId) {
     const a = getArtistAgg(agg, evt.artistId);
     a.events += 1;
-    if (a[`${evt.type}s`] !== undefined) a[`${evt.type}s`] += 1;
+
+    const artistKey = TOTALS_KEY[evt.type];
+    if (artistKey && a[artistKey] !== undefined) a[artistKey] += 1;
+
     if (evt.watchMs) a.watchMs += evt.watchMs;
     a.lastAt = evt.at;
   }
 
-  // Debug trail
   agg.last100.push({
     at: evt.at,
     type: evt.type,
@@ -230,6 +223,7 @@ function applyAgg(agg, evt) {
 function compactAgg(agg) {
   const entries = Object.entries(agg.byArtist || {});
   if (entries.length <= AGG_TOP_LIMIT) return agg;
+
   entries.sort((a, b) => (b[1]?.events || 0) - (a[1]?.events || 0));
   const keep = entries.slice(0, AGG_TOP_LIMIT);
   const next = {};
@@ -238,9 +232,6 @@ function compactAgg(agg) {
   return agg;
 }
 
-/** -----------------------------
- * Load/Save aggregates
- * ------------------------------*/
 async function loadAgg() {
   await ensureDataDir();
   const base = makeAggSkeleton();
@@ -258,20 +249,7 @@ async function saveAgg(agg) {
   await writeJsonAtomic(EVENTS_AGG_FILE, agg);
 }
 
-/** -----------------------------
- * Validation
- * ------------------------------*/
-const ALLOWED_TYPES = new Set([
-  "view",
-  "skip",
-  "replay",
-  "like",
-  "save",
-  "share",
-  "follow",
-  "comment",
-  "vote",
-]);
+const ALLOWED_TYPES = new Set(Object.keys(TOTALS_KEY));
 
 function normalizeType(type) {
   const t = safeString(type, 24);
@@ -319,24 +297,15 @@ function buildEvent(reqBody, req) {
   };
 }
 
-/** -----------------------------
- * Middleware
- * ------------------------------*/
 router.use(express.json({ limit: `${EVENTS_MAX_BODY_KB}kb` }));
 
-/** -----------------------------
- * GET endpoints
- * ------------------------------*/
 router.get("/health", async (_req, res) => {
   res.json({
     success: true,
     service: "events",
     version: routerVersion,
     dataDir: DATA_DIR,
-    files: {
-      log: path.basename(EVENTS_LOG_FILE),
-      agg: path.basename(EVENTS_AGG_FILE),
-    },
+    files: { log: path.basename(EVENTS_LOG_FILE), agg: path.basename(EVENTS_AGG_FILE) },
     limits: {
       maxBodyKb: EVENTS_MAX_BODY_KB,
       rateWindowSec: EVENTS_RATE_WINDOW_SEC,
@@ -373,13 +342,11 @@ router.get("/recent", async (_req, res) => {
   res.json({ success: true, updatedAt: agg.updatedAt, last100: agg.last100 || [] });
 });
 
-/** -----------------------------
- * POST endpoints
- * ------------------------------*/
 router.post("/", async (req, res) => {
   const ipHash = hashIp(getClientIp(req));
   const nowMs = Date.now();
   const win = buildRateWindow(rateStore, ipHash, nowMs);
+
   if (win.count >= EVENTS_MAX_PER_WINDOW) {
     const retryAfterSec = Math.max(
       0,
@@ -399,6 +366,7 @@ router.post("/", async (req, res) => {
   pruneRateStore(rateStore);
 
   await ensureDataDir();
+
   if (EVENTS_ALLOW_LOG) {
     try {
       await appendJsonl(EVENTS_LOG_FILE, built.evt);
