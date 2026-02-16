@@ -1,18 +1,11 @@
 /**
  * ranking.js (root) — ESM default export
- * iBand Algorithm Brain (v1)
+ * iBand Algorithm Brain (v1.1)
  *
- * Mount in server.js:
- *   import rankingRouter from "./ranking.js";
- *   app.use("/api/ranking", rankingRouter);
- *
- * Reads events aggregates from Render disk and produces:
- * - Rising (global breakout) ranking
- * - Simple explainability payload for tuning
- *
- * Notes:
- * - v1 uses events-agg.json (fast + deterministic)
- * - v2 can add personalization once user profiles exist
+ * Change:
+ * - Use artist bucket metrics as the primary scoring source (stable + always current)
+ * - Use bucket.lastAt for freshness (authoritative)
+ * - Treat last100 as debug only (not required for correctness)
  */
 
 import express from "express";
@@ -21,17 +14,11 @@ import path from "path";
 
 const router = express.Router();
 
-/** -----------------------------
- * Config
- * ------------------------------*/
 const DATA_DIR = process.env.DATA_DIR || "/var/data/iband/db";
 const EVENTS_AGG_FILE = process.env.EVENTS_AGG_FILE || path.join(DATA_DIR, "events-agg.json");
 
-// Rising scoring window uses last100 debug trail as a “recent sample”
-// (good enough for v1; later we’ll compute proper rolling windows from jsonl)
-const RISING_RECENT_WINDOW_HOURS = parseInt(process.env.RISING_RECENT_WINDOW_HOURS || "6", 10);
-const RISING_HALF_LIFE_HOURS = parseFloat(process.env.RISING_HALF_LIFE_HOURS || "24"); // freshness decay
-const RISING_WATCHMS_PER_POINT = parseInt(process.env.RISING_WATCHMS_PER_POINT || "10000", 10); // 10s = 1 point
+const RISING_HALF_LIFE_HOURS = parseFloat(process.env.RISING_HALF_LIFE_HOURS || "24");
+const RISING_WATCHMS_PER_POINT = parseInt(process.env.RISING_WATCHMS_PER_POINT || "10000", 10);
 
 // Weights (tunable)
 const W_VIEW = parseFloat(process.env.RISING_W_VIEW || "1.0");
@@ -44,12 +31,8 @@ const W_COMMENT = parseFloat(process.env.RISING_W_COMMENT || "2.0");
 const W_VOTE = parseFloat(process.env.RISING_W_VOTE || "1.0");
 
 const MAX_RETURN = parseInt(process.env.RANKING_MAX_RETURN || "50", 10);
+const routerVersion = 2;
 
-const routerVersion = 1;
-
-/** -----------------------------
- * Helpers
- * ------------------------------*/
 function nowIso() {
   return new Date().toISOString();
 }
@@ -75,7 +58,6 @@ function decayMultiplier(lastAtIso) {
   const ageH = hoursBetween(lastAtIso, nowIso());
   if (ageH === null) return 1;
 
-  // Exponential-ish decay using half-life
   const hl = Math.max(1, safeNumber(RISING_HALF_LIFE_HOURS, 24));
   const mult = Math.pow(0.5, ageH / hl);
   return clamp(mult, 0.05, 1.0);
@@ -91,7 +73,7 @@ async function readJsonSafe(filePath, fallback) {
 }
 
 async function loadAgg() {
-  const base = { version: 1, updatedAt: null, totals: {}, byArtist: {}, byType: {}, last100: [] };
+  const base = { version: 1, updatedAt: null, byArtist: {}, last100: [] };
   const agg = await readJsonSafe(EVENTS_AGG_FILE, base);
 
   if (!agg || typeof agg !== "object") return base;
@@ -100,99 +82,57 @@ async function loadAgg() {
   return agg;
 }
 
-function recentSampleForArtist(last100, artistId, windowHours) {
-  const now = Date.now();
-  const winMs = windowHours * 60 * 60 * 1000;
+/**
+ * Rising score (v1.1):
+ * - Uses lifetime bucket metrics but applies freshness decay using bucket.lastAt
+ * - Good enough to ship; later we’ll add true rolling windows from events.jsonl
+ */
+function risingScoreFromBucket(bucket) {
+  const views = safeNumber(bucket.views, 0);
+  const replays = safeNumber(bucket.replays, 0);
+  const likes = safeNumber(bucket.likes, 0);
+  const saves = safeNumber(bucket.saves, 0);
+  const shares = safeNumber(bucket.shares, 0);
+  const follows = safeNumber(bucket.follows, 0);
+  const comments = safeNumber(bucket.comments, 0);
+  const votes = safeNumber(bucket.votes, 0);
+  const watchMs = safeNumber(bucket.watchMs, 0);
 
-  const sample = {
-    events: 0,
-    view: 0,
-    replay: 0,
-    like: 0,
-    save: 0,
-    share: 0,
-    follow: 0,
-    comment: 0,
-    vote: 0,
-    watchMs: 0,
-    lastAt: null,
-  };
+  const watchPoints = watchMs / Math.max(1000, RISING_WATCHMS_PER_POINT);
 
-  for (let i = last100.length - 1; i >= 0; i--) {
-    const e = last100[i];
-    if (!e || e.artistId !== artistId) continue;
-
-    const t = Date.parse(e.at);
-    if (!Number.isFinite(t)) continue;
-    if (now - t > winMs) break; // last100 is chronological-ish; break once outside window
-
-    sample.events += 1;
-    if (typeof e.type === "string" && sample[e.type] !== undefined) sample[e.type] += 1;
-    sample.watchMs += safeNumber(e.watchMs, 0);
-    sample.lastAt = e.at;
-  }
-
-  return sample;
-}
-
-function risingScore({ recent, lifetime, lastAt }) {
-  // Recent weighted signal
-  const watchPoints = recent.watchMs / Math.max(1000, RISING_WATCHMS_PER_POINT);
-
-  const recentWeighted =
-    recent.view * W_VIEW +
-    recent.replay * W_REPLAY +
-    recent.like * W_LIKE +
-    recent.save * W_SAVE +
-    recent.share * W_SHARE +
-    recent.follow * W_FOLLOW +
-    recent.comment * W_COMMENT +
-    recent.vote * W_VOTE +
+  const weighted =
+    views * W_VIEW +
+    replays * W_REPLAY +
+    likes * W_LIKE +
+    saves * W_SAVE +
+    shares * W_SHARE +
+    follows * W_FOLLOW +
+    comments * W_COMMENT +
+    votes * W_VOTE +
     watchPoints;
 
-  // Lifetime provides stability but low influence (prevents “one spike” from dominating)
-  const lifetimeWeighted =
-    (safeNumber(lifetime.views) * 0.05) +
-    (safeNumber(lifetime.replays) * 0.08) +
-    (safeNumber(lifetime.likes) * 0.06) +
-    (safeNumber(lifetime.saves) * 0.10) +
-    (safeNumber(lifetime.shares) * 0.12) +
-    (safeNumber(lifetime.follows) * 0.15) +
-    (safeNumber(lifetime.comments) * 0.08) +
-    (safeNumber(lifetime.votes) * 0.05) +
-    (safeNumber(lifetime.watchMs) / Math.max(1, RISING_WATCHMS_PER_POINT) * 0.02);
+  const freshness = decayMultiplier(bucket.lastAt || null);
 
-  const freshness = decayMultiplier(lastAt);
+  // Simple velocity proxy (v1.1): newer content gets a mild boost
+  // (true velocity arrives in v2 by reading jsonl)
+  const velocityBoost = 1.0;
 
-  // Velocity boost: more recent events per hour => higher
-  const vph = recent.events / Math.max(1, RISING_RECENT_WINDOW_HOURS);
-  const velocityBoost = 1 + clamp(vph / 10, 0, 1.5); // gentle (0–2.5x)
-
-  const score = (recentWeighted + lifetimeWeighted) * freshness * velocityBoost;
+  const score = weighted * freshness * velocityBoost;
 
   return {
     score: Number(score.toFixed(6)),
     components: {
-      recentWeighted: Number(recentWeighted.toFixed(6)),
-      lifetimeWeighted: Number(lifetimeWeighted.toFixed(6)),
+      weighted: Number(weighted.toFixed(6)),
       freshness: Number(freshness.toFixed(6)),
       velocityBoost: Number(velocityBoost.toFixed(6)),
-      vph: Number(vph.toFixed(6)),
       watchPoints: Number(watchPoints.toFixed(6)),
-      windowHours: RISING_RECENT_WINDOW_HOURS,
       halfLifeHours: RISING_HALF_LIFE_HOURS,
     },
   };
 }
 
-/** -----------------------------
- * Middleware
- * ------------------------------*/
 router.use(express.json({ limit: "64kb" }));
 
-/** -----------------------------
- * GET endpoints
- * ------------------------------*/
 router.get("/health", async (_req, res) => {
   return res.json({
     success: true,
@@ -202,7 +142,6 @@ router.get("/health", async (_req, res) => {
     source: path.basename(EVENTS_AGG_FILE),
     updatedAt: nowIso(),
     config: {
-      recentWindowHours: RISING_RECENT_WINDOW_HOURS,
       halfLifeHours: RISING_HALF_LIFE_HOURS,
       watchMsPerPoint: RISING_WATCHMS_PER_POINT,
       weights: {
@@ -216,45 +155,35 @@ router.get("/health", async (_req, res) => {
         vote: W_VOTE,
       },
       maxReturn: MAX_RETURN,
+      mode: "bucket-primary",
     },
   });
 });
 
-/**
- * GET /api/ranking/rising?limit=25
- * Returns global "Rising" artists (breakout detection)
- */
 router.get("/rising", async (req, res) => {
   const limit = clamp(parseInt(req.query.limit || `${MAX_RETURN}`, 10) || MAX_RETURN, 1, MAX_RETURN);
 
   const agg = await loadAgg();
-  const last100 = Array.isArray(agg.last100) ? agg.last100 : [];
 
   const rows = [];
   for (const [artistId, bucket] of Object.entries(agg.byArtist || {})) {
-    const lifetime = {
-      views: safeNumber(bucket.views, 0),
-      replays: safeNumber(bucket.replays, 0),
-      likes: safeNumber(bucket.likes, 0),
-      saves: safeNumber(bucket.saves, 0),
-      shares: safeNumber(bucket.shares, 0),
-      follows: safeNumber(bucket.follows, 0),
-      comments: safeNumber(bucket.comments, 0),
-      votes: safeNumber(bucket.votes, 0),
-      watchMs: safeNumber(bucket.watchMs, 0),
-    };
-
-    const recent = recentSampleForArtist(last100, artistId, RISING_RECENT_WINDOW_HOURS);
-    const lastAt = recent.lastAt || bucket.lastAt || null;
-
-    const scored = risingScore({ recent, lifetime, lastAt });
+    const scored = risingScoreFromBucket(bucket);
 
     rows.push({
       artistId,
       risingScore: scored.score,
-      lastAt,
-      recent,
-      lifetime,
+      lastAt: bucket.lastAt || null,
+      lifetime: {
+        views: safeNumber(bucket.views, 0),
+        replays: safeNumber(bucket.replays, 0),
+        likes: safeNumber(bucket.likes, 0),
+        saves: safeNumber(bucket.saves, 0),
+        shares: safeNumber(bucket.shares, 0),
+        follows: safeNumber(bucket.follows, 0),
+        comments: safeNumber(bucket.comments, 0),
+        votes: safeNumber(bucket.votes, 0),
+        watchMs: safeNumber(bucket.watchMs, 0),
+      },
       explain: scored.components,
     });
   }
@@ -264,16 +193,11 @@ router.get("/rising", async (req, res) => {
   return res.json({
     success: true,
     updatedAt: agg.updatedAt || null,
-    windowHours: RISING_RECENT_WINDOW_HOURS,
     count: rows.length,
     results: rows.slice(0, limit),
   });
 });
 
-/**
- * GET /api/ranking/artist/:artistId
- * Returns the artist ranking breakdown (explainable)
- */
 router.get("/artist/:artistId", async (req, res) => {
   const artistId = String(req.params.artistId || "").trim();
   if (!artistId) return res.status(400).json({ success: false, message: "artistId is required." });
@@ -282,31 +206,25 @@ router.get("/artist/:artistId", async (req, res) => {
   const bucket = agg.byArtist?.[artistId];
   if (!bucket) return res.status(404).json({ success: false, message: "No ranking data for this artist." });
 
-  const last100 = Array.isArray(agg.last100) ? agg.last100 : [];
-  const lifetime = {
-    views: safeNumber(bucket.views, 0),
-    replays: safeNumber(bucket.replays, 0),
-    likes: safeNumber(bucket.likes, 0),
-    saves: safeNumber(bucket.saves, 0),
-    shares: safeNumber(bucket.shares, 0),
-    follows: safeNumber(bucket.follows, 0),
-    comments: safeNumber(bucket.comments, 0),
-    votes: safeNumber(bucket.votes, 0),
-    watchMs: safeNumber(bucket.watchMs, 0),
-  };
-
-  const recent = recentSampleForArtist(last100, artistId, RISING_RECENT_WINDOW_HOURS);
-  const lastAt = recent.lastAt || bucket.lastAt || null;
-  const scored = risingScore({ recent, lifetime, lastAt });
+  const scored = risingScoreFromBucket(bucket);
 
   return res.json({
     success: true,
     updatedAt: agg.updatedAt || null,
     artistId,
-    lastAt,
+    lastAt: bucket.lastAt || null,
     risingScore: scored.score,
-    recent,
-    lifetime,
+    lifetime: {
+      views: safeNumber(bucket.views, 0),
+      replays: safeNumber(bucket.replays, 0),
+      likes: safeNumber(bucket.likes, 0),
+      saves: safeNumber(bucket.saves, 0),
+      shares: safeNumber(bucket.shares, 0),
+      follows: safeNumber(bucket.follows, 0),
+      comments: safeNumber(bucket.comments, 0),
+      votes: safeNumber(bucket.votes, 0),
+      watchMs: safeNumber(bucket.watchMs, 0),
+    },
     explain: scored.components,
   });
 });
