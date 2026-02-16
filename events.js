@@ -2,23 +2,8 @@
  * events.js (root) — ESM default export
  * Canonical Event Tracking Router (learning fuel for the iBand algorithm)
  *
- * Mount in server.js:
- *   import eventsRouter from "./events.js";
- *   app.use("/api/events", eventsRouter);
- *
- * Purpose:
- * - Capture user interactions as immutable events (append-only)
- * - Maintain lightweight aggregates for fast stats + ranking inputs
- * - Designed for Render persistent disk (/var/data/iband/db)
- *
- * Storage (DATA_DIR):
- * - events.jsonl         (append-only event log)
- * - events-agg.json      (aggregates snapshot, atomic writes)
- *
- * Notes:
- * - This is the foundation for:
- *   - ranking.js (score computation)
- *   - recs.js (feed generation: For You / Rising / Following)
+ * Fix included:
+ * - Correctly increments totals.{type} (views, replays, etc.)
  */
 
 import express from "express";
@@ -39,12 +24,12 @@ const EVENTS_AGG_FILE = process.env.EVENTS_AGG_FILE || path.join(DATA_DIR, "even
 const EVENTS_ALLOW_LOG = (process.env.EVENTS_ALLOW_LOG || "true").toLowerCase() === "true";
 const EVENTS_MAX_BODY_KB = parseInt(process.env.EVENTS_MAX_BODY_KB || "32", 10);
 
-// Lightweight abuse protection (events can be spammy)
-const EVENTS_RATE_WINDOW_SEC = parseInt(process.env.EVENTS_RATE_WINDOW_SEC || "60", 10); // 1 min
-const EVENTS_MAX_PER_WINDOW = parseInt(process.env.EVENTS_MAX_PER_WINDOW || "120", 10); // per IP hash per window
+// Rate limiting
+const EVENTS_RATE_WINDOW_SEC = parseInt(process.env.EVENTS_RATE_WINDOW_SEC || "60", 10);
+const EVENTS_MAX_PER_WINDOW = parseInt(process.env.EVENTS_MAX_PER_WINDOW || "120", 10);
 
-// Keep aggregates compact
-const AGG_TOP_LIMIT = parseInt(process.env.EVENTS_AGG_TOP_LIMIT || "200", 10); // cap for "top artists" etc.
+// Aggregate caps
+const AGG_TOP_LIMIT = parseInt(process.env.EVENTS_AGG_TOP_LIMIT || "200", 10);
 
 const routerVersion = 1;
 
@@ -67,7 +52,6 @@ function safeString(v, maxLen = 128) {
 function normalizeId(v, maxLen = 80) {
   const s = safeString(v, maxLen);
   if (!s) return "";
-  // conservative safe charset; expand later if needed
   if (!/^[a-zA-Z0-9._:-]+$/.test(s)) return "";
   return s;
 }
@@ -93,7 +77,6 @@ function hashIp(ip) {
 }
 
 function makeId(prefix = "evt") {
-  // short, sortable-ish id
   const rnd = crypto.randomBytes(8).toString("hex");
   return `${prefix}_${Date.now()}_${rnd}`;
 }
@@ -126,9 +109,7 @@ async function appendJsonl(filePath, obj) {
  * Rate limit (per-IP hash)
  * ------------------------------*/
 function makeRateStore() {
-  return {
-    ipWindows: {}, // { [ipHash]: { windowStart:number(ms), count:number } }
-  };
+  return { ipWindows: {} };
 }
 
 function buildRateWindow(rateStore, ipHash, nowMs) {
@@ -137,11 +118,8 @@ function buildRateWindow(rateStore, ipHash, nowMs) {
 
   if (!cur || typeof cur.windowStart !== "number") {
     rateStore.ipWindows[ipHash] = { windowStart: nowMs, count: 0 };
-  } else {
-    const elapsed = nowMs - cur.windowStart;
-    if (elapsed >= winMs) {
-      rateStore.ipWindows[ipHash] = { windowStart: nowMs, count: 0 };
-    }
+  } else if (nowMs - cur.windowStart >= winMs) {
+    rateStore.ipWindows[ipHash] = { windowStart: nowMs, count: 0 };
   }
   return rateStore.ipWindows[ipHash];
 }
@@ -176,9 +154,9 @@ function makeAggSkeleton() {
       comments: 0,
       votes: 0,
     },
-    byArtist: {}, // { [artistId]: { events, views, ... , watchMs, lastAt } }
-    byType: {},   // { [type]: count }
-    last100: [],  // small debug trail (safe fields only)
+    byArtist: {},
+    byType: {},
+    last100: [],
   };
 }
 
@@ -208,23 +186,31 @@ function inc(obj, key, by = 1) {
 }
 
 function applyAgg(agg, evt) {
+  // Global totals
   agg.totals.events += 1;
+
+  // Per-type counts (both maps)
   inc(agg.byType, evt.type, 1);
+  if (evt.type === "view") agg.totals.views += 1;
+  else if (evt.type === "skip") agg.totals.skips += 1;
+  else if (evt.type === "replay") agg.totals.replays += 1;
+  else if (evt.type === "like") agg.totals.likes += 1;
+  else if (evt.type === "save") agg.totals.saves += 1;
+  else if (evt.type === "share") agg.totals.shares += 1;
+  else if (evt.type === "follow") agg.totals.follows += 1;
+  else if (evt.type === "comment") agg.totals.comments += 1;
+  else if (evt.type === "vote") agg.totals.votes += 1;
 
-  // totals by type
-  if (agg.totals[evt.type] !== undefined) agg.totals[evt.type] += 1;
-
+  // Per-artist
   if (evt.artistId) {
     const a = getArtistAgg(agg, evt.artistId);
     a.events += 1;
-    if (a[evt.type] !== undefined) a[evt.type] += 1;
-
+    if (a[`${evt.type}s`] !== undefined) a[`${evt.type}s`] += 1;
     if (evt.watchMs) a.watchMs += evt.watchMs;
     a.lastAt = evt.at;
   }
 
-  // last100 safe debug list
-  agg.last100 = Array.isArray(agg.last100) ? agg.last100 : [];
+  // Debug trail
   agg.last100.push({
     at: evt.at,
     type: evt.type,
@@ -233,7 +219,7 @@ function applyAgg(agg, evt) {
     userId: evt.userId || null,
     sessionId: evt.sessionId || null,
     watchMs: evt.watchMs || 0,
-    ipHash: evt.ipHash, // hashed only
+    ipHash: evt.ipHash,
   });
   if (agg.last100.length > 100) agg.last100 = agg.last100.slice(-100);
 
@@ -242,17 +228,13 @@ function applyAgg(agg, evt) {
 }
 
 function compactAgg(agg) {
-  // keep only top AGG_TOP_LIMIT artists by events
   const entries = Object.entries(agg.byArtist || {});
   if (entries.length <= AGG_TOP_LIMIT) return agg;
-
   entries.sort((a, b) => (b[1]?.events || 0) - (a[1]?.events || 0));
   const keep = entries.slice(0, AGG_TOP_LIMIT);
-
   const next = {};
   for (const [k, v] of keep) next[k] = v;
   agg.byArtist = next;
-
   return agg;
 }
 
@@ -263,13 +245,11 @@ async function loadAgg() {
   await ensureDataDir();
   const base = makeAggSkeleton();
   const agg = await readJsonSafe(EVENTS_AGG_FILE, base);
-
   if (!agg || typeof agg !== "object") return base;
-  if (!agg.totals || typeof agg.totals !== "object") agg.totals = base.totals;
-  if (!agg.byArtist || typeof agg.byArtist !== "object") agg.byArtist = {};
-  if (!agg.byType || typeof agg.byType !== "object") agg.byType = {};
+  if (!agg.totals) agg.totals = base.totals;
+  if (!agg.byArtist) agg.byArtist = {};
+  if (!agg.byType) agg.byType = {};
   if (!Array.isArray(agg.last100)) agg.last100 = [];
-
   return agg;
 }
 
@@ -295,22 +275,9 @@ const ALLOWED_TYPES = new Set([
 
 function normalizeType(type) {
   const t = safeString(type, 24);
-  if (!t) return "";
-  return t.toLowerCase();
+  return t ? t.toLowerCase() : "";
 }
 
-/**
- * Event contract (v1):
- * {
- *   type: "view" | "skip" | ...
- *   artistId?: string
- *   trackId?: string
- *   userId?: string           (optional for now)
- *   sessionId?: string        (optional; helps ML later)
- *   watchMs?: number          (for view/replay)
- *   meta?: object             (small, optional)
- * }
- */
 function buildEvent(reqBody, req) {
   const type = normalizeType(reqBody?.type);
   if (!ALLOWED_TYPES.has(type)) return { ok: false, error: "Invalid type." };
@@ -319,14 +286,10 @@ function buildEvent(reqBody, req) {
   const trackId = reqBody?.trackId ? normalizeId(reqBody.trackId) : "";
   const userId = reqBody?.userId ? normalizeId(reqBody.userId, 64) : "";
   const sessionId = reqBody?.sessionId ? normalizeId(reqBody.sessionId, 64) : "";
-
-  // watchMs is meaningful for view/replay, optional for others
   const watchMs = reqBody?.watchMs !== undefined ? clampInt(reqBody.watchMs, 0, 60 * 60 * 1000) : 0;
 
-  // meta: keep small and safe
   let meta = null;
   if (reqBody?.meta && typeof reqBody.meta === "object" && !Array.isArray(reqBody.meta)) {
-    // shallow, size-limited sanitization
     const m = {};
     for (const [k, v] of Object.entries(reqBody.meta)) {
       const key = safeString(k, 32);
@@ -337,10 +300,6 @@ function buildEvent(reqBody, req) {
     }
     meta = Object.keys(m).length ? m : null;
   }
-
-  // For most signals, we strongly prefer an artistId; but we won’t hard-require yet.
-  // The algorithm can still learn from session-level signals.
-  const ipHash = hashIp(getClientIp(req));
 
   return {
     ok: true,
@@ -353,7 +312,7 @@ function buildEvent(reqBody, req) {
       userId: userId || null,
       sessionId: sessionId || null,
       watchMs: watchMs || 0,
-      ipHash,
+      ipHash: hashIp(getClientIp(req)),
       meta,
       v: 1,
     },
@@ -366,14 +325,10 @@ function buildEvent(reqBody, req) {
 router.use(express.json({ limit: `${EVENTS_MAX_BODY_KB}kb` }));
 
 /** -----------------------------
- * GET endpoints (grouped)
+ * GET endpoints
  * ------------------------------*/
-
-/**
- * GET /api/events/health
- */
 router.get("/health", async (_req, res) => {
-  return res.json({
+  res.json({
     success: true,
     service: "events",
     version: routerVersion,
@@ -393,13 +348,9 @@ router.get("/health", async (_req, res) => {
   });
 });
 
-/**
- * GET /api/events/stats
- * Quick totals snapshot (used later by ranking)
- */
 router.get("/stats", async (_req, res) => {
   const agg = await loadAgg();
-  return res.json({
+  res.json({
     success: true,
     updatedAt: agg.updatedAt,
     totals: agg.totals,
@@ -408,49 +359,24 @@ router.get("/stats", async (_req, res) => {
   });
 });
 
-/**
- * GET /api/events/artist/:artistId
- * Aggregate summary for a single artist
- */
 router.get("/artist/:artistId", async (req, res) => {
   const artistId = normalizeId(req.params.artistId);
   if (!artistId) return res.status(400).json({ success: false, message: "Invalid artistId." });
-
   const agg = await loadAgg();
   const bucket = agg.byArtist?.[artistId];
   if (!bucket) return res.status(404).json({ success: false, message: "No events found for this artist." });
-
-  return res.json({
-    success: true,
-    artistId,
-    updatedAt: agg.updatedAt,
-    summary: bucket,
-  });
+  res.json({ success: true, artistId, updatedAt: agg.updatedAt, summary: bucket });
 });
 
-/**
- * GET /api/events/recent
- * Debug: returns last100 safe events from aggregates snapshot (not raw log)
- */
 router.get("/recent", async (_req, res) => {
   const agg = await loadAgg();
-  return res.json({
-    success: true,
-    updatedAt: agg.updatedAt,
-    last100: Array.isArray(agg.last100) ? agg.last100 : [],
-  });
+  res.json({ success: true, updatedAt: agg.updatedAt, last100: agg.last100 || [] });
 });
 
 /** -----------------------------
- * POST endpoints (grouped)
+ * POST endpoints
  * ------------------------------*/
-
-/**
- * POST /api/events
- * Body: { type, artistId?, trackId?, userId?, sessionId?, watchMs?, meta? }
- */
 router.post("/", async (req, res) => {
-  // Rate limit first (cheap)
   const ipHash = hashIp(getClientIp(req));
   const nowMs = Date.now();
   const win = buildRateWindow(rateStore, ipHash, nowMs);
@@ -469,26 +395,21 @@ router.post("/", async (req, res) => {
   const built = buildEvent(req.body, req);
   if (!built.ok) return res.status(400).json({ success: false, message: built.error });
 
-  // Count this event
   win.count += 1;
   pruneRateStore(rateStore);
 
-  // Persist: append log (best effort), then update aggregates snapshot
   await ensureDataDir();
-
   if (EVENTS_ALLOW_LOG) {
     try {
       await appendJsonl(EVENTS_LOG_FILE, built.evt);
-    } catch {
-      // log append failure should not break ingestion; aggregates still update
-    }
+    } catch {}
   }
 
   const agg = await loadAgg();
   applyAgg(agg, built.evt);
   await saveAgg(agg);
 
-  return res.json({
+  res.json({
     success: true,
     message: "Event recorded.",
     event: {
