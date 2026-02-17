@@ -1,27 +1,20 @@
 /**
  * recs.js (root) — ESM default export
- * iBand Feed Generator (v6 — mix: rising + personalized + exploration + diversity)
+ * iBand Feed Generator (v6.1 — mix patched: exploration from full catalog)
+ *
+ * Patch goal:
+ * - Exploration must work even when ranked list is small
+ * - Explore picks come from FULL artists catalog (artists.json), not only ranked rows
+ * - Explore picks exclude already chosen ids before injection
+ * - Artists with no agg bucket can still be explored (baseScore=0)
  *
  * Keeps:
  * - /api/recs/health
  * - /api/recs/rising
  * - /api/recs/personalized/health
  * - /api/recs/personalized
- *
- * Adds:
  * - /api/recs/mix/health
- * - /api/recs/mix?sessionId=...&limit=...
- *
- * Feed Intelligence v2 goals:
- * - Preserve engagement-weighted ranking (baseScore)
- * - Add session personalization (multiplier)
- * - Add exploration injection (discover new / low-signal artists)
- * - Add diversity caps (genre/location) to prevent winner-takes-all
- * - Add fatigue control (light penalty for repeated seen in session)
- *
- * Deterministic:
- * - Exploration selection uses a seeded PRNG from sessionId
- * - Same sessionId yields stable mix ordering for the same data
+ * - /api/recs/mix
  */
 
 import express from "express";
@@ -47,17 +40,19 @@ const ARTISTS_FILE =
 const MAX_RETURN = parseInt(process.env.RECS_MAX_RETURN || "50", 10);
 
 // Personalization scan limits (Render-safe)
-const PERSONALIZE_TAIL_KB = parseInt(process.env.PERSONALIZE_TAIL_KB || "512", 10); // read last 512KB
-const PERSONALIZE_MAX_LINES = parseInt(process.env.PERSONALIZE_MAX_LINES || "2500", 10); // cap lines parsed
+const PERSONALIZE_TAIL_KB = parseInt(process.env.PERSONALIZE_TAIL_KB || "512", 10);
+const PERSONALIZE_MAX_LINES = parseInt(process.env.PERSONALIZE_MAX_LINES || "2500", 10);
 
 // Mix v2 controls
 const MIX_EXPLORE_PCT = parseFloat(process.env.MIX_EXPLORE_PCT || "0.2"); // 20% slots
-const MIX_GENRE_CAP = parseInt(process.env.MIX_GENRE_CAP || "2", 10); // max per genre in list
-const MIX_LOCATION_CAP = parseInt(process.env.MIX_LOCATION_CAP || "3", 10); // max per location in list (light cap)
-const MIX_FATIGUE_STEP = parseFloat(process.env.MIX_FATIGUE_STEP || "0.04"); // penalty per extra seen
-const MIX_FATIGUE_MIN = parseFloat(process.env.MIX_FATIGUE_MIN || "0.84"); // clamp floor
+const MIX_GENRE_CAP = parseInt(process.env.MIX_GENRE_CAP || "2", 10);
+const MIX_LOCATION_CAP = parseInt(process.env.MIX_LOCATION_CAP || "3", 10);
+const MIX_FATIGUE_STEP = parseFloat(process.env.MIX_FATIGUE_STEP || "0.04");
+const MIX_FATIGUE_MIN = parseFloat(process.env.MIX_FATIGUE_MIN || "0.84");
 
-const routerVersion = 6;
+// Exploration behavior
+const MIX_EXPLORE_NUDGE = parseFloat(process.env.MIX_EXPLORE_NUDGE || "1.02"); // small uplift
+const routerVersion = 61;
 
 /* -----------------------------
  * Helpers
@@ -123,21 +118,32 @@ function extractArtistsArray(store) {
   return [];
 }
 
-async function loadArtistsMap() {
+async function loadArtistsAll() {
   const r = await readFileSafe(ARTISTS_FILE);
-  if (!r.ok) return { map: {}, count: 0, readOk: false, parseOk: false };
+  if (!r.ok) return { artists: [], readOk: false, parseOk: false };
 
   const p = parseJsonSafe(r.raw);
-  if (!p.ok) return { map: {}, count: 0, readOk: true, parseOk: false };
+  if (!p.ok) return { artists: [], readOk: true, parseOk: false };
 
   const arr = extractArtistsArray(p.obj);
+  const artists = arr
+    .filter((a) => a && typeof a === "object" && typeof a.id === "string" && a.id.trim())
+    .map((a) => ({
+      id: a.id.trim(),
+      name: a.name || null,
+      imageUrl: a.imageUrl || null,
+      genre: a.genre || null,
+      location: a.location || null,
+    }));
+
+  return { artists, readOk: true, parseOk: true };
+}
+
+async function loadArtistsMap() {
+  const all = await loadArtistsAll();
   const map = {};
-  for (const a of arr) {
-    if (a && typeof a === "object" && typeof a.id === "string" && a.id.trim()) {
-      map[a.id.trim()] = a;
-    }
-  }
-  return { map, count: Object.keys(map).length, readOk: true, parseOk: true };
+  for (const a of all.artists) map[a.id] = a;
+  return { map, count: all.artists.length, readOk: all.readOk, parseOk: all.parseOk, list: all.artists };
 }
 
 /* -----------------------------
@@ -193,7 +199,7 @@ function risingScoreFromBucket(bucket) {
 }
 
 /* -----------------------------
- * Personalization v1 (session-based)
+ * Session parsing + signals
  * ----------------------------- */
 function safeLineJson(line) {
   const s = (line || "").trim();
@@ -265,7 +271,6 @@ function buildSessionSignals(events, sessionId) {
     if (t === "comment") a.comments += 1;
     if (t === "vote") a.votes += 1;
 
-    // Engagement points (simple, explainable)
     a.engagedPoints += Math.floor(safeNumber(ev.watchMs, 0) / 10000);
     if (t === "replay") a.engagedPoints += 4;
     if (t === "like") a.engagedPoints += 2;
@@ -289,14 +294,13 @@ function personalizationMultiplier(signal) {
   const boost = 1 + clamp(Math.log1p(points) / 10, 0, 0.35);
 
   const lowEngagement = points <= 1;
-  const fatigue = lowEngagement && seen >= 2 ? clamp(1 - (seen - 1) * 0.04, 0.84, 1.0) : 1.0;
+  const fatigueLow = lowEngagement && seen >= 2 ? clamp(1 - (seen - 1) * 0.04, 0.84, 1.0) : 1.0;
 
-  const mult = boost * fatigue;
+  const mult = boost * fatigueLow;
   return Number(mult.toFixed(6));
 }
 
 function fatigueMultiplier(signal) {
-  // Applies even when engagement exists (light, controlled)
   const seen = safeNumber(signal?.seen, 0);
   if (seen <= 1) return 1.0;
   const mult = clamp(1 - (seen - 1) * MIX_FATIGUE_STEP, MIX_FATIGUE_MIN, 1.0);
@@ -307,7 +311,6 @@ function fatigueMultiplier(signal) {
  * Deterministic PRNG (seeded by sessionId)
  * ----------------------------- */
 function hash32(str) {
-  // FNV-1a 32-bit
   let h = 2166136261;
   for (let i = 0; i < str.length; i++) {
     h ^= str.charCodeAt(i);
@@ -319,49 +322,20 @@ function hash32(str) {
 function makePrng(seedStr) {
   let state = hash32(seedStr || "seed");
   return () => {
-    // LCG
     state = (Math.imul(1664525, state) + 1013904223) >>> 0;
     return state / 4294967296;
   };
 }
 
 /* -----------------------------
- * Mix v2 logic
+ * Mix v2.1 logic
  * ----------------------------- */
-function pickExploreCandidates(allRows, sessionSignals, exploreCount, prng) {
-  // Choose from lowest-baseScore / lowest-signal artists (novelty)
-  // Novelty score favors low baseScore and unseen in session.
-  const candidates = allRows
-    .filter((r) => {
-      const id = r.artist?.id;
-      return id && !sessionSignals[id]; // unseen in session
-    })
-    .map((r) => {
-      const base = safeNumber(r.baseScore, 0);
-      // higher novelty when base is small (underdogs)
-      const novelty = 1 / (1 + base);
-      return { ...r, _novelty: novelty };
-    });
-
-  // Sort by novelty desc then shuffle top slice deterministically
-  candidates.sort((a, b) => b._novelty - a._novelty);
-
-  const pool = candidates.slice(0, Math.max(10, exploreCount * 8));
-  // deterministic shuffle using prng
-  for (let i = pool.length - 1; i > 0; i--) {
-    const j = Math.floor(prng() * (i + 1));
-    [pool[i], pool[j]] = [pool[j], pool[i]];
-  }
-
-  return pool.slice(0, exploreCount);
-}
-
 function canAddWithDiversity(item, genreCount, locCount) {
   const g = (item.artist?.genre || "unknown").toLowerCase().trim();
   const l = (item.artist?.location || "unknown").toLowerCase().trim();
 
-  if (g !== "unknown" && genreCount[g] >= MIX_GENRE_CAP) return false;
-  if (l !== "unknown" && locCount[l] >= MIX_LOCATION_CAP) return false;
+  if (g !== "unknown" && (genreCount[g] || 0) >= MIX_GENRE_CAP) return false;
+  if (l !== "unknown" && (locCount[l] || 0) >= MIX_LOCATION_CAP) return false;
   return true;
 }
 
@@ -371,6 +345,67 @@ function bumpDiversityCounts(item, genreCount, locCount) {
 
   if (g !== "unknown") genreCount[g] = (genreCount[g] || 0) + 1;
   if (l !== "unknown") locCount[l] = (locCount[l] || 0) + 1;
+}
+
+function buildCatalogRows(artistsList, aggByArtist) {
+  // Create a row for every artist even if they have no agg bucket yet.
+  // If no bucket, metrics zeros, lastAt null, baseScore=0.
+  const rows = [];
+  for (const a of artistsList) {
+    const bucket = aggByArtist[a.id] || null;
+    const baseScore = bucket ? risingScoreFromBucket(bucket) : 0;
+
+    rows.push({
+      artist: { ...a },
+      baseScore,
+      lastAt: bucket?.lastAt || null,
+      metrics: bucket
+        ? {
+            views: safeNumber(bucket.views),
+            replays: safeNumber(bucket.replays),
+            likes: safeNumber(bucket.likes),
+            saves: safeNumber(bucket.saves),
+            shares: safeNumber(bucket.shares),
+            follows: safeNumber(bucket.follows),
+            comments: safeNumber(bucket.comments),
+            votes: safeNumber(bucket.votes),
+            watchMs: safeNumber(bucket.watchMs),
+          }
+        : { views: 0, replays: 0, likes: 0, saves: 0, shares: 0, follows: 0, comments: 0, votes: 0, watchMs: 0 },
+    });
+  }
+  return rows;
+}
+
+function pickExploreFromCatalog(catalogRows, sessionSignals, excludeIds, exploreCount, prng) {
+  // Prefer artists:
+  // - unseen in session
+  // - lower baseScore (underdogs)
+  // - and not already in excludeIds
+  const pool = catalogRows
+    .filter((r) => {
+      const id = r.artist?.id;
+      if (!id) return false;
+      if (excludeIds.has(id)) return false;
+      if (sessionSignals[id]) return false;
+      return true;
+    })
+    .map((r) => {
+      const base = safeNumber(r.baseScore, 0);
+      const novelty = 1 / (1 + base);
+      return { ...r, _novelty: novelty };
+    });
+
+  pool.sort((a, b) => b._novelty - a._novelty);
+
+  const slice = pool.slice(0, Math.max(12, exploreCount * 10));
+
+  for (let i = slice.length - 1; i > 0; i--) {
+    const j = Math.floor(prng() * (i + 1));
+    [slice[i], slice[j]] = [slice[j], slice[i]];
+  }
+
+  return slice.slice(0, exploreCount);
 }
 
 /* -----------------------------
@@ -419,22 +454,10 @@ router.get("/rising", async (req, res) => {
     const artist = artists.map[artistId] || null;
 
     rows.push({
-      artist: artist
-        ? {
-            id: artist.id,
-            name: artist.name || null,
-            imageUrl: artist.imageUrl || null,
-            genre: artist.genre || null,
-            location: artist.location || null,
-          }
-        : { id: artistId },
+      artist: artist ? { ...artist } : { id: artistId },
       score,
       lastAt: bucket.lastAt || null,
-      metrics: {
-        views: safeNumber(bucket.views),
-        replays: safeNumber(bucket.replays),
-        watchMs: safeNumber(bucket.watchMs),
-      },
+      metrics: { views: safeNumber(bucket.views), replays: safeNumber(bucket.replays), watchMs: safeNumber(bucket.watchMs) },
     });
   }
 
@@ -499,33 +522,15 @@ router.get("/personalized", async (req, res) => {
     const mult = sig ? personalizationMultiplier(sig) : 1.0;
 
     const finalScore = Number((baseScore * mult).toFixed(6));
-
     const artist = artists.map[artistId] || null;
 
     rows.push({
-      artist: artist
-        ? { id: artist.id, name: artist.name || null, imageUrl: artist.imageUrl || null, genre: artist.genre || null, location: artist.location || null }
-        : { id: artistId },
+      artist: artist ? { ...artist } : { id: artistId },
       score: finalScore,
       baseScore,
       multiplier: mult,
       lastAt: bucket.lastAt || null,
-      explain: sig
-        ? {
-            sessionId,
-            seen: sig.seen,
-            engagedPoints: sig.engagedPoints,
-            watchMs: sig.watchMs,
-            views: sig.views,
-            replays: sig.replays,
-            likes: sig.likes,
-            saves: sig.saves,
-            shares: sig.shares,
-            follows: sig.follows,
-            comments: sig.comments,
-            votes: sig.votes,
-          }
-        : { sessionId, seen: 0, engagedPoints: 0 },
+      explain: sig ? { sessionId, ...sig } : { sessionId, seen: 0, engagedPoints: 0 },
     });
   }
 
@@ -543,14 +548,14 @@ router.get("/personalized", async (req, res) => {
 });
 
 /* -----------------------------
- * Mix v2 endpoints
+ * Mix endpoints
  * ----------------------------- */
 router.get("/mix/health", async (_req, res) => {
   const logStat = await statSafe(EVENTS_LOG_FILE);
   res.json({
     success: true,
     service: "recs-mix",
-    version: 2,
+    version: 21,
     updatedAt: nowIso(),
     config: {
       explorePct: MIX_EXPLORE_PCT,
@@ -558,6 +563,7 @@ router.get("/mix/health", async (_req, res) => {
       locationCap: MIX_LOCATION_CAP,
       fatigueStep: MIX_FATIGUE_STEP,
       fatigueMin: MIX_FATIGUE_MIN,
+      exploreNudge: MIX_EXPLORE_NUDGE,
       tailKb: PERSONALIZE_TAIL_KB,
       maxLines: PERSONALIZE_MAX_LINES,
       eventLog: path.basename(EVENTS_LOG_FILE),
@@ -566,16 +572,6 @@ router.get("/mix/health", async (_req, res) => {
   });
 });
 
-/**
- * GET /api/recs/mix?sessionId=...&limit=20
- *
- * Returns a blended feed list:
- * - Primary: base rising score
- * - Personalized: session multiplier
- * - Fatigue: gentle penalty on repeats in session
- * - Exploration: inject underdogs/unseen picks
- * - Diversity: cap genre/location dominance
- */
 router.get("/mix", async (req, res) => {
   const sessionId = typeof req.query.sessionId === "string" ? req.query.sessionId.trim() : "";
   if (!sessionId) {
@@ -590,7 +586,6 @@ router.get("/mix", async (req, res) => {
 
   const [agg, artists] = await Promise.all([loadAgg(), loadArtistsMap()]);
 
-  // session signals
   const tail = await readTailText(EVENTS_LOG_FILE, PERSONALIZE_TAIL_KB);
   const lines = (tail.ok ? tail.text.split("\n") : []).slice(-PERSONALIZE_MAX_LINES);
 
@@ -601,10 +596,15 @@ router.get("/mix", async (req, res) => {
   }
   const signals = buildSessionSignals(parsed, sessionId);
 
-  // build base rows
-  const allRows = [];
+  // Build catalog rows from all artists (exploration source of truth)
+  const catalogRows = buildCatalogRows(artists.list, agg.byArtist || {});
+
+  // Ranked rows only from artists that have agg buckets (signal)
+  const rankedRows = [];
   for (const [artistIdRaw, bucket] of Object.entries(agg.byArtist || {})) {
     const artistId = String(artistIdRaw || "").trim();
+    const artist = artists.map[artistId] || { id: artistId, name: null, imageUrl: null, genre: null, location: null };
+
     const baseScore = risingScoreFromBucket(bucket);
     const sig = signals[artistId] || null;
 
@@ -613,18 +613,11 @@ router.get("/mix", async (req, res) => {
 
     const finalScore = Number((baseScore * personalMult * fatMult).toFixed(6));
 
-    const artist = artists.map[artistId] || null;
-
-    allRows.push({
-      artist: artist
-        ? { id: artist.id, name: artist.name || null, imageUrl: artist.imageUrl || null, genre: artist.genre || null, location: artist.location || null }
-        : { id: artistId },
+    rankedRows.push({
+      artist,
       score: finalScore,
       baseScore,
-      multipliers: {
-        personalization: personalMult,
-        fatigue: fatMult,
-      },
+      multipliers: { personalization: personalMult, fatigue: fatMult },
       lastAt: bucket.lastAt || null,
       metrics: {
         views: safeNumber(bucket.views),
@@ -637,46 +630,54 @@ router.get("/mix", async (req, res) => {
         votes: safeNumber(bucket.votes),
         watchMs: safeNumber(bucket.watchMs),
       },
-      explain: sig
-        ? {
-            sessionId,
-            seen: sig.seen,
-            engagedPoints: sig.engagedPoints,
-            watchMs: sig.watchMs,
-            views: sig.views,
-            replays: sig.replays,
-            likes: sig.likes,
-            saves: sig.saves,
-            shares: sig.shares,
-            follows: sig.follows,
-            comments: sig.comments,
-            votes: sig.votes,
-          }
-        : { sessionId, seen: 0, engagedPoints: 0 },
+      explain: sig ? { sessionId, ...sig } : { sessionId, seen: 0, engagedPoints: 0 },
       _source: "ranked",
     });
   }
 
-  // Sort by finalScore desc as baseline
-  allRows.sort((a, b) => b.score - a.score);
+  rankedRows.sort((a, b) => b.score - a.score);
 
-  // Exploration slots
-  const exploreCount = clamp(Math.floor(limit * clamp(MIX_EXPLORE_PCT, 0, 0.5)), 1, Math.max(1, Math.floor(limit / 2)));
+  // Determine explore slots
+  const exploreCount = clamp(
+    Math.floor(limit * clamp(MIX_EXPLORE_PCT, 0, 0.5)),
+    1,
+    Math.max(1, Math.floor(limit / 2))
+  );
+
   const prng = makePrng(sessionId);
-  const explorePicks = pickExploreCandidates(allRows, signals, exploreCount, prng).map((r) => ({
-    ...r,
-    _source: "explore",
-    // tiny nudge so explore picks can surface but not dominate:
-    score: Number((r.score * 1.02).toFixed(6)),
-  }));
 
-  // Build final mixed list with diversity
+  // Pre-select top ranked (skeleton) to exclude from exploration
+  // We'll choose ranked first, then inject explore; ensures explore doesn't collide with top ranked.
+  const preChosenIds = new Set();
+  for (let i = 0; i < Math.min(limit, rankedRows.length); i++) {
+    const id = rankedRows[i]?.artist?.id;
+    if (id) preChosenIds.add(id);
+  }
+
+  const explorePicksCatalog = pickExploreFromCatalog(catalogRows, signals, preChosenIds, exploreCount, prng).map((r) => {
+    // Map catalog row into feed row shape. If artist has no bucket, baseScore=0, score=0.
+    // Give tiny nudge so explore picks can surface in injected positions.
+    const baseScore = safeNumber(r.baseScore, 0);
+    const score = Number((baseScore * MIX_EXPLORE_NUDGE).toFixed(6));
+    return {
+      artist: r.artist,
+      score,
+      baseScore,
+      multipliers: { personalization: 1.0, fatigue: 1.0 },
+      lastAt: r.lastAt || null,
+      metrics: r.metrics,
+      explain: { sessionId, seen: 0, engagedPoints: 0, explore: true },
+      _source: "explore",
+    };
+  });
+
+  // Build final mixed list with diversity caps
   const chosen = [];
   const seenIds = new Set();
   const genreCount = {};
   const locCount = {};
 
-  // positions to inject explore: every 5th slot, starting at slot 3 (1-indexed)
+  // inject explore at fixed slots: every 5th starting at 3
   const injectSlots = new Set();
   for (let i = 3; i <= limit; i += 5) injectSlots.add(i);
 
@@ -705,43 +706,40 @@ router.get("/mix", async (req, res) => {
     return true;
   }
 
-  // First pass: construct list with planned explore injections
-  while (chosen.length < limit && (rankedIdx < allRows.length || exploreIdx < explorePicks.length)) {
+  while (chosen.length < limit && (rankedIdx < rankedRows.length || exploreIdx < explorePicksCatalog.length)) {
     const slot = chosen.length + 1;
 
-    const shouldInjectExplore = injectSlots.has(slot) && exploreIdx < explorePicks.length;
+    const shouldInjectExplore = injectSlots.has(slot) && exploreIdx < explorePicksCatalog.length;
 
     if (shouldInjectExplore) {
-      const ex = explorePicks[exploreIdx++];
+      const ex = explorePicksCatalog[exploreIdx++];
       if (tryAdd(ex, "explore")) continue;
-      // if couldn't add due to diversity, keep going and try ranked
+      // if explore blocked by diversity, fall through to ranked
     }
 
-    // ranked fill
-    while (rankedIdx < allRows.length) {
-      const r = allRows[rankedIdx++];
+    // Fill ranked
+    while (rankedIdx < rankedRows.length) {
+      const r = rankedRows[rankedIdx++];
       if (tryAdd(r, "ranked")) break;
     }
 
-    // if ranked exhausted, try explore remaining
-    if (rankedIdx >= allRows.length && exploreIdx < explorePicks.length) {
-      const ex = explorePicks[exploreIdx++];
+    // If ranked exhausted, try explore remainder
+    if (rankedIdx >= rankedRows.length && exploreIdx < explorePicksCatalog.length) {
+      const ex = explorePicksCatalog[exploreIdx++];
       tryAdd(ex, "explore");
     }
 
-    // safety break if we can't progress
-    if (rankedIdx >= allRows.length && exploreIdx >= explorePicks.length) break;
+    if (rankedIdx >= rankedRows.length && exploreIdx >= explorePicksCatalog.length) break;
   }
 
-  // Second pass fallback: if diversity caps were too strict, relax by allowing "unknown" caps only (already allowed)
-  // If still short, append ignoring diversity (last resort) to prevent empty feeds.
+  // If still short, append remaining catalog ignoring diversity (last resort)
   if (chosen.length < limit) {
-    for (const r of allRows) {
+    const fallbackAll = [...rankedRows, ...explorePicksCatalog];
+    for (const r of fallbackAll) {
       if (chosen.length >= limit) break;
       const id = r?.artist?.id;
       if (!id || seenIds.has(id)) continue;
 
-      // Ignore diversity last resort
       seenIds.add(id);
       chosen.push({
         artist: r.artist,
@@ -750,7 +748,7 @@ router.get("/mix", async (req, res) => {
         multipliers: r.multipliers,
         lastAt: r.lastAt,
         metrics: r.metrics,
-        source: "ranked-relaxed",
+        source: r._source === "explore" ? "explore-relaxed" : "ranked-relaxed",
         explain: r.explain,
       });
     }
@@ -769,6 +767,7 @@ router.get("/mix", async (req, res) => {
       locationCap: MIX_LOCATION_CAP,
       fatigueStep: MIX_FATIGUE_STEP,
       fatigueMin: MIX_FATIGUE_MIN,
+      exploreNudge: MIX_EXPLORE_NUDGE,
     },
     count: chosen.length,
     results: chosen,
