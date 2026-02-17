@@ -1,11 +1,14 @@
 /**
  * recs.js (root) — ESM default export
- * iBand Feed Generator (v6.4 — cold start boost for explore)
+ * iBand Feed Generator (v6.5 — explore rotation memory)
  *
- * v6.4 adds:
- * - Cold-start scoring for artists with baseScore=0 (no agg bucket yet)
- * - Taste-aware boost still applies
- * - Keeps v6.3: taste vector + deterministic explore injection + diversity caps
+ * v6.5 adds:
+ * - Session explore-rotation memory using /var/data/iband/db/recs-state.json
+ * - Explore cooldown window so we don’t keep picking the same explore artist
+ *
+ * Keeps:
+ * - v6.4 cold start boost for explore items with baseScore=0
+ * - v6.3 taste-vector, deterministic injection, diversity caps, personalization, fatigue
  *
  * Endpoints:
  * - /api/recs/health
@@ -36,6 +39,10 @@ const EVENTS_LOG_FILE =
 const ARTISTS_FILE =
   process.env.ARTISTS_FILE || path.join(DATA_DIR, "artists.json");
 
+// NEW v6.5: session memory state
+const RECS_STATE_FILE =
+  process.env.RECS_STATE_FILE || path.join(DATA_DIR, "recs-state.json");
+
 const MAX_RETURN = parseInt(process.env.RECS_MAX_RETURN || "50", 10);
 
 // Personalization scan limits (Render-safe)
@@ -59,10 +66,14 @@ const TASTE_LOCATION_BOOST = parseFloat(process.env.TASTE_LOCATION_BOOST || "1.0
 const TASTE_WATCH_MS_PER_POINT = parseInt(process.env.TASTE_WATCH_MS_PER_POINT || "5000", 10);
 const TASTE_TOP_K = parseInt(process.env.TASTE_TOP_K || "3", 10);
 
-// NEW v6.4: cold-start base score (for explore items with baseScore=0)
+// v6.4: cold-start base score (for explore items with baseScore=0)
 const COLD_START_BASE = parseFloat(process.env.COLD_START_BASE || "1.5");
 
-const routerVersion = 64;
+// v6.5: explore rotation knobs
+const EXPLORE_COOLDOWN_MIN = parseInt(process.env.EXPLORE_COOLDOWN_MIN || "60", 10);
+const EXPLORE_HISTORY_MAX = parseInt(process.env.EXPLORE_HISTORY_MAX || "20", 10);
+
+const routerVersion = 65;
 
 /* -----------------------------
  * Helpers
@@ -98,6 +109,16 @@ async function readFileSafe(p) {
   }
 }
 
+async function writeFileSafe(p, raw) {
+  try {
+    await fs.mkdir(path.dirname(p), { recursive: true });
+    await fs.writeFile(p, raw, "utf8");
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e?.code || e?.message || "write_failed" };
+  }
+}
+
 function parseJsonSafe(raw) {
   try {
     const obj = JSON.parse(raw);
@@ -107,6 +128,79 @@ function parseJsonSafe(raw) {
   }
 }
 
+function normKey(s) {
+  return (s || "unknown").toString().toLowerCase().trim();
+}
+
+/* -----------------------------
+ * v6.5 state store: explore rotation memory
+ * ----------------------------- */
+function emptyState() {
+  return { updatedAt: null, sessions: {} };
+}
+
+async function loadState() {
+  const r = await readFileSafe(RECS_STATE_FILE);
+  if (!r.ok) return emptyState();
+
+  const p = parseJsonSafe(r.raw);
+  if (!p.ok || !p.obj || typeof p.obj !== "object") return emptyState();
+
+  if (!p.obj.sessions || typeof p.obj.sessions !== "object") p.obj.sessions = {};
+  return p.obj;
+}
+
+function pruneSessionHistory(session) {
+  if (!session || typeof session !== "object") return { explore: [] };
+  if (!Array.isArray(session.explore)) session.explore = [];
+
+  const cutoffMs = Date.now() - EXPLORE_COOLDOWN_MIN * 60 * 1000;
+
+  session.explore = session.explore
+    .filter((x) => x && typeof x === "object" && typeof x.artistId === "string")
+    .filter((x) => {
+      const t = Date.parse(x.at || "");
+      if (!Number.isFinite(t)) return true; // keep if no date (rare)
+      return t >= cutoffMs;
+    })
+    .slice(-clamp(EXPLORE_HISTORY_MAX, 5, 200));
+
+  return session;
+}
+
+function getCooldownSetForSession(state, sessionId) {
+  const sess = pruneSessionHistory(state.sessions[sessionId] || { explore: [] });
+  state.sessions[sessionId] = sess;
+
+  const set = new Set();
+  for (const it of sess.explore) set.add(it.artistId);
+  return set;
+}
+
+async function recordExplorePick(state, sessionId, artistId, meta = {}) {
+  if (!state.sessions) state.sessions = {};
+  const sess = pruneSessionHistory(state.sessions[sessionId] || { explore: [] });
+
+  // push new record
+  sess.explore.push({
+    artistId,
+    at: nowIso(),
+    ...meta,
+  });
+
+  // re-prune to enforce size + window
+  pruneSessionHistory(sess);
+
+  state.sessions[sessionId] = sess;
+  state.updatedAt = nowIso();
+
+  // best-effort save (don’t fail request if write fails)
+  await writeFileSafe(RECS_STATE_FILE, JSON.stringify(state, null, 2));
+}
+
+/* -----------------------------
+ * Data loaders
+ * ----------------------------- */
 async function loadAgg() {
   const base = { updatedAt: null, byArtist: {} };
   const r = await readFileSafe(EVENTS_AGG_FILE);
@@ -126,10 +220,6 @@ function extractArtistsArray(store) {
   if (Array.isArray(store.artists)) return store.artists;
   if (store.data && Array.isArray(store.data.artists)) return store.data.artists;
   return [];
-}
-
-function normKey(s) {
-  return (s || "unknown").toString().toLowerCase().trim();
 }
 
 async function loadArtistsAll() {
@@ -368,7 +458,7 @@ function tasteBoostForArtist(artist, taste) {
   return boost;
 }
 
-// NEW v6.4: cold-start score when baseScore === 0
+// v6.4: cold-start score when baseScore === 0
 function coldStartScoreForArtist(artist, taste) {
   const tBoost = tasteBoostForArtist(artist, taste);
   const cold = COLD_START_BASE + tBoost;
@@ -469,28 +559,41 @@ function buildCatalogRows(artistsList, aggByArtist) {
   return rows;
 }
 
-function pickExploreCandidate(catalogRows, signals, excludeIds, prng, taste) {
-  // Explore score = unseenBoost + underdog novelty + tasteBoost + tiny jitter
-  const pool = catalogRows
-    .filter((r) => {
-      const id = r.artist?.id;
-      if (!id) return false;
-      if (excludeIds.has(id)) return false;
-      return true;
-    })
-    .map((r) => {
-      const id = r.artist.id;
-      const base = safeNumber(r.baseScore, 0);
+/**
+ * v6.5: Explore candidate selection now supports a "cooldown set" to prevent repeats.
+ * If cooldown excludes everything, we fall back to normal behaviour.
+ */
+function pickExploreCandidate(catalogRows, signals, excludeIds, prng, taste, cooldownSet) {
+  const baseFilter = (r) => {
+    const id = r.artist?.id;
+    if (!id) return false;
+    if (excludeIds.has(id)) return false;
+    return true;
+  };
 
-      const unseen = signals[id] ? 0 : 1;
-      const novelty = 1 / (1 + base);
-      const tBoost = tasteBoostForArtist(r.artist, taste);
+  const scorePool = (rows) =>
+    rows
+      .filter(baseFilter)
+      .map((r) => {
+        const id = r.artist.id;
+        const base = safeNumber(r.baseScore, 0);
 
-      const jitter = prng() * 0.0001;
-      const score = unseen * 10 + novelty + tBoost + jitter;
+        const unseen = signals[id] ? 0 : 1;
+        const novelty = 1 / (1 + base);
+        const tBoost = tasteBoostForArtist(r.artist, taste);
 
-      return { ...r, _exploreScore: score, _unseen: unseen === 1, _tBoost: tBoost };
-    });
+        const jitter = prng() * 0.0001;
+        const score = unseen * 10 + novelty + tBoost + jitter;
+
+        return { ...r, _exploreScore: score, _unseen: unseen === 1, _tBoost: tBoost };
+      });
+
+  // First pass: honor cooldown set
+  let pool = scorePool(catalogRows.filter((r) => !cooldownSet?.has(r.artist?.id)));
+  if (!pool.length) {
+    // Fallback: ignore cooldown if it would block explore completely
+    pool = scorePool(catalogRows);
+  }
 
   if (!pool.length) return null;
 
@@ -509,6 +612,7 @@ router.use(express.json({ limit: "64kb" }));
 router.get("/health", async (_req, res) => {
   const artists = await loadArtistsMap();
   const logStat = await statSafe(EVENTS_LOG_FILE);
+  const stateStat = await statSafe(RECS_STATE_FILE);
 
   res.json({
     success: true,
@@ -520,6 +624,8 @@ router.get("/health", async (_req, res) => {
       eventsAgg: path.basename(EVENTS_AGG_FILE),
       artistsFile: path.basename(ARTISTS_FILE),
       eventsLog: path.basename(EVENTS_LOG_FILE),
+      recsState: path.basename(RECS_STATE_FILE),
+      recsStateOk: stateStat.ok,
       artistsLoaded: artists.count,
       eventsLogOk: logStat.ok,
     },
@@ -633,14 +739,16 @@ router.get("/personalized", async (req, res) => {
 });
 
 /* -----------------------------
- * Mix endpoints (taste-aware explore + cold start)
+ * Mix endpoints (taste-aware explore + cold start + rotation memory)
  * ----------------------------- */
 router.get("/mix/health", async (_req, res) => {
   const logStat = await statSafe(EVENTS_LOG_FILE);
+  const stateStat = await statSafe(RECS_STATE_FILE);
+
   res.json({
     success: true,
     service: "recs-mix",
-    version: 24,
+    version: 25,
     updatedAt: nowIso(),
     config: {
       explorePct: MIX_EXPLORE_PCT,
@@ -651,6 +759,12 @@ router.get("/mix/health", async (_req, res) => {
       exploreNudge: MIX_EXPLORE_NUDGE,
       forceExploreMin: MIX_FORCE_EXPLORE_MIN,
       coldStartBase: COLD_START_BASE,
+      exploreRotation: {
+        stateFile: path.basename(RECS_STATE_FILE),
+        stateOk: stateStat.ok,
+        cooldownMin: EXPLORE_COOLDOWN_MIN,
+        historyMax: EXPLORE_HISTORY_MAX,
+      },
       taste: {
         genreBoost: TASTE_GENRE_BOOST,
         locationBoost: TASTE_LOCATION_BOOST,
@@ -677,7 +791,7 @@ router.get("/mix", async (req, res) => {
 
   const limit = clamp(parseInt(req.query.limit || `${MAX_RETURN}`, 10) || MAX_RETURN, 1, MAX_RETURN);
 
-  const [agg, artists] = await Promise.all([loadAgg(), loadArtistsMap()]);
+  const [agg, artists, state] = await Promise.all([loadAgg(), loadArtistsMap(), loadState()]);
 
   const tail = await readTailText(EVENTS_LOG_FILE, PERSONALIZE_TAIL_KB);
   const lines = (tail.ok ? tail.text.split("\n") : []).slice(-PERSONALIZE_MAX_LINES);
@@ -695,6 +809,7 @@ router.get("/mix", async (req, res) => {
   const prng = makePrng(sessionId);
 
   const catalogRows = buildCatalogRows(artists.list, agg.byArtist || {});
+  const cooldownSet = getCooldownSetForSession(state, sessionId);
 
   // Ranked rows
   const rankedRows = [];
@@ -752,8 +867,15 @@ router.get("/mix", async (req, res) => {
   const genreCount = {};
   const locCount = {};
 
-  function addItem(item, sourceTag) {
-    bumpDiversityCounts(item, genreCount, locCount);
+  function bumpCountsForChosen(ch) {
+    const g = normKey(ch.artist?.genre);
+    const l = normKey(ch.artist?.location);
+    if (g !== "unknown") genreCount[g] = (genreCount[g] || 0) + 1;
+    if (l !== "unknown") locCount[l] = (locCount[l] || 0) + 1;
+  }
+
+  async function addItem(item, sourceTag) {
+    bumpCountsForChosen(item);
     chosenIds.add(item.artist.id);
     chosen.push({
       artist: item.artist,
@@ -765,6 +887,15 @@ router.get("/mix", async (req, res) => {
       source: sourceTag,
       explain: item.explain,
     });
+
+    // v6.5: record explore picks for rotation
+    if (sourceTag.startsWith("explore")) {
+      await recordExplorePick(state, sessionId, item.artist.id, {
+        source: sourceTag,
+        topGenres: taste.topGenres?.slice(0, 3),
+        topLocations: taste.topLocations?.slice(0, 3),
+      });
+    }
   }
 
   let rankedIdx = 0;
@@ -774,12 +905,12 @@ router.get("/mix", async (req, res) => {
     const isExploreSlot = injectSlots.includes(slot) && exploreUsed < exploreCount;
 
     if (isExploreSlot) {
-      const candidate = pickExploreCandidate(catalogRows, signals, chosenIds, prng, taste);
+      const candidate = pickExploreCandidate(catalogRows, signals, chosenIds, prng, taste, cooldownSet);
 
       if (candidate) {
         const baseScore = safeNumber(candidate.baseScore, 0);
 
-        // NEW v6.4: cold start if baseScore==0
+        // v6.4: cold start if baseScore==0
         let computedBase = baseScore;
         let coldStart = null;
 
@@ -810,14 +941,18 @@ router.get("/mix", async (req, res) => {
               topGenres: taste.topGenres,
               topLocations: taste.topLocations,
             },
+            rotation: {
+              cooldownMin: EXPLORE_COOLDOWN_MIN,
+              recentExploreCount: state.sessions?.[sessionId]?.explore?.length || 0,
+            },
             coldStart,
           },
         };
 
         if (canAddWithDiversity(exploreRow, genreCount, locCount)) {
-          addItem(exploreRow, "explore");
+          await addItem(exploreRow, "explore");
         } else {
-          addItem(exploreRow, "explore-relaxed");
+          await addItem(exploreRow, "explore-relaxed");
         }
 
         exploreUsed++;
@@ -833,7 +968,7 @@ router.get("/mix", async (req, res) => {
       if (!id || chosenIds.has(id)) continue;
 
       if (canAddWithDiversity(r, genreCount, locCount)) {
-        addItem(r, "ranked");
+        await addItem(r, "ranked");
         placed = true;
         break;
       }
@@ -845,17 +980,17 @@ router.get("/mix", async (req, res) => {
         const id = r?.artist?.id;
         if (!id || chosenIds.has(id)) continue;
 
-        addItem(r, "ranked-relaxed");
+        await addItem(r, "ranked-relaxed");
         placed = true;
         break;
       }
     }
 
     if (!placed) {
-      const filler = pickExploreCandidate(catalogRows, signals, chosenIds, prng, taste);
+      const filler = pickExploreCandidate(catalogRows, signals, chosenIds, prng, taste, cooldownSet);
       if (filler) {
         const baseScore = safeNumber(filler.baseScore, 0);
-        addItem(
+        await addItem(
           {
             artist: filler.artist,
             baseScore,
@@ -877,7 +1012,7 @@ router.get("/mix", async (req, res) => {
     const idx = swapSlot - 1;
 
     const excludeIds = new Set(chosenIds);
-    const candidate = pickExploreCandidate(catalogRows, signals, excludeIds, prng, taste);
+    const candidate = pickExploreCandidate(catalogRows, signals, excludeIds, prng, taste, cooldownSet);
 
     if (candidate) {
       const baseScore = safeNumber(candidate.baseScore, 0);
@@ -896,7 +1031,7 @@ router.get("/mix", async (req, res) => {
         };
       }
 
-      chosen[idx] = {
+      const swapped = {
         artist: candidate.artist,
         score: Number((computedBase * MIX_EXPLORE_NUDGE).toFixed(6)),
         baseScore: computedBase,
@@ -909,9 +1044,23 @@ router.get("/mix", async (req, res) => {
           explore: true,
           swap: true,
           taste: { topGenres: taste.topGenres, topLocations: taste.topLocations },
+          rotation: {
+            cooldownMin: EXPLORE_COOLDOWN_MIN,
+            recentExploreCount: state.sessions?.[sessionId]?.explore?.length || 0,
+          },
           coldStart,
         },
       };
+
+      chosen[idx] = swapped;
+
+      // record swap for rotation memory
+      await recordExplorePick(state, sessionId, swapped.artist.id, {
+        source: "explore-swap",
+        swapSlot,
+        topGenres: taste.topGenres?.slice(0, 3),
+        topLocations: taste.topLocations?.slice(0, 3),
+      });
     }
   }
 
@@ -933,6 +1082,11 @@ router.get("/mix", async (req, res) => {
       forceExploreMin: MIX_FORCE_EXPLORE_MIN,
       injectSlots,
       coldStartBase: COLD_START_BASE,
+      exploreRotation: {
+        stateFile: RECS_STATE_FILE,
+        cooldownMin: EXPLORE_COOLDOWN_MIN,
+        historyMax: EXPLORE_HISTORY_MAX,
+      },
     },
     count: chosen.length,
     results: chosen,
