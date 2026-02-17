@@ -1,25 +1,27 @@
 /**
  * recs.js (root) — ESM default export
- * iBand Feed Generator (v5 — personalized)
+ * iBand Feed Generator (v6 — mix: rising + personalized + exploration + diversity)
  *
  * Keeps:
  * - /api/recs/health
  * - /api/recs/rising
+ * - /api/recs/personalized/health
+ * - /api/recs/personalized
  *
  * Adds:
- * - /api/recs/personalized/health
- * - /api/recs/personalized?sessionId=...&limit=...
+ * - /api/recs/mix/health
+ * - /api/recs/mix?sessionId=...&limit=...
  *
- * Personalization v1:
- * - Read last chunk of events.jsonl
- * - Build session-level engagement per artist
- * - Apply small explainable boosts for engaged artists
- * - Apply light fatigue penalty for repeatedly seen artists
+ * Feed Intelligence v2 goals:
+ * - Preserve engagement-weighted ranking (baseScore)
+ * - Add session personalization (multiplier)
+ * - Add exploration injection (discover new / low-signal artists)
+ * - Add diversity caps (genre/location) to prevent winner-takes-all
+ * - Add fatigue control (light penalty for repeated seen in session)
  *
- * Safety:
- * - No auth required
- * - No code self-mutation
- * - Deterministic + explainable output
+ * Deterministic:
+ * - Exploration selection uses a seeded PRNG from sessionId
+ * - Same sessionId yields stable mix ordering for the same data
  */
 
 import express from "express";
@@ -48,7 +50,14 @@ const MAX_RETURN = parseInt(process.env.RECS_MAX_RETURN || "50", 10);
 const PERSONALIZE_TAIL_KB = parseInt(process.env.PERSONALIZE_TAIL_KB || "512", 10); // read last 512KB
 const PERSONALIZE_MAX_LINES = parseInt(process.env.PERSONALIZE_MAX_LINES || "2500", 10); // cap lines parsed
 
-const routerVersion = 5;
+// Mix v2 controls
+const MIX_EXPLORE_PCT = parseFloat(process.env.MIX_EXPLORE_PCT || "0.2"); // 20% slots
+const MIX_GENRE_CAP = parseInt(process.env.MIX_GENRE_CAP || "2", 10); // max per genre in list
+const MIX_LOCATION_CAP = parseInt(process.env.MIX_LOCATION_CAP || "3", 10); // max per location in list (light cap)
+const MIX_FATIGUE_STEP = parseFloat(process.env.MIX_FATIGUE_STEP || "0.04"); // penalty per extra seen
+const MIX_FATIGUE_MIN = parseFloat(process.env.MIX_FATIGUE_MIN || "0.84"); // clamp floor
+
+const routerVersion = 6;
 
 /* -----------------------------
  * Helpers
@@ -101,14 +110,11 @@ async function loadAgg() {
   const p = parseJsonSafe(r.raw);
   if (!p.ok || !p.obj || typeof p.obj !== "object") return base;
 
-  if (!p.obj.byArtist || typeof p.obj.byArtist.byArtist === "object") {
-    // ignore nested weirdness if any
-  }
   if (!p.obj.byArtist || typeof p.obj.byArtist !== "object") p.obj.byArtist = {};
   return p.obj;
 }
 
-/** Artists store supports: array legacy OR canonical { artists: [] } */
+/** Artists store supports: legacy array OR canonical { artists: [] } */
 function extractArtistsArray(store) {
   if (Array.isArray(store)) return store;
   if (!store || typeof store !== "object") return [];
@@ -118,7 +124,6 @@ function extractArtistsArray(store) {
 }
 
 async function loadArtistsMap() {
-  const base = { artists: [] };
   const r = await readFileSafe(ARTISTS_FILE);
   if (!r.ok) return { map: {}, count: 0, readOk: false, parseOk: false };
 
@@ -201,7 +206,6 @@ function safeLineJson(line) {
 }
 
 async function readTailText(filePath, tailKb) {
-  // Reads last N KB of file as utf8 text (Render-safe)
   const st = await statSafe(filePath);
   if (!st.ok) return { ok: false, error: st.error, text: "" };
   const size = st.size;
@@ -221,7 +225,7 @@ async function readTailText(filePath, tailKb) {
 }
 
 function buildSessionSignals(events, sessionId) {
-  const byArtist = {}; // { [artistId]: { seen, engagedPoints, watchMs, views, replays, likes, saves, shares, follows, comments, votes } }
+  const byArtist = {};
 
   for (const ev of events) {
     if (!ev || typeof ev !== "object") continue;
@@ -262,7 +266,6 @@ function buildSessionSignals(events, sessionId) {
     if (t === "vote") a.votes += 1;
 
     // Engagement points (simple, explainable)
-    // watch: 1 point per 10s, replay: +4, like: +2, save: +5, share: +6, follow: +7, comment: +3, vote: +2
     a.engagedPoints += Math.floor(safeNumber(ev.watchMs, 0) / 10000);
     if (t === "replay") a.engagedPoints += 4;
     if (t === "like") a.engagedPoints += 2;
@@ -280,9 +283,6 @@ function buildSessionSignals(events, sessionId) {
 }
 
 function personalizationMultiplier(signal) {
-  // Small boosts only (safe v1)
-  // boost = 1 + clamp(log1p(points)/10, 0, 0.35)
-  // fatigue penalty if seen a lot but low engagement: multiply by 0.92..1.0
   const points = safeNumber(signal?.engagedPoints, 0);
   const seen = safeNumber(signal?.seen, 0);
 
@@ -293,6 +293,84 @@ function personalizationMultiplier(signal) {
 
   const mult = boost * fatigue;
   return Number(mult.toFixed(6));
+}
+
+function fatigueMultiplier(signal) {
+  // Applies even when engagement exists (light, controlled)
+  const seen = safeNumber(signal?.seen, 0);
+  if (seen <= 1) return 1.0;
+  const mult = clamp(1 - (seen - 1) * MIX_FATIGUE_STEP, MIX_FATIGUE_MIN, 1.0);
+  return Number(mult.toFixed(6));
+}
+
+/* -----------------------------
+ * Deterministic PRNG (seeded by sessionId)
+ * ----------------------------- */
+function hash32(str) {
+  // FNV-1a 32-bit
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function makePrng(seedStr) {
+  let state = hash32(seedStr || "seed");
+  return () => {
+    // LCG
+    state = (Math.imul(1664525, state) + 1013904223) >>> 0;
+    return state / 4294967296;
+  };
+}
+
+/* -----------------------------
+ * Mix v2 logic
+ * ----------------------------- */
+function pickExploreCandidates(allRows, sessionSignals, exploreCount, prng) {
+  // Choose from lowest-baseScore / lowest-signal artists (novelty)
+  // Novelty score favors low baseScore and unseen in session.
+  const candidates = allRows
+    .filter((r) => {
+      const id = r.artist?.id;
+      return id && !sessionSignals[id]; // unseen in session
+    })
+    .map((r) => {
+      const base = safeNumber(r.baseScore, 0);
+      // higher novelty when base is small (underdogs)
+      const novelty = 1 / (1 + base);
+      return { ...r, _novelty: novelty };
+    });
+
+  // Sort by novelty desc then shuffle top slice deterministically
+  candidates.sort((a, b) => b._novelty - a._novelty);
+
+  const pool = candidates.slice(0, Math.max(10, exploreCount * 8));
+  // deterministic shuffle using prng
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(prng() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+
+  return pool.slice(0, exploreCount);
+}
+
+function canAddWithDiversity(item, genreCount, locCount) {
+  const g = (item.artist?.genre || "unknown").toLowerCase().trim();
+  const l = (item.artist?.location || "unknown").toLowerCase().trim();
+
+  if (g !== "unknown" && genreCount[g] >= MIX_GENRE_CAP) return false;
+  if (l !== "unknown" && locCount[l] >= MIX_LOCATION_CAP) return false;
+  return true;
+}
+
+function bumpDiversityCounts(item, genreCount, locCount) {
+  const g = (item.artist?.genre || "unknown").toLowerCase().trim();
+  const l = (item.artist?.location || "unknown").toLowerCase().trim();
+
+  if (g !== "unknown") genreCount[g] = (genreCount[g] || 0) + 1;
+  if (l !== "unknown") locCount[l] = (locCount[l] || 0) + 1;
 }
 
 /* -----------------------------
@@ -323,6 +401,7 @@ router.get("/health", async (_req, res) => {
     endpoints: {
       rising: "/api/recs/rising",
       personalized: "/api/recs/personalized",
+      mix: "/api/recs/mix",
     },
     maxReturn: MAX_RETURN,
   });
@@ -386,9 +465,6 @@ router.get("/personalized/health", async (_req, res) => {
   });
 });
 
-/**
- * GET /api/recs/personalized?sessionId=...&limit=20
- */
 router.get("/personalized", async (req, res) => {
   const sessionId = typeof req.query.sessionId === "string" ? req.query.sessionId.trim() : "";
   if (!sessionId) {
@@ -403,7 +479,6 @@ router.get("/personalized", async (req, res) => {
 
   const [agg, artists] = await Promise.all([loadAgg(), loadArtistsMap()]);
 
-  // Build session signals from tail of jsonl
   const tail = await readTailText(EVENTS_LOG_FILE, PERSONALIZE_TAIL_KB);
   const lines = (tail.ok ? tail.text.split("\n") : []).slice(-PERSONALIZE_MAX_LINES);
 
@@ -429,13 +504,7 @@ router.get("/personalized", async (req, res) => {
 
     rows.push({
       artist: artist
-        ? {
-            id: artist.id,
-            name: artist.name || null,
-            imageUrl: artist.imageUrl || null,
-            genre: artist.genre || null,
-            location: artist.location || null,
-          }
+        ? { id: artist.id, name: artist.name || null, imageUrl: artist.imageUrl || null, genre: artist.genre || null, location: artist.location || null }
         : { id: artistId },
       score: finalScore,
       baseScore,
@@ -470,6 +539,239 @@ router.get("/personalized", async (req, res) => {
     signalArtists: Object.keys(signals).length,
     count: rows.length,
     results: rows.slice(0, limit),
+  });
+});
+
+/* -----------------------------
+ * Mix v2 endpoints
+ * ----------------------------- */
+router.get("/mix/health", async (_req, res) => {
+  const logStat = await statSafe(EVENTS_LOG_FILE);
+  res.json({
+    success: true,
+    service: "recs-mix",
+    version: 2,
+    updatedAt: nowIso(),
+    config: {
+      explorePct: MIX_EXPLORE_PCT,
+      genreCap: MIX_GENRE_CAP,
+      locationCap: MIX_LOCATION_CAP,
+      fatigueStep: MIX_FATIGUE_STEP,
+      fatigueMin: MIX_FATIGUE_MIN,
+      tailKb: PERSONALIZE_TAIL_KB,
+      maxLines: PERSONALIZE_MAX_LINES,
+      eventLog: path.basename(EVENTS_LOG_FILE),
+      eventLogOk: logStat.ok,
+    },
+  });
+});
+
+/**
+ * GET /api/recs/mix?sessionId=...&limit=20
+ *
+ * Returns a blended feed list:
+ * - Primary: base rising score
+ * - Personalized: session multiplier
+ * - Fatigue: gentle penalty on repeats in session
+ * - Exploration: inject underdogs/unseen picks
+ * - Diversity: cap genre/location dominance
+ */
+router.get("/mix", async (req, res) => {
+  const sessionId = typeof req.query.sessionId === "string" ? req.query.sessionId.trim() : "";
+  if (!sessionId) {
+    return res.status(400).json({
+      success: false,
+      message: "sessionId query param is required.",
+      example: "/api/recs/mix?sessionId=sess_seed_1&limit=20",
+    });
+  }
+
+  const limit = clamp(parseInt(req.query.limit || `${MAX_RETURN}`, 10) || MAX_RETURN, 1, MAX_RETURN);
+
+  const [agg, artists] = await Promise.all([loadAgg(), loadArtistsMap()]);
+
+  // session signals
+  const tail = await readTailText(EVENTS_LOG_FILE, PERSONALIZE_TAIL_KB);
+  const lines = (tail.ok ? tail.text.split("\n") : []).slice(-PERSONALIZE_MAX_LINES);
+
+  const parsed = [];
+  for (const line of lines) {
+    const obj = safeLineJson(line);
+    if (obj) parsed.push(obj);
+  }
+  const signals = buildSessionSignals(parsed, sessionId);
+
+  // build base rows
+  const allRows = [];
+  for (const [artistIdRaw, bucket] of Object.entries(agg.byArtist || {})) {
+    const artistId = String(artistIdRaw || "").trim();
+    const baseScore = risingScoreFromBucket(bucket);
+    const sig = signals[artistId] || null;
+
+    const personalMult = sig ? personalizationMultiplier(sig) : 1.0;
+    const fatMult = sig ? fatigueMultiplier(sig) : 1.0;
+
+    const finalScore = Number((baseScore * personalMult * fatMult).toFixed(6));
+
+    const artist = artists.map[artistId] || null;
+
+    allRows.push({
+      artist: artist
+        ? { id: artist.id, name: artist.name || null, imageUrl: artist.imageUrl || null, genre: artist.genre || null, location: artist.location || null }
+        : { id: artistId },
+      score: finalScore,
+      baseScore,
+      multipliers: {
+        personalization: personalMult,
+        fatigue: fatMult,
+      },
+      lastAt: bucket.lastAt || null,
+      metrics: {
+        views: safeNumber(bucket.views),
+        replays: safeNumber(bucket.replays),
+        likes: safeNumber(bucket.likes),
+        saves: safeNumber(bucket.saves),
+        shares: safeNumber(bucket.shares),
+        follows: safeNumber(bucket.follows),
+        comments: safeNumber(bucket.comments),
+        votes: safeNumber(bucket.votes),
+        watchMs: safeNumber(bucket.watchMs),
+      },
+      explain: sig
+        ? {
+            sessionId,
+            seen: sig.seen,
+            engagedPoints: sig.engagedPoints,
+            watchMs: sig.watchMs,
+            views: sig.views,
+            replays: sig.replays,
+            likes: sig.likes,
+            saves: sig.saves,
+            shares: sig.shares,
+            follows: sig.follows,
+            comments: sig.comments,
+            votes: sig.votes,
+          }
+        : { sessionId, seen: 0, engagedPoints: 0 },
+      _source: "ranked",
+    });
+  }
+
+  // Sort by finalScore desc as baseline
+  allRows.sort((a, b) => b.score - a.score);
+
+  // Exploration slots
+  const exploreCount = clamp(Math.floor(limit * clamp(MIX_EXPLORE_PCT, 0, 0.5)), 1, Math.max(1, Math.floor(limit / 2)));
+  const prng = makePrng(sessionId);
+  const explorePicks = pickExploreCandidates(allRows, signals, exploreCount, prng).map((r) => ({
+    ...r,
+    _source: "explore",
+    // tiny nudge so explore picks can surface but not dominate:
+    score: Number((r.score * 1.02).toFixed(6)),
+  }));
+
+  // Build final mixed list with diversity
+  const chosen = [];
+  const seenIds = new Set();
+  const genreCount = {};
+  const locCount = {};
+
+  // positions to inject explore: every 5th slot, starting at slot 3 (1-indexed)
+  const injectSlots = new Set();
+  for (let i = 3; i <= limit; i += 5) injectSlots.add(i);
+
+  let exploreIdx = 0;
+  let rankedIdx = 0;
+
+  function tryAdd(item, sourceTag) {
+    const id = item?.artist?.id;
+    if (!id || seenIds.has(id)) return false;
+    if (!canAddWithDiversity(item, genreCount, locCount)) return false;
+
+    bumpDiversityCounts(item, genreCount, locCount);
+    seenIds.add(id);
+
+    chosen.push({
+      artist: item.artist,
+      score: item.score,
+      baseScore: item.baseScore,
+      multipliers: item.multipliers,
+      lastAt: item.lastAt,
+      metrics: item.metrics,
+      source: sourceTag,
+      explain: item.explain,
+    });
+
+    return true;
+  }
+
+  // First pass: construct list with planned explore injections
+  while (chosen.length < limit && (rankedIdx < allRows.length || exploreIdx < explorePicks.length)) {
+    const slot = chosen.length + 1;
+
+    const shouldInjectExplore = injectSlots.has(slot) && exploreIdx < explorePicks.length;
+
+    if (shouldInjectExplore) {
+      const ex = explorePicks[exploreIdx++];
+      if (tryAdd(ex, "explore")) continue;
+      // if couldn't add due to diversity, keep going and try ranked
+    }
+
+    // ranked fill
+    while (rankedIdx < allRows.length) {
+      const r = allRows[rankedIdx++];
+      if (tryAdd(r, "ranked")) break;
+    }
+
+    // if ranked exhausted, try explore remaining
+    if (rankedIdx >= allRows.length && exploreIdx < explorePicks.length) {
+      const ex = explorePicks[exploreIdx++];
+      tryAdd(ex, "explore");
+    }
+
+    // safety break if we can't progress
+    if (rankedIdx >= allRows.length && exploreIdx >= explorePicks.length) break;
+  }
+
+  // Second pass fallback: if diversity caps were too strict, relax by allowing "unknown" caps only (already allowed)
+  // If still short, append ignoring diversity (last resort) to prevent empty feeds.
+  if (chosen.length < limit) {
+    for (const r of allRows) {
+      if (chosen.length >= limit) break;
+      const id = r?.artist?.id;
+      if (!id || seenIds.has(id)) continue;
+
+      // Ignore diversity last resort
+      seenIds.add(id);
+      chosen.push({
+        artist: r.artist,
+        score: r.score,
+        baseScore: r.baseScore,
+        multipliers: r.multipliers,
+        lastAt: r.lastAt,
+        metrics: r.metrics,
+        source: "ranked-relaxed",
+        explain: r.explain,
+      });
+    }
+  }
+
+  res.json({
+    success: true,
+    updatedAt: agg.updatedAt || null,
+    sessionId,
+    artistsLoaded: artists.count,
+    signalArtists: Object.keys(signals).length,
+    config: {
+      explorePct: MIX_EXPLORE_PCT,
+      exploreCount,
+      genreCap: MIX_GENRE_CAP,
+      locationCap: MIX_LOCATION_CAP,
+      fatigueStep: MIX_FATIGUE_STEP,
+      fatigueMin: MIX_FATIGUE_MIN,
+    },
+    count: chosen.length,
+    results: chosen,
   });
 });
 
