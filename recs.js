@@ -1,12 +1,19 @@
 /**
  * recs.js (root) — ESM default export
- * iBand Feed Generator (v6.1 — mix patched: exploration from full catalog)
+ * iBand Feed Generator (v6.2 — mix guarantees explore slot)
  *
- * Patch goal:
- * - Exploration must work even when ranked list is small
- * - Explore picks come from FULL artists catalog (artists.json), not only ranked rows
- * - Explore picks exclude already chosen ids before injection
- * - Artists with no agg bucket can still be explored (baseScore=0)
+ * Why v6.2:
+ * - With small catalogs (equal to limit), v6.1 could have zero eligible explore candidates.
+ * - v6.2 guarantees at least one explore slot by:
+ *   1) Building a normal ranked list
+ *   2) Reserving specific injection slots
+ *   3) At injection slots, selecting an explore candidate from the FULL catalog that is:
+ *      - not already chosen so far (dynamic exclusion)
+ *      - preferably unseen in session
+ *      - preferably low baseScore / low events
+ *   4) If none exist, perform a deterministic SWAP:
+ *      - choose an underdog from catalog not in chosen
+ *      - swap it into the injection slot (source: explore-swap)
  *
  * Keeps:
  * - /api/recs/health
@@ -49,10 +56,12 @@ const MIX_GENRE_CAP = parseInt(process.env.MIX_GENRE_CAP || "2", 10);
 const MIX_LOCATION_CAP = parseInt(process.env.MIX_LOCATION_CAP || "3", 10);
 const MIX_FATIGUE_STEP = parseFloat(process.env.MIX_FATIGUE_STEP || "0.04");
 const MIX_FATIGUE_MIN = parseFloat(process.env.MIX_FATIGUE_MIN || "0.84");
+const MIX_EXPLORE_NUDGE = parseFloat(process.env.MIX_EXPLORE_NUDGE || "1.02");
 
-// Exploration behavior
-const MIX_EXPLORE_NUDGE = parseFloat(process.env.MIX_EXPLORE_NUDGE || "1.02"); // small uplift
-const routerVersion = 61;
+// v6.2 specific
+const MIX_FORCE_EXPLORE_MIN = parseInt(process.env.MIX_FORCE_EXPLORE_MIN || "1", 10); // guarantee >=1 explore slot
+
+const routerVersion = 62;
 
 /* -----------------------------
  * Helpers
@@ -143,7 +152,7 @@ async function loadArtistsMap() {
   const all = await loadArtistsAll();
   const map = {};
   for (const a of all.artists) map[a.id] = a;
-  return { map, count: all.artists.length, readOk: all.readOk, parseOk: all.parseOk, list: all.artists };
+  return { map, count: all.artists.length, list: all.artists, readOk: all.readOk, parseOk: all.parseOk };
 }
 
 /* -----------------------------
@@ -328,7 +337,7 @@ function makePrng(seedStr) {
 }
 
 /* -----------------------------
- * Mix v2.1 logic
+ * Diversity helpers
  * ----------------------------- */
 function canAddWithDiversity(item, genreCount, locCount) {
   const g = (item.artist?.genre || "unknown").toLowerCase().trim();
@@ -347,9 +356,10 @@ function bumpDiversityCounts(item, genreCount, locCount) {
   if (l !== "unknown") locCount[l] = (locCount[l] || 0) + 1;
 }
 
+/* -----------------------------
+ * Catalog + Explore selection
+ * ----------------------------- */
 function buildCatalogRows(artistsList, aggByArtist) {
-  // Create a row for every artist even if they have no agg bucket yet.
-  // If no bucket, metrics zeros, lastAt null, baseScore=0.
   const rows = [];
   for (const a of artistsList) {
     const bucket = aggByArtist[a.id] || null;
@@ -377,35 +387,36 @@ function buildCatalogRows(artistsList, aggByArtist) {
   return rows;
 }
 
-function pickExploreFromCatalog(catalogRows, sessionSignals, excludeIds, exploreCount, prng) {
-  // Prefer artists:
-  // - unseen in session
-  // - lower baseScore (underdogs)
-  // - and not already in excludeIds
+function pickExploreCandidate(catalogRows, signals, excludeIds, prng) {
+  // Prefer:
+  // 1) not already chosen (excludeIds)
+  // 2) unseen in session
+  // 3) low baseScore (underdog novelty)
+  // Deterministic tie-break via prng
+
   const pool = catalogRows
     .filter((r) => {
       const id = r.artist?.id;
       if (!id) return false;
       if (excludeIds.has(id)) return false;
-      if (sessionSignals[id]) return false;
       return true;
     })
     .map((r) => {
+      const id = r.artist.id;
       const base = safeNumber(r.baseScore, 0);
-      const novelty = 1 / (1 + base);
-      return { ...r, _novelty: novelty };
+
+      const unseen = signals[id] ? 0 : 1; // unseen gets boost
+      const novelty = 1 / (1 + base); // underdog boost
+      const jitter = prng() * 0.0001; // deterministic tiny jitter
+
+      const score = unseen * 10 + novelty + jitter;
+      return { ...r, _exploreScore: score, _unseen: unseen === 1 };
     });
 
-  pool.sort((a, b) => b._novelty - a._novelty);
+  if (!pool.length) return null;
 
-  const slice = pool.slice(0, Math.max(12, exploreCount * 10));
-
-  for (let i = slice.length - 1; i > 0; i--) {
-    const j = Math.floor(prng() * (i + 1));
-    [slice[i], slice[j]] = [slice[j], slice[i]];
-  }
-
-  return slice.slice(0, exploreCount);
+  pool.sort((a, b) => b._exploreScore - a._exploreScore);
+  return pool[0];
 }
 
 /* -----------------------------
@@ -555,7 +566,7 @@ router.get("/mix/health", async (_req, res) => {
   res.json({
     success: true,
     service: "recs-mix",
-    version: 21,
+    version: 22,
     updatedAt: nowIso(),
     config: {
       explorePct: MIX_EXPLORE_PCT,
@@ -564,6 +575,7 @@ router.get("/mix/health", async (_req, res) => {
       fatigueStep: MIX_FATIGUE_STEP,
       fatigueMin: MIX_FATIGUE_MIN,
       exploreNudge: MIX_EXPLORE_NUDGE,
+      forceExploreMin: MIX_FORCE_EXPLORE_MIN,
       tailKb: PERSONALIZE_TAIL_KB,
       maxLines: PERSONALIZE_MAX_LINES,
       eventLog: path.basename(EVENTS_LOG_FILE),
@@ -596,10 +608,11 @@ router.get("/mix", async (req, res) => {
   }
   const signals = buildSessionSignals(parsed, sessionId);
 
-  // Build catalog rows from all artists (exploration source of truth)
+  const prng = makePrng(sessionId);
+
   const catalogRows = buildCatalogRows(artists.list, agg.byArtist || {});
 
-  // Ranked rows only from artists that have agg buckets (signal)
+  // Ranked rows from agg buckets
   const rankedRows = [];
   for (const [artistIdRaw, bucket] of Object.entries(agg.byArtist || {})) {
     const artistId = String(artistIdRaw || "").trim();
@@ -637,61 +650,28 @@ router.get("/mix", async (req, res) => {
 
   rankedRows.sort((a, b) => b.score - a.score);
 
-  // Determine explore slots
-  const exploreCount = clamp(
-    Math.floor(limit * clamp(MIX_EXPLORE_PCT, 0, 0.5)),
-    1,
-    Math.max(1, Math.floor(limit / 2))
-  );
+  // Explore count (guarantee at least 1)
+  const computedExplore = Math.floor(limit * clamp(MIX_EXPLORE_PCT, 0, 0.5));
+  const exploreCount = clamp(Math.max(MIX_FORCE_EXPLORE_MIN, computedExplore), 1, Math.max(1, Math.floor(limit / 2)));
 
-  const prng = makePrng(sessionId);
-
-  // Pre-select top ranked (skeleton) to exclude from exploration
-  // We'll choose ranked first, then inject explore; ensures explore doesn't collide with top ranked.
-  const preChosenIds = new Set();
-  for (let i = 0; i < Math.min(limit, rankedRows.length); i++) {
-    const id = rankedRows[i]?.artist?.id;
-    if (id) preChosenIds.add(id);
+  // Determine injection slots (1-indexed): every 5th starting at 3
+  const injectSlots = [];
+  for (let i = 3; i <= limit; i += 5) injectSlots.push(i);
+  // Ensure we have enough inject slots for exploreCount; if not, append from end backwards
+  for (let i = injectSlots.length; i < exploreCount; i++) {
+    const slot = clamp(limit - i, 1, limit);
+    if (!injectSlots.includes(slot)) injectSlots.push(slot);
   }
+  injectSlots.sort((a, b) => a - b);
 
-  const explorePicksCatalog = pickExploreFromCatalog(catalogRows, signals, preChosenIds, exploreCount, prng).map((r) => {
-    // Map catalog row into feed row shape. If artist has no bucket, baseScore=0, score=0.
-    // Give tiny nudge so explore picks can surface in injected positions.
-    const baseScore = safeNumber(r.baseScore, 0);
-    const score = Number((baseScore * MIX_EXPLORE_NUDGE).toFixed(6));
-    return {
-      artist: r.artist,
-      score,
-      baseScore,
-      multipliers: { personalization: 1.0, fatigue: 1.0 },
-      lastAt: r.lastAt || null,
-      metrics: r.metrics,
-      explain: { sessionId, seen: 0, engagedPoints: 0, explore: true },
-      _source: "explore",
-    };
-  });
-
-  // Build final mixed list with diversity caps
   const chosen = [];
-  const seenIds = new Set();
+  const chosenIds = new Set();
   const genreCount = {};
   const locCount = {};
 
-  // inject explore at fixed slots: every 5th starting at 3
-  const injectSlots = new Set();
-  for (let i = 3; i <= limit; i += 5) injectSlots.add(i);
-
-  let exploreIdx = 0;
-  let rankedIdx = 0;
-
-  function tryAdd(item, sourceTag) {
-    const id = item?.artist?.id;
-    if (!id || seenIds.has(id)) return false;
-    if (!canAddWithDiversity(item, genreCount, locCount)) return false;
-
+  function addItem(item, sourceTag) {
     bumpDiversityCounts(item, genreCount, locCount);
-    seenIds.add(id);
-
+    chosenIds.add(item.artist.id);
     chosen.push({
       artist: item.artist,
       score: item.score,
@@ -702,55 +682,125 @@ router.get("/mix", async (req, res) => {
       source: sourceTag,
       explain: item.explain,
     });
-
-    return true;
   }
 
-  while (chosen.length < limit && (rankedIdx < rankedRows.length || exploreIdx < explorePicksCatalog.length)) {
-    const slot = chosen.length + 1;
+  // Build list slot-by-slot, injecting explore candidates dynamically
+  let rankedIdx = 0;
+  let exploreUsed = 0;
 
-    const shouldInjectExplore = injectSlots.has(slot) && exploreIdx < explorePicksCatalog.length;
+  for (let slot = 1; slot <= limit; slot++) {
+    const isExploreSlot = injectSlots.includes(slot) && exploreUsed < exploreCount;
 
-    if (shouldInjectExplore) {
-      const ex = explorePicksCatalog[exploreIdx++];
-      if (tryAdd(ex, "explore")) continue;
-      // if explore blocked by diversity, fall through to ranked
+    if (isExploreSlot) {
+      // pick explore candidate based on current chosenIds (dynamic)
+      const candidate = pickExploreCandidate(catalogRows, signals, chosenIds, prng);
+
+      if (candidate) {
+        const baseScore = safeNumber(candidate.baseScore, 0);
+        const exploreRow = {
+          artist: candidate.artist,
+          baseScore,
+          score: Number((baseScore * MIX_EXPLORE_NUDGE).toFixed(6)),
+          multipliers: { personalization: 1.0, fatigue: 1.0 },
+          lastAt: candidate.lastAt || null,
+          metrics: candidate.metrics,
+          explain: { sessionId, seen: 0, engagedPoints: 0, explore: true },
+        };
+
+        // Try diversity; if blocked, we still force explore by allowing it (explore-relaxed) to meet guarantee
+        if (canAddWithDiversity(exploreRow, genreCount, locCount)) {
+          addItem(exploreRow, "explore");
+        } else {
+          addItem(exploreRow, "explore-relaxed");
+        }
+
+        exploreUsed++;
+        continue;
+      }
+
+      // If no candidate exists (should be rare), we fall through to ranked fill and later swap.
     }
 
-    // Fill ranked
+    // ranked fill: find next rankable not yet chosen that fits diversity
+    let placed = false;
     while (rankedIdx < rankedRows.length) {
       const r = rankedRows[rankedIdx++];
-      if (tryAdd(r, "ranked")) break;
+      const id = r?.artist?.id;
+      if (!id || chosenIds.has(id)) continue;
+
+      if (canAddWithDiversity(r, genreCount, locCount)) {
+        addItem(r, "ranked");
+        placed = true;
+        break;
+      }
     }
 
-    // If ranked exhausted, try explore remainder
-    if (rankedIdx >= rankedRows.length && exploreIdx < explorePicksCatalog.length) {
-      const ex = explorePicksCatalog[exploreIdx++];
-      tryAdd(ex, "explore");
+    if (!placed) {
+      // relaxed ranked fill
+      while (rankedIdx < rankedRows.length) {
+        const r = rankedRows[rankedIdx++];
+        const id = r?.artist?.id;
+        if (!id || chosenIds.has(id)) continue;
+
+        addItem(r, "ranked-relaxed");
+        placed = true;
+        break;
+      }
     }
 
-    if (rankedIdx >= rankedRows.length && exploreIdx >= explorePicksCatalog.length) break;
+    // if still nothing, attempt any remaining catalog as filler
+    if (!placed) {
+      const filler = pickExploreCandidate(catalogRows, signals, chosenIds, prng);
+      if (filler) {
+        const baseScore = safeNumber(filler.baseScore, 0);
+        addItem(
+          {
+            artist: filler.artist,
+            baseScore,
+            score: Number((baseScore * 1.0).toFixed(6)),
+            multipliers: { personalization: 1.0, fatigue: 1.0 },
+            lastAt: filler.lastAt || null,
+            metrics: filler.metrics,
+            explain: { sessionId, seen: 0, engagedPoints: 0, filler: true },
+          },
+          "fill"
+        );
+      }
+    }
   }
 
-  // If still short, append remaining catalog ignoring diversity (last resort)
-  if (chosen.length < limit) {
-    const fallbackAll = [...rankedRows, ...explorePicksCatalog];
-    for (const r of fallbackAll) {
-      if (chosen.length >= limit) break;
-      const id = r?.artist?.id;
-      if (!id || seenIds.has(id)) continue;
+  // Final guarantee: if exploreUsed is 0 but we require >=1, do a deterministic swap at first injection slot
+  if (exploreUsed < MIX_FORCE_EXPLORE_MIN && chosen.length) {
+    const swapSlot = injectSlots[0] ? clamp(injectSlots[0], 1, chosen.length) : 1;
+    const idx = swapSlot - 1;
 
-      seenIds.add(id);
-      chosen.push({
-        artist: r.artist,
-        score: r.score,
-        baseScore: r.baseScore,
-        multipliers: r.multipliers,
-        lastAt: r.lastAt,
-        metrics: r.metrics,
-        source: r._source === "explore" ? "explore-relaxed" : "ranked-relaxed",
-        explain: r.explain,
-      });
+    const excludeIds = new Set(chosenIds);
+    // Allow swapping in a different artist (if any exist) — even if it would have been later
+    const candidate = pickExploreCandidate(catalogRows, signals, excludeIds, prng);
+
+    if (candidate) {
+      const baseScore = safeNumber(candidate.baseScore, 0);
+      const swapRow = {
+        artist: candidate.artist,
+        baseScore,
+        score: Number((baseScore * MIX_EXPLORE_NUDGE).toFixed(6)),
+        multipliers: { personalization: 1.0, fatigue: 1.0 },
+        lastAt: candidate.lastAt || null,
+        metrics: candidate.metrics,
+        explain: { sessionId, seen: 0, engagedPoints: 0, explore: true, swap: true },
+      };
+
+      // Replace row at idx (do NOT rebuild diversity counters — this is "force explore")
+      chosen[idx] = {
+        artist: swapRow.artist,
+        score: swapRow.score,
+        baseScore: swapRow.baseScore,
+        multipliers: swapRow.multipliers,
+        lastAt: swapRow.lastAt,
+        metrics: swapRow.metrics,
+        source: "explore-swap",
+        explain: swapRow.explain,
+      };
     }
   }
 
@@ -768,6 +818,8 @@ router.get("/mix", async (req, res) => {
       fatigueStep: MIX_FATIGUE_STEP,
       fatigueMin: MIX_FATIGUE_MIN,
       exploreNudge: MIX_EXPLORE_NUDGE,
+      forceExploreMin: MIX_FORCE_EXPLORE_MIN,
+      injectSlots,
     },
     count: chosen.length,
     results: chosen,
