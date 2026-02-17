@@ -1,13 +1,13 @@
 /**
  * recs.js (root) — ESM default export
- * iBand Feed Generator (v6.3 — taste-vector explore)
+ * iBand Feed Generator (v6.4 — cold start boost for explore)
  *
- * v6.3 adds:
- * - Session taste vector (genre/location affinity) derived from session events
- * - Explore candidate scoring uses: unseen + underdog novelty + taste-match boosts
- * - Keeps v6.2 guarantee: at least 1 explore slot in /mix
+ * v6.4 adds:
+ * - Cold-start scoring for artists with baseScore=0 (no agg bucket yet)
+ * - Taste-aware boost still applies
+ * - Keeps v6.3: taste vector + deterministic explore injection + diversity caps
  *
- * Endpoints unchanged:
+ * Endpoints:
  * - /api/recs/health
  * - /api/recs/rising
  * - /api/recs/personalized/health
@@ -56,10 +56,13 @@ const MIX_FORCE_EXPLORE_MIN = parseInt(process.env.MIX_FORCE_EXPLORE_MIN || "1",
 // Taste vector weights (simple, tunable)
 const TASTE_GENRE_BOOST = parseFloat(process.env.TASTE_GENRE_BOOST || "2.0"); // strong
 const TASTE_LOCATION_BOOST = parseFloat(process.env.TASTE_LOCATION_BOOST || "1.0"); // medium
-const TASTE_WATCH_MS_PER_POINT = parseInt(process.env.TASTE_WATCH_MS_PER_POINT || "5000", 10); // watch contributes
+const TASTE_WATCH_MS_PER_POINT = parseInt(process.env.TASTE_WATCH_MS_PER_POINT || "5000", 10);
 const TASTE_TOP_K = parseInt(process.env.TASTE_TOP_K || "3", 10);
 
-const routerVersion = 63;
+// NEW v6.4: cold-start base score (for explore items with baseScore=0)
+const COLD_START_BASE = parseFloat(process.env.COLD_START_BASE || "1.5");
+
+const routerVersion = 64;
 
 /* -----------------------------
  * Helpers
@@ -354,6 +357,24 @@ function buildTasteVector(sessionEvents, artistsMap) {
   return { topGenres, topLocations, genreScore, locScore };
 }
 
+function tasteBoostForArtist(artist, taste) {
+  const g = normKey(artist?.genre);
+  const l = normKey(artist?.location);
+
+  let boost = 0;
+  if (taste?.topGenres?.includes(g)) boost += TASTE_GENRE_BOOST;
+  if (taste?.topLocations?.includes(l)) boost += TASTE_LOCATION_BOOST;
+
+  return boost;
+}
+
+// NEW v6.4: cold-start score when baseScore === 0
+function coldStartScoreForArtist(artist, taste) {
+  const tBoost = tasteBoostForArtist(artist, taste);
+  const cold = COLD_START_BASE + tBoost;
+  return { coldScore: cold, tasteBoost: tBoost };
+}
+
 /* -----------------------------
  * Multipliers
  * ----------------------------- */
@@ -418,7 +439,7 @@ function bumpDiversityCounts(item, genreCount, locCount) {
 }
 
 /* -----------------------------
- * Catalog + Explore selection (taste-aware)
+ * Catalog rows
  * ----------------------------- */
 function buildCatalogRows(artistsList, aggByArtist) {
   const rows = [];
@@ -448,20 +469,8 @@ function buildCatalogRows(artistsList, aggByArtist) {
   return rows;
 }
 
-function tasteBoostForArtist(artist, taste) {
-  const g = normKey(artist?.genre);
-  const l = normKey(artist?.location);
-
-  let boost = 0;
-
-  if (taste?.topGenres?.includes(g)) boost += TASTE_GENRE_BOOST;
-  if (taste?.topLocations?.includes(l)) boost += TASTE_LOCATION_BOOST;
-
-  return boost;
-}
-
 function pickExploreCandidate(catalogRows, signals, excludeIds, prng, taste) {
-  // Explore score = unseenBoost + novelty + tasteBoost + tiny jitter
+  // Explore score = unseenBoost + underdog novelty + tasteBoost + tiny jitter
   const pool = catalogRows
     .filter((r) => {
       const id = r.artist?.id;
@@ -473,9 +482,8 @@ function pickExploreCandidate(catalogRows, signals, excludeIds, prng, taste) {
       const id = r.artist.id;
       const base = safeNumber(r.baseScore, 0);
 
-      const unseen = signals[id] ? 0 : 1; // unseen gets big bump
-      const novelty = 1 / (1 + base); // underdog boost
-
+      const unseen = signals[id] ? 0 : 1;
+      const novelty = 1 / (1 + base);
       const tBoost = tasteBoostForArtist(r.artist, taste);
 
       const jitter = prng() * 0.0001;
@@ -625,14 +633,14 @@ router.get("/personalized", async (req, res) => {
 });
 
 /* -----------------------------
- * Mix endpoints (taste-aware explore)
+ * Mix endpoints (taste-aware explore + cold start)
  * ----------------------------- */
 router.get("/mix/health", async (_req, res) => {
   const logStat = await statSafe(EVENTS_LOG_FILE);
   res.json({
     success: true,
     service: "recs-mix",
-    version: 23,
+    version: 24,
     updatedAt: nowIso(),
     config: {
       explorePct: MIX_EXPLORE_PCT,
@@ -642,6 +650,7 @@ router.get("/mix/health", async (_req, res) => {
       fatigueMin: MIX_FATIGUE_MIN,
       exploreNudge: MIX_EXPLORE_NUDGE,
       forceExploreMin: MIX_FORCE_EXPLORE_MIN,
+      coldStartBase: COLD_START_BASE,
       taste: {
         genreBoost: TASTE_GENRE_BOOST,
         locationBoost: TASTE_LOCATION_BOOST,
@@ -681,7 +690,6 @@ router.get("/mix", async (req, res) => {
 
   const sessionEvents = parsed.filter((e) => e && typeof e === "object" && e.sessionId === sessionId);
   const signals = buildSessionSignals(parsed, sessionId);
-
   const taste = buildTasteVector(sessionEvents, artists.map);
 
   const prng = makePrng(sessionId);
@@ -770,10 +778,26 @@ router.get("/mix", async (req, res) => {
 
       if (candidate) {
         const baseScore = safeNumber(candidate.baseScore, 0);
+
+        // NEW v6.4: cold start if baseScore==0
+        let computedBase = baseScore;
+        let coldStart = null;
+
+        if (computedBase <= 0) {
+          const cs = coldStartScoreForArtist(candidate.artist, taste);
+          computedBase = Number(cs.coldScore.toFixed(6));
+          coldStart = {
+            applied: true,
+            base: COLD_START_BASE,
+            tasteBoost: cs.tasteBoost,
+            computedBase,
+          };
+        }
+
         const exploreRow = {
           artist: candidate.artist,
-          baseScore,
-          score: Number((baseScore * MIX_EXPLORE_NUDGE).toFixed(6)),
+          baseScore: computedBase,
+          score: Number((computedBase * MIX_EXPLORE_NUDGE).toFixed(6)),
           multipliers: { personalization: 1.0, fatigue: 1.0 },
           lastAt: candidate.lastAt || null,
           metrics: candidate.metrics,
@@ -786,6 +810,7 @@ router.get("/mix", async (req, res) => {
               topGenres: taste.topGenres,
               topLocations: taste.topLocations,
             },
+            coldStart,
           },
         };
 
@@ -846,7 +871,7 @@ router.get("/mix", async (req, res) => {
     }
   }
 
-  // Guarantee (swap) if somehow explore not used
+  // Guarantee swap if somehow explore not used
   if (exploreUsed < MIX_FORCE_EXPLORE_MIN && chosen.length) {
     const swapSlot = injectSlots[0] ? clamp(injectSlots[0], 1, chosen.length) : 1;
     const idx = swapSlot - 1;
@@ -856,10 +881,25 @@ router.get("/mix", async (req, res) => {
 
     if (candidate) {
       const baseScore = safeNumber(candidate.baseScore, 0);
+
+      let computedBase = baseScore;
+      let coldStart = null;
+
+      if (computedBase <= 0) {
+        const cs = coldStartScoreForArtist(candidate.artist, taste);
+        computedBase = Number(cs.coldScore.toFixed(6));
+        coldStart = {
+          applied: true,
+          base: COLD_START_BASE,
+          tasteBoost: cs.tasteBoost,
+          computedBase,
+        };
+      }
+
       chosen[idx] = {
         artist: candidate.artist,
-        score: Number((baseScore * MIX_EXPLORE_NUDGE).toFixed(6)),
-        baseScore,
+        score: Number((computedBase * MIX_EXPLORE_NUDGE).toFixed(6)),
+        baseScore: computedBase,
         multipliers: { personalization: 1.0, fatigue: 1.0 },
         lastAt: candidate.lastAt || null,
         metrics: candidate.metrics,
@@ -868,10 +908,8 @@ router.get("/mix", async (req, res) => {
           sessionId,
           explore: true,
           swap: true,
-          taste: {
-            topGenres: taste.topGenres,
-            topLocations: taste.topLocations,
-          },
+          taste: { topGenres: taste.topGenres, topLocations: taste.topLocations },
+          coldStart,
         },
       };
     }
@@ -894,6 +932,7 @@ router.get("/mix", async (req, res) => {
       exploreNudge: MIX_EXPLORE_NUDGE,
       forceExploreMin: MIX_FORCE_EXPLORE_MIN,
       injectSlots,
+      coldStartBase: COLD_START_BASE,
     },
     count: chosen.length,
     results: chosen,
