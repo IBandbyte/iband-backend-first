@@ -1,21 +1,13 @@
 /**
  * recs.js (root) — ESM default export
- * iBand Feed Generator (v6.2 — mix guarantees explore slot)
+ * iBand Feed Generator (v6.3 — taste-vector explore)
  *
- * Why v6.2:
- * - With small catalogs (equal to limit), v6.1 could have zero eligible explore candidates.
- * - v6.2 guarantees at least one explore slot by:
- *   1) Building a normal ranked list
- *   2) Reserving specific injection slots
- *   3) At injection slots, selecting an explore candidate from the FULL catalog that is:
- *      - not already chosen so far (dynamic exclusion)
- *      - preferably unseen in session
- *      - preferably low baseScore / low events
- *   4) If none exist, perform a deterministic SWAP:
- *      - choose an underdog from catalog not in chosen
- *      - swap it into the injection slot (source: explore-swap)
+ * v6.3 adds:
+ * - Session taste vector (genre/location affinity) derived from session events
+ * - Explore candidate scoring uses: unseen + underdog novelty + taste-match boosts
+ * - Keeps v6.2 guarantee: at least 1 explore slot in /mix
  *
- * Keeps:
+ * Endpoints unchanged:
  * - /api/recs/health
  * - /api/recs/rising
  * - /api/recs/personalized/health
@@ -50,18 +42,24 @@ const MAX_RETURN = parseInt(process.env.RECS_MAX_RETURN || "50", 10);
 const PERSONALIZE_TAIL_KB = parseInt(process.env.PERSONALIZE_TAIL_KB || "512", 10);
 const PERSONALIZE_MAX_LINES = parseInt(process.env.PERSONALIZE_MAX_LINES || "2500", 10);
 
-// Mix v2 controls
-const MIX_EXPLORE_PCT = parseFloat(process.env.MIX_EXPLORE_PCT || "0.2"); // 20% slots
+// Mix controls
+const MIX_EXPLORE_PCT = parseFloat(process.env.MIX_EXPLORE_PCT || "0.2");
 const MIX_GENRE_CAP = parseInt(process.env.MIX_GENRE_CAP || "2", 10);
 const MIX_LOCATION_CAP = parseInt(process.env.MIX_LOCATION_CAP || "3", 10);
 const MIX_FATIGUE_STEP = parseFloat(process.env.MIX_FATIGUE_STEP || "0.04");
 const MIX_FATIGUE_MIN = parseFloat(process.env.MIX_FATIGUE_MIN || "0.84");
 const MIX_EXPLORE_NUDGE = parseFloat(process.env.MIX_EXPLORE_NUDGE || "1.02");
 
-// v6.2 specific
-const MIX_FORCE_EXPLORE_MIN = parseInt(process.env.MIX_FORCE_EXPLORE_MIN || "1", 10); // guarantee >=1 explore slot
+// Guarantee explore
+const MIX_FORCE_EXPLORE_MIN = parseInt(process.env.MIX_FORCE_EXPLORE_MIN || "1", 10);
 
-const routerVersion = 62;
+// Taste vector weights (simple, tunable)
+const TASTE_GENRE_BOOST = parseFloat(process.env.TASTE_GENRE_BOOST || "2.0"); // strong
+const TASTE_LOCATION_BOOST = parseFloat(process.env.TASTE_LOCATION_BOOST || "1.0"); // medium
+const TASTE_WATCH_MS_PER_POINT = parseInt(process.env.TASTE_WATCH_MS_PER_POINT || "5000", 10); // watch contributes
+const TASTE_TOP_K = parseInt(process.env.TASTE_TOP_K || "3", 10);
+
+const routerVersion = 63;
 
 /* -----------------------------
  * Helpers
@@ -125,6 +123,10 @@ function extractArtistsArray(store) {
   if (Array.isArray(store.artists)) return store.artists;
   if (store.data && Array.isArray(store.data.artists)) return store.data.artists;
   return [];
+}
+
+function normKey(s) {
+  return (s || "unknown").toString().toLowerCase().trim();
 }
 
 async function loadArtistsAll() {
@@ -296,6 +298,65 @@ function buildSessionSignals(events, sessionId) {
   return byArtist;
 }
 
+/* -----------------------------
+ * Taste vector (genre/location affinity)
+ * ----------------------------- */
+function eventEngagementPoints(ev) {
+  const t = typeof ev.type === "string" ? ev.type : "";
+  const watch = safeNumber(ev.watchMs, 0);
+  const watchPts = Math.floor(watch / Math.max(1000, TASTE_WATCH_MS_PER_POINT));
+
+  let pts = watchPts;
+  if (t === "view") pts += 1;
+  if (t === "replay") pts += 4;
+  if (t === "like") pts += 3;
+  if (t === "save") pts += 5;
+  if (t === "share") pts += 6;
+  if (t === "follow") pts += 7;
+  if (t === "comment") pts += 3;
+  if (t === "vote") pts += 2;
+
+  return pts;
+}
+
+function buildTasteVector(sessionEvents, artistsMap) {
+  const genreScore = {};
+  const locScore = {};
+
+  for (const ev of sessionEvents) {
+    if (!ev || typeof ev !== "object") continue;
+    const artistId = typeof ev.artistId === "string" ? ev.artistId.trim() : "";
+    if (!artistId) continue;
+
+    const a = artistsMap[artistId];
+    if (!a) continue;
+
+    const pts = eventEngagementPoints(ev);
+    if (pts <= 0) continue;
+
+    const g = normKey(a.genre);
+    const l = normKey(a.location);
+
+    if (g !== "unknown") genreScore[g] = (genreScore[g] || 0) + pts;
+    if (l !== "unknown") locScore[l] = (locScore[l] || 0) + pts;
+  }
+
+  const topGenres = Object.entries(genreScore)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, clamp(TASTE_TOP_K, 1, 10))
+    .map(([k]) => k);
+
+  const topLocations = Object.entries(locScore)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, clamp(TASTE_TOP_K, 1, 10))
+    .map(([k]) => k);
+
+  return { topGenres, topLocations, genreScore, locScore };
+}
+
+/* -----------------------------
+ * Multipliers
+ * ----------------------------- */
 function personalizationMultiplier(signal) {
   const points = safeNumber(signal?.engagedPoints, 0);
   const seen = safeNumber(signal?.seen, 0);
@@ -317,7 +378,7 @@ function fatigueMultiplier(signal) {
 }
 
 /* -----------------------------
- * Deterministic PRNG (seeded by sessionId)
+ * Deterministic PRNG
  * ----------------------------- */
 function hash32(str) {
   let h = 2166136261;
@@ -340,8 +401,8 @@ function makePrng(seedStr) {
  * Diversity helpers
  * ----------------------------- */
 function canAddWithDiversity(item, genreCount, locCount) {
-  const g = (item.artist?.genre || "unknown").toLowerCase().trim();
-  const l = (item.artist?.location || "unknown").toLowerCase().trim();
+  const g = normKey(item.artist?.genre);
+  const l = normKey(item.artist?.location);
 
   if (g !== "unknown" && (genreCount[g] || 0) >= MIX_GENRE_CAP) return false;
   if (l !== "unknown" && (locCount[l] || 0) >= MIX_LOCATION_CAP) return false;
@@ -349,15 +410,15 @@ function canAddWithDiversity(item, genreCount, locCount) {
 }
 
 function bumpDiversityCounts(item, genreCount, locCount) {
-  const g = (item.artist?.genre || "unknown").toLowerCase().trim();
-  const l = (item.artist?.location || "unknown").toLowerCase().trim();
+  const g = normKey(item.artist?.genre);
+  const l = normKey(item.artist?.location);
 
   if (g !== "unknown") genreCount[g] = (genreCount[g] || 0) + 1;
   if (l !== "unknown") locCount[l] = (locCount[l] || 0) + 1;
 }
 
 /* -----------------------------
- * Catalog + Explore selection
+ * Catalog + Explore selection (taste-aware)
  * ----------------------------- */
 function buildCatalogRows(artistsList, aggByArtist) {
   const rows = [];
@@ -387,13 +448,20 @@ function buildCatalogRows(artistsList, aggByArtist) {
   return rows;
 }
 
-function pickExploreCandidate(catalogRows, signals, excludeIds, prng) {
-  // Prefer:
-  // 1) not already chosen (excludeIds)
-  // 2) unseen in session
-  // 3) low baseScore (underdog novelty)
-  // Deterministic tie-break via prng
+function tasteBoostForArtist(artist, taste) {
+  const g = normKey(artist?.genre);
+  const l = normKey(artist?.location);
 
+  let boost = 0;
+
+  if (taste?.topGenres?.includes(g)) boost += TASTE_GENRE_BOOST;
+  if (taste?.topLocations?.includes(l)) boost += TASTE_LOCATION_BOOST;
+
+  return boost;
+}
+
+function pickExploreCandidate(catalogRows, signals, excludeIds, prng, taste) {
+  // Explore score = unseenBoost + novelty + tasteBoost + tiny jitter
   const pool = catalogRows
     .filter((r) => {
       const id = r.artist?.id;
@@ -405,12 +473,15 @@ function pickExploreCandidate(catalogRows, signals, excludeIds, prng) {
       const id = r.artist.id;
       const base = safeNumber(r.baseScore, 0);
 
-      const unseen = signals[id] ? 0 : 1; // unseen gets boost
+      const unseen = signals[id] ? 0 : 1; // unseen gets big bump
       const novelty = 1 / (1 + base); // underdog boost
-      const jitter = prng() * 0.0001; // deterministic tiny jitter
 
-      const score = unseen * 10 + novelty + jitter;
-      return { ...r, _exploreScore: score, _unseen: unseen === 1 };
+      const tBoost = tasteBoostForArtist(r.artist, taste);
+
+      const jitter = prng() * 0.0001;
+      const score = unseen * 10 + novelty + tBoost + jitter;
+
+      return { ...r, _exploreScore: score, _unseen: unseen === 1, _tBoost: tBoost };
     });
 
   if (!pool.length) return null;
@@ -443,11 +514,6 @@ router.get("/health", async (_req, res) => {
       eventsLog: path.basename(EVENTS_LOG_FILE),
       artistsLoaded: artists.count,
       eventsLogOk: logStat.ok,
-    },
-    endpoints: {
-      rising: "/api/recs/rising",
-      personalized: "/api/recs/personalized",
-      mix: "/api/recs/mix",
     },
     maxReturn: MAX_RETURN,
   });
@@ -559,14 +625,14 @@ router.get("/personalized", async (req, res) => {
 });
 
 /* -----------------------------
- * Mix endpoints
+ * Mix endpoints (taste-aware explore)
  * ----------------------------- */
 router.get("/mix/health", async (_req, res) => {
   const logStat = await statSafe(EVENTS_LOG_FILE);
   res.json({
     success: true,
     service: "recs-mix",
-    version: 22,
+    version: 23,
     updatedAt: nowIso(),
     config: {
       explorePct: MIX_EXPLORE_PCT,
@@ -576,6 +642,12 @@ router.get("/mix/health", async (_req, res) => {
       fatigueMin: MIX_FATIGUE_MIN,
       exploreNudge: MIX_EXPLORE_NUDGE,
       forceExploreMin: MIX_FORCE_EXPLORE_MIN,
+      taste: {
+        genreBoost: TASTE_GENRE_BOOST,
+        locationBoost: TASTE_LOCATION_BOOST,
+        watchMsPerPoint: TASTE_WATCH_MS_PER_POINT,
+        topK: TASTE_TOP_K,
+      },
       tailKb: PERSONALIZE_TAIL_KB,
       maxLines: PERSONALIZE_MAX_LINES,
       eventLog: path.basename(EVENTS_LOG_FILE),
@@ -606,13 +678,17 @@ router.get("/mix", async (req, res) => {
     const obj = safeLineJson(line);
     if (obj) parsed.push(obj);
   }
+
+  const sessionEvents = parsed.filter((e) => e && typeof e === "object" && e.sessionId === sessionId);
   const signals = buildSessionSignals(parsed, sessionId);
+
+  const taste = buildTasteVector(sessionEvents, artists.map);
 
   const prng = makePrng(sessionId);
 
   const catalogRows = buildCatalogRows(artists.list, agg.byArtist || {});
 
-  // Ranked rows from agg buckets
+  // Ranked rows
   const rankedRows = [];
   for (const [artistIdRaw, bucket] of Object.entries(agg.byArtist || {})) {
     const artistId = String(artistIdRaw || "").trim();
@@ -650,14 +726,13 @@ router.get("/mix", async (req, res) => {
 
   rankedRows.sort((a, b) => b.score - a.score);
 
-  // Explore count (guarantee at least 1)
+  // Explore count (guarantee >=1)
   const computedExplore = Math.floor(limit * clamp(MIX_EXPLORE_PCT, 0, 0.5));
   const exploreCount = clamp(Math.max(MIX_FORCE_EXPLORE_MIN, computedExplore), 1, Math.max(1, Math.floor(limit / 2)));
 
-  // Determine injection slots (1-indexed): every 5th starting at 3
+  // Injection slots
   const injectSlots = [];
   for (let i = 3; i <= limit; i += 5) injectSlots.push(i);
-  // Ensure we have enough inject slots for exploreCount; if not, append from end backwards
   for (let i = injectSlots.length; i < exploreCount; i++) {
     const slot = clamp(limit - i, 1, limit);
     if (!injectSlots.includes(slot)) injectSlots.push(slot);
@@ -684,7 +759,6 @@ router.get("/mix", async (req, res) => {
     });
   }
 
-  // Build list slot-by-slot, injecting explore candidates dynamically
   let rankedIdx = 0;
   let exploreUsed = 0;
 
@@ -692,8 +766,7 @@ router.get("/mix", async (req, res) => {
     const isExploreSlot = injectSlots.includes(slot) && exploreUsed < exploreCount;
 
     if (isExploreSlot) {
-      // pick explore candidate based on current chosenIds (dynamic)
-      const candidate = pickExploreCandidate(catalogRows, signals, chosenIds, prng);
+      const candidate = pickExploreCandidate(catalogRows, signals, chosenIds, prng, taste);
 
       if (candidate) {
         const baseScore = safeNumber(candidate.baseScore, 0);
@@ -704,10 +777,18 @@ router.get("/mix", async (req, res) => {
           multipliers: { personalization: 1.0, fatigue: 1.0 },
           lastAt: candidate.lastAt || null,
           metrics: candidate.metrics,
-          explain: { sessionId, seen: 0, engagedPoints: 0, explore: true },
+          explain: {
+            sessionId,
+            seen: 0,
+            engagedPoints: 0,
+            explore: true,
+            taste: {
+              topGenres: taste.topGenres,
+              topLocations: taste.topLocations,
+            },
+          },
         };
 
-        // Try diversity; if blocked, we still force explore by allowing it (explore-relaxed) to meet guarantee
         if (canAddWithDiversity(exploreRow, genreCount, locCount)) {
           addItem(exploreRow, "explore");
         } else {
@@ -717,11 +798,9 @@ router.get("/mix", async (req, res) => {
         exploreUsed++;
         continue;
       }
-
-      // If no candidate exists (should be rare), we fall through to ranked fill and later swap.
     }
 
-    // ranked fill: find next rankable not yet chosen that fits diversity
+    // ranked fill
     let placed = false;
     while (rankedIdx < rankedRows.length) {
       const r = rankedRows[rankedIdx++];
@@ -736,7 +815,6 @@ router.get("/mix", async (req, res) => {
     }
 
     if (!placed) {
-      // relaxed ranked fill
       while (rankedIdx < rankedRows.length) {
         const r = rankedRows[rankedIdx++];
         const id = r?.artist?.id;
@@ -748,9 +826,8 @@ router.get("/mix", async (req, res) => {
       }
     }
 
-    // if still nothing, attempt any remaining catalog as filler
     if (!placed) {
-      const filler = pickExploreCandidate(catalogRows, signals, chosenIds, prng);
+      const filler = pickExploreCandidate(catalogRows, signals, chosenIds, prng, taste);
       if (filler) {
         const baseScore = safeNumber(filler.baseScore, 0);
         addItem(
@@ -761,7 +838,7 @@ router.get("/mix", async (req, res) => {
             multipliers: { personalization: 1.0, fatigue: 1.0 },
             lastAt: filler.lastAt || null,
             metrics: filler.metrics,
-            explain: { sessionId, seen: 0, engagedPoints: 0, filler: true },
+            explain: { sessionId, filler: true },
           },
           "fill"
         );
@@ -769,37 +846,33 @@ router.get("/mix", async (req, res) => {
     }
   }
 
-  // Final guarantee: if exploreUsed is 0 but we require >=1, do a deterministic swap at first injection slot
+  // Guarantee (swap) if somehow explore not used
   if (exploreUsed < MIX_FORCE_EXPLORE_MIN && chosen.length) {
     const swapSlot = injectSlots[0] ? clamp(injectSlots[0], 1, chosen.length) : 1;
     const idx = swapSlot - 1;
 
     const excludeIds = new Set(chosenIds);
-    // Allow swapping in a different artist (if any exist) — even if it would have been later
-    const candidate = pickExploreCandidate(catalogRows, signals, excludeIds, prng);
+    const candidate = pickExploreCandidate(catalogRows, signals, excludeIds, prng, taste);
 
     if (candidate) {
       const baseScore = safeNumber(candidate.baseScore, 0);
-      const swapRow = {
+      chosen[idx] = {
         artist: candidate.artist,
-        baseScore,
         score: Number((baseScore * MIX_EXPLORE_NUDGE).toFixed(6)),
+        baseScore,
         multipliers: { personalization: 1.0, fatigue: 1.0 },
         lastAt: candidate.lastAt || null,
         metrics: candidate.metrics,
-        explain: { sessionId, seen: 0, engagedPoints: 0, explore: true, swap: true },
-      };
-
-      // Replace row at idx (do NOT rebuild diversity counters — this is "force explore")
-      chosen[idx] = {
-        artist: swapRow.artist,
-        score: swapRow.score,
-        baseScore: swapRow.baseScore,
-        multipliers: swapRow.multipliers,
-        lastAt: swapRow.lastAt,
-        metrics: swapRow.metrics,
         source: "explore-swap",
-        explain: swapRow.explain,
+        explain: {
+          sessionId,
+          explore: true,
+          swap: true,
+          taste: {
+            topGenres: taste.topGenres,
+            topLocations: taste.topLocations,
+          },
+        },
       };
     }
   }
@@ -810,6 +883,7 @@ router.get("/mix", async (req, res) => {
     sessionId,
     artistsLoaded: artists.count,
     signalArtists: Object.keys(signals).length,
+    taste: { topGenres: taste.topGenres, topLocations: taste.topLocations },
     config: {
       explorePct: MIX_EXPLORE_PCT,
       exploreCount,
