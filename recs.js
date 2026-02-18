@@ -1,13 +1,10 @@
 // recs.js
-// iBand Backend — Recs Mix (v6 / Step 6 "Gentle Explore" tuning)
+// iBand Backend — Recs Mix (v6 / Step 6.1 wrapper-aware artists loader)
 // Root-level router: mounted at /api/recs
 //
-// Goals (Step 6):
-// - Stop aggressive explore pressure on small feeds (no more exploreCount=10 on a 9-item feed)
-// - Prefer cold-start real artists for explore (artists with 0 events)
-// - Exclude demo from explore by default (still allowed in ranked)
-// - Reduce / eliminate "fill" unless absolutely unavoidable
-// - Keep rotation memory on disk: /var/data/iband/db/recs-state.json
+// Fix (Step 6.1):
+// - artistsLoaded=0 happened because artists.json is wrapped (e.g. {success:true, artists:[...]})
+// - Make loadArtists() support common wrapper shapes safely.
 //
 // Captain’s Protocol: full canonical, future-proof, Render-safe, always JSON.
 
@@ -22,7 +19,7 @@ const router = express.Router();
 // Config (safe defaults)
 // -------------------------
 const SERVICE = "recs-mix";
-const VERSION = 24; // bump for Step 6
+const VERSION = 25; // Step 6.1 fix
 
 const DATA_DIR = process.env.IBAND_DATA_DIR || "/var/data/iband/db";
 const EVENTS_AGG = process.env.IBAND_EVENTS_AGG || path.join(DATA_DIR, "events-agg.json");
@@ -32,50 +29,42 @@ const EVENT_LOG = process.env.IBAND_EVENTS_LOG || path.join(DATA_DIR, "events.js
 // Rotation state on disk (persistent)
 const STATE_FILE = process.env.IBAND_RECS_STATE || path.join(DATA_DIR, "recs-state.json");
 
-// Gentle explore tuning (Step 6 defaults)
+// Gentle explore tuning defaults
 const DEFAULTS = {
-  // base mixing controls
-  explorePct: 0.2, // target ratio of explore items
-  forceExploreMin: 1, // always at least 1 explore item
-  injectSlots: [3], // 1-indexed positions where explore is injected (slot 3 = index 2)
+  explorePct: 0.2,
+  forceExploreMin: 1,
+  injectSlots: [3],
 
-  // caps (soft caps; can be relaxed if needed)
   genreCap: 2,
   locationCap: 3,
 
-  // fatigue
   fatigueStep: 0.04,
   fatigueMin: 0.84,
 
-  // taste
   taste: {
     topK: 3,
-    genreBoost: 2, // points per matched top genre
-    locationBoost: 1, // points per matched top location
-    watchMsPerPoint: 5000, // watchMs -> taste points conversion
+    genreBoost: 2,
+    locationBoost: 1,
+    watchMsPerPoint: 5000,
   },
 
-  // cold start
-  coldStartBase: 1.5, // baseline cold-start score
-  coldStartTasteBoostMax: 3, // max boost multiplier for taste match
+  coldStartBase: 1.5,
+  coldStartTasteBoostMax: 3,
 
-  // rotation memory
   exploreRotation: {
     cooldownMin: 60,
     historyMax: 20,
   },
 
-  // safety
   maxReturn: 50,
   tailKb: 512,
   maxLines: 2500,
 
-  // Step 6: exclude demo from explore by default
   exploreExcludeIds: ["demo"],
 };
 
 // -------------------------
-// Helpers (Render-safe)
+// Helpers
 // -------------------------
 function nowIso() {
   return new Date().toISOString();
@@ -118,7 +107,6 @@ function normalizeStr(s) {
 }
 
 function normalizeGenre(genre) {
-  // keep simple: split on "/" and commas, take trimmed tokens
   const g = normalizeStr(genre);
   if (!g) return [];
   return g
@@ -136,43 +124,70 @@ function uniq(arr) {
 }
 
 function pickInjectSlots(count, injectSlots) {
-  // injectSlots are 1-indexed; only keep those within count
   const slots = (injectSlots || [])
     .map((n) => Number(n))
     .filter((n) => Number.isFinite(n) && n >= 1 && n <= count);
 
-  // Step 6: for small feeds, keep it minimal
   if (count <= 12) return uniq(slots.length ? slots : [3]).slice(0, 2);
   return uniq(slots.length ? slots : [3, 8]).slice(0, 6);
 }
 
 function deriveExploreCount(feedCount, explorePct, forceExploreMin) {
-  // Step 6: derive from feed size (not hard-coded 10)
   const pct = clamp(Number(explorePct ?? DEFAULTS.explorePct), 0, 1);
   const min = clamp(Number(forceExploreMin ?? DEFAULTS.forceExploreMin), 0, 10);
+
   const derived = Math.round(feedCount * pct);
-  // For small feeds, keep explore gentle: max 2 unless explicitly huge feed
   const capped = feedCount <= 12 ? clamp(derived, 0, 2) : derived;
+
   return Math.max(min, capped);
+}
+
+// --------- Step 6.1: wrapper-aware artists extraction ----------
+function extractArtistsArray(parsed) {
+  // Supported shapes:
+  // 1) [ ...artists ]
+  // 2) { "id1": {...}, "id2": {...} }  (keyed object)
+  // 3) { success:true, artists:[...] }
+  // 4) { data:[...] } / { items:[...] } / { results:[...] } / { list:[...] }
+  // 5) { artists: { ...keyed... } }
+  if (!parsed) return [];
+
+  if (Array.isArray(parsed)) return parsed;
+
+  if (parsed && typeof parsed === "object") {
+    // common wrapper keys
+    const candidates = ["artists", "data", "items", "results", "list"];
+    for (const k of candidates) {
+      const v = parsed[k];
+      if (Array.isArray(v)) return v;
+      if (v && typeof v === "object" && !Array.isArray(v)) {
+        // { artists: { id: {...} } }
+        const maybeVals = Object.values(v).filter((x) => x && typeof x === "object");
+        if (maybeVals.length) return maybeVals;
+      }
+    }
+
+    // keyed object at top-level
+    const vals = Object.values(parsed).filter((x) => x && typeof x === "object");
+    // Guard: if this looks like a single artist object, not a map
+    if (vals.length && !("id" in parsed && "name" in parsed)) {
+      // many objects => likely keyed map
+      if (vals.length > 1) return vals;
+      // could still be map with 1 entry
+      if (vals.length === 1 && typeof vals[0] === "object") return vals;
+    }
+  }
+
+  return [];
 }
 
 function loadArtists() {
   const a = readJsonIfExists(ARTISTS_FILE_CANON);
   if (!a.ok) return { ok: false, artists: [], error: a.error, selected: { path: ARTISTS_FILE_CANON } };
 
-  // artists file can be either:
-  // - array of artists
-  // - object keyed by id (legacy)
-  let artists = [];
-  if (Array.isArray(a.value)) artists = a.value;
-  else if (a.value && typeof a.value === "object") {
-    // if keyed by ids: {"demo": {...}} or {"0": {...}} etc
-    const values = Object.values(a.value);
-    artists = values.filter((x) => x && typeof x === "object");
-  }
+  const rawArtists = extractArtistsArray(a.value);
 
-  // Normalize required fields
-  const normalized = artists
+  const normalized = rawArtists
     .map((x) => ({
       id: String(x?.id || "").trim(),
       name: x?.name ?? null,
@@ -190,32 +205,18 @@ function loadArtists() {
 
   return { ok: true, artists: normalized, error: null, selected: { path: ARTISTS_FILE_CANON } };
 }
+// -------------------------------------------------------------
 
 function loadAgg() {
   const a = readJsonIfExists(EVENTS_AGG);
   if (!a.ok) return { ok: false, agg: null, error: a.error };
-
-  // Expect shape from events aggregator:
-  // {
-  //   updatedAt,
-  //   totals: {...},
-  //   artists: {
-  //     [artistId]: {
-  //        lastAt,
-  //        lifetime: { views, replays, likes, saves, shares, follows, comments, votes, watchMs }
-  //     }
-  //   }
-  // }
-  const agg = a.value || null;
-  return { ok: true, agg, error: null };
+  return { ok: true, agg: a.value || null, error: null };
 }
 
-// Tail read last ~N lines of a file (events.jsonl)
 function tailLines(filePath, maxBytes, maxLines) {
   try {
-    if (!fs.existsSync(filePath)) {
-      return { ok: false, lines: [], error: "ENOENT" };
-    }
+    if (!fs.existsSync(filePath)) return { ok: false, lines: [], error: "ENOENT" };
+
     const stat = fs.statSync(filePath);
     const size = stat.size;
     const readSize = Math.min(size, maxBytes);
@@ -250,24 +251,12 @@ function parseEventsJsonlLines(lines) {
 
 function buildSessionSignals(events, sessionId) {
   const sid = String(sessionId || "").trim();
-  if (!sid) return { seen: 0, engagedPoints: 0, watchMs: 0, byArtist: {}, totals: {} };
+  if (!sid) return { seen: 0, engagedPoints: 0, watchMs: 0, byArtist: {} };
 
   const byArtist = {};
+  const typePts = { view: 1, replay: 2, like: 2, save: 3, share: 4, follow: 5, comment: 2, vote: 1 };
+
   let seen = 0;
-
-  // Weighted engagement points (simple)
-  // view=1, replay=2, like=2, save=3, share=4, follow=5, comment=2, vote=1
-  const typePts = {
-    view: 1,
-    replay: 2,
-    like: 2,
-    save: 3,
-    share: 4,
-    follow: 5,
-    comment: 2,
-    vote: 1,
-  };
-
   let engagedPoints = 0;
   let watchMs = 0;
 
@@ -280,9 +269,7 @@ function buildSessionSignals(events, sessionId) {
     const t = String(ev.type || "").toLowerCase();
     const pts = typePts[t] || 0;
 
-    if (!byArtist[aid]) {
-      byArtist[aid] = { seen: 0, engagedPoints: 0, watchMs: 0, counts: {} };
-    }
+    if (!byArtist[aid]) byArtist[aid] = { seen: 0, engagedPoints: 0, watchMs: 0, counts: {} };
     byArtist[aid].seen += 1;
     byArtist[aid].counts[t] = (byArtist[aid].counts[t] || 0) + 1;
     byArtist[aid].engagedPoints += pts;
@@ -301,8 +288,6 @@ function buildSessionSignals(events, sessionId) {
 }
 
 function buildTasteProfile(artistsById, signals, tasteCfg) {
-  // Taste is derived from session signal artists, using watchMs & engagement
-  // Output: topGenres[], topLocations[]
   const topK = clamp(Number(tasteCfg?.topK ?? DEFAULTS.taste.topK), 1, 10);
   const watchMsPerPoint = clamp(Number(tasteCfg?.watchMsPerPoint ?? DEFAULTS.taste.watchMsPerPoint), 1000, 60000);
 
@@ -319,12 +304,8 @@ function buildTasteProfile(artistsById, signals, tasteCfg) {
     const genres = normalizeGenre(a.genre);
     const loc = normalizeLocation(a.location);
 
-    for (const g of genres) {
-      genreScore[g] = (genreScore[g] || 0) + pts;
-    }
-    if (loc) {
-      locScore[loc] = (locScore[loc] || 0) + pts;
-    }
+    for (const g of genres) genreScore[g] = (genreScore[g] || 0) + pts;
+    if (loc) locScore[loc] = (locScore[loc] || 0) + pts;
   }
 
   const topGenres = Object.entries(genreScore)
@@ -356,13 +337,13 @@ function calcBaseScoreFromAgg(aggArtist, weights) {
     (Number(life.votes || 0) || 0) * (Number(w.vote || 1) || 1);
 
   const watchMs = Number(life.watchMs || 0) || 0;
-  const watchPoints = watchMs / 10000; // 10s per point baseline
+  const watchPoints = watchMs / 10000;
 
   return sum + watchPoints;
 }
 
 function freshnessMultiplier(lastAtIso, halfLifeHours) {
-  if (!lastAtIso) return 0.9; // unknown -> mild penalty but not zero
+  if (!lastAtIso) return 0.9;
   const last = Date.parse(lastAtIso);
   if (!Number.isFinite(last)) return 0.9;
 
@@ -371,38 +352,23 @@ function freshnessMultiplier(lastAtIso, halfLifeHours) {
   const ageHours = ageMs / (1000 * 60 * 60);
   const hl = clamp(Number(halfLifeHours || 24), 1, 168);
 
-  // exp decay: 0.5^(age/halfLife)
   return Math.pow(0.5, ageHours / hl);
 }
 
 function buildRankedList(artists, agg, cfg) {
-  const weights = (cfg?.weights && typeof cfg.weights === "object") ? cfg.weights : DEFAULTS.weights;
-
-  // ranking config may be coming from ranking.js; we keep a local default
+  const weights = (cfg?.weights && typeof cfg.weights === "object") ? cfg.weights : {};
   const halfLifeHours = clamp(Number(cfg?.halfLifeHours ?? 24), 1, 168);
-
   const aggArtists = (agg && agg.artists && typeof agg.artists === "object") ? agg.artists : {};
 
   const results = artists
     .filter((a) => a.status !== "deleted")
     .map((a) => {
       const aa = aggArtists[a.id] || null;
-
       const base = calcBaseScoreFromAgg(aa, weights);
       const fresh = freshnessMultiplier(aa?.lastAt, halfLifeHours);
       const score = base * fresh;
 
-      const lifetime = aa?.lifetime || {
-        views: 0,
-        replays: 0,
-        likes: 0,
-        saves: 0,
-        shares: 0,
-        follows: 0,
-        comments: 0,
-        votes: 0,
-        watchMs: 0,
-      };
+      const lifetime = aa?.lifetime || { views: 0, replays: 0, likes: 0, saves: 0, shares: 0, follows: 0, comments: 0, votes: 0, watchMs: 0 };
 
       return {
         artistId: a.id,
@@ -420,13 +386,7 @@ function buildRankedList(artists, agg, cfg) {
           votes: Number(lifetime.votes || 0) || 0,
           watchMs: Number(lifetime.watchMs || 0) || 0,
         },
-        artist: {
-          id: a.id,
-          name: a.name,
-          imageUrl: a.imageUrl,
-          genre: a.genre,
-          location: a.location,
-        },
+        artist: { id: a.id, name: a.name, imageUrl: a.imageUrl, genre: a.genre, location: a.location },
       };
     })
     .sort((x, y) => y.score - x.score);
@@ -436,9 +396,7 @@ function buildRankedList(artists, agg, cfg) {
 
 function loadState() {
   const st = readJsonIfExists(STATE_FILE);
-  if (!st.ok) {
-    return { ok: true, state: { v: 1, updatedAt: null, sessions: {} }, created: true };
-  }
+  if (!st.ok) return { ok: true, state: { v: 1, updatedAt: null, sessions: {} }, created: true };
   const s = st.value && typeof st.value === "object" ? st.value : { v: 1, sessions: {} };
   if (!s.sessions || typeof s.sessions !== "object") s.sessions = {};
   return { ok: true, state: s, created: false };
@@ -446,9 +404,7 @@ function loadState() {
 
 function getSessionExploreHistory(state, sessionId) {
   const sid = String(sessionId || "").trim() || "_anon";
-  if (!state.sessions[sid]) {
-    state.sessions[sid] = { explore: [], updatedAt: null };
-  }
+  if (!state.sessions[sid]) state.sessions[sid] = { explore: [], updatedAt: null };
   if (!Array.isArray(state.sessions[sid].explore)) state.sessions[sid].explore = [];
   return { sid, hist: state.sessions[sid].explore };
 }
@@ -462,10 +418,9 @@ function pruneExploreHistory(hist, cooldownMin, historyMax) {
     .filter((x) => {
       const t = Date.parse(x.at);
       if (!Number.isFinite(t)) return false;
-      return now - t <= cooldownMs; // only keep within cooldown window
+      return now - t <= cooldownMs;
     });
 
-  // keep last N
   const max = clamp(Number(historyMax || DEFAULTS.exploreRotation.historyMax), 1, 200);
   return kept.slice(-max);
 }
@@ -480,11 +435,9 @@ function recordExplorePick(state, sessionId, artistId) {
 }
 
 function computeFatigueMultiplier(signalsByArtist, fatigueStep, fatigueMin, artistId) {
-  // fatigue reduces score based on how many times user has seen artist in this session
   const seen = Number(signalsByArtist?.[artistId]?.seen || 0) || 0;
   const step = clamp(Number(fatigueStep ?? DEFAULTS.fatigueStep), 0, 0.25);
   const min = clamp(Number(fatigueMin ?? DEFAULTS.fatigueMin), 0.5, 1);
-
   const mult = 1 - seen * step;
   return clamp(mult, min, 1);
 }
@@ -497,13 +450,8 @@ function tasteBoostForArtist(taste, artist, tasteCfg) {
   const loc = normalizeLocation(artist?.location);
 
   let boost = 0;
-
-  for (const tg of taste.topGenres || []) {
-    if (gTokens.includes(normalizeStr(tg))) boost += genreBoost;
-  }
-  for (const tl of taste.topLocations || []) {
-    if (loc && loc === normalizeStr(tl)) boost += locationBoost;
-  }
+  for (const tg of taste.topGenres || []) if (gTokens.includes(normalizeStr(tg))) boost += genreBoost;
+  for (const tl of taste.topLocations || []) if (loc && loc === normalizeStr(tl)) boost += locationBoost;
 
   return boost;
 }
@@ -525,35 +473,9 @@ function isColdStart(aggArtists, artistId) {
   return total === 0;
 }
 
-function chooseExploreCandidates({
-  allArtists,
-  ranked,
-  aggArtists,
-  taste,
-  cfg,
-  state,
-  sessionId,
-  alreadyChosenIds,
-}) {
-  // Step 6 priority:
-  // 1) cold-start real artists (0 events) with taste match
-  // 2) cold-start without taste match
-  // 3) taste-matching non-cold-start
-  // 4) anything else
-  // Also apply rotation cooldown and excludeIds.
-
+function chooseExploreCandidates({ allArtists, ranked, aggArtists, taste, cfg, sessionId, alreadyChosenIds, prunedHistory }) {
   const excludeIds = uniq([...(cfg.exploreExcludeIds || DEFAULTS.exploreExcludeIds || [])].map(String));
-  const cooldownMin = cfg.exploreRotation?.cooldownMin ?? DEFAULTS.exploreRotation.cooldownMin;
-  const historyMax = cfg.exploreRotation?.historyMax ?? DEFAULTS.exploreRotation.historyMax;
-
-  const st = loadState().state; // local read in case state passed is stale
-  const { hist } = getSessionExploreHistory(st, sessionId);
-  const pruned = pruneExploreHistory(hist, cooldownMin, historyMax);
-  const recently = new Set(pruned.map((x) => x.id));
-
-  // build quick artist lookup
-  const byId = {};
-  for (const a of allArtists) byId[a.id] = a;
+  const recently = new Set((prunedHistory || []).map((x) => x.id));
 
   const tasteCfg = cfg.taste || DEFAULTS.taste;
 
@@ -568,41 +490,27 @@ function chooseExploreCandidates({
     const tBoost = tasteBoostForArtist(taste, a, tasteCfg);
     const tasteMatch = tBoost > 0;
 
-    // base cold-start points
     const base = cold ? Number(cfg.coldStartBase ?? DEFAULTS.coldStartBase) : 0;
-
-    // cap the taste multiplier for cold start
     const maxTasteBoost = clamp(Number(cfg.coldStartTasteBoostMax ?? DEFAULTS.coldStartTasteBoostMax), 0, 10);
     const coldTasteBoost = cold ? clamp(tBoost, 0, maxTasteBoost) : 0;
 
-    // rotation penalty if recently shown in explore injection
     const recentPenalty = recently.has(a.id) ? -9999 : 0;
-
-    // ranked bias: if the artist exists in ranked list, use it as a minor signal (not primary)
     const rankedEntry = ranked.find((r) => r.artistId === a.id);
     const rankedScore = rankedEntry ? rankedEntry.score : 0;
 
-    // total explore desirability
     const score =
       recentPenalty +
-      (cold ? 1000 : 0) + // cold start primary
-      (tasteMatch ? 100 : 0) + // taste match secondary
-      coldTasteBoost * 10 + // small shaping
-      base * 3 + // baseline
-      Math.log10(1 + Math.max(0, rankedScore)); // tertiary
+      (cold ? 1000 : 0) +
+      (tasteMatch ? 100 : 0) +
+      coldTasteBoost * 10 +
+      base * 3 +
+      Math.log10(1 + Math.max(0, rankedScore));
 
-    return {
-      artist: a,
-      exploreScore: score,
-      coldStart: cold,
-      tasteBoost: tBoost,
-      recentlyShown: recently.has(a.id),
-    };
+    return { artist: a, exploreScore: score, coldStart: cold, tasteBoost: tBoost, recentlyShown: recently.has(a.id) };
   });
 
   scored.sort((x, y) => y.exploreScore - x.exploreScore);
-
-  return { scored, prunedHistory: pruned };
+  return scored;
 }
 
 function applyCaps(list, genreCap, locationCap) {
@@ -619,7 +527,7 @@ function applyCaps(list, genreCap, locationCap) {
     const gTokens = normalizeGenre(item?.artist?.genre);
     const loc = normalizeLocation(item?.artist?.location);
 
-    const gKey = gTokens.length ? gTokens[0] : ""; // primary token
+    const gKey = gTokens.length ? gTokens[0] : "";
     const lKey = loc || "";
 
     const gOk = !gKey || (gCount[gKey] || 0) < gCap;
@@ -644,6 +552,7 @@ router.get("/health", (_req, res) => {
   const artists = loadArtists();
   const agg = loadAgg();
   const st = readJsonIfExists(STATE_FILE);
+  const artistsRaw = readJsonIfExists(ARTISTS_FILE_CANON);
 
   res.json({
     success: true,
@@ -657,6 +566,12 @@ router.get("/health", (_req, res) => {
       eventLog: EVENT_LOG,
       stateFile: STATE_FILE,
       stateFileOk: st.ok,
+      artistsFileOk: artistsRaw.ok,
+      artistsFileTopKeys: artistsRaw.ok && artistsRaw.value && typeof artistsRaw.value === "object" && !Array.isArray(artistsRaw.value)
+        ? Object.keys(artistsRaw.value).slice(0, 10)
+        : Array.isArray(artistsRaw.value)
+          ? ["<array>"]
+          : null,
     },
     artistsLoaded: artists.ok ? artists.artists.length : 0,
     aggOk: agg.ok,
@@ -683,7 +598,6 @@ router.get("/mix", (req, res) => {
   const sessionId = String(req.query.sessionId || "").trim() || "anon";
   const maxReturn = clamp(Number(req.query.maxReturn || DEFAULTS.maxReturn), 1, DEFAULTS.maxReturn);
 
-  // Load artists + agg
   const artistsLoad = loadArtists();
   if (!artistsLoad.ok) {
     return res.status(500).json({
@@ -698,39 +612,22 @@ router.get("/mix", (req, res) => {
   const agg = aggLoad.ok ? aggLoad.agg : null;
   const aggArtists = (agg && agg.artists && typeof agg.artists === "object") ? agg.artists : {};
 
-  // Feed size (avoid returning more than artists available)
   const feedCount = Math.min(artistsLoad.artists.length, maxReturn);
 
-  // Build ranked list
   const rankedRaw = buildRankedList(artistsLoad.artists, agg, {
     halfLifeHours: 24,
-    // lightweight weights (kept in line with your ranking.js config)
-    weights: {
-      view: 1,
-      replay: 2.5,
-      like: 1.5,
-      save: 3.5,
-      share: 4.5,
-      follow: 5,
-      comment: 2,
-      vote: 1,
-    },
+    weights: { view: 1, replay: 2.5, like: 1.5, save: 3.5, share: 4.5, follow: 5, comment: 2, vote: 1 },
   });
 
-  // Session signals (from event log tail)
   const maxBytes = clamp(Number(DEFAULTS.tailKb), 16, 4096) * 1024;
   const tail = tailLines(EVENT_LOG, maxBytes, clamp(Number(DEFAULTS.maxLines), 100, 20000));
   const events = tail.ok ? parseEventsJsonlLines(tail.lines) : [];
   const signals = buildSessionSignals(events, sessionId);
 
-  // Taste profile derived from signals
   const artistsById = {};
   for (const a of artistsLoad.artists) artistsById[a.id] = a;
   const taste = buildTasteProfile(artistsById, signals, DEFAULTS.taste);
 
-  // -------------------------
-  // Step 6: gentle explore
-  // -------------------------
   const cfg = {
     explorePct: DEFAULTS.explorePct,
     genreCap: DEFAULTS.genreCap,
@@ -749,26 +646,19 @@ router.get("/mix", (req, res) => {
   const injectSlots = pickInjectSlots(feedCount, DEFAULTS.injectSlots);
   const exploreCount = deriveExploreCount(feedCount, cfg.explorePct, cfg.forceExploreMin);
 
-  // Build personalization multiplier + fatigue
   const enrichedRanked = rankedRaw.map((r) => {
     const aid = r.artistId;
-    const a = artistsById[aid];
-
-    // personalization: engaged points in session -> multiplier
     const sig = signals.byArtist?.[aid] || null;
+
     const engaged = Number(sig?.engagedPoints || 0) || 0;
     const watchMs = Number(sig?.watchMs || 0) || 0;
 
-    // base multiplier: 1 + (engaged points / 30) + (watchMs/120000)
     const personalization = 1 + engaged / 30 + watchMs / 120000;
     const fatigue = computeFatigueMultiplier(signals.byArtist, cfg.fatigueStep, cfg.fatigueMin, aid);
 
     return {
       ...r,
-      multipliers: {
-        personalization: Number(personalization.toFixed(6)),
-        fatigue: Number(fatigue.toFixed(6)),
-      },
+      multipliers: { personalization: Number(personalization.toFixed(6)), fatigue: Number(fatigue.toFixed(6)) },
       score: r.score * personalization * fatigue,
       source: "ranked",
       explain: {
@@ -776,14 +666,6 @@ router.get("/mix", (req, res) => {
         seen: Number(sig?.seen || 0) || 0,
         engagedPoints: engaged,
         watchMs,
-        views: Number(sig?.counts?.view || 0) || 0,
-        replays: Number(sig?.counts?.replay || 0) || 0,
-        likes: Number(sig?.counts?.like || 0) || 0,
-        saves: Number(sig?.counts?.save || 0) || 0,
-        shares: Number(sig?.counts?.share || 0) || 0,
-        follows: Number(sig?.counts?.follow || 0) || 0,
-        comments: Number(sig?.counts?.comment || 0) || 0,
-        votes: Number(sig?.counts?.vote || 0) || 0,
         lastAt: r.lastAt,
       },
     };
@@ -791,126 +673,89 @@ router.get("/mix", (req, res) => {
 
   enrichedRanked.sort((a, b) => b.score - a.score);
 
-  // Apply caps softly to ranked list first
   const capped = applyCaps(enrichedRanked, cfg.genreCap, cfg.locationCap);
   let baseList = capped.kept.slice(0, feedCount);
 
-  // If caps were too strict and we got short, top-up with rejected ranked
   if (baseList.length < feedCount) {
     const needed = feedCount - baseList.length;
     baseList = baseList.concat(capped.rejected.slice(0, needed));
   }
 
-  // Build explore candidates
   const chosen = new Set(baseList.map((x) => x.artistId));
-  const explorePickPlan = chooseExploreCandidates({
-    allArtists: artistsLoad.artists,
-    ranked: enrichedRanked,
-    aggArtists,
-    taste,
-    cfg,
-    state: null,
-    sessionId,
-    alreadyChosenIds: chosen,
-  });
 
-  // Load + prune state
   const stLoad = loadState();
   const state = stLoad.state;
   const { sid, hist } = getSessionExploreHistory(state, sessionId);
   const pruned = pruneExploreHistory(hist, cfg.exploreRotation.cooldownMin, cfg.exploreRotation.historyMax);
   state.sessions[sid].explore = pruned;
 
-  // Determine explore injections (Step 6: gentle count + strict slot)
+  const exploreScored = chooseExploreCandidates({
+    allArtists: artistsLoad.artists,
+    ranked: enrichedRanked,
+    aggArtists,
+    taste,
+    cfg,
+    sessionId,
+    alreadyChosenIds: chosen,
+    prunedHistory: pruned,
+  });
+
   const injections = [];
   const maxExploreToInject = Math.min(exploreCount, injectSlots.length ? injectSlots.length : 1);
 
   for (let i = 0; i < maxExploreToInject; i++) {
-    const cand = explorePickPlan.scored[i];
+    const cand = exploreScored[i];
     if (!cand || !cand.artist || !cand.artist.id) continue;
 
-    // create synthetic rec item for explore
     const a = cand.artist;
     const base = cand.coldStart ? Number(cfg.coldStartBase) : 0;
     const tBoost = clamp(Number(cand.tasteBoost || 0), 0, Number(cfg.coldStartTasteBoostMax || 3));
     const computedBase = cand.coldStart ? base * Math.max(1, tBoost) : base;
 
-    const item = {
+    injections.push({
       artistId: a.id,
-      artist: {
-        id: a.id,
-        name: a.name,
-        imageUrl: a.imageUrl,
-        genre: a.genre,
-        location: a.location,
-      },
+      artist: { id: a.id, name: a.name, imageUrl: a.imageUrl, genre: a.genre, location: a.location },
       baseScore: Number((cand.coldStart ? computedBase : 0).toFixed(6)),
       score: Number((cand.coldStart ? computedBase : 0).toFixed(6)),
       lastAt: null,
-      metrics: {
-        views: 0,
-        replays: 0,
-        likes: 0,
-        saves: 0,
-        shares: 0,
-        follows: 0,
-        comments: 0,
-        votes: 0,
-        watchMs: 0,
-      },
+      metrics: { views: 0, replays: 0, likes: 0, saves: 0, shares: 0, follows: 0, comments: 0, votes: 0, watchMs: 0 },
       source: cand.coldStart ? "explore" : "explore-relaxed",
       explain: {
         sessionId,
         explore: true,
         taste,
-        rotation: {
-          cooldownMin: cfg.exploreRotation.cooldownMin,
-          recentExploreCount: pruned.length,
-        },
+        rotation: { cooldownMin: cfg.exploreRotation.cooldownMin, recentExploreCount: pruned.length },
         coldStart: cand.coldStart
-          ? {
-              applied: true,
-              base: cfg.coldStartBase,
-              tasteBoost: tBoost,
-              computedBase: Number(computedBase.toFixed(6)),
-            }
+          ? { applied: true, base: cfg.coldStartBase, tasteBoost: tBoost, computedBase: Number(computedBase.toFixed(6)) }
           : null,
       },
-    };
+    });
 
-    injections.push(item);
     chosen.add(a.id);
-
-    // Record explore pick to state
     recordExplorePick(state, sessionId, a.id);
   }
 
-  // Write state (best effort; keep response successful even if write fails)
   try {
     writeJsonAtomic(STATE_FILE, state);
-  } catch (e) {
-    // ignore write failure; still return data
+  } catch {
+    // best effort
   }
 
-  // Inject explore into base list at inject slots (slot number is 1-indexed)
   let final = [...baseList];
+
   for (let i = 0; i < injections.length; i++) {
     const slot = injectSlots[i] || injectSlots[0] || 3;
     const idx = clamp(slot - 1, 0, Math.max(0, final.length - 1));
-
-    // remove current item at idx (to keep length stable), then inject explore
-    // but avoid dropping the top ranked item if idx=0 (we use slot 3 default)
     final.splice(idx, 1, injections[i]);
   }
 
-  // If final is still short (shouldn’t happen), top up with remaining ranked
   if (final.length < feedCount) {
     const need = feedCount - final.length;
     const leftovers = enrichedRanked.filter((x) => !final.some((y) => y.artistId === x.artistId));
     final = final.concat(leftovers.slice(0, need));
   }
 
-  // Final fallback: only if still short, add "fill" from any remaining artists (should be rare Step 6)
+  // Step 6: fill should be rare; only if absolutely unavoidable
   if (final.length < feedCount) {
     const need = feedCount - final.length;
     const remaining = artistsLoad.artists
@@ -931,10 +776,8 @@ router.get("/mix", (req, res) => {
     final = final.concat(remaining);
   }
 
-  // Trim to feedCount
   final = final.slice(0, feedCount);
 
-  // Response
   return res.json({
     success: true,
     updatedAt: agg?.updatedAt || nowIso(),
@@ -943,7 +786,6 @@ router.get("/mix", (req, res) => {
     signalArtists: Object.keys(signals.byArtist || {}).length,
     taste,
     config: {
-      // Step 6 outputs (what you care about)
       explorePct: cfg.explorePct,
       exploreCount,
       genreCap: cfg.genreCap,
@@ -954,11 +796,7 @@ router.get("/mix", (req, res) => {
       forceExploreMin: cfg.forceExploreMin,
       injectSlots,
       coldStartBase: cfg.coldStartBase,
-      exploreRotation: {
-        stateFile: STATE_FILE,
-        cooldownMin: cfg.exploreRotation.cooldownMin,
-        historyMax: cfg.exploreRotation.historyMax,
-      },
+      exploreRotation: { stateFile: STATE_FILE, cooldownMin: cfg.exploreRotation.cooldownMin, historyMax: cfg.exploreRotation.historyMax },
       exploreExcludeIds: cfg.exploreExcludeIds,
       feedCount,
     },
