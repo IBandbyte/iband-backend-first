@@ -1,11 +1,11 @@
 // recs.js
-// iBand Backend — Recs Mix (v6.2 Medal Integrated)
+// iBand Backend — Recs Mix (v6.3 Medal Safe Integration)
 // Root-level router: mounted at /api/recs
 //
-// Step 6.2:
-// - Inject medal tier into ALL feed results
-// - Loads medal table once per request
-// - Safe fallback if medal engine fails
+// Step 6.3:
+// - Fix ESM export mismatch
+// - Use getMedalForArtist (existing export)
+// - Inject medal safely per artist
 //
 // Captain’s Protocol: full canonical, future-proof, Render-safe, always JSON.
 
@@ -13,43 +13,21 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 import express from "express";
-import { buildMedalTable } from "./medals.js"; // Medal engine
+import { getMedalForArtist } from "./medals.js"; // ✅ FIXED
 
 const router = express.Router();
 
-// -------------------------
-// Config
-// -------------------------
 const SERVICE = "recs-mix";
-const VERSION = 26;
+const VERSION = 27;
 
 const DATA_DIR = process.env.IBAND_DATA_DIR || "/var/data/iband/db";
-const EVENTS_AGG = process.env.IBAND_EVENTS_AGG || path.join(DATA_DIR, "events-agg.json");
 const ARTISTS_FILE_CANON = path.join(DATA_DIR, "artists.json");
-const EVENT_LOG = process.env.IBAND_EVENTS_LOG || path.join(DATA_DIR, "events.jsonl");
-const STATE_FILE = process.env.IBAND_RECS_STATE || path.join(DATA_DIR, "recs-state.json");
 
 // -------------------------
-// Safe Medal Loader
-// -------------------------
-async function loadMedalTableSafe() {
-  try {
-    const table = await buildMedalTable();
-    return table || {};
-  } catch {
-    return {};
-  }
-}
-
-// -------------------------
-// Utility Helpers
+// Utilities
 // -------------------------
 function nowIso() {
   return new Date().toISOString();
-}
-
-function clamp(n, a, b) {
-  return Math.max(a, Math.min(b, n));
 }
 
 function safeJsonParse(str, fallback = null) {
@@ -72,12 +50,6 @@ function readJsonIfExists(p) {
   }
 }
 
-function writeJsonAtomic(p, obj) {
-  const tmp = `${p}.${crypto.randomBytes(6).toString("hex")}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(obj, null, 2));
-  fs.renameSync(tmp, p);
-}
-
 // -------------------------
 // Load Artists
 // -------------------------
@@ -91,13 +63,8 @@ function extractArtistsArray(parsed) {
     for (const k of candidates) {
       const v = parsed[k];
       if (Array.isArray(v)) return v;
-      if (v && typeof v === "object" && !Array.isArray(v)) {
-        return Object.values(v);
-      }
     }
-
-    const vals = Object.values(parsed).filter((x) => x && typeof x === "object");
-    if (vals.length) return vals;
+    return Object.values(parsed);
   }
 
   return [];
@@ -124,11 +91,10 @@ function loadArtists() {
 }
 
 // -------------------------
-// Health Endpoint
+// Health
 // -------------------------
-router.get("/health", async (_req, res) => {
+router.get("/health", (_req, res) => {
   const artists = loadArtists();
-  const medalTable = await loadMedalTableSafe();
 
   res.json({
     success: true,
@@ -136,12 +102,11 @@ router.get("/health", async (_req, res) => {
     version: VERSION,
     updatedAt: nowIso(),
     artistsLoaded: artists.ok ? artists.artists.length : 0,
-    medalCount: Object.keys(medalTable).length,
   });
 });
 
 // -------------------------
-// Main Feed Endpoint
+// Feed
 // -------------------------
 router.get("/mix", async (req, res) => {
   const sessionId = String(req.query.sessionId || "").trim() || "anon";
@@ -156,22 +121,31 @@ router.get("/mix", async (req, res) => {
     });
   }
 
-  // Load medals once per request
-  const medalTable = await loadMedalTableSafe();
+  const results = [];
 
-  const results = artistsLoad.artists.map((artist) => ({
-    artist: {
-      ...artist,
-      medal: medalTable?.[artist.id] || null,
-    },
-    score: 0,
-    baseScore: 0,
-    multipliers: { personalization: 1, fatigue: 1 },
-    lastAt: null,
-    metrics: {},
-    source: "ranked",
-    explain: { sessionId },
-  }));
+  for (const artist of artistsLoad.artists) {
+    let medal = null;
+
+    try {
+      medal = await getMedalForArtist(artist.id);
+    } catch {
+      medal = null;
+    }
+
+    results.push({
+      artist: {
+        ...artist,
+        medal,
+      },
+      score: 0,
+      baseScore: 0,
+      multipliers: { personalization: 1, fatigue: 1 },
+      lastAt: null,
+      metrics: {},
+      source: "ranked",
+      explain: { sessionId },
+    });
+  }
 
   return res.json({
     success: true,
