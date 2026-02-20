@@ -10,7 +10,8 @@ import commentsRouter from "./comments.js";
 import adminRouter from "./admin.js";
 import eventsRouter from "./events.js";
 import rankingRouter from "./ranking.js";
-import recsRouter from "./recs.js"; // ✅ NEW
+import recsRouter from "./recs.js";
+import medalsRouter from "./medals.js"; // ✅ NEW
 
 const app = express();
 
@@ -54,7 +55,8 @@ app.use("/api/comments", commentsRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/events", eventsRouter);
 app.use("/api/ranking", rankingRouter);
-app.use("/api/recs", recsRouter); // ✅ NEW
+app.use("/api/recs", recsRouter);
+app.use("/api/medals", medalsRouter); // ✅ NEW
 
 app.use((req, res) => {
   res.status(404).json({
