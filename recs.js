@@ -1,31 +1,34 @@
 // recs.js
-// iBand Backend — Recs Mix (v6.3 Medal Safe Integration)
+// iBand Backend — Recs Mix (v6.4 Self-Contained Medal Engine)
 // Root-level router: mounted at /api/recs
 //
-// Step 6.3:
-// - Fix ESM export mismatch
-// - Use getMedalForArtist (existing export)
-// - Inject medal safely per artist
+// Step 6.4:
+// - Remove medals.js dependency entirely
+// - Compute medal tiers internally
+// - Fully self-contained (no ESM risk)
 //
 // Captain’s Protocol: full canonical, future-proof, Render-safe, always JSON.
 
 import fs from "fs";
 import path from "path";
-import crypto from "crypto";
 import express from "express";
-import { getMedalForArtist } from "./medals.js"; // ✅ FIXED
 
 const router = express.Router();
 
 const SERVICE = "recs-mix";
-const VERSION = 27;
+const VERSION = 28;
 
 const DATA_DIR = process.env.IBAND_DATA_DIR || "/var/data/iband/db";
-const ARTISTS_FILE_CANON = path.join(DATA_DIR, "artists.json");
+const EVENTS_AGG = path.join(DATA_DIR, "events-agg.json");
+const ARTISTS_FILE = path.join(DATA_DIR, "artists.json");
 
-// -------------------------
-// Utilities
-// -------------------------
+// Medal tier thresholds (percentile-based)
+const MEDAL_CONFIG = {
+  goldTopPct: 0.05,
+  silverTopPct: 0.2,
+  bronzeTopPct: 0.5,
+};
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -40,120 +43,110 @@ function safeJsonParse(str, fallback = null) {
 
 function readJsonIfExists(p) {
   try {
-    if (!fs.existsSync(p)) return { ok: false, value: null, error: "ENOENT" };
-    const raw = fs.readFileSync(p, "utf8");
-    const val = safeJsonParse(raw, null);
-    if (!val) return { ok: false, value: null, error: "EJSONPARSE" };
-    return { ok: true, value: val, error: null };
-  } catch (e) {
-    return { ok: false, value: null, error: e?.message || "EREAD" };
+    if (!fs.existsSync(p)) return null;
+    return safeJsonParse(fs.readFileSync(p, "utf8"), null);
+  } catch {
+    return null;
   }
 }
 
-// -------------------------
-// Load Artists
-// -------------------------
-function extractArtistsArray(parsed) {
+function extractArtists(parsed) {
   if (!parsed) return [];
-
   if (Array.isArray(parsed)) return parsed;
+  if (parsed.artists && Array.isArray(parsed.artists)) return parsed.artists;
+  return Object.values(parsed).filter((x) => x && typeof x === "object");
+}
 
-  if (parsed && typeof parsed === "object") {
-    const candidates = ["artists", "data", "items", "results", "list"];
-    for (const k of candidates) {
-      const v = parsed[k];
-      if (Array.isArray(v)) return v;
+function calculateScore(life = {}) {
+  return (
+    (life.views || 0) * 1 +
+    (life.replays || 0) * 2.5 +
+    (life.likes || 0) * 1.5 +
+    (life.saves || 0) * 3.5 +
+    (life.shares || 0) * 4.5 +
+    (life.follows || 0) * 5 +
+    (life.comments || 0) * 2 +
+    (life.votes || 0) * 1 +
+    (life.watchMs || 0) / 10000
+  );
+}
+
+function assignMedals(scoredList) {
+  const total = scoredList.length;
+
+  return scoredList.map((item, index) => {
+    const pct = total ? index / total : 1;
+    let medal = null;
+
+    if (pct <= MEDAL_CONFIG.goldTopPct) {
+      medal = { tier: "gold", label: "Gold", emoji: "🥇", hex: "#D4AF37" };
+    } else if (pct <= MEDAL_CONFIG.silverTopPct) {
+      medal = { tier: "silver", label: "Silver", emoji: "🥈", hex: "#C0C0C0" };
+    } else if (pct <= MEDAL_CONFIG.bronzeTopPct) {
+      medal = { tier: "bronze", label: "Bronze", emoji: "🥉", hex: "#CD7F32" };
+    } else {
+      medal = { tier: "certified", label: "Certified", emoji: "🎸", hex: "#6C63FF" };
     }
-    return Object.values(parsed);
-  }
 
-  return [];
+    return { ...item, medal };
+  });
 }
 
-function loadArtists() {
-  const a = readJsonIfExists(ARTISTS_FILE_CANON);
-  if (!a.ok) return { ok: false, artists: [], error: a.error };
-
-  const rawArtists = extractArtistsArray(a.value);
-
-  const normalized = rawArtists
-    .map((x) => ({
-      id: String(x?.id || "").trim(),
-      name: x?.name ?? null,
-      imageUrl: x?.imageUrl ?? null,
-      genre: x?.genre ?? null,
-      location: x?.location ?? null,
-      status: x?.status ?? "active",
-    }))
-    .filter((x) => x.id);
-
-  return { ok: true, artists: normalized };
-}
-
-// -------------------------
 // Health
-// -------------------------
 router.get("/health", (_req, res) => {
-  const artists = loadArtists();
-
+  const artists = extractArtists(readJsonIfExists(ARTISTS_FILE) || []);
   res.json({
     success: true,
     service: SERVICE,
     version: VERSION,
     updatedAt: nowIso(),
-    artistsLoaded: artists.ok ? artists.artists.length : 0,
+    artistsLoaded: artists.length,
   });
 });
 
-// -------------------------
 // Feed
-// -------------------------
-router.get("/mix", async (req, res) => {
+router.get("/mix", (req, res) => {
   const sessionId = String(req.query.sessionId || "").trim() || "anon";
 
-  const artistsLoad = loadArtists();
-  if (!artistsLoad.ok) {
-    return res.status(500).json({
-      success: false,
-      message: "Artists file not available.",
-      error: artistsLoad.error,
-      updatedAt: nowIso(),
-    });
-  }
+  const artistsRaw = readJsonIfExists(ARTISTS_FILE);
+  const aggRaw = readJsonIfExists(EVENTS_AGG);
 
-  const results = [];
+  const artists = extractArtists(artistsRaw);
+  const aggArtists = aggRaw?.artists || {};
 
-  for (const artist of artistsLoad.artists) {
-    let medal = null;
+  const scored = artists.map((a) => {
+    const life = aggArtists[a.id]?.lifetime || {};
+    const score = calculateScore(life);
 
-    try {
-      medal = await getMedalForArtist(artist.id);
-    } catch {
-      medal = null;
-    }
-
-    results.push({
+    return {
       artist: {
-        ...artist,
-        medal,
+        id: a.id,
+        name: a.name,
+        imageUrl: a.imageUrl || null,
+        genre: a.genre || null,
+        location: a.location || null,
       },
-      score: 0,
-      baseScore: 0,
-      multipliers: { personalization: 1, fatigue: 1 },
-      lastAt: null,
-      metrics: {},
-      source: "ranked",
-      explain: { sessionId },
-    });
-  }
+      score,
+      metrics: life,
+    };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+
+  const withMedals = assignMedals(scored);
 
   return res.json({
     success: true,
     version: VERSION,
     updatedAt: nowIso(),
     sessionId,
-    count: results.length,
-    results,
+    count: withMedals.length,
+    results: withMedals.map((x) => ({
+      artist: { ...x.artist, medal: x.medal },
+      score: Number(x.score.toFixed(6)),
+      metrics: x.metrics,
+      source: "ranked",
+    })),
   });
 });
 
