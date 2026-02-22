@@ -12,7 +12,7 @@ import eventsRouter from "./events.js";
 import rankingRouter from "./ranking.js";
 import recsRouter from "./recs.js";
 import medalsRouter from "./medals.js";
-import flashMedalsRouter from "./flashMedals.js";
+import flashMedalsRouter from "./flashMedals.js"; // ✅ Phase E
 
 const app = express();
 
@@ -57,8 +57,9 @@ app.use("/api/admin", adminRouter);
 app.use("/api/events", eventsRouter);
 app.use("/api/ranking", rankingRouter);
 app.use("/api/recs", recsRouter);
+
 app.use("/api/medals", medalsRouter);
-app.use("/api/flash-medals", flashMedalsRouter);
+app.use("/api/flash-medals", flashMedalsRouter); // ✅ Phase E
 
 app.use((req, res) => {
   res.status(404).json({
