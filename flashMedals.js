@@ -1,111 +1,106 @@
-// flashMedals.js
-// iBand Backend — Flash Medals Engine (Phase E)
-// Root-level router: mounted at /api/flash-medals
-//
-// Purpose:
-// - Daily "Flash Medals" that last 24 hours (fan retention + artist competition)
-// - Uses events.jsonl (real behavior), Render-safe, always returns JSON
-// - No DB required (file-backed like the rest of iBand backend)
-//
-// Endpoints:
-// - GET  /api/flash-medals/health
-// - GET  /api/flash-medals/today
-// - GET  /api/flash-medals/artists
-// - GET  /api/flash-medals/fans
-//
-// Captain’s Protocol: full canonical, future-proof, Render-safe, always JSON.
+/**
+ * flashMedals.js (root) — ESM default export
+ * iBand Flash Medals Engine (v1.1)
+ *
+ * Goal:
+ * - "Flash medals" that last for a short rolling window (default 24h)
+ * - Awarded to BOTH artists + fans (by sessionId) based on events.jsonl
+ * - Query-controlled windowHours for testing (safe clamped)
+ *
+ * Endpoints:
+ * - GET  /api/flash-medals/health
+ * - GET  /api/flash-medals/today?windowHours=24&limit=50
+ *
+ * Notes:
+ * - Render-safe: reads tail of events.jsonl only (no full file load)
+ * - Never breaks: if events missing, returns empty arrays with ok=false tail
+ * - Strict JSON responses always
+ */
 
-import fs from "fs";
-import path from "path";
 import express from "express";
+import fs from "fs/promises";
+import path from "path";
 
 const router = express.Router();
 
-// -------------------------
-// Config
-// -------------------------
+// -------------------- Env / Paths --------------------
+const DATA_DIR = process.env.DATA_DIR || "/var/data/iband/db";
+const ARTISTS_FILE = process.env.ARTISTS_FILE || path.join(DATA_DIR, "artists.json");
+const EVENTS_LOG_FILE = process.env.EVENTS_LOG_FILE || path.join(DATA_DIR, "events.jsonl");
+
+// Defaults
 const SERVICE = "flash-medals";
-const VERSION = 1;
+const VERSION = 2; // v1.1
 
-const DATA_DIR = process.env.IBAND_DATA_DIR || "/var/data/iband/db";
-const EVENTS_LOG = process.env.IBAND_EVENTS_LOG || path.join(DATA_DIR, "events.jsonl");
-const ARTISTS_FILE = path.join(DATA_DIR, "artists.json");
+const DEFAULT_WINDOW_HOURS = Number(process.env.FLASH_MEDALS_WINDOW_HOURS || 24);
+const MAX_WINDOW_HOURS = Number(process.env.FLASH_MEDALS_MAX_WINDOW_HOURS || 72);
+const MIN_WINDOW_HOURS = Number(process.env.FLASH_MEDALS_MIN_WINDOW_HOURS || 0.1);
 
-// Engine defaults (tunable later via env if needed)
-const DEFAULTS = {
-  windowHours: 24,
-  maxReturn: 50,
+const MAX_RETURN = parseInt(process.env.FLASH_MEDALS_MAX_RETURN || "50", 10);
 
-  // Medal names (copy-friendly for UI)
-  medals: {
-    artistViral: { tier: "flash", code: "artist_viral", label: "Viral Lift", emoji: "🚀" },
-    artistBreakout: { tier: "flash", code: "artist_breakout", label: "Breakout Surge", emoji: "⚡" },
-    fanPowerVoter: { tier: "flash", code: "fan_power_voter", label: "Power Voter", emoji: "🗳️" },
-  },
+// Tail reading (Render-safe)
+const TAIL_KB = parseInt(process.env.FLASH_MEDALS_TAIL_KB || "512", 10);
+const MAX_LINES = parseInt(process.env.FLASH_MEDALS_MAX_LINES || "4000", 10);
+
+// Thresholds (tunable)
+const FAN_POWER_VOTER_MIN_VOTES = parseInt(process.env.FLASH_FAN_POWER_VOTER_MIN_VOTES || "1", 10);
+const ARTIST_BREAKOUT_MIN_VOTES = parseInt(process.env.FLASH_ARTIST_BREAKOUT_MIN_VOTES || "1", 10);
+const ARTIST_VIRAL_MIN_SHARES = parseInt(process.env.FLASH_ARTIST_VIRAL_MIN_SHARES || "1", 10);
+const ARTIST_VIRAL_MIN_VIEWS = parseInt(process.env.FLASH_ARTIST_VIRAL_MIN_VIEWS || "0", 10);
+
+// -------------------- Medal Definitions --------------------
+const MEDALS = {
+  artistViral: { tier: "flash", code: "artist_viral", label: "Viral Lift", emoji: "🚀" },
+  artistBreakout: { tier: "flash", code: "artist_breakout", label: "Breakout Surge", emoji: "⚡" },
+  fanPowerVoter: { tier: "flash", code: "fan_power_voter", label: "Power Voter", emoji: "🗳️" },
 };
 
-// -------------------------
-// Helpers
-// -------------------------
+// -------------------- Utils --------------------
 function nowIso() {
   return new Date().toISOString();
 }
 
-function safeJsonParse(str, fallback = null) {
+function safeNumber(n, fallback = 0) {
+  const x = Number(n);
+  return Number.isFinite(x) ? x : fallback;
+}
+
+function clamp(n, min, max) {
+  return Math.max(min, Math.min(max, n));
+}
+
+function normalizeType(t) {
+  const x = String(t || "").trim().toLowerCase();
+  return x || null;
+}
+
+function withinWindow(atIso, windowHours) {
+  const t = Date.parse(atIso);
+  if (!Number.isFinite(t)) return false;
+  const now = Date.now();
+  const maxAgeMs = windowHours * 60 * 60 * 1000;
+  return now - t <= maxAgeMs;
+}
+
+async function statOk(p) {
   try {
-    return JSON.parse(str);
+    const s = await fs.stat(p);
+    return { ok: true, size: s.size, mtimeMs: s.mtimeMs };
+  } catch (e) {
+    return { ok: false, error: e?.code || String(e) };
+  }
+}
+
+async function readJsonSafe(filePath, fallback) {
+  try {
+    const raw = await fs.readFile(filePath, "utf8");
+    return JSON.parse(raw);
   } catch {
     return fallback;
   }
 }
 
-function clamp(n, a, b) {
-  return Math.max(a, Math.min(b, n));
-}
-
-function withinHours(atIso, hours) {
-  const t = Date.parse(atIso);
-  if (!Number.isFinite(t)) return false;
-  const now = Date.now();
-  const maxAgeMs = hours * 60 * 60 * 1000;
-  return now - t <= maxAgeMs;
-}
-
-function readJsonIfExists(p) {
-  try {
-    if (!fs.existsSync(p)) return { ok: false, value: null, error: "ENOENT" };
-    const raw = fs.readFileSync(p, "utf8");
-    const val = safeJsonParse(raw, null);
-    if (!val) return { ok: false, value: null, error: "EJSONPARSE" };
-    return { ok: true, value: val, error: null };
-  } catch (e) {
-    return { ok: false, value: null, error: e?.message || "EREAD" };
-  }
-}
-
-function readJsonlAll(filePath) {
-  try {
-    if (!fs.existsSync(filePath)) return { ok: false, events: [], error: "ENOENT", lines: 0 };
-
-    const text = fs.readFileSync(filePath, "utf8");
-    const lines = text
-      .split("\n")
-      .map((l) => l.trim())
-      .filter(Boolean);
-
-    const events = [];
-    for (const ln of lines) {
-      const obj = safeJsonParse(ln, null);
-      if (obj && typeof obj === "object") events.push(obj);
-    }
-
-    return { ok: true, events, error: null, lines: lines.length };
-  } catch (e) {
-    return { ok: false, events: [], error: e?.message || "EJSONL", lines: 0 };
-  }
-}
-
-// Wrapper-safe artists extraction (matches recs.js pattern)
+// Wrapper-aware artists extractor (same spirit as recs.js)
 function extractArtistsArray(parsed) {
   if (!parsed) return [];
   if (Array.isArray(parsed)) return parsed;
@@ -116,297 +111,300 @@ function extractArtistsArray(parsed) {
       const v = parsed[k];
       if (Array.isArray(v)) return v;
       if (v && typeof v === "object" && !Array.isArray(v)) {
-        const maybeVals = Object.values(v).filter((x) => x && typeof x === "object");
-        if (maybeVals.length) return maybeVals;
+        const vals = Object.values(v).filter((x) => x && typeof x === "object");
+        if (vals.length) return vals;
       }
     }
-
+    // keyed object at top-level
     const vals = Object.values(parsed).filter((x) => x && typeof x === "object");
-    if (vals.length && !("id" in parsed && "name" in parsed)) return vals;
+    if (vals.length && !(("id" in parsed) && ("name" in parsed))) return vals;
   }
 
   return [];
 }
 
-function loadArtistsMap() {
-  const a = readJsonIfExists(ARTISTS_FILE);
-  if (!a.ok) return { ok: false, byId: {}, error: a.error, loaded: 0 };
-
-  const raw = extractArtistsArray(a.value);
+async function loadArtistsById() {
+  const base = null;
+  const parsed = await readJsonSafe(ARTISTS_FILE, base);
+  const arr = extractArtistsArray(parsed);
 
   const byId = {};
-  for (const x of raw) {
-    const id = String(x?.id || "").trim();
+  for (const a of arr) {
+    const id = String(a?.id || "").trim();
     if (!id) continue;
     byId[id] = {
       id,
-      name: x?.name ?? null,
-      imageUrl: x?.imageUrl ?? null,
-      genre: x?.genre ?? null,
-      location: x?.location ?? null,
-      status: x?.status ?? "active",
+      name: a?.name ?? null,
+      imageUrl: a?.imageUrl ?? null,
+      genre: a?.genre ?? null,
+      location: a?.location ?? null,
+      status: a?.status ?? "active",
     };
   }
-
-  return { ok: true, byId, error: null, loaded: Object.keys(byId).length };
+  return { byId, count: Object.keys(byId).length };
 }
 
-// -------------------------
-// Core stats builders
-// -------------------------
-function buildArtistStats(events, windowHours) {
+// Read last N KB from JSONL, parse lines safely (Render-safe)
+async function readJsonlTail(filePath, tailKb, maxLines) {
+  try {
+    const s = await fs.stat(filePath);
+    const size = s.size;
+    const bytes = Math.min(size, Math.max(8 * 1024, tailKb * 1024));
+
+    const fh = await fs.open(filePath, "r");
+    try {
+      const buf = Buffer.alloc(bytes);
+      await fh.read(buf, 0, bytes, size - bytes);
+      const text = buf.toString("utf8");
+
+      const lines = text
+        .split("\n")
+        .map((l) => l.trim())
+        .filter(Boolean);
+
+      const tail = lines.slice(-maxLines);
+
+      const events = [];
+      for (const line of tail) {
+        try {
+          const obj = JSON.parse(line);
+          if (obj && typeof obj === "object") events.push(obj);
+        } catch {
+          // ignore
+        }
+      }
+
+      return { ok: true, events, lines: tail.length, error: null };
+    } finally {
+      await fh.close();
+    }
+  } catch (e) {
+    return { ok: false, events: [], lines: 0, error: e?.code || String(e) };
+  }
+}
+
+// -------------------- Core: compute flash medals --------------------
+function buildFlashFromEvents(events, artistsById, windowHours) {
   const byArtist = {};
+  const byFan = {}; // by sessionId
 
   for (const ev of events) {
     const at = ev?.at;
-    const artistId = String(ev?.artistId || "").trim();
-    const type = String(ev?.type || "").toLowerCase().trim();
+    if (!at || !withinWindow(at, windowHours)) continue;
 
-    if (!at || !artistId || !type) continue;
-    if (!withinHours(at, windowHours)) continue;
+    const type = normalizeType(ev?.type);
+    if (!type) continue;
 
-    if (!byArtist[artistId]) {
-      byArtist[artistId] = {
-        artistId,
-        events: 0,
-        view: 0,
-        like: 0,
-        share: 0,
-        vote: 0,
-        watchMs: 0,
-        lastAt: at,
-      };
+    const artistId = String(ev?.artistId || "").trim() || null;
+    const sessionId = String(ev?.sessionId || "").trim() || null;
+
+    // --- Artist stats ---
+    if (artistId) {
+      if (!byArtist[artistId]) {
+        byArtist[artistId] = {
+          artistId,
+          lastAt: at,
+          vote: 0,
+          share: 0,
+          view: 0,
+          like: 0,
+          watchMs: 0,
+          events: 0,
+        };
+      }
+
+      const a = byArtist[artistId];
+      a.events += 1;
+      if (!a.lastAt || Date.parse(at) > Date.parse(a.lastAt)) a.lastAt = at;
+
+      const wm = safeNumber(ev?.watchMs, 0);
+      if (wm > 0) a.watchMs += wm;
+
+      if (type === "vote") a.vote += 1;
+      else if (type === "share") a.share += 1;
+      else if (type === "view") a.view += 1;
+      else if (type === "like") a.like += 1;
     }
 
-    const row = byArtist[artistId];
-    row.events += 1;
+    // --- Fan stats (sessionId) ---
+    if (sessionId) {
+      if (!byFan[sessionId]) {
+        byFan[sessionId] = {
+          sessionId,
+          lastAt: at,
+          votes: 0,
+          likes: 0,
+          shares: 0,
+        };
+      }
 
-    if (!row.lastAt || Date.parse(at) > Date.parse(row.lastAt)) row.lastAt = at;
+      const f = byFan[sessionId];
+      if (!f.lastAt || Date.parse(at) > Date.parse(f.lastAt)) f.lastAt = at;
 
-    if (type === "view") row.view += 1;
-    else if (type === "like") row.like += 1;
-    else if (type === "share") row.share += 1;
-    else if (type === "vote") row.vote += 1;
-
-    const wm = Number(ev?.watchMs || 0);
-    if (Number.isFinite(wm) && wm > 0) row.watchMs += wm;
-  }
-
-  return byArtist;
-}
-
-function buildFanStats(events, windowHours) {
-  // NOTE: we use sessionId as fan identity for now (Phase E)
-  const byFan = {};
-
-  for (const ev of events) {
-    const at = ev?.at;
-    const sid = String(ev?.sessionId || "").trim();
-    const type = String(ev?.type || "").toLowerCase().trim();
-
-    if (!at || !sid || !type) continue;
-    if (!withinHours(at, windowHours)) continue;
-
-    if (!byFan[sid]) {
-      byFan[sid] = {
-        sessionId: sid,
-        votes: 0,
-        likes: 0,
-        shares: 0,
-        lastAt: at,
-      };
+      if (type === "vote") f.votes += 1;
+      else if (type === "like") f.likes += 1;
+      else if (type === "share") f.shares += 1;
     }
-
-    const row = byFan[sid];
-    if (!row.lastAt || Date.parse(at) > Date.parse(row.lastAt)) row.lastAt = at;
-
-    if (type === "vote") row.votes += 1;
-    else if (type === "like") row.likes += 1;
-    else if (type === "share") row.shares += 1;
   }
 
-  return byFan;
-}
+  // --- Award medals (artists) ---
+  const artists = Object.values(byArtist).map((row) => {
+    const artist = artistsById[row.artistId] || null;
 
-// -------------------------
-// Medal logic (Phase E)
-// -------------------------
-function computeArtistFlashWinners(artistStats) {
-  // Two medals:
-  // - Viral Lift: highest shares (24h)
-  // - Breakout Surge: highest votes (24h)
-  let topShare = null;
-  let topVote = null;
+    // Decide medal:
+    // Priority: Viral Lift (share dominance), else Breakout Surge (vote activity)
+    let medal = null;
 
-  for (const row of Object.values(artistStats || {})) {
-    if (!topShare || row.share > topShare.share) topShare = row;
-    if (!topVote || row.vote > topVote.vote) topVote = row;
-  }
+    const qualifiesViral =
+      row.share >= ARTIST_VIRAL_MIN_SHARES && row.view >= ARTIST_VIRAL_MIN_VIEWS;
 
-  const winners = [];
+    const qualifiesBreakout = row.vote >= ARTIST_BREAKOUT_MIN_VOTES;
 
-  if (topShare && topShare.share > 0) {
-    winners.push({
-      artistId: topShare.artistId,
-      medal: DEFAULTS.medals.artistViral,
-      lastAt: topShare.lastAt || null,
-      stats: {
-        share: topShare.share,
-        vote: topShare.vote,
-        view: topShare.view,
-        like: topShare.like,
-        watchMs: topShare.watchMs,
-        events: topShare.events,
-      },
-    });
-  }
+    if (qualifiesViral) medal = MEDALS.artistViral;
+    else if (qualifiesBreakout) medal = MEDALS.artistBreakout;
 
-  if (topVote && topVote.vote > 0) {
-    winners.push({
-      artistId: topVote.artistId,
-      medal: DEFAULTS.medals.artistBreakout,
-      lastAt: topVote.lastAt || null,
-      stats: {
-        vote: topVote.vote,
-        share: topVote.share,
-        view: topVote.view,
-        like: topVote.like,
-        watchMs: topVote.watchMs,
-        events: topVote.events,
-      },
-    });
-  }
-
-  return winners;
-}
-
-function computeFanFlashWinners(fanStats) {
-  // One medal:
-  // - Power Voter: highest votes in 24h
-  let topVoter = null;
-
-  for (const row of Object.values(fanStats || {})) {
-    if (!topVoter || row.votes > topVoter.votes) topVoter = row;
-  }
-
-  const winners = [];
-  if (topVoter && topVoter.votes > 0) {
-    winners.push({
-      sessionId: topVoter.sessionId,
-      medal: DEFAULTS.medals.fanPowerVoter,
-      lastAt: topVoter.lastAt || null,
-      stats: {
-        votes: topVoter.votes,
-        likes: topVoter.likes,
-        shares: topVoter.shares,
-      },
-    });
-  }
-
-  return winners;
-}
-
-// Attach artist mini-profile if present
-function attachArtistProfiles(winners, artistsById) {
-  return (winners || []).map((w) => {
-    const a = artistsById?.[w.artistId] || null;
     return {
-      ...w,
-      artist: a
-        ? { id: a.id, name: a.name, imageUrl: a.imageUrl, genre: a.genre, location: a.location }
+      artistId: row.artistId,
+      medal,
+      lastAt: row.lastAt || null,
+      stats: {
+        vote: row.vote,
+        share: row.share,
+        view: row.view,
+        like: row.like,
+        watchMs: row.watchMs,
+        events: row.events,
+      },
+      artist: artist
+        ? {
+            id: artist.id,
+            name: artist.name,
+            imageUrl: artist.imageUrl,
+            genre: artist.genre,
+            location: artist.location,
+          }
         : null,
     };
   });
+
+  // Sort artists: medal first, then most shares, then votes, then lastAt
+  artists.sort((a, b) => {
+    const aHas = a.medal ? 1 : 0;
+    const bHas = b.medal ? 1 : 0;
+    if (bHas !== aHas) return bHas - aHas;
+    if ((b.stats.share || 0) !== (a.stats.share || 0)) return (b.stats.share || 0) - (a.stats.share || 0);
+    if ((b.stats.vote || 0) !== (a.stats.vote || 0)) return (b.stats.vote || 0) - (a.stats.vote || 0);
+    return Date.parse(b.lastAt || 0) - Date.parse(a.lastAt || 0);
+  });
+
+  const artistsWithMedals = artists.filter((x) => x.medal);
+
+  // --- Award medals (fans) ---
+  const fans = Object.values(byFan).map((row) => {
+    let medal = null;
+    if (row.votes >= FAN_POWER_VOTER_MIN_VOTES) medal = MEDALS.fanPowerVoter;
+
+    return {
+      sessionId: row.sessionId,
+      medal,
+      lastAt: row.lastAt || null,
+      stats: {
+        votes: row.votes,
+        likes: row.likes,
+        shares: row.shares,
+      },
+    };
+  });
+
+  // Sort fans: medal first, then votes, then lastAt
+  fans.sort((a, b) => {
+    const aHas = a.medal ? 1 : 0;
+    const bHas = b.medal ? 1 : 0;
+    if (bHas !== aHas) return bHas - aHas;
+    if ((b.stats.votes || 0) !== (a.stats.votes || 0)) return (b.stats.votes || 0) - (a.stats.votes || 0);
+    return Date.parse(b.lastAt || 0) - Date.parse(a.lastAt || 0);
+  });
+
+  const fansWithMedals = fans.filter((x) => x.medal);
+
+  return {
+    artists: artistsWithMedals,
+    fans: fansWithMedals,
+  };
 }
 
-// -------------------------
-// Routes
-// -------------------------
-router.get("/health", (_req, res) => {
-  const artists = loadArtistsMap();
-  const ev = readJsonlAll(EVENTS_LOG);
+// -------------------- Endpoints --------------------
+router.use(express.json({ limit: "64kb" }));
 
-  res.json({
+router.get("/health", async (_req, res) => {
+  const artistsStat = await statOk(ARTISTS_FILE);
+  const eventsStat = await statOk(EVENTS_LOG_FILE);
+
+  // Tail read (best effort)
+  const tail = await readJsonlTail(EVENTS_LOG_FILE, TAIL_KB, MAX_LINES);
+
+  const artistsLoad = await loadArtistsById();
+
+  return res.json({
     success: true,
     service: SERVICE,
-    version: VERSION,
+    version: 1,
     updatedAt: nowIso(),
     sources: {
       dataDir: DATA_DIR,
       artistsFile: ARTISTS_FILE,
-      eventsLog: EVENTS_LOG,
-      artistsLoaded: artists.ok ? artists.loaded : 0,
-      eventsOk: ev.ok,
-      eventsLines: ev.lines,
-      error: !ev.ok ? ev.error : null,
+      eventsLog: EVENTS_LOG_FILE,
+      artistsLoaded: artistsLoad.count,
+      eventsOk: tail.ok,
+      eventsLines: tail.lines,
+      error: tail.ok ? null : tail.error,
+      stat: {
+        artists: artistsStat,
+        events: eventsStat,
+      },
     },
     config: {
-      windowHours: DEFAULTS.windowHours,
-      maxReturn: DEFAULTS.maxReturn,
-      medals: DEFAULTS.medals,
+      windowHours: DEFAULT_WINDOW_HOURS,
+      maxReturn: MAX_RETURN,
+      minWindowHours: MIN_WINDOW_HOURS,
+      maxWindowHours: MAX_WINDOW_HOURS,
+      tailKb: TAIL_KB,
+      maxLines: MAX_LINES,
+      thresholds: {
+        fanPowerVoterMinVotes: FAN_POWER_VOTER_MIN_VOTES,
+        artistBreakoutMinVotes: ARTIST_BREAKOUT_MIN_VOTES,
+        artistViralMinShares: ARTIST_VIRAL_MIN_SHARES,
+        artistViralMinViews: ARTIST_VIRAL_MIN_VIEWS,
+      },
+      medals: MEDALS,
     },
   });
 });
 
-router.get("/today", (_req, res) => {
-  const artists = loadArtistsMap();
-  const ev = readJsonlAll(EVENTS_LOG);
+router.get("/today", async (req, res) => {
+  const windowHoursRaw = safeNumber(req.query.windowHours, DEFAULT_WINDOW_HOURS);
+  const windowHours = clamp(windowHoursRaw, MIN_WINDOW_HOURS, MAX_WINDOW_HOURS);
 
-  const events = ev.ok ? ev.events : [];
-  const artistStats = buildArtistStats(events, DEFAULTS.windowHours);
-  const fanStats = buildFanStats(events, DEFAULTS.windowHours);
+  const limitRaw = parseInt(String(req.query.limit || MAX_RETURN), 10);
+  const limit = clamp(Number.isFinite(limitRaw) ? limitRaw : MAX_RETURN, 1, MAX_RETURN);
 
-  const artistWinners = attachArtistProfiles(computeArtistFlashWinners(artistStats), artists.byId);
-  const fanWinners = computeFanFlashWinners(fanStats);
+  const tail = await readJsonlTail(EVENTS_LOG_FILE, TAIL_KB, MAX_LINES);
+  const artistsLoad = await loadArtistsById();
 
-  res.json({
+  const computed = buildFlashFromEvents(tail.events || [], artistsLoad.byId, windowHours);
+
+  return res.json({
     success: true,
     updatedAt: nowIso(),
-    windowHours: DEFAULTS.windowHours,
+    windowHours,
     tail: {
-      file: path.basename(EVENTS_LOG),
-      ok: ev.ok,
-      linesParsed: ev.lines,
-      error: ev.ok ? null : ev.error,
+      file: path.basename(EVENTS_LOG_FILE),
+      ok: tail.ok,
+      linesParsed: tail.lines,
+      error: tail.ok ? null : tail.error,
     },
-    artists: artistWinners.slice(0, DEFAULTS.maxReturn),
-    fans: fanWinners.slice(0, DEFAULTS.maxReturn),
-  });
-});
-
-router.get("/artists", (req, res) => {
-  const limit = clamp(parseInt(req.query.limit || `${DEFAULTS.maxReturn}`, 10) || DEFAULTS.maxReturn, 1, DEFAULTS.maxReturn);
-
-  const artists = loadArtistsMap();
-  const ev = readJsonlAll(EVENTS_LOG);
-
-  const events = ev.ok ? ev.events : [];
-  const artistStats = buildArtistStats(events, DEFAULTS.windowHours);
-
-  const winners = attachArtistProfiles(computeArtistFlashWinners(artistStats), artists.byId);
-
-  res.json({
-    success: true,
-    updatedAt: nowIso(),
-    count: winners.length,
-    results: winners.slice(0, limit),
-  });
-});
-
-router.get("/fans", (req, res) => {
-  const limit = clamp(parseInt(req.query.limit || `${DEFAULTS.maxReturn}`, 10) || DEFAULTS.maxReturn, 1, DEFAULTS.maxReturn);
-
-  const ev = readJsonlAll(EVENTS_LOG);
-  const events = ev.ok ? ev.events : [];
-
-  const fanStats = buildFanStats(events, DEFAULTS.windowHours);
-  const winners = computeFanFlashWinners(fanStats);
-
-  res.json({
-    success: true,
-    updatedAt: nowIso(),
-    count: winners.length,
-    results: winners.slice(0, limit),
+    artists: (computed.artists || []).slice(0, limit),
+    fans: (computed.fans || []).slice(0, limit),
   });
 });
 
