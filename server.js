@@ -1,5 +1,6 @@
 // server.js
 // iBand Backend — ES Module entrypoint (authoritative)
+// Captain’s Protocol: full canonical file, no snippets.
 
 import express from "express";
 import cors from "cors";
@@ -11,7 +12,8 @@ import adminRouter from "./admin.js";
 import eventsRouter from "./events.js";
 import rankingRouter from "./ranking.js";
 import recsRouter from "./recs.js";
-import medalsRouter from "./medals.js"; // ✅ NEW
+import medalsRouter from "./medals.js";
+import flashMedalsRouter from "./flashMedals.js";
 
 const app = express();
 
@@ -49,6 +51,7 @@ app.get("/health", (_req, res) => {
   });
 });
 
+// -------------------- Routers --------------------
 app.use("/api/artists", artistsRouter);
 app.use("/api/votes", votesRouter);
 app.use("/api/comments", commentsRouter);
@@ -56,8 +59,10 @@ app.use("/api/admin", adminRouter);
 app.use("/api/events", eventsRouter);
 app.use("/api/ranking", rankingRouter);
 app.use("/api/recs", recsRouter);
-app.use("/api/medals", medalsRouter); // ✅ NEW
+app.use("/api/medals", medalsRouter);
+app.use("/api/flash-medals", flashMedalsRouter);
 
+// -------------------- 404 --------------------
 app.use((req, res) => {
   res.status(404).json({
     success: false,
@@ -66,6 +71,7 @@ app.use((req, res) => {
   });
 });
 
+// -------------------- Error handler --------------------
 app.use((err, req, res, _next) => {
   const code = Number(err?.status || err?.statusCode || 500);
   const safeCode = code >= 400 && code <= 599 ? code : 500;
