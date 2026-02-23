@@ -12,7 +12,7 @@ import eventsRouter from "./events.js";
 import rankingRouter from "./ranking.js";
 import recsRouter from "./recs.js";
 import medalsRouter from "./medals.js";
-import flashMedalsRouter from "./flashMedals.js"; // ✅ Phase E
+import flashMedalsRouter from "./flashMedals.js"; // ✅ Phase E/F
 
 const app = express();
 
@@ -50,6 +50,7 @@ app.get("/health", (_req, res) => {
   });
 });
 
+// Routers
 app.use("/api/artists", artistsRouter);
 app.use("/api/votes", votesRouter);
 app.use("/api/comments", commentsRouter);
@@ -57,9 +58,10 @@ app.use("/api/admin", adminRouter);
 app.use("/api/events", eventsRouter);
 app.use("/api/ranking", rankingRouter);
 app.use("/api/recs", recsRouter);
-
 app.use("/api/medals", medalsRouter);
-app.use("/api/flash-medals", flashMedalsRouter); // ✅ Phase E
+
+// ✅ Flash medals (fan retention + daily competition)
+app.use("/api/flash-medals", flashMedalsRouter);
 
 app.use((req, res) => {
   res.status(404).json({
