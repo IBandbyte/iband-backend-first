@@ -1,25 +1,32 @@
 /**
  * achievements.js (root) — ESM default export
- * iBand Achievements Store (v2)
+ * iBand Achievements Engine (v2)
  *
- * v2 Upgrade:
- * - Adds global feed endpoint: GET /api/achievements/feed?limit=20
- * - Adds optional filters: type=..., subjectType=...
- * - Keeps subject timeline endpoint
- * - Safe file store with atomic writes
- * - Dedup guard (retry-safe)
- * - Render-safe, always JSON
+ * Captain’s Protocol:
+ * - Full canonical file (no snippets)
+ * - Render-safe disk persistence (/var/data/iband/db)
+ * - Always JSON responses
+ * - Backwards-compatible routes
  *
- * Endpoints:
- * - GET  /api/achievements/health
- * - POST /api/achievements/record
- * - GET  /api/achievements/subject/:subjectType/:subjectId?limit=50
- * - GET  /api/achievements/feed?limit=50&type=achievement&subjectType=fan
+ * Storage:
+ * - /var/data/iband/db/achievements.json
+ *
+ * Endpoints (mounted at /api/achievements):
+ * - GET  /health
+ * - POST /record
+ * - GET  /list?type=&subjectType=&subjectId=&limit=&order=desc|asc
+ * - GET  /feed?limit=20   (alias of /list)
+ * - GET  /subject/:subjectType/:subjectId?limit=
+ * - GET  /id/:id
+ *
+ * Back-compat aliases:
+ * - GET  /all           (alias of /list)
+ * - GET  /by-subject    (query: subjectType, subjectId)
+ * - GET  /              (alias of /list, so /api/achievements?type=... works)
  */
 
 import express from "express";
-import fs from "fs";
-import fsp from "fs/promises";
+import fs from "fs/promises";
 import path from "path";
 import crypto from "crypto";
 
@@ -30,16 +37,23 @@ const SERVICE = "achievements";
 const VERSION = 2;
 
 const DATA_DIR = process.env.IBAND_DATA_DIR || "/var/data/iband/db";
-const STORE_FILE =
+const FILE_PATH =
   process.env.IBAND_ACHIEVEMENTS_FILE || path.join(DATA_DIR, "achievements.json");
 
-const MAX_RETURN = parseInt(process.env.ACHIEVEMENTS_MAX_RETURN || "50", 10);
 const CACHE_TTL_MS = parseInt(process.env.ACHIEVEMENTS_CACHE_TTL_MS || "15000", 10);
+const MAX_STORE_ITEMS = parseInt(process.env.ACHIEVEMENTS_MAX_STORE_ITEMS || "5000", 10);
+const MAX_RETURN = parseInt(process.env.ACHIEVEMENTS_MAX_RETURN || "100", 10);
 
-// Retry-safe dedupe window (seconds)
-const DEDUPE_WINDOW_SEC = parseInt(process.env.ACHIEVEMENTS_DEDUPE_WINDOW_SEC || "30", 10);
+// Dedup window: prevents spam if client retries
+const DEDUPE_WINDOW_SEC = parseInt(process.env.ACHIEVEMENTS_DEDUPE_WINDOW_SEC || "120", 10);
 
-// -------------------- Helpers --------------------
+// -------------------- In-memory cache --------------------
+let _cache = {
+  atMs: 0,
+  store: null,
+};
+
+// -------------------- Utils --------------------
 function nowIso() {
   return new Date().toISOString();
 }
@@ -53,306 +67,364 @@ function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
 }
 
-function safeJsonParse(str, fallback = null) {
+function normalizeStr(s) {
+  return String(s || "").trim();
+}
+
+function toLower(s) {
+  return normalizeStr(s).toLowerCase();
+}
+
+function mkId(prefix = "ach") {
+  return `${prefix}_${Date.now()}_${crypto.randomBytes(8).toString("hex")}`;
+}
+
+async function ensureDir(dirPath) {
   try {
-    return JSON.parse(str);
+    await fs.mkdir(dirPath, { recursive: true });
   } catch {
-    return fallback;
+    // best effort
   }
 }
 
-async function statOk(p) {
+async function statSafe(p) {
   try {
-    const s = await fsp.stat(p);
+    const s = await fs.stat(p);
     return { ok: true, size: s.size, mtimeMs: s.mtimeMs };
   } catch (e) {
     return { ok: false, error: e?.code || String(e) };
   }
 }
 
-function ensureDirSync(dir) {
+async function readJsonSafe(p, fallback) {
   try {
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const raw = await fs.readFile(p, "utf8");
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : fallback;
   } catch {
-    // best effort
+    return fallback;
   }
 }
 
-async function readStore() {
-  const base = { version: 1, updatedAt: null, items: [] };
+async function writeJsonAtomic(p, obj) {
+  const dir = path.dirname(p);
+  await ensureDir(dir);
 
-  try {
-    if (!fs.existsSync(STORE_FILE)) return { ok: true, store: base, created: true, error: null };
-    const raw = await fsp.readFile(STORE_FILE, "utf8");
-    const parsed = safeJsonParse(raw, null);
-    if (!parsed || typeof parsed !== "object") return { ok: true, store: base, created: true, error: "EJSON" };
+  const tmp = `${p}.${crypto.randomBytes(6).toString("hex")}.tmp`;
+  const raw = JSON.stringify(obj, null, 2);
+  await fs.writeFile(tmp, raw, "utf8");
+  await fs.rename(tmp, p);
+}
 
-    const store = {
-      version: safeNumber(parsed.version, 1),
-      updatedAt: parsed.updatedAt || null,
-      items: Array.isArray(parsed.items) ? parsed.items : [],
-    };
+function baseEmptyStore() {
+  return {
+    version: 1,
+    updatedAt: null,
+    items: [], // newest-last (append-only)
+  };
+}
 
-    // sanitize items
-    store.items = store.items
-      .filter((x) => x && typeof x === "object")
-      .map((x) => ({
-        id: String(x.id || "").trim() || null,
-        at: x.at || null,
-        type: x.type || "achievement",
-        subjectType: x.subjectType || null,
-        subjectId: x.subjectId || null,
-        medal: x.medal || null,
-        title: x.title || null,
-        message: x.message || null,
-        stats: x.stats || null,
-        subject: x.subject || null,
-        meta: x.meta || null,
-        v: safeNumber(x.v, 1),
-      }))
-      .filter((x) => x.id && x.at && x.subjectType && x.subjectId);
-
-    return { ok: true, store, created: false, error: null };
-  } catch (e) {
-    return { ok: false, store: base, created: false, error: e?.message || "EREAD" };
+function buildIndex(store) {
+  // subject index: `${subjectType}:${subjectId}` => [itemIds...]
+  const bySubject = {};
+  for (const it of store.items || []) {
+    const st = normalizeStr(it?.subjectType);
+    const sid = normalizeStr(it?.subjectId);
+    if (!st || !sid) continue;
+    const key = `${st}:${sid}`;
+    if (!bySubject[key]) bySubject[key] = [];
+    bySubject[key].push(it.id);
   }
+  return { bySubject };
 }
 
-async function writeStoreAtomic(store) {
-  ensureDirSync(DATA_DIR);
-  const tmp = `${STORE_FILE}.${crypto.randomBytes(6).toString("hex")}.tmp`;
-  const payload = JSON.stringify(store, null, 2);
-  await fsp.writeFile(tmp, payload, "utf8");
-  await fsp.rename(tmp, STORE_FILE);
+function summarizeStore(store) {
+  const idx = buildIndex(store);
+  return {
+    version: store.version || 1,
+    updatedAt: store.updatedAt || null,
+    items: Array.isArray(store.items) ? store.items.length : 0,
+    subjectsIndexed: Object.keys(idx.bySubject).length,
+  };
 }
 
-function makeId(prefix = "ach") {
-  return `${prefix}_${Date.now()}_${crypto.randomBytes(8).toString("hex")}`;
+function computeDedupeKey(ach) {
+  const parts = [
+    toLower(ach?.type),
+    toLower(ach?.subjectType),
+    normalizeStr(ach?.subjectId),
+    toLower(ach?.medal?.code || ach?.medal?.tier || ""),
+    normalizeStr(ach?.title || ""),
+    normalizeStr(ach?.message || ""),
+  ];
+  return crypto.createHash("sha1").update(parts.join("|")).digest("hex");
 }
 
-function makeDedupeKey(a) {
-  const medalCode = a?.medal?.code ? String(a.medal.code) : "";
-  const message = a?.message ? String(a.message) : "";
-  const title = a?.title ? String(a.title) : "";
-  const type = String(a?.type || "achievement");
-  const subjectType = String(a?.subjectType || "");
-  const subjectId = String(a?.subjectId || "");
-  const stats = a?.stats ? JSON.stringify(a.stats) : "";
-  const raw = `${type}|${subjectType}|${subjectId}|${medalCode}|${title}|${message}|${stats}`;
-  return crypto.createHash("sha1").update(raw).digest("hex");
-}
-
-function withinSeconds(isoA, isoB, seconds) {
-  const a = Date.parse(isoA);
-  const b = Date.parse(isoB);
-  if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
-  return Math.abs(b - a) <= seconds * 1000;
-}
-
-function normalizeLimit(q, fallback = 50) {
-  return clamp(parseInt(String(q ?? fallback), 10) || fallback, 1, MAX_RETURN);
-}
-
-function filterItem(item, { type, subjectType }) {
-  if (type && String(item.type) !== String(type)) return false;
-  if (subjectType && String(item.subjectType) !== String(subjectType)) return false;
+function isValidAchievementPayload(body) {
+  // required: type, subjectType, subjectId
+  const type = normalizeStr(body?.type);
+  const subjectType = normalizeStr(body?.subjectType);
+  const subjectId = normalizeStr(body?.subjectId);
+  if (!type || !subjectType || !subjectId) return false;
   return true;
 }
 
-function sortNewestFirst(items) {
-  return items
-    .slice()
-    .sort((a, b) => {
-      const ta = Date.parse(a.at || 0);
-      const tb = Date.parse(b.at || 0);
-      return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
-    });
-}
+function normalizeAchievement(body) {
+  const at = body?.at ? String(body.at) : nowIso();
+  const type = normalizeStr(body?.type);
+  const subjectType = normalizeStr(body?.subjectType);
+  const subjectId = normalizeStr(body?.subjectId);
 
-// -------------------- Cache --------------------
-let _cache = {
-  atMs: 0,
-  store: null,
-};
+  // Optional medal object (flash/weekly/lifetime etc)
+  const medal =
+    body?.medal && typeof body.medal === "object"
+      ? {
+          tier: normalizeStr(body.medal.tier) || null,
+          code: normalizeStr(body.medal.code) || null,
+          label: normalizeStr(body.medal.label) || null,
+          emoji: normalizeStr(body.medal.emoji) || null,
+          hex: normalizeStr(body.medal.hex) || null,
+        }
+      : null;
 
-async function getStoreCached() {
-  const now = Date.now();
-  const age = now - _cache.atMs;
-  if (_cache.store && age >= 0 && age <= CACHE_TTL_MS) {
-    return { ok: true, store: _cache.store, cached: true, cacheAgeMs: age };
-  }
+  const stats =
+    body?.stats && typeof body.stats === "object"
+      ? body.stats
+      : null;
 
-  const read = await readStore();
-  if (!read.ok) return { ok: false, store: read.store, cached: false, cacheAgeMs: 0, error: read.error };
+  const subject =
+    body?.subject && typeof body.subject === "object"
+      ? body.subject
+      : null;
 
-  _cache = { atMs: now, store: read.store };
-  return { ok: true, store: read.store, cached: false, cacheAgeMs: 0 };
-}
+  const meta =
+    body?.meta && typeof body.meta === "object"
+      ? body.meta
+      : null;
 
-function bustCache() {
-  _cache = { atMs: 0, store: null };
-}
+  const title = body?.title != null ? String(body.title) : null;
+  const message = body?.message != null ? String(body.message) : null;
 
-// -------------------- Validation --------------------
-function validateAchievementPayload(body) {
-  const type = String(body?.type || "").trim();
-  const subjectType = String(body?.subjectType || "").trim();
-  const subjectId = String(body?.subjectId || "").trim();
-
-  if (!type || !subjectType || !subjectId) {
-    return { ok: false, message: "Invalid achievement payload. Requires: type, subjectType, subjectId." };
-  }
-
-  const medal = body?.medal && typeof body.medal === "object" ? body.medal : null;
-
-  const out = {
+  return {
+    id: mkId("ach"),
+    at,
     type,
     subjectType,
     subjectId,
     medal,
-    title: body?.title ?? null,
-    message: body?.message ?? null,
-    stats: body?.stats && typeof body.stats === "object" ? body.stats : null,
-    subject: body?.subject && typeof body.subject === "object" ? body.subject : null,
-    meta: body?.meta && typeof body.meta === "object" ? body.meta : null,
+    title,
+    message,
+    stats,
+    subject,
+    meta,
     v: 1,
   };
-
-  return { ok: true, value: out };
 }
 
-// -------------------- Endpoints --------------------
+// -------------------- Load / Save --------------------
+async function loadStore({ bypassCache = false } = {}) {
+  const now = Date.now();
+  if (!bypassCache && _cache.store && now - _cache.atMs <= CACHE_TTL_MS) {
+    return { ok: true, store: _cache.store, cached: true, cacheAgeMs: now - _cache.atMs };
+  }
+
+  const base = baseEmptyStore();
+  const parsed = await readJsonSafe(FILE_PATH, base);
+
+  const store = {
+    version: safeNumber(parsed.version, 1),
+    updatedAt: parsed.updatedAt || null,
+    items: Array.isArray(parsed.items) ? parsed.items : [],
+  };
+
+  _cache = { atMs: now, store };
+  return { ok: true, store, cached: false, cacheAgeMs: 0 };
+}
+
+async function saveStore(store) {
+  store.updatedAt = nowIso();
+
+  // Hard cap
+  if (Array.isArray(store.items) && store.items.length > MAX_STORE_ITEMS) {
+    store.items = store.items.slice(store.items.length - MAX_STORE_ITEMS);
+  }
+
+  await writeJsonAtomic(FILE_PATH, store);
+
+  _cache = { atMs: Date.now(), store };
+  return true;
+}
+
+// -------------------- Query helpers --------------------
+function filterAndSortItems(items, { type, subjectType, subjectId, order }) {
+  let out = Array.isArray(items) ? items.slice() : [];
+
+  const t = type ? toLower(type) : null;
+  const st = subjectType ? toLower(subjectType) : null;
+  const sid = subjectId ? normalizeStr(subjectId) : null;
+
+  if (t) out = out.filter((x) => toLower(x?.type) === t);
+  if (st) out = out.filter((x) => toLower(x?.subjectType) === st);
+  if (sid) out = out.filter((x) => normalizeStr(x?.subjectId) === sid);
+
+  const ord = toLower(order || "desc");
+  out.sort((a, b) => {
+    const ta = Date.parse(a?.at || "") || 0;
+    const tb = Date.parse(b?.at || "") || 0;
+    return ord === "asc" ? ta - tb : tb - ta;
+  });
+
+  return out;
+}
+
+function applyLimit(items, limit) {
+  const lim = clamp(safeNumber(limit, 20), 1, MAX_RETURN);
+  return items.slice(0, lim);
+}
+
+// -------------------- Routes --------------------
+
+// Health
 router.get("/health", async (_req, res) => {
-  const st = await statOk(STORE_FILE);
-  const cached = await getStoreCached();
-
-  const store = cached.ok ? cached.store : { version: 1, updatedAt: null, items: [] };
-  const items = Array.isArray(store.items) ? store.items : [];
-
-  // basic subject index count (computed)
-  const subjects = new Set(items.map((x) => `${x.subjectType}:${x.subjectId}`));
-
-  return res.json({
+  const st = await statSafe(FILE_PATH);
+  const loaded = await loadStore();
+  res.json({
     success: true,
     service: SERVICE,
     version: VERSION,
     updatedAt: nowIso(),
     dataDir: DATA_DIR,
-    file: { ...st, path: STORE_FILE },
-    store: {
-      version: safeNumber(store.version, 1),
-      updatedAt: store.updatedAt || null,
-      items: items.length,
-      subjectsIndexed: subjects.size,
-    },
+    file: { ...st, path: FILE_PATH },
+    store: summarizeStore(loaded.store),
     cache: {
       ttlMs: CACHE_TTL_MS,
-      cached: cached.ok ? cached.cached : false,
-      cacheAgeMs: cached.ok ? cached.cacheAgeMs : 0,
+      cached: loaded.cached,
+      cacheAgeMs: loaded.cacheAgeMs,
     },
   });
 });
 
 // Record
-router.post("/record", express.json({ limit: "128kb" }), async (req, res) => {
-  const v = validateAchievementPayload(req.body);
-  if (!v.ok) {
-    return res.status(400).json({ success: false, message: v.message, updatedAt: nowIso() });
-  }
-
-  const read = await readStore();
-  if (!read.ok) {
-    return res.status(500).json({
+router.post("/record", async (req, res) => {
+  if (!isValidAchievementPayload(req.body)) {
+    return res.status(400).json({
       success: false,
-      message: "Failed to read achievements store.",
-      error: read.error,
+      message: "Invalid achievement payload. Requires: type, subjectType, subjectId.",
       updatedAt: nowIso(),
     });
   }
 
-  const store = read.store;
-  const items = Array.isArray(store.items) ? store.items : [];
+  const loaded = await loadStore({ bypassCache: true });
+  const store = loaded.store;
 
-  const ach = {
-    id: makeId("ach"),
-    at: nowIso(),
-    ...v.value,
-  };
+  const incoming = normalizeAchievement(req.body);
+  const dedupeKey = computeDedupeKey(incoming);
 
-  // Dedup guard: if an identical achievement exists for same subject in last N seconds, do not add again.
-  const key = makeDedupeKey(ach);
-  const recently = items
-    .filter((x) => x.subjectType === ach.subjectType && x.subjectId === ach.subjectId)
-    .slice(-50);
+  // Dedup within window seconds
+  const windowMs = clamp(DEDUPE_WINDOW_SEC, 0, 3600) * 1000;
+  let deduped = false;
 
-  const deduped = recently.some((x) => {
-    const k2 = makeDedupeKey(x);
-    return k2 === key && withinSeconds(x.at, ach.at, DEDUPE_WINDOW_SEC);
-  });
+  if (windowMs > 0 && Array.isArray(store.items) && store.items.length) {
+    const now = Date.now();
+    // scan last 200 only (fast)
+    const tail = store.items.slice(-200);
+    for (let i = tail.length - 1; i >= 0; i--) {
+      const prev = tail[i];
+      const prevAt = Date.parse(prev?.at || "");
+      if (!Number.isFinite(prevAt)) continue;
 
-  if (!deduped) {
-    items.push(ach);
-    // cap store size to protect disk (keep last 10k)
-    const HARD_CAP = 10000;
-    const nextItems = items.length > HARD_CAP ? items.slice(items.length - HARD_CAP) : items;
+      if (now - prevAt > windowMs) break;
 
-    const nextStore = {
-      version: safeNumber(store.version, 1),
-      updatedAt: ach.at,
-      items: nextItems,
-    };
-
-    try {
-      await writeStoreAtomic(nextStore);
-      bustCache();
-      return res.json({
-        success: true,
-        updatedAt: nextStore.updatedAt,
-        recorded: true,
-        deduped: false,
-        achievement: ach,
-      });
-    } catch (e) {
-      return res.status(500).json({
-        success: false,
-        message: "Failed to write achievements store.",
-        error: e?.message || "EWRITE",
-        updatedAt: nowIso(),
-      });
+      const prevKey = prev?.dedupeKey || computeDedupeKey(prev);
+      if (prevKey === dedupeKey) {
+        deduped = true;
+        return res.json({
+          success: true,
+          updatedAt: store.updatedAt || nowIso(),
+          recorded: false,
+          deduped: true,
+          achievement: prev,
+        });
+      }
     }
   }
+
+  // persist dedupeKey on item
+  incoming.dedupeKey = dedupeKey;
+
+  store.items.push(incoming);
+  await saveStore(store);
+
+  return res.json({
+    success: true,
+    updatedAt: store.updatedAt,
+    recorded: true,
+    deduped,
+    achievement: incoming,
+  });
+});
+
+// LIST (canonical)
+router.get("/list", async (req, res) => {
+  const { type, subjectType, subjectId, limit, order } = req.query || {};
+
+  const loaded = await loadStore();
+  const store = loaded.store;
+
+  const filtered = filterAndSortItems(store.items, {
+    type,
+    subjectType,
+    subjectId,
+    order,
+  });
+
+  const results = applyLimit(filtered, limit);
 
   return res.json({
     success: true,
     updatedAt: store.updatedAt || nowIso(),
-    recorded: false,
-    deduped: true,
-    achievement: ach,
+    filters: {
+      type: type ?? null,
+      subjectType: subjectType ?? null,
+      subjectId: subjectId ?? null,
+      order: order ?? "desc",
+    },
+    count: results.length,
+    results,
+    cached: loaded.cached,
+    cacheAgeMs: loaded.cacheAgeMs,
   });
 });
 
-// Subject timeline
+// FEED (alias of list)
+router.get("/feed", async (req, res) => {
+  // defaults: limit 20, desc
+  const q = {
+    ...req.query,
+    limit: req.query?.limit ?? "20",
+    order: req.query?.order ?? "desc",
+  };
+  req.query = q;
+  return router.handle(req, res, () => {});
+});
+
+// Subject drilldown
 router.get("/subject/:subjectType/:subjectId", async (req, res) => {
-  const subjectType = String(req.params.subjectType || "").trim();
-  const subjectId = String(req.params.subjectId || "").trim();
-  const limit = normalizeLimit(req.query.limit, 50);
+  const subjectType = normalizeStr(req.params.subjectType);
+  const subjectId = normalizeStr(req.params.subjectId);
+  const limit = req.query?.limit ?? "50";
 
-  const cached = await getStoreCached();
-  if (!cached.ok) {
-    return res.status(500).json({
-      success: false,
-      message: "Failed to load achievements store.",
-      error: cached.error,
-      updatedAt: nowIso(),
-    });
-  }
+  const loaded = await loadStore();
+  const store = loaded.store;
 
-  const store = cached.store;
-  const items = Array.isArray(store.items) ? store.items : [];
+  const filtered = filterAndSortItems(store.items, {
+    type: null,
+    subjectType,
+    subjectId,
+    order: "desc",
+  });
 
-  const results = sortNewestFirst(
-    items.filter((x) => x.subjectType === subjectType && x.subjectId === subjectId)
-  ).slice(0, limit);
+  const results = applyLimit(filtered, limit);
 
   return res.json({
     success: true,
@@ -361,41 +433,67 @@ router.get("/subject/:subjectType/:subjectId", async (req, res) => {
     subjectId,
     count: results.length,
     results,
-    cached: cached.cached,
+    cached: loaded.cached,
+    cacheAgeMs: loaded.cacheAgeMs,
   });
 });
 
-// ✅ NEW: Global feed
-router.get("/feed", async (req, res) => {
-  const limit = normalizeLimit(req.query.limit, 50);
-  const type = req.query.type ? String(req.query.type).trim() : null;
-  const subjectType = req.query.subjectType ? String(req.query.subjectType).trim() : null;
+// By ID
+router.get("/id/:id", async (req, res) => {
+  const id = normalizeStr(req.params.id);
+  const loaded = await loadStore();
+  const store = loaded.store;
 
-  const cached = await getStoreCached();
-  if (!cached.ok) {
-    return res.status(500).json({
+  const found = (store.items || []).find((x) => normalizeStr(x?.id) === id) || null;
+  if (!found) {
+    return res.status(404).json({
       success: false,
-      message: "Failed to load achievements store.",
-      error: cached.error,
-      updatedAt: nowIso(),
+      message: "Achievement not found.",
+      id,
+      updatedAt: store.updatedAt || nowIso(),
     });
   }
-
-  const store = cached.store;
-  const items = Array.isArray(store.items) ? store.items : [];
-
-  const filtered = items.filter((x) => filterItem(x, { type, subjectType }));
-  const results = sortNewestFirst(filtered).slice(0, limit);
 
   return res.json({
     success: true,
     updatedAt: store.updatedAt || nowIso(),
-    filters: { type, subjectType },
-    count: results.length,
-    results,
-    cached: cached.cached,
-    cacheAgeMs: cached.cacheAgeMs,
+    achievement: found,
+    cached: loaded.cached,
+    cacheAgeMs: loaded.cacheAgeMs,
   });
+});
+
+// -------------------- Backwards compat aliases --------------------
+
+// /all -> /list
+router.get("/all", async (req, res) => {
+  req.url = "/list" + (req.url.includes("?") ? req.url.substring(req.url.indexOf("?")) : "");
+  return router.handle(req, res, () => {});
+});
+
+// /by-subject?subjectType=&subjectId=&limit=
+router.get("/by-subject", async (req, res) => {
+  const subjectType = normalizeStr(req.query?.subjectType);
+  const subjectId = normalizeStr(req.query?.subjectId);
+  if (!subjectType || !subjectId) {
+    return res.status(400).json({
+      success: false,
+      message: "Missing required query params: subjectType, subjectId",
+      updatedAt: nowIso(),
+    });
+  }
+
+  req.params = { subjectType, subjectId };
+  req.url = `/subject/${encodeURIComponent(subjectType)}/${encodeURIComponent(subjectId)}${
+    req.url.includes("?") ? req.url.substring(req.url.indexOf("?")) : ""
+  }`;
+  return router.handle(req, res, () => {});
+});
+
+// IMPORTANT: root handler so /api/achievements?type=... works
+router.get("/", async (req, res) => {
+  req.url = "/list" + (req.url.includes("?") ? req.url.substring(req.url.indexOf("?")) : "");
+  return router.handle(req, res, () => {});
 });
 
 export default router;
