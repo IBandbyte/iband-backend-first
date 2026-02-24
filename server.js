@@ -1,11 +1,10 @@
 /**
- * server.js (root) — ESM
- * iBand Backend — Canonical bootstrap (Captain’s Protocol)
+ * server.js (root) — iBand Backend Gateway (ESM)
  *
- * Goals:
- * - Always boot, even if a module is missing (safe dynamic imports)
- * - Mount all routers consistently
- * - Render-safe JSON APIs only
+ * Captain’s Protocol:
+ * - Full canonical file
+ * - Mount all routers explicitly
+ * - Never crash deploy if one optional router is missing
  */
 
 import express from "express";
@@ -13,102 +12,56 @@ import cors from "cors";
 
 const app = express();
 
-// -------------------- Core middleware --------------------
-app.disable("x-powered-by");
+// -------------------- Core Middleware --------------------
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 
-// -------------------- Helpers --------------------
-function nowIso() {
-  return new Date().toISOString();
-}
+// -------------------- Base Health --------------------
+app.get("/health", (_req, res) => {
+  res.json({ status: "ok", uptime: process.uptime(), timestamp: new Date().toISOString() });
+});
 
-async function safeImportRouter(relPath) {
+// -------------------- Router loader (optional-safe) --------------------
+async function mountRouter({ name, mountPath, modulePath }) {
   try {
-    const mod = await import(relPath);
+    const mod = await import(modulePath);
     const router = mod?.default;
-    if (typeof router !== "function") {
-      return { ok: false, error: "no_default_export_router", path: relPath };
-    }
-    return { ok: true, router, path: relPath };
+    if (!router) throw new Error(`No default export in ${modulePath}`);
+    app.use(mountPath, router);
+    // eslint-disable-next-line no-console
+    console.log(`Mounted ${name} at ${mountPath} from ${modulePath}`);
+    return { ok: true };
   } catch (e) {
-    return { ok: false, error: e?.message || "import_failed", path: relPath };
+    // eslint-disable-next-line no-console
+    console.log(`Skipped ${name} (${mountPath}) — ${e?.message || String(e)}`);
+    return { ok: false, error: e?.message || String(e) };
   }
 }
 
-function mountIfOk(basePath, imp, registry) {
-  if (imp.ok) {
-    app.use(basePath, imp.router);
-    registry.mounted.push({ basePath, file: imp.path });
-  } else {
-    registry.missing.push({ basePath, file: imp.path, error: imp.error });
-  }
-}
+// -------------------- Mount all known APIs --------------------
+await mountRouter({ name: "artists", mountPath: "/api/artists", modulePath: "./artists.js" });
+await mountRouter({ name: "votes", mountPath: "/api/votes", modulePath: "./votes.js" });
+await mountRouter({ name: "ranking", mountPath: "/api/ranking", modulePath: "./ranking.js" });
+await mountRouter({ name: "recs", mountPath: "/api/recs", modulePath: "./recs.js" });
+await mountRouter({ name: "medals", mountPath: "/api/medals", modulePath: "./medals.js" });
+await mountRouter({ name: "flash-medals", mountPath: "/api/flash-medals", modulePath: "./flashMedals.js" });
+await mountRouter({ name: "achievements", mountPath: "/api/achievements", modulePath: "./achievements.js" });
 
-// -------------------- Status endpoints --------------------
-app.get("/", (_req, res) => {
-  res.json({
-    status: "ok",
-    service: "iband-backend",
-    timestamp: nowIso(),
-  });
-});
-
-app.get("/status", (_req, res) => {
-  const uptime = process.uptime();
-  res.json({
-    status: "ok",
-    uptime,
-    timestamp: nowIso(),
-  });
-});
-
-// -------------------- Router mounting --------------------
-const registry = { mounted: [], missing: [] };
-
-// Import/mount in a stable order
-const routersToMount = [
-  { base: "/api/artists", file: "./artists.js" },
-  { base: "/api/events", file: "./events.js" },
-  { base: "/api/votes", file: "./votes.js" },
-  { base: "/api/ranking", file: "./ranking.js" },
-  { base: "/api/recs", file: "./recs.js" },
-  { base: "/api/medals", file: "./medals.js" },
-  { base: "/api/flash-medals", file: "./flashMedals.js" },
-  { base: "/api/live-feed", file: "./liveFeed.js" },
-  { base: "/api/achievements", file: "./achievements.js" }, // ✅ Phase G2
-];
-
-// Load sequentially to keep logs readable on Render
-for (const r of routersToMount) {
-  // eslint-disable-next-line no-await-in-loop
-  const imp = await safeImportRouter(r.file);
-  mountIfOk(r.base, imp, registry);
-}
-
-// Router registry endpoint (debug)
-app.get("/api/_registry", (_req, res) => {
-  res.json({
-    success: true,
-    updatedAt: nowIso(),
-    mounted: registry.mounted,
-    missing: registry.missing,
-  });
-});
-
-// 404 JSON
+// -------------------- 404 Handler --------------------
 app.use((req, res) => {
   res.status(404).json({
     success: false,
     message: "API route not found.",
-    path: req.originalUrl,
-    updatedAt: nowIso(),
+    path: req.path,
+    updatedAt: new Date().toISOString(),
   });
 });
 
-// -------------------- Listen --------------------
+// -------------------- Start --------------------
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
-  // Render logs
+  // eslint-disable-next-line no-console
   console.log(`iBand backend listening on port ${PORT}`);
+  // eslint-disable-next-line no-console
+  console.log("our service is live 🎉");
 });
