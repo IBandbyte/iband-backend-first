@@ -1,98 +1,114 @@
-// server.js
-// iBand Backend — ES Module entrypoint (authoritative)
+/**
+ * server.js (root) — ESM
+ * iBand Backend — Canonical bootstrap (Captain’s Protocol)
+ *
+ * Goals:
+ * - Always boot, even if a module is missing (safe dynamic imports)
+ * - Mount all routers consistently
+ * - Render-safe JSON APIs only
+ */
 
 import express from "express";
 import cors from "cors";
 
-import artistsRouter from "./artists.js";
-import votesRouter from "./votes.js";
-import commentsRouter from "./comments.js";
-import adminRouter from "./admin.js";
-import eventsRouter from "./events.js";
-import rankingRouter from "./ranking.js";
-import recsRouter from "./recs.js";
-import medalsRouter from "./medals.js";
-import flashMedalsRouter from "./flashMedals.js"; // ✅ Phase E/F
-
 const app = express();
 
+// -------------------- Core middleware --------------------
 app.disable("x-powered-by");
-app.set("trust proxy", 1);
+app.use(cors());
+app.use(express.json({ limit: "2mb" }));
 
-app.use(
-  cors({
-    origin: "*",
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "x-admin-key"],
-  })
-);
+// -------------------- Helpers --------------------
+function nowIso() {
+  return new Date().toISOString();
+}
 
-app.use(express.json({ limit: "1mb" }));
+async function safeImportRouter(relPath) {
+  try {
+    const mod = await import(relPath);
+    const router = mod?.default;
+    if (typeof router !== "function") {
+      return { ok: false, error: "no_default_export_router", path: relPath };
+    }
+    return { ok: true, router, path: relPath };
+  } catch (e) {
+    return { ok: false, error: e?.message || "import_failed", path: relPath };
+  }
+}
 
-app.use((req, _res, next) => {
-  req._rid = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  next();
-});
+function mountIfOk(basePath, imp, registry) {
+  if (imp.ok) {
+    app.use(basePath, imp.router);
+    registry.mounted.push({ basePath, file: imp.path });
+  } else {
+    registry.missing.push({ basePath, file: imp.path, error: imp.error });
+  }
+}
 
+// -------------------- Status endpoints --------------------
 app.get("/", (_req, res) => {
   res.json({
-    success: true,
-    message: "iBand backend is running",
-    timestamp: new Date().toISOString(),
+    status: "ok",
+    service: "iband-backend",
+    timestamp: nowIso(),
   });
 });
 
-app.get("/health", (_req, res) => {
+app.get("/status", (_req, res) => {
+  const uptime = process.uptime();
   res.json({
     status: "ok",
-    uptime: process.uptime(),
-    timestamp: new Date().toISOString(),
+    uptime,
+    timestamp: nowIso(),
   });
 });
 
-// Routers
-app.use("/api/artists", artistsRouter);
-app.use("/api/votes", votesRouter);
-app.use("/api/comments", commentsRouter);
-app.use("/api/admin", adminRouter);
-app.use("/api/events", eventsRouter);
-app.use("/api/ranking", rankingRouter);
-app.use("/api/recs", recsRouter);
-app.use("/api/medals", medalsRouter);
+// -------------------- Router mounting --------------------
+const registry = { mounted: [], missing: [] };
 
-// ✅ Flash medals (fan retention + daily competition)
-app.use("/api/flash-medals", flashMedalsRouter);
+// Import/mount in a stable order
+const routersToMount = [
+  { base: "/api/artists", file: "./artists.js" },
+  { base: "/api/events", file: "./events.js" },
+  { base: "/api/votes", file: "./votes.js" },
+  { base: "/api/ranking", file: "./ranking.js" },
+  { base: "/api/recs", file: "./recs.js" },
+  { base: "/api/medals", file: "./medals.js" },
+  { base: "/api/flash-medals", file: "./flashMedals.js" },
+  { base: "/api/live-feed", file: "./liveFeed.js" },
+  { base: "/api/achievements", file: "./achievements.js" }, // ✅ Phase G2
+];
 
+// Load sequentially to keep logs readable on Render
+for (const r of routersToMount) {
+  // eslint-disable-next-line no-await-in-loop
+  const imp = await safeImportRouter(r.file);
+  mountIfOk(r.base, imp, registry);
+}
+
+// Router registry endpoint (debug)
+app.get("/api/_registry", (_req, res) => {
+  res.json({
+    success: true,
+    updatedAt: nowIso(),
+    mounted: registry.mounted,
+    missing: registry.missing,
+  });
+});
+
+// 404 JSON
 app.use((req, res) => {
   res.status(404).json({
     success: false,
     message: "API route not found.",
     path: req.originalUrl,
+    updatedAt: nowIso(),
   });
 });
 
-app.use((err, req, res, _next) => {
-  const code = Number(err?.status || err?.statusCode || 500);
-  const safeCode = code >= 400 && code <= 599 ? code : 500;
-
-  console.error("API_ERROR", {
-    rid: req?._rid,
-    method: req?.method,
-    path: req?.originalUrl,
-    message: err?.message,
-  });
-
-  res.status(safeCode).json({
-    success: false,
-    message: safeCode === 500 ? "Internal server error" : err?.message || "Error",
-    rid: req?._rid,
-  });
-});
-
+// -------------------- Listen --------------------
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
+  // Render logs
   console.log(`iBand backend listening on port ${PORT}`);
-  console.log("our service is live 🎉");
 });
-
-export default app;
