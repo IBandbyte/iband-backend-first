@@ -1,67 +1,87 @@
-/**
- * server.js (root) — iBand Backend Gateway (ESM)
- *
- * Captain’s Protocol:
- * - Full canonical file
- * - Mount all routers explicitly
- * - Never crash deploy if one optional router is missing
- */
+// server.js
+// iBand Backend — Captain’s Protocol
+// Full canonical server with all routers mounted safely.
+// Root layout: server.js and feature routers in repo root.
 
 import express from "express";
 import cors from "cors";
 
+// Routers (root-level files)
+import votesRouter from "./votes.js";
+import rankingRouter from "./ranking.js";
+import medalsRouter from "./medals.js";
+import recsRouter from "./recs.js";
+import flashMedalsRouter from "./flashMedals.js";
+import achievementsRouter from "./achievements.js";
+
 const app = express();
 
-// -------------------- Core Middleware --------------------
+// -------------------------
+// Core middleware
+// -------------------------
+app.disable("x-powered-by");
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
+app.use(express.urlencoded({ extended: true }));
 
-// -------------------- Base Health --------------------
-app.get("/health", (_req, res) => {
-  res.json({ status: "ok", uptime: process.uptime(), timestamp: new Date().toISOString() });
+// -------------------------
+// Root health
+// -------------------------
+app.get("/", (_req, res) => {
+  res.json({
+    status: "ok",
+    service: "iband-backend",
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+  });
 });
 
-// -------------------- Router loader (optional-safe) --------------------
-async function mountRouter({ name, mountPath, modulePath }) {
-  try {
-    const mod = await import(modulePath);
-    const router = mod?.default;
-    if (!router) throw new Error(`No default export in ${modulePath}`);
-    app.use(mountPath, router);
-    // eslint-disable-next-line no-console
-    console.log(`Mounted ${name} at ${mountPath} from ${modulePath}`);
-    return { ok: true };
-  } catch (e) {
-    // eslint-disable-next-line no-console
-    console.log(`Skipped ${name} (${mountPath}) — ${e?.message || String(e)}`);
-    return { ok: false, error: e?.message || String(e) };
-  }
-}
+app.get("/status", (_req, res) => {
+  res.json({
+    status: "ok",
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+  });
+});
 
-// -------------------- Mount all known APIs --------------------
-await mountRouter({ name: "artists", mountPath: "/api/artists", modulePath: "./artists.js" });
-await mountRouter({ name: "votes", mountPath: "/api/votes", modulePath: "./votes.js" });
-await mountRouter({ name: "ranking", mountPath: "/api/ranking", modulePath: "./ranking.js" });
-await mountRouter({ name: "recs", mountPath: "/api/recs", modulePath: "./recs.js" });
-await mountRouter({ name: "medals", mountPath: "/api/medals", modulePath: "./medals.js" });
-await mountRouter({ name: "flash-medals", mountPath: "/api/flash-medals", modulePath: "./flashMedals.js" });
-await mountRouter({ name: "achievements", mountPath: "/api/achievements", modulePath: "./achievements.js" });
+// -------------------------
+// API routers
+// -------------------------
+// Voting engine
+app.use("/api/votes", votesRouter);
 
-// -------------------- 404 Handler --------------------
-app.use((req, res) => {
+// Ranking engine
+app.use("/api/ranking", rankingRouter);
+
+// Medals engine (tiers / leaderboard / artist medal)
+app.use("/api/medals", medalsRouter);
+
+// Recs mix engine (feed mix + medals integrated)
+app.use("/api/recs", recsRouter);
+
+// Flash medals engine (24h badges + countdown + live feed)
+app.use("/api/flash-medals", flashMedalsRouter);
+
+// Achievements engine (persistent achievement log + queries)
+app.use("/api/achievements", achievementsRouter);
+
+// -------------------------
+// 404 handler (API only)
+// -------------------------
+app.use("/api", (req, res) => {
   res.status(404).json({
     success: false,
     message: "API route not found.",
-    path: req.path,
+    path: req.originalUrl,
     updatedAt: new Date().toISOString(),
   });
 });
 
-// -------------------- Start --------------------
+// -------------------------
+// Start
+// -------------------------
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
-  // eslint-disable-next-line no-console
   console.log(`iBand backend listening on port ${PORT}`);
-  // eslint-disable-next-line no-console
   console.log("our service is live 🎉");
 });
