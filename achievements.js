@@ -1,33 +1,25 @@
 /**
  * achievements.js (root) — ESM default export
- * iBand Achievements / Medal Cabinet Engine (v1)
+ * iBand Achievements Store (v2)
  *
- * Purpose:
- * - Persist "proof of progress" for Fans + Artists:
- *   - Flash medals (24h)
- *   - Future: weekly podium placements
- *   - Future: chart placements (Top 40)
- *   - Future: long-term medals unlocks
- *
- * Storage (Render disk MVP):
- * - /var/data/iband/db/achievements.json
+ * v2 Upgrade:
+ * - Adds global feed endpoint: GET /api/achievements/feed?limit=20
+ * - Adds optional filters: type=..., subjectType=...
+ * - Keeps subject timeline endpoint
+ * - Safe file store with atomic writes
+ * - Dedup guard (retry-safe)
+ * - Render-safe, always JSON
  *
  * Endpoints:
  * - GET  /api/achievements/health
+ * - POST /api/achievements/record
  * - GET  /api/achievements/subject/:subjectType/:subjectId?limit=50
- * - GET  /api/achievements/recent?limit=50
- * - POST /api/achievements/record   (internal/admin; records a single achievement)
- * - POST /api/achievements/scan-flash?windowHours=24&limit=50
- *   -> calls local flash-medals engine via internal function import if available
- *   -> else falls back to HTTP fetch against same server origin
- *
- * Captain’s Protocol:
- * - Full canonical file (no snippets)
- * - Render-safe / file-backed / JSON always
+ * - GET  /api/achievements/feed?limit=50&type=achievement&subjectType=fan
  */
 
 import express from "express";
-import fs from "fs/promises";
+import fs from "fs";
+import fsp from "fs/promises";
 import path from "path";
 import crypto from "crypto";
 
@@ -35,19 +27,19 @@ const router = express.Router();
 
 // -------------------- Config --------------------
 const SERVICE = "achievements";
-const VERSION = 1;
+const VERSION = 2;
 
-const DATA_DIR = process.env.DATA_DIR || process.env.IBAND_DATA_DIR || "/var/data/iband/db";
-const ACH_FILE = process.env.ACHIEVEMENTS_FILE || path.join(DATA_DIR, "achievements.json");
+const DATA_DIR = process.env.IBAND_DATA_DIR || "/var/data/iband/db";
+const STORE_FILE =
+  process.env.IBAND_ACHIEVEMENTS_FILE || path.join(DATA_DIR, "achievements.json");
 
-// Limits
-const MAX_RETURN = parseInt(process.env.ACH_MAX_RETURN || "50", 10);
-const CACHE_TTL_MS = parseInt(process.env.ACH_CACHE_TTL_MS || "15000", 10);
+const MAX_RETURN = parseInt(process.env.ACHIEVEMENTS_MAX_RETURN || "50", 10);
+const CACHE_TTL_MS = parseInt(process.env.ACHIEVEMENTS_CACHE_TTL_MS || "15000", 10);
 
-// Optional shared defaults
-const DEFAULT_LIMIT = 50;
+// Retry-safe dedupe window (seconds)
+const DEDUPE_WINDOW_SEC = parseInt(process.env.ACHIEVEMENTS_DEDUPE_WINDOW_SEC || "30", 10);
 
-// -------------------- Small helpers --------------------
+// -------------------- Helpers --------------------
 function nowIso() {
   return new Date().toISOString();
 }
@@ -61,281 +53,184 @@ function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
 }
 
-function normalizeType(s) {
-  return String(s || "").trim().toLowerCase();
+function safeJsonParse(str, fallback = null) {
+  try {
+    return JSON.parse(str);
+  } catch {
+    return fallback;
+  }
 }
 
-function normalizeId(s) {
-  return String(s || "").trim();
+async function statOk(p) {
+  try {
+    const s = await fsp.stat(p);
+    return { ok: true, size: s.size, mtimeMs: s.mtimeMs };
+  } catch (e) {
+    return { ok: false, error: e?.code || String(e) };
+  }
+}
+
+function ensureDirSync(dir) {
+  try {
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  } catch {
+    // best effort
+  }
+}
+
+async function readStore() {
+  const base = { version: 1, updatedAt: null, items: [] };
+
+  try {
+    if (!fs.existsSync(STORE_FILE)) return { ok: true, store: base, created: true, error: null };
+    const raw = await fsp.readFile(STORE_FILE, "utf8");
+    const parsed = safeJsonParse(raw, null);
+    if (!parsed || typeof parsed !== "object") return { ok: true, store: base, created: true, error: "EJSON" };
+
+    const store = {
+      version: safeNumber(parsed.version, 1),
+      updatedAt: parsed.updatedAt || null,
+      items: Array.isArray(parsed.items) ? parsed.items : [],
+    };
+
+    // sanitize items
+    store.items = store.items
+      .filter((x) => x && typeof x === "object")
+      .map((x) => ({
+        id: String(x.id || "").trim() || null,
+        at: x.at || null,
+        type: x.type || "achievement",
+        subjectType: x.subjectType || null,
+        subjectId: x.subjectId || null,
+        medal: x.medal || null,
+        title: x.title || null,
+        message: x.message || null,
+        stats: x.stats || null,
+        subject: x.subject || null,
+        meta: x.meta || null,
+        v: safeNumber(x.v, 1),
+      }))
+      .filter((x) => x.id && x.at && x.subjectType && x.subjectId);
+
+    return { ok: true, store, created: false, error: null };
+  } catch (e) {
+    return { ok: false, store: base, created: false, error: e?.message || "EREAD" };
+  }
+}
+
+async function writeStoreAtomic(store) {
+  ensureDirSync(DATA_DIR);
+  const tmp = `${STORE_FILE}.${crypto.randomBytes(6).toString("hex")}.tmp`;
+  const payload = JSON.stringify(store, null, 2);
+  await fsp.writeFile(tmp, payload, "utf8");
+  await fsp.rename(tmp, STORE_FILE);
 }
 
 function makeId(prefix = "ach") {
   return `${prefix}_${Date.now()}_${crypto.randomBytes(8).toString("hex")}`;
 }
 
-async function ensureDir(dir) {
-  try {
-    await fs.mkdir(dir, { recursive: true });
-  } catch {
-    // ignore
-  }
+function makeDedupeKey(a) {
+  const medalCode = a?.medal?.code ? String(a.medal.code) : "";
+  const message = a?.message ? String(a.message) : "";
+  const title = a?.title ? String(a.title) : "";
+  const type = String(a?.type || "achievement");
+  const subjectType = String(a?.subjectType || "");
+  const subjectId = String(a?.subjectId || "");
+  const stats = a?.stats ? JSON.stringify(a.stats) : "";
+  const raw = `${type}|${subjectType}|${subjectId}|${medalCode}|${title}|${message}|${stats}`;
+  return crypto.createHash("sha1").update(raw).digest("hex");
 }
 
-async function readJsonSafe(filePath, fallback) {
-  try {
-    const raw = await fs.readFile(filePath, "utf8");
-    const parsed = JSON.parse(raw);
-    return parsed ?? fallback;
-  } catch {
-    return fallback;
-  }
+function withinSeconds(isoA, isoB, seconds) {
+  const a = Date.parse(isoA);
+  const b = Date.parse(isoB);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
+  return Math.abs(b - a) <= seconds * 1000;
 }
 
-// atomic write
-async function writeJsonAtomic(filePath, obj) {
-  const tmp = `${filePath}.${crypto.randomBytes(6).toString("hex")}.tmp`;
-  await fs.writeFile(tmp, JSON.stringify(obj, null, 2), "utf8");
-  await fs.rename(tmp, filePath);
+function normalizeLimit(q, fallback = 50) {
+  return clamp(parseInt(String(q ?? fallback), 10) || fallback, 1, MAX_RETURN);
 }
 
-function baseShape() {
-  return {
-    version: 1,
-    updatedAt: null,
-    // Append-only log
-    items: [],
-    // Fast index: subjectKey -> [ids newest first]
-    index: {},
-  };
+function filterItem(item, { type, subjectType }) {
+  if (type && String(item.type) !== String(type)) return false;
+  if (subjectType && String(item.subjectType) !== String(subjectType)) return false;
+  return true;
 }
 
-function subjectKey(subjectType, subjectId) {
-  return `${normalizeType(subjectType)}:${normalizeId(subjectId)}`;
-}
-
-function coerceAchievement(input) {
-  const type = normalizeType(input?.type);
-  const subjectType = normalizeType(input?.subjectType);
-  const subjectId = normalizeId(input?.subjectId);
-
-  if (!type || !subjectType || !subjectId) return null;
-
-  const medal = input?.medal && typeof input.medal === "object" ? input.medal : null;
-
-  return {
-    id: normalizeId(input?.id) || makeId("ach"),
-    at: input?.at || nowIso(),
-    type, // e.g. "flash_medal", "weekly_podium", "chart_entry", "long_medal"
-    subjectType, // "fan" | "artist" | "label" etc
-    subjectId,
-    // optional fields for UX
-    medal,
-    title: input?.title ?? null,
-    message: input?.message ?? null,
-    // optional stats snapshot
-    stats: (input?.stats && typeof input.stats === "object") ? input.stats : null,
-    // optional artist/fan profile snapshot
-    subject: (input?.subject && typeof input.subject === "object") ? input.subject : null,
-    // misc metadata
-    meta: (input?.meta && typeof input.meta === "object") ? input.meta : null,
-    v: 1,
-  };
+function sortNewestFirst(items) {
+  return items
+    .slice()
+    .sort((a, b) => {
+      const ta = Date.parse(a.at || 0);
+      const tb = Date.parse(b.at || 0);
+      return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
+    });
 }
 
 // -------------------- Cache --------------------
 let _cache = {
   atMs: 0,
-  value: null,
+  store: null,
 };
 
-function cacheGet() {
-  if (!_cache.value) return null;
-  const age = Date.now() - _cache.atMs;
-  if (age > CACHE_TTL_MS) return null;
-  return _cache.value;
-}
-
-function cacheSet(val) {
-  _cache = { atMs: Date.now(), value: val };
-}
-
-function cacheClear() {
-  _cache = { atMs: 0, value: null };
-}
-
-// -------------------- Load/Save --------------------
-async function loadStore() {
-  const cached = cacheGet();
-  if (cached) return { ok: true, store: cached, cached: true };
-
-  await ensureDir(DATA_DIR);
-
-  const store = await readJsonSafe(ACH_FILE, baseShape());
-  if (!store || typeof store !== "object") return { ok: true, store: baseShape(), cached: false };
-
-  if (!Array.isArray(store.items)) store.items = [];
-  if (!store.index || typeof store.index !== "object") store.index = {};
-  if (!store.version) store.version = 1;
-
-  cacheSet(store);
-  return { ok: true, store, cached: false };
-}
-
-async function saveStore(store) {
-  store.updatedAt = nowIso();
-  await ensureDir(DATA_DIR);
-  await writeJsonAtomic(ACH_FILE, store);
-  cacheSet(store);
-  return store;
-}
-
-// -------------------- Core ops --------------------
-function indexAdd(store, ach) {
-  const key = subjectKey(ach.subjectType, ach.subjectId);
-  if (!store.index[key]) store.index[key] = [];
-  // newest first
-  store.index[key].unshift(ach.id);
-  // keep index arrays bounded
-  store.index[key] = store.index[key].slice(0, 500);
-}
-
-function storeHasId(store, id) {
-  return store.items.some((x) => x && x.id === id);
-}
-
-function recordAchievement(store, ach) {
-  if (!ach) return { ok: false, error: "invalid" };
-  if (storeHasId(store, ach.id)) {
-    return { ok: true, deduped: true, item: ach };
-  }
-  store.items.push(ach);
-  indexAdd(store, ach);
-  // keep items bounded
-  if (store.items.length > 5000) store.items = store.items.slice(-5000);
-  return { ok: true, deduped: false, item: ach };
-}
-
-function getSubjectAchievements(store, subjectType, subjectId, limit) {
-  const key = subjectKey(subjectType, subjectId);
-  const ids = Array.isArray(store.index[key]) ? store.index[key] : [];
-  const lim = clamp(safeNumber(limit, DEFAULT_LIMIT), 1, MAX_RETURN);
-
-  // Pull by id while preserving order
-  const map = new Map(store.items.map((x) => [x.id, x]));
-  const out = [];
-  for (const id of ids) {
-    const it = map.get(id);
-    if (it) out.push(it);
-    if (out.length >= lim) break;
-  }
-  return out;
-}
-
-function getRecent(store, limit) {
-  const lim = clamp(safeNumber(limit, DEFAULT_LIMIT), 1, MAX_RETURN);
-  const items = Array.isArray(store.items) ? store.items : [];
-  // items are append-only; recent = tail
-  return items.slice(-lim).reverse();
-}
-
-// -------------------- Flash medals integration --------------------
-// Prefer direct import to avoid HTTP. Fall back to fetch.
-async function tryGetFlashMedalsInternal(windowHours, limit) {
-  try {
-    // Dynamic import so missing file never breaks deploy
-    const mod = await import("./flashMedals.js");
-    const maybeFn = mod?.computeFlashMedalsSnapshot;
-    if (typeof maybeFn !== "function") return { ok: false, error: "no_internal_fn" };
-
-    const snap = await maybeFn({
-      windowHours,
-      limit,
-      includeProfiles: true,
-    });
-
-    return { ok: true, snapshot: snap };
-  } catch (e) {
-    return { ok: false, error: e?.message || "import_failed" };
-  }
-}
-
-async function tryGetFlashMedalsViaHttp(req, windowHours, limit) {
-  try {
-    const origin =
-      (req.headers["x-forwarded-proto"] && req.headers["x-forwarded-host"])
-        ? `${req.headers["x-forwarded-proto"]}://${req.headers["x-forwarded-host"]}`
-        : `${req.protocol}://${req.get("host")}`;
-
-    const url = new URL(`${origin}/api/flash-medals/list`);
-    url.searchParams.set("windowHours", String(windowHours));
-    url.searchParams.set("limit", String(limit));
-
-    const r = await fetch(url.toString(), { method: "GET" });
-    const json = await r.json().catch(() => null);
-    if (!r.ok || !json || json.success !== true) {
-      return { ok: false, error: "http_failed", status: r.status, body: json };
-    }
-    return { ok: true, snapshot: json };
-  } catch (e) {
-    return { ok: false, error: e?.message || "fetch_failed" };
-  }
-}
-
-// Convert flash-medals list response into achievements
-function achievementsFromFlashSnapshot(snapshot) {
-  // snapshot expected shape:
-  // { success:true, updatedAt, windowHours, expiresAt, results:[{type, at, subjectId, medal, message, stats, artist?...}] }
-  const list = Array.isArray(snapshot?.results) ? snapshot.results : [];
-  const out = [];
-
-  for (const row of list) {
-    const t = normalizeType(row?.type); // "artist" | "fan"
-    const sid = normalizeId(row?.subjectId);
-    const at = row?.at || null;
-    const medal = row?.medal && typeof row.medal === "object" ? row.medal : null;
-    if (!t || !sid || !medal) continue;
-
-    // Stable id: same flash medal same subject same "at" => same achievement id
-    const stableId = `flash_${t}_${sid}_${normalizeId(medal.code || medal.label || "medal")}_${String(at || "na")}`;
-
-    out.push(
-      coerceAchievement({
-        id: stableId,
-        at: at || nowIso(),
-        type: "flash_medal",
-        subjectType: t,
-        subjectId: sid,
-        medal,
-        title: medal.label || "Flash Medal",
-        message: row?.message ?? null,
-        stats: row?.stats ?? null,
-        subject: row?.artist ?? null, // for artist rows flash feed includes artist summary
-        meta: {
-          windowHours: snapshot?.windowHours ?? null,
-          expiresAt: snapshot?.expiresAt ?? null,
-        },
-      })
-    );
+async function getStoreCached() {
+  const now = Date.now();
+  const age = now - _cache.atMs;
+  if (_cache.store && age >= 0 && age <= CACHE_TTL_MS) {
+    return { ok: true, store: _cache.store, cached: true, cacheAgeMs: age };
   }
 
-  return out.filter(Boolean);
+  const read = await readStore();
+  if (!read.ok) return { ok: false, store: read.store, cached: false, cacheAgeMs: 0, error: read.error };
+
+  _cache = { atMs: now, store: read.store };
+  return { ok: true, store: read.store, cached: false, cacheAgeMs: 0 };
+}
+
+function bustCache() {
+  _cache = { atMs: 0, store: null };
+}
+
+// -------------------- Validation --------------------
+function validateAchievementPayload(body) {
+  const type = String(body?.type || "").trim();
+  const subjectType = String(body?.subjectType || "").trim();
+  const subjectId = String(body?.subjectId || "").trim();
+
+  if (!type || !subjectType || !subjectId) {
+    return { ok: false, message: "Invalid achievement payload. Requires: type, subjectType, subjectId." };
+  }
+
+  const medal = body?.medal && typeof body.medal === "object" ? body.medal : null;
+
+  const out = {
+    type,
+    subjectType,
+    subjectId,
+    medal,
+    title: body?.title ?? null,
+    message: body?.message ?? null,
+    stats: body?.stats && typeof body.stats === "object" ? body.stats : null,
+    subject: body?.subject && typeof body.subject === "object" ? body.subject : null,
+    meta: body?.meta && typeof body.meta === "object" ? body.meta : null,
+    v: 1,
+  };
+
+  return { ok: true, value: out };
 }
 
 // -------------------- Endpoints --------------------
-
-// Health
 router.get("/health", async (_req, res) => {
-  const st = await loadStore();
-  const store = st.store;
+  const st = await statOk(STORE_FILE);
+  const cached = await getStoreCached();
 
-  // basic file stat
-  let fileStat = { ok: false };
-  try {
-    const s = await fs.stat(ACH_FILE);
-    fileStat = { ok: true, size: s.size, mtimeMs: s.mtimeMs, path: ACH_FILE };
-  } catch (e) {
-    fileStat = { ok: false, error: e?.code || String(e), path: ACH_FILE };
-  }
+  const store = cached.ok ? cached.store : { version: 1, updatedAt: null, items: [] };
+  const items = Array.isArray(store.items) ? store.items : [];
+
+  // basic subject index count (computed)
+  const subjects = new Set(items.map((x) => `${x.subjectType}:${x.subjectId}`));
 
   return res.json({
     success: true,
@@ -343,139 +238,163 @@ router.get("/health", async (_req, res) => {
     version: VERSION,
     updatedAt: nowIso(),
     dataDir: DATA_DIR,
-    file: fileStat,
+    file: { ...st, path: STORE_FILE },
     store: {
-      version: store.version,
-      updatedAt: store.updatedAt,
-      items: store.items.length,
-      subjectsIndexed: Object.keys(store.index || {}).length,
+      version: safeNumber(store.version, 1),
+      updatedAt: store.updatedAt || null,
+      items: items.length,
+      subjectsIndexed: subjects.size,
     },
     cache: {
       ttlMs: CACHE_TTL_MS,
-      cached: st.cached,
-      cacheAgeMs: st.cached ? (Date.now() - _cache.atMs) : 0,
+      cached: cached.ok ? cached.cached : false,
+      cacheAgeMs: cached.ok ? cached.cacheAgeMs : 0,
     },
   });
 });
 
-// Recent achievements
-router.get("/recent", async (req, res) => {
-  const limit = clamp(safeNumber(req.query.limit, DEFAULT_LIMIT), 1, MAX_RETURN);
-  const st = await loadStore();
-  const store = st.store;
+// Record
+router.post("/record", express.json({ limit: "128kb" }), async (req, res) => {
+  const v = validateAchievementPayload(req.body);
+  if (!v.ok) {
+    return res.status(400).json({ success: false, message: v.message, updatedAt: nowIso() });
+  }
 
-  const recent = getRecent(store, limit);
+  const read = await readStore();
+  if (!read.ok) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to read achievements store.",
+      error: read.error,
+      updatedAt: nowIso(),
+    });
+  }
+
+  const store = read.store;
+  const items = Array.isArray(store.items) ? store.items : [];
+
+  const ach = {
+    id: makeId("ach"),
+    at: nowIso(),
+    ...v.value,
+  };
+
+  // Dedup guard: if an identical achievement exists for same subject in last N seconds, do not add again.
+  const key = makeDedupeKey(ach);
+  const recently = items
+    .filter((x) => x.subjectType === ach.subjectType && x.subjectId === ach.subjectId)
+    .slice(-50);
+
+  const deduped = recently.some((x) => {
+    const k2 = makeDedupeKey(x);
+    return k2 === key && withinSeconds(x.at, ach.at, DEDUPE_WINDOW_SEC);
+  });
+
+  if (!deduped) {
+    items.push(ach);
+    // cap store size to protect disk (keep last 10k)
+    const HARD_CAP = 10000;
+    const nextItems = items.length > HARD_CAP ? items.slice(items.length - HARD_CAP) : items;
+
+    const nextStore = {
+      version: safeNumber(store.version, 1),
+      updatedAt: ach.at,
+      items: nextItems,
+    };
+
+    try {
+      await writeStoreAtomic(nextStore);
+      bustCache();
+      return res.json({
+        success: true,
+        updatedAt: nextStore.updatedAt,
+        recorded: true,
+        deduped: false,
+        achievement: ach,
+      });
+    } catch (e) {
+      return res.status(500).json({
+        success: false,
+        message: "Failed to write achievements store.",
+        error: e?.message || "EWRITE",
+        updatedAt: nowIso(),
+      });
+    }
+  }
 
   return res.json({
     success: true,
     updatedAt: store.updatedAt || nowIso(),
-    count: recent.length,
-    results: recent,
-    cached: st.cached,
+    recorded: false,
+    deduped: true,
+    achievement: ach,
   });
 });
 
-// Subject medal cabinet
+// Subject timeline
 router.get("/subject/:subjectType/:subjectId", async (req, res) => {
-  const subjectType = normalizeType(req.params.subjectType);
-  const subjectId = normalizeId(req.params.subjectId);
-  const limit = clamp(safeNumber(req.query.limit, DEFAULT_LIMIT), 1, MAX_RETURN);
+  const subjectType = String(req.params.subjectType || "").trim();
+  const subjectId = String(req.params.subjectId || "").trim();
+  const limit = normalizeLimit(req.query.limit, 50);
 
-  const st = await loadStore();
-  const store = st.store;
+  const cached = await getStoreCached();
+  if (!cached.ok) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to load achievements store.",
+      error: cached.error,
+      updatedAt: nowIso(),
+    });
+  }
 
-  const items = getSubjectAchievements(store, subjectType, subjectId, limit);
+  const store = cached.store;
+  const items = Array.isArray(store.items) ? store.items : [];
+
+  const results = sortNewestFirst(
+    items.filter((x) => x.subjectType === subjectType && x.subjectId === subjectId)
+  ).slice(0, limit);
 
   return res.json({
     success: true,
     updatedAt: store.updatedAt || nowIso(),
     subjectType,
     subjectId,
-    count: items.length,
-    results: items,
-    cached: st.cached,
+    count: results.length,
+    results,
+    cached: cached.cached,
   });
 });
 
-// Record one achievement (internal/admin)
-router.post("/record", async (req, res) => {
-  const ach = coerceAchievement(req.body || {});
-  if (!ach) {
-    return res.status(400).json({
-      success: false,
-      message: "Invalid achievement payload. Requires: type, subjectType, subjectId.",
-      updatedAt: nowIso(),
-    });
-  }
+// ✅ NEW: Global feed
+router.get("/feed", async (req, res) => {
+  const limit = normalizeLimit(req.query.limit, 50);
+  const type = req.query.type ? String(req.query.type).trim() : null;
+  const subjectType = req.query.subjectType ? String(req.query.subjectType).trim() : null;
 
-  const st = await loadStore();
-  const store = st.store;
-
-  const r = recordAchievement(store, ach);
-  await saveStore(store);
-  cacheClear();
-
-  return res.json({
-    success: true,
-    updatedAt: store.updatedAt || nowIso(),
-    recorded: true,
-    deduped: !!r.deduped,
-    achievement: ach,
-  });
-});
-
-// Scan flash medals and persist into achievements.json
-router.post("/scan-flash", async (req, res) => {
-  const windowHours = clamp(safeNumber(req.query.windowHours, 24), 0.1, 72);
-  const limit = clamp(safeNumber(req.query.limit, 50), 1, MAX_RETURN);
-
-  // 1) Get flash medals snapshot
-  let snapRes = await tryGetFlashMedalsInternal(windowHours, limit);
-
-  if (!snapRes.ok) {
-    snapRes = await tryGetFlashMedalsViaHttp(req, windowHours, limit);
-  }
-
-  if (!snapRes.ok) {
+  const cached = await getStoreCached();
+  if (!cached.ok) {
     return res.status(500).json({
       success: false,
-      message: "Could not retrieve flash medals snapshot.",
+      message: "Failed to load achievements store.",
+      error: cached.error,
       updatedAt: nowIso(),
-      error: snapRes.error,
-      hint: "Ensure /api/flash-medals/list works and flashMedals.js exists.",
     });
   }
 
-  const snapshot = snapRes.snapshot;
-  const derived = achievementsFromFlashSnapshot(snapshot);
+  const store = cached.store;
+  const items = Array.isArray(store.items) ? store.items : [];
 
-  const st = await loadStore();
-  const store = st.store;
-
-  let added = 0;
-  let deduped = 0;
-
-  for (const ach of derived) {
-    const r = recordAchievement(store, ach);
-    if (r.ok && r.deduped) deduped += 1;
-    if (r.ok && !r.deduped) added += 1;
-  }
-
-  await saveStore(store);
-  cacheClear();
+  const filtered = items.filter((x) => filterItem(x, { type, subjectType }));
+  const results = sortNewestFirst(filtered).slice(0, limit);
 
   return res.json({
     success: true,
     updatedAt: store.updatedAt || nowIso(),
-    scanned: "flash-medals",
-    windowHours,
-    derivedCount: derived.length,
-    added,
-    deduped,
-    snapshotMeta: {
-      expiresAt: snapshot?.expiresAt ?? null,
-      count: Array.isArray(snapshot?.results) ? snapshot.results.length : 0,
-    },
+    filters: { type, subjectType },
+    count: results.length,
+    results,
+    cached: cached.cached,
+    cacheAgeMs: cached.cacheAgeMs,
   });
 });
 
