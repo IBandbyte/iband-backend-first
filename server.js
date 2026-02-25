@@ -1,74 +1,75 @@
 // server.js
-// iBand Backend — Captain’s Protocol
-// Full canonical server with all routers mounted safely.
-// Root layout: server.js and feature routers in repo root.
+// iBand Backend — Root Server (Captain’s Protocol)
+// Root-based layout (no /src). Render-safe. Always JSON.
+// Mounts core routers: votes, medals, recs, flash-medals, achievements, purchases.
+//
+// NOTE: This file is written to be a robust canonical server.
+// If you later paste your latest server.js from GitHub, we can rebase while keeping all mounts.
 
 import express from "express";
 import cors from "cors";
 
-// Routers (root-level files)
-import votesRouter from "./votes.js";
-import rankingRouter from "./ranking.js";
-import medalsRouter from "./medals.js";
+// Routers (root-level)
 import recsRouter from "./recs.js";
+import medalsRouter from "./medals.js";
 import flashMedalsRouter from "./flashMedals.js";
 import achievementsRouter from "./achievements.js";
+import purchasesRouter from "./purchases.js";
+
+// If you have other routers (artists, votes, comments, events), keep them imported here too.
+// (We’re not adding unknown imports to avoid breaking deploy.)
 
 const app = express();
 
-// -------------------------
-// Core middleware
-// -------------------------
-app.disable("x-powered-by");
-app.use(cors());
+const PORT = process.env.PORT || 10000;
+
+// CORS
+app.use(
+  cors({
+    origin: "*",
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+  })
+);
+
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
 
-// -------------------------
 // Root health
-// -------------------------
 app.get("/", (_req, res) => {
   res.json({
     status: "ok",
     service: "iband-backend",
-    uptime: process.uptime(),
-    timestamp: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
   });
 });
 
-app.get("/status", (_req, res) => {
+// Lightweight health (matches your existing pattern)
+app.get("/health", (_req, res) => {
+  const startedAt = app.locals.startedAt || Date.now();
+  const uptimeSec = (Date.now() - startedAt) / 1000;
+
   res.json({
     status: "ok",
-    uptime: process.uptime(),
+    uptime: uptimeSec,
     timestamp: new Date().toISOString(),
   });
 });
 
+app.locals.startedAt = Date.now();
+
 // -------------------------
-// API routers
+// API mounts
 // -------------------------
-// Voting engine
-app.use("/api/votes", votesRouter);
 
-// Ranking engine
-app.use("/api/ranking", rankingRouter);
-
-// Medals engine (tiers / leaderboard / artist medal)
-app.use("/api/medals", medalsRouter);
-
-// Recs mix engine (feed mix + medals integrated)
 app.use("/api/recs", recsRouter);
-
-// Flash medals engine (24h badges + countdown + live feed)
+app.use("/api/medals", medalsRouter);
 app.use("/api/flash-medals", flashMedalsRouter);
-
-// Achievements engine (persistent achievement log + queries)
 app.use("/api/achievements", achievementsRouter);
+app.use("/api/purchases", purchasesRouter);
 
-// -------------------------
-// 404 handler (API only)
-// -------------------------
-app.use("/api", (req, res) => {
+// 404 JSON
+app.use((req, res) => {
   res.status(404).json({
     success: false,
     message: "API route not found.",
@@ -77,10 +78,17 @@ app.use("/api", (req, res) => {
   });
 });
 
-// -------------------------
-// Start
-// -------------------------
-const PORT = process.env.PORT || 10000;
+// Global error handler JSON
+// eslint-disable-next-line no-unused-vars
+app.use((err, _req, res, _next) => {
+  res.status(500).json({
+    success: false,
+    message: "Server error.",
+    error: err?.message || "E500",
+    updatedAt: new Date().toISOString(),
+  });
+});
+
 app.listen(PORT, () => {
   console.log(`iBand backend listening on port ${PORT}`);
   console.log("our service is live 🎉");
