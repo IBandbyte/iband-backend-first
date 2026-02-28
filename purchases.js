@@ -1,20 +1,22 @@
 // purchases.js
-// iBand Backend — Purchases / Commerce Engine (v3)
-// Root-level router: mounted at /api/purchases
+// iBand Backend — Purchases / Subscriptions / Ownership (Phase H2 — Creator Economy wiring)
+// Root-level router: mounted at /api/purchases (and alias /api/commerce)
 //
-// Captain’s Protocol: full canonical, future-proof, Render-safe, always JSON.
+// Captain’s Protocol:
+// - Full canonical file
+// - Future-proof endpoints
+// - Render-safe
+// - Always JSON
 //
-// Provides:
-// - GET  /health
-// - GET  /list
-// - POST /record            ✅ (this fixes your "route not found")
-// - GET  /id/:id
-// - GET  /buyer/:buyerId
-// - GET  /artist/:artistId
-// - POST /subscribe
-// - POST /cancel-subscription
-// - GET  /subscriptions
-// - GET  /summary
+// What this adds (Phase H2):
+// - purchases.json persistent store (auto-created)
+// - Record purchase + subscription events
+// - Ownership lookup
+// - Emit events into events.jsonl (so ranking / flash medals can react later)
+// - Optional auto-write into achievements.json (if achievements engine is present)
+//
+// NOTE: We do NOT do real Stripe yet. This is a "ledger + events" layer.
+// Stripe can be wired later without changing the API surface.
 
 import fs from "fs";
 import path from "path";
@@ -27,17 +29,35 @@ const router = express.Router();
 // Config
 // -------------------------
 const SERVICE = "purchases";
-const VERSION = 3;
+const VERSION = 3; // Phase H2 + /record compat alias
 
 const DATA_DIR = process.env.IBAND_DATA_DIR || "/var/data/iband/db";
+
 const PURCHASES_FILE = process.env.IBAND_PURCHASES_FILE || path.join(DATA_DIR, "purchases.json");
+const EVENTS_LOG = process.env.IBAND_EVENTS_LOG || path.join(DATA_DIR, "events.jsonl");
 const ARTISTS_FILE = process.env.IBAND_ARTISTS_FILE || path.join(DATA_DIR, "artists.json");
 
-const CACHE_TTL_MS = clampInt(process.env.IBAND_PURCHASES_CACHE_TTL_MS, 15000, 1000, 300000);
+// Optional integration: achievements store (best-effort)
+const ACHIEVEMENTS_FILE = process.env.IBAND_ACHIEVEMENTS_FILE || path.join(DATA_DIR, "achievements.json");
 
-// -------------------------
-// Tiny cache (in-memory)
-// -------------------------
+// Safety / limits
+const DEFAULTS = {
+  cacheTtlMs: 15000,
+  maxReturn: 50,
+
+  // Purchase rules (soft)
+  maxQtyPerPurchase: 50,
+
+  // Subscription defaults
+  defaultSubPeriodDays: 30,
+  maxSubPeriodDays: 365,
+
+  // Events tail
+  tailKb: 512,
+  maxLines: 3000,
+};
+
+// In-memory cache for health + store read (tiny perf)
 const cache = {
   atMs: 0,
   store: null,
@@ -50,10 +70,8 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-function clampInt(v, def, min, max) {
-  const n = Number(v);
-  if (!Number.isFinite(n)) return def;
-  return Math.max(min, Math.min(max, Math.floor(n)));
+function clamp(n, a, b) {
+  return Math.max(a, Math.min(b, n));
 }
 
 function safeJsonParse(str, fallback = null) {
@@ -86,278 +104,335 @@ function readJsonIfExists(p) {
 }
 
 function writeJsonAtomic(p, obj) {
-  const dir = path.dirname(p);
-  const mk = ensureDir(dir);
-  if (!mk.ok) throw new Error(mk.error || "EMKDIR");
-
   const tmp = `${p}.${crypto.randomBytes(6).toString("hex")}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(obj, null, 2));
   fs.renameSync(tmp, p);
 }
 
-function sha1(input) {
-  return crypto.createHash("sha1").update(String(input)).digest("hex");
+function makeId(prefix) {
+  return `${prefix}_${Date.now()}_${crypto.randomBytes(8).toString("hex")}`;
+}
+
+function sha1(s) {
+  return crypto.createHash("sha1").update(String(s)).digest("hex");
 }
 
 function normalizeStr(s) {
   return String(s || "").trim();
 }
 
-function pickOrder(order) {
-  const o = String(order || "desc").toLowerCase();
-  return o === "asc" ? "asc" : "desc";
+function isNonEmpty(s) {
+  return !!normalizeStr(s);
 }
 
-function limitInt(v, def, min, max) {
-  const n = Number(v);
-  if (!Number.isFinite(n)) return def;
-  return Math.max(min, Math.min(max, Math.floor(n)));
+function asMoney(n) {
+  const x = Number(n);
+  if (!Number.isFinite(x) || x < 0) return 0;
+  return Math.round(x * 100) / 100;
 }
 
-// -------------------------
-// Store shape
-// -------------------------
-function blankStore() {
-  return {
-    version: 1,
-    updatedAt: null,
-    items: [], // purchases + subscriptions
-    index: {
-      byId: {},
-      byBuyer: {}, // buyerId -> [id...]
-      byArtist: {}, // artistId -> [id...]
-      bySubscriber: {}, // subscriberId -> [id...]
-      byDedupeKey: {}, // dedupeKey -> id
-      subsBySubscriber: {}, // subscriberId -> activeSubId (best effort)
-    },
-  };
+function asInt(n, def = 0) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return def;
+  return Math.trunc(x);
 }
 
-function isCacheValid() {
-  return cache.store && Date.now() - cache.atMs <= CACHE_TTL_MS;
+function ensureStore() {
+  // Load with cache
+  const now = Date.now();
+  if (cache.store && now - cache.atMs < DEFAULTS.cacheTtlMs) {
+    return { ok: true, store: cache.store, cached: true };
+  }
+
+  const dirOk = ensureDir(DATA_DIR);
+  if (!dirOk.ok) {
+    return { ok: false, error: dirOk.error, store: null, cached: false };
+  }
+
+  const r = readJsonIfExists(PURCHASES_FILE);
+  if (!r.ok) {
+    const initial = {
+      version: 1,
+      updatedAt: null,
+      purchases: [],
+      subs: [],
+    };
+    try {
+      writeJsonAtomic(PURCHASES_FILE, initial);
+      cache.store = initial;
+      cache.atMs = now;
+      return { ok: true, store: initial, cached: false, created: true };
+    } catch (e) {
+      return { ok: false, error: e?.message || "EWRITE_INIT", store: null, cached: false };
+    }
+  }
+
+  const v = r.value && typeof r.value === "object" ? r.value : null;
+  if (!v) {
+    return { ok: false, error: "EBAD_STORE", store: null, cached: false };
+  }
+
+  if (!Array.isArray(v.purchases)) v.purchases = [];
+  if (!Array.isArray(v.subs)) v.subs = [];
+  if (!("version" in v)) v.version = 1;
+
+  cache.store = v;
+  cache.atMs = now;
+  return { ok: true, store: v, cached: false };
 }
 
-function setCache(store) {
+function persistStore(store) {
+  store.updatedAt = nowIso();
+  writeJsonAtomic(PURCHASES_FILE, store);
   cache.store = store;
   cache.atMs = Date.now();
 }
 
-function clearCache() {
-  cache.store = null;
-  cache.atMs = 0;
-}
-
-function rebuildIndexes(store) {
-  const st = store && typeof store === "object" ? store : blankStore();
-  if (!Array.isArray(st.items)) st.items = [];
-
-  st.index = {
-    byId: {},
-    byBuyer: {},
-    byArtist: {},
-    bySubscriber: {},
-    byDedupeKey: {},
-    subsBySubscriber: {},
-  };
-
-  for (const item of st.items) {
-    const id = String(item?.id || "");
-    if (!id) continue;
-    st.index.byId[id] = true;
-
-    const buyerId = normalizeStr(item?.buyerId);
-    const artistId = normalizeStr(item?.artistId);
-    const subscriberId = normalizeStr(item?.subscriberId);
-    const dedupeKey = normalizeStr(item?.dedupeKey);
-
-    if (buyerId) {
-      if (!st.index.byBuyer[buyerId]) st.index.byBuyer[buyerId] = [];
-      st.index.byBuyer[buyerId].push(id);
-    }
-    if (artistId) {
-      if (!st.index.byArtist[artistId]) st.index.byArtist[artistId] = [];
-      st.index.byArtist[artistId].push(id);
-    }
-    if (subscriberId) {
-      if (!st.index.bySubscriber[subscriberId]) st.index.bySubscriber[subscriberId] = [];
-      st.index.bySubscriber[subscriberId].push(id);
-    }
-    if (dedupeKey) {
-      if (!st.index.byDedupeKey[dedupeKey]) st.index.byDedupeKey[dedupeKey] = id;
-    }
-
-    if (String(item?.kind) === "subscription" && subscriberId) {
-      const status = String(item?.status || "active");
-      if (status === "active") st.index.subsBySubscriber[subscriberId] = id;
-    }
-  }
-
-  return st;
-}
-
-function loadStore() {
-  if (isCacheValid()) return { ok: true, store: cache.store, cached: true, cacheAgeMs: Date.now() - cache.atMs };
-
-  const r = readJsonIfExists(PURCHASES_FILE);
-  if (!r.ok) {
-    const st = blankStore();
-    setCache(st);
-    return { ok: true, store: st, cached: false, cacheAgeMs: 0, created: true, fileError: r.error };
-  }
-
-  const raw = r.value;
-  const st = rebuildIndexes(raw && typeof raw === "object" ? raw : blankStore());
-  setCache(st);
-
-  return { ok: true, store: st, cached: false, cacheAgeMs: 0, created: false, fileError: null };
-}
-
-function saveStore(store) {
-  const st = rebuildIndexes(store);
-  st.updatedAt = nowIso();
-  writeJsonAtomic(PURCHASES_FILE, st);
-  setCache(st);
-  return st;
-}
-
-function statFile(p) {
+function appendJsonl(filePath, obj) {
   try {
-    const s = fs.statSync(p);
-    return { ok: true, size: s.size, mtimeMs: s.mtimeMs, path: p };
+    ensureDir(path.dirname(filePath));
+    fs.appendFileSync(filePath, `${JSON.stringify(obj)}\n`, "utf8");
+    return { ok: true, error: null };
   } catch (e) {
-    return { ok: false, error: e?.code || e?.message || "ESTAT", path: p };
+    return { ok: false, error: e?.message || "EAPPEND" };
   }
 }
 
-function loadArtistsMeta() {
+function loadArtistsIndex() {
   const r = readJsonIfExists(ARTISTS_FILE);
-  if (!r.ok) return { ok: false, artistsLoaded: 0, error: r.error };
+  if (!r.ok) return { ok: false, artistsById: {}, artistsLoaded: 0, error: r.error };
 
-  // wrapper-aware
+  // wrapper-aware: { artists:[...] }
   const parsed = r.value;
   let arr = [];
   if (Array.isArray(parsed)) arr = parsed;
   else if (parsed && typeof parsed === "object") {
     if (Array.isArray(parsed.artists)) arr = parsed.artists;
-    else if (Array.isArray(parsed.data)) arr = parsed.data;
     else if (Array.isArray(parsed.items)) arr = parsed.items;
-    else if (parsed.artists && typeof parsed.artists === "object") arr = Object.values(parsed.artists);
-    else arr = Object.values(parsed).filter((x) => x && typeof x === "object");
+    else if (Array.isArray(parsed.results)) arr = parsed.results;
   }
 
-  const artistsLoaded = arr.filter((a) => a && a.id).length;
-  return { ok: true, artistsLoaded, error: null };
+  const artistsById = {};
+  for (const a of arr) {
+    const id = normalizeStr(a?.id);
+    if (!id) continue;
+    artistsById[id] = {
+      id,
+      name: a?.name ?? null,
+      genre: a?.genre ?? null,
+      location: a?.location ?? null,
+      imageUrl: a?.imageUrl ?? null,
+    };
+  }
+
+  return { ok: true, artistsById, artistsLoaded: Object.keys(artistsById).length, error: null };
+}
+
+function bestEffortWriteAchievement(payload) {
+  // Payload shape: { subjectType, subjectId, message, title, medal, stats, meta }
+  try {
+    if (!fs.existsSync(ACHIEVEMENTS_FILE)) return { ok: false, skipped: true, reason: "ACH_FILE_MISSING" };
+    const r = readJsonIfExists(ACHIEVEMENTS_FILE);
+    if (!r.ok) return { ok: false, skipped: true, reason: r.error };
+
+    const store = r.value && typeof r.value === "object" ? r.value : null;
+    if (!store) return { ok: false, skipped: true, reason: "ACH_BAD_STORE" };
+
+    if (!Array.isArray(store.items)) store.items = [];
+    if (!store.version) store.version = 1;
+
+    const ach = {
+      id: makeId("ach"),
+      at: nowIso(),
+      type: "achievement",
+      subjectType: payload.subjectType,
+      subjectId: payload.subjectId,
+      medal: payload.medal ?? null,
+      title: payload.title ?? null,
+      message: payload.message ?? null,
+      stats: payload.stats ?? null,
+      subject: payload.subject ?? null,
+      meta: payload.meta ?? null,
+      v: 1,
+      // weak dedupe (same msg + subject)
+      dedupeKey: sha1(`${payload.subjectType}:${payload.subjectId}:${payload.message || ""}`),
+    };
+
+    store.items.push(ach);
+    store.updatedAt = ach.at;
+
+    writeJsonAtomic(ACHIEVEMENTS_FILE, store);
+    return { ok: true, skipped: false, achievementId: ach.id };
+  } catch (e) {
+    return { ok: false, skipped: true, reason: e?.message || "EACH_WRITE" };
+  }
 }
 
 // -------------------------
-// Validation + creation
+// Core handler: Purchase
+// (used by POST /purchase and compat alias POST /record)
 // -------------------------
-function makeId(prefix) {
-  return `${prefix}_${Date.now()}_${crypto.randomBytes(8).toString("hex")}`;
-}
+function handlePurchase(req, res) {
+  const body = req.body || {};
 
-function computeDedupeKey(payload) {
-  // Dedupe over a short logical set so “double taps” don’t duplicate purchases.
-  const kind = normalizeStr(payload?.kind);
-  const buyerId = normalizeStr(payload?.buyerId);
-  const subscriberId = normalizeStr(payload?.subscriberId);
-  const artistId = normalizeStr(payload?.artistId);
-  const trackId = normalizeStr(payload?.trackId);
-  const albumId = normalizeStr(payload?.albumId);
-  const amountMinor = Number(payload?.amountMinor || 0) || 0;
-  const currency = normalizeStr(payload?.currency || "");
-  const source = normalizeStr(payload?.source || "");
+  const buyerType = normalizeStr(body.buyerType || "fan"); // fan | user | company (future)
+  const buyerId = normalizeStr(body.buyerId || body.sessionId || "anon");
 
-  return sha1(JSON.stringify({ kind, buyerId, subscriberId, artistId, trackId, albumId, amountMinor, currency, source }));
-}
+  const artistId = normalizeStr(body.artistId || "");
+  const itemType = normalizeStr(body.itemType || "track"); // track|album|ticket|merch|tip|subscription
+  const itemId = normalizeStr(body.itemId || "");
+  const qty = clamp(asInt(body.qty, 1), 1, DEFAULTS.maxQtyPerPurchase);
 
-function validatePurchasePayload(body) {
-  const kind = normalizeStr(body?.kind);
-  if (!kind) return { ok: false, message: "Invalid payload: kind is required." };
+  const currency = normalizeStr(body.currency || "GBP").toUpperCase();
+  const amount = asMoney(body.amount || 0); // total gross amount (not net)
+  const platformFeePct = clamp(Number(body.platformFeePct ?? 10), 0, 50); // default 10% (tunable)
+  const platformFee = asMoney((amount * platformFeePct) / 100);
+  const artistNet = asMoney(Math.max(0, amount - platformFee));
 
-  if (kind !== "purchase" && kind !== "subscription") {
-    return { ok: false, message: "Invalid payload: kind must be 'purchase' or 'subscription'." };
+  const sessionId = normalizeStr(body.sessionId || "");
+  const meta = body.meta && typeof body.meta === "object" ? body.meta : null;
+
+  // Validation
+  if (!isNonEmpty(buyerId)) {
+    return res.status(400).json({ success: false, message: "Invalid purchase payload. buyerId/sessionId required.", updatedAt: nowIso() });
+  }
+  if (!isNonEmpty(artistId)) {
+    return res.status(400).json({ success: false, message: "Invalid purchase payload. artistId required.", updatedAt: nowIso() });
+  }
+  if (!isNonEmpty(itemId)) {
+    return res.status(400).json({ success: false, message: "Invalid purchase payload. itemId required.", updatedAt: nowIso() });
+  }
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return res.status(400).json({ success: false, message: "Invalid purchase payload. amount must be > 0.", updatedAt: nowIso() });
   }
 
-  if (kind === "purchase") {
-    const buyerId = normalizeStr(body?.buyerId);
-    const artistId = normalizeStr(body?.artistId);
-    if (!buyerId) return { ok: false, message: "Invalid purchase payload: buyerId is required." };
-    if (!artistId) return { ok: false, message: "Invalid purchase payload: artistId is required." };
-
-    const amountMinor = Number(body?.amountMinor || 0);
-    if (!Number.isFinite(amountMinor) || amountMinor < 0) {
-      return { ok: false, message: "Invalid purchase payload: amountMinor must be a number >= 0." };
-    }
-
-    return { ok: true };
+  const storeLoad = ensureStore();
+  if (!storeLoad.ok) {
+    return res.status(500).json({ success: false, message: "Purchases store not available.", error: storeLoad.error, updatedAt: nowIso() });
   }
 
-  // subscription
-  const subscriberId = normalizeStr(body?.subscriberId);
-  if (!subscriberId) return { ok: false, message: "Invalid subscription payload: subscriberId is required." };
+  const artists = loadArtistsIndex();
+  const artist = artists.artistsById?.[artistId] || { id: artistId, name: null, genre: null, location: null, imageUrl: null };
 
-  const plan = normalizeStr(body?.plan || "iband_unlimited");
-  const amountMinor = Number(body?.amountMinor || 0);
-  if (!Number.isFinite(amountMinor) || amountMinor < 0) {
-    return { ok: false, message: "Invalid subscription payload: amountMinor must be a number >= 0." };
+  const at = nowIso();
+  const id = makeId("pur");
+
+  // Dedupe key: same buyer + item + artist within 2 minutes
+  const dedupeKey = sha1(`${buyerType}:${buyerId}:${artistId}:${itemType}:${itemId}:${qty}:${currency}:${amount}`);
+  const dedupeWindowMs = 2 * 60 * 1000;
+  const nowMs = Date.now();
+
+  const lastDup = (storeLoad.store.purchases || [])
+    .slice(-50)
+    .find((p) => p && p.dedupeKey === dedupeKey && Number.isFinite(Date.parse(p.at)) && nowMs - Date.parse(p.at) <= dedupeWindowMs);
+
+  if (lastDup) {
+    return res.json({
+      success: true,
+      updatedAt: storeLoad.store.updatedAt || at,
+      recorded: false,
+      deduped: true,
+      purchase: lastDup,
+    });
   }
 
-  return { ok: true, plan };
-}
+  const purchase = {
+    id,
+    at,
+    type: "purchase",
+    buyerType,
+    buyerId,
+    sessionId: sessionId || null,
 
-function addItemToStore(store, item, { allowDedupe = true } = {}) {
-  const st = rebuildIndexes(store);
+    artistId,
+    itemType,
+    itemId,
+    qty,
 
-  const dedupeKey = normalizeStr(item?.dedupeKey);
-  if (allowDedupe && dedupeKey && st.index.byDedupeKey[dedupeKey]) {
-    const existingId = st.index.byDedupeKey[dedupeKey];
-    const existing = st.items.find((x) => x.id === existingId) || null;
-    return { saved: false, deduped: true, item: existing };
-  }
+    currency,
+    amount,
+    platformFeePct,
+    platformFee,
+    artistNet,
 
-  st.items.push(item);
-  const saved = saveStore(st);
-  const storedItem = saved.items.find((x) => x.id === item.id) || item;
+    status: "captured", // later: pending|captured|refunded|disputed
+    provider: body.provider ? normalizeStr(body.provider) : "ledger",
+    providerRef: body.providerRef ? normalizeStr(body.providerRef) : null,
 
-  return { saved: true, deduped: false, item: storedItem };
-}
+    meta,
+    v: 1,
+    dedupeKey,
+  };
 
-// -------------------------
-// Queries
-// -------------------------
-function listItems(store, filters) {
-  const kind = normalizeStr(filters?.kind);
-  const buyerId = normalizeStr(filters?.buyerId);
-  const subscriberId = normalizeStr(filters?.subscriberId);
-  const artistId = normalizeStr(filters?.artistId);
-  const order = pickOrder(filters?.order);
-  const limit = limitInt(filters?.limit, 50, 1, 200);
+  storeLoad.store.purchases.push(purchase);
+  persistStore(storeLoad.store);
 
-  let arr = Array.isArray(store?.items) ? [...store.items] : [];
+  // Emit event to events.jsonl (so ranking/flash-medals can react later)
+  const event = {
+    id: makeId("evt"),
+    at,
+    type: "purchase",
+    artistId,
+    trackId: itemType === "track" ? itemId : null,
+    userId: buyerType === "fan" ? null : buyerId,
+    sessionId: sessionId || buyerId || "anon",
+    watchMs: 0,
+    v: 1,
+    meta: {
+      itemType,
+      itemId,
+      qty,
+      amount,
+      currency,
+      platformFee,
+      artistNet,
+      buyerType,
+      buyerId,
+    },
+  };
 
-  if (kind) arr = arr.filter((x) => String(x?.kind) === kind);
-  if (buyerId) arr = arr.filter((x) => normalizeStr(x?.buyerId) === buyerId);
-  if (subscriberId) arr = arr.filter((x) => normalizeStr(x?.subscriberId) === subscriberId);
-  if (artistId) arr = arr.filter((x) => normalizeStr(x?.artistId) === artistId);
+  const evWrite = appendJsonl(EVENTS_LOG, event);
 
-  arr.sort((a, b) => {
-    const ta = Date.parse(a?.at || "") || 0;
-    const tb = Date.parse(b?.at || "") || 0;
-    return order === "asc" ? ta - tb : tb - ta;
+  // Best-effort achievements (fan + artist)
+  const achFan = bestEffortWriteAchievement({
+    subjectType: "fan",
+    subjectId: buyerId,
+    message: `🛒 Supporter purchase! You supported ${artist?.name || artistId} (${itemType}).`,
+    stats: { amount, currency, itemType, qty },
+    meta: { artistId, itemId, purchaseId: id },
   });
 
-  return arr.slice(0, limit);
+  const achArtist = bestEffortWriteAchievement({
+    subjectType: "artist",
+    subjectId: artistId,
+    message: `💚 New supporter purchase received (${itemType}).`,
+    stats: { amount, currency, itemType, qty },
+    meta: { buyerId, itemId, purchaseId: id },
+  });
+
+  return res.json({
+    success: true,
+    updatedAt: storeLoad.store.updatedAt || at,
+    recorded: true,
+    deduped: false,
+    purchase,
+    artist,
+    emittedEvent: { ok: evWrite.ok, error: evWrite.error },
+    achievements: {
+      fan: achFan,
+      artist: achArtist,
+      file: ACHIEVEMENTS_FILE,
+    },
+  });
 }
 
 // -------------------------
-// Endpoints
+// Health
 // -------------------------
 router.get("/health", (_req, res) => {
-  const st = loadStore();
-  const artists = loadArtistsMeta();
-
-  const fileStat = statFile(PURCHASES_FILE);
+  const st = readJsonIfExists(PURCHASES_FILE);
+  const store = ensureStore();
+  const artists = loadArtistsIndex();
 
   res.json({
     success: true,
@@ -365,268 +440,284 @@ router.get("/health", (_req, res) => {
     version: VERSION,
     updatedAt: nowIso(),
     dataDir: DATA_DIR,
-    file: fileStat,
-    store: {
-      version: st.store?.version ?? 1,
-      updatedAt: st.store?.updatedAt ?? null,
-      items: Array.isArray(st.store?.items) ? st.store.items.length : 0,
-      subjectsIndexed: st.store?.index ? Object.keys(st.store.index.byBuyer || {}).length : null,
-      subs: st.store?.index ? Object.keys(st.store.index.subsBySubscriber || {}).length : 0,
-    },
-    artists,
-    cache: {
-      ttlMs: CACHE_TTL_MS,
-      cached: !!st.cached,
-      cacheAgeMs: st.cacheAgeMs || 0,
-    },
+    file: st.ok
+      ? {
+          ok: true,
+          size: (() => {
+            try {
+              const s = fs.statSync(PURCHASES_FILE);
+              return s.size;
+            } catch {
+              return null;
+            }
+          })(),
+          mtimeMs: (() => {
+            try {
+              const s = fs.statSync(PURCHASES_FILE);
+              return s.mtimeMs;
+            } catch {
+              return null;
+            }
+          })(),
+          path: PURCHASES_FILE,
+        }
+      : { ok: false, error: st.error, path: PURCHASES_FILE },
+    store: store.ok
+      ? {
+          version: store.store.version || 1,
+          updatedAt: store.store.updatedAt || null,
+          items: Array.isArray(store.store.purchases) ? store.store.purchases.length : 0,
+          subjectsIndexed: null, // reserved (we can add an index later)
+          subs: Array.isArray(store.store.subs) ? store.store.subs.length : 0,
+        }
+      : null,
+    artists: { ok: artists.ok, artistsLoaded: artists.artistsLoaded, error: artists.error },
+    cache: { ttlMs: DEFAULTS.cacheTtlMs, cached: !!store.cached, cacheAgeMs: Date.now() - cache.atMs },
   });
 });
 
-router.get("/list", (req, res) => {
-  const st = loadStore();
+// -------------------------
+// POST /purchase
+// -------------------------
+router.post("/purchase", express.json({ limit: "200kb" }), handlePurchase);
 
-  const kind = normalizeStr(req.query.kind);
-  const buyerId = normalizeStr(req.query.buyerId);
-  const subscriberId = normalizeStr(req.query.subscriberId);
-  const artistId = normalizeStr(req.query.artistId);
-  const order = pickOrder(req.query.order);
-  const limit = limitInt(req.query.limit, 50, 1, 200);
+// -------------------------
+// POST /record  (compat alias)
+// Some earlier notes/tests used /record — we support it to avoid Hoppscotch pain.
+// -------------------------
+router.post("/record", express.json({ limit: "200kb" }), handlePurchase);
 
-  const results = listItems(st.store, { kind, buyerId, subscriberId, artistId, order, limit });
-
-  res.json({
-    success: true,
-    updatedAt: st.store?.updatedAt || nowIso(),
-    filters: { kind: kind || null, buyerId: buyerId || null, subscriberId: subscriberId || null, artistId: artistId || null, order },
-    count: results.length,
-    results,
-    cached: !!st.cached,
-    cacheAgeMs: st.cacheAgeMs || 0,
-  });
-});
-
-// ✅ This is the missing endpoint you hit
-router.post("/record", (req, res) => {
+// -------------------------
+// POST /subscribe
+// Records a subscription (fan -> iBand unlimited OR fan -> specific artist tier later)
+// -------------------------
+router.post("/subscribe", express.json({ limit: "200kb" }), (req, res) => {
   const body = req.body || {};
-  const v = validatePurchasePayload(body);
-  if (!v.ok) {
-    return res.status(400).json({ success: false, message: v.message, updatedAt: nowIso() });
-  }
 
-  const st = loadStore();
+  const subscriberId = normalizeStr(body.subscriberId || body.sessionId || "anon");
+  const plan = normalizeStr(body.plan || "iband_unlimited"); // iband_unlimited | artist_tier_* (future)
+  const targetArtistId = normalizeStr(body.artistId || ""); // optional (artist-tier subs)
+  const currency = normalizeStr(body.currency || "GBP").toUpperCase();
+  const amount = asMoney(body.amount || 0);
 
-  const kind = normalizeStr(body.kind);
+  const periodDays = clamp(asInt(body.periodDays, DEFAULTS.defaultSubPeriodDays), 1, DEFAULTS.maxSubPeriodDays);
   const at = nowIso();
+  const startsAt = body.startsAt ? new Date(body.startsAt).toISOString() : at;
+  const endsAt = new Date(Date.parse(startsAt) + periodDays * 24 * 60 * 60 * 1000).toISOString();
 
-  const base = {
-    id: makeId("pur"),
-    at,
-    kind,
-    currency: normalizeStr(body.currency || "GBP"),
-    amountMinor: Number(body.amountMinor || 0) || 0,
-    source: normalizeStr(body.source || "unknown"),
-    meta: body.meta && typeof body.meta === "object" ? body.meta : null,
-    v: 1,
-  };
+  const sessionId = normalizeStr(body.sessionId || "");
+  const meta = body.meta && typeof body.meta === "object" ? body.meta : null;
 
-  let item = null;
-
-  if (kind === "purchase") {
-    item = {
-      ...base,
-      buyerId: normalizeStr(body.buyerId),
-      artistId: normalizeStr(body.artistId),
-      trackId: normalizeStr(body.trackId) || null,
-      albumId: normalizeStr(body.albumId) || null,
-      productType: normalizeStr(body.productType || (body.albumId ? "album" : "track")) || "track",
-      status: "paid",
-    };
-  } else {
-    // subscription
-    item = {
-      ...base,
-      id: makeId("sub"),
-      subscriberId: normalizeStr(body.subscriberId),
-      plan: normalizeStr(body.plan || "iband_unlimited"),
-      status: normalizeStr(body.status || "active"),
-      period: normalizeStr(body.period || "monthly"),
-      renewsAt: body.renewsAt ? String(body.renewsAt) : null,
-      cancelAt: body.cancelAt ? String(body.cancelAt) : null,
-    };
+  if (!isNonEmpty(subscriberId)) {
+    return res.status(400).json({ success: false, message: "Invalid subscription payload. subscriberId/sessionId required.", updatedAt: nowIso() });
+  }
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return res.status(400).json({ success: false, message: "Invalid subscription payload. amount must be > 0.", updatedAt: nowIso() });
   }
 
-  const dedupeKey = normalizeStr(body.dedupeKey) || computeDedupeKey(item);
-  item.dedupeKey = dedupeKey;
-
-  const saved = addItemToStore(st.store, item, { allowDedupe: true });
-
-  return res.json({
-    success: true,
-    updatedAt: nowIso(),
-    recorded: saved.saved,
-    deduped: saved.deduped,
-    item: saved.item,
-  });
-});
-
-router.get("/id/:id", (req, res) => {
-  const st = loadStore();
-  const id = normalizeStr(req.params.id);
-
-  const found = (st.store?.items || []).find((x) => String(x?.id) === id) || null;
-
-  res.json({
-    success: true,
-    updatedAt: st.store?.updatedAt || nowIso(),
-    id,
-    found: !!found,
-    item: found,
-  });
-});
-
-router.get("/buyer/:buyerId", (req, res) => {
-  const st = loadStore();
-  const buyerId = normalizeStr(req.params.buyerId);
-  const limit = limitInt(req.query.limit, 50, 1, 200);
-  const order = pickOrder(req.query.order);
-
-  const results = listItems(st.store, { kind: "purchase", buyerId, order, limit });
-
-  res.json({
-    success: true,
-    updatedAt: st.store?.updatedAt || nowIso(),
-    buyerId,
-    count: results.length,
-    results,
-  });
-});
-
-router.get("/artist/:artistId", (req, res) => {
-  const st = loadStore();
-  const artistId = normalizeStr(req.params.artistId);
-  const limit = limitInt(req.query.limit, 50, 1, 200);
-  const order = pickOrder(req.query.order);
-
-  const results = listItems(st.store, { kind: "purchase", artistId, order, limit });
-
-  res.json({
-    success: true,
-    updatedAt: st.store?.updatedAt || nowIso(),
-    artistId,
-    count: results.length,
-    results,
-  });
-});
-
-router.post("/subscribe", (req, res) => {
-  const body = req.body || {};
-  body.kind = "subscription";
-
-  const v = validatePurchasePayload(body);
-  if (!v.ok) {
-    return res.status(400).json({ success: false, message: v.message, updatedAt: nowIso() });
+  const storeLoad = ensureStore();
+  if (!storeLoad.ok) {
+    return res.status(500).json({ success: false, message: "Purchases store not available.", error: storeLoad.error, updatedAt: nowIso() });
   }
 
-  // Default monthly sub (future-proof fields)
-  const now = new Date();
-  const renew = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+  // If same subscriber already active on same plan, extend instead of adding new
+  const nowMs = Date.now();
+  const active = (storeLoad.store.subs || []).find((s) => {
+    if (!s) return false;
+    if (s.subscriberId !== subscriberId) return false;
+    if (s.plan !== plan) return false;
+    if ((s.artistId || "") !== (targetArtistId || "")) return false;
+    const e = Date.parse(s.endsAt);
+    return Number.isFinite(e) && e > nowMs && s.status === "active";
+  });
 
-  const payload = {
-    ...body,
-    plan: normalizeStr(body.plan || "iband_unlimited"),
-    status: normalizeStr(body.status || "active"),
-    period: normalizeStr(body.period || "monthly"),
-    renewsAt: body.renewsAt || renew.toISOString(),
-    amountMinor: Number(body.amountMinor || 0) || 0,
-    currency: normalizeStr(body.currency || "GBP"),
-    source: normalizeStr(body.source || "demo"),
-  };
+  if (active) {
+    const prevEnd = Date.parse(active.endsAt);
+    const newEnd = new Date(prevEnd + periodDays * 24 * 60 * 60 * 1000).toISOString();
+    active.endsAt = newEnd;
+    active.updatedAt = at;
+    active.amountTotal = asMoney((Number(active.amountTotal || 0) || 0) + amount);
 
-  // reuse record logic
-  req.body = payload;
-  return router.handle(req, res);
-});
+    persistStore(storeLoad.store);
 
-router.post("/cancel-subscription", (req, res) => {
-  const st = loadStore();
-  const subscriberId = normalizeStr(req.body?.subscriberId);
-  if (!subscriberId) {
-    return res.status(400).json({ success: false, message: "subscriberId is required.", updatedAt: nowIso() });
-  }
+    appendJsonl(EVENTS_LOG, {
+      id: makeId("evt"),
+      at,
+      type: "subscribe",
+      artistId: targetArtistId || null,
+      trackId: null,
+      userId: null,
+      sessionId: sessionId || subscriberId,
+      watchMs: 0,
+      v: 1,
+      meta: { plan, amount, currency, extended: true, endsAt: newEnd, subscriberId },
+    });
 
-  const items = Array.isArray(st.store?.items) ? [...st.store.items] : [];
-  const active = items
-    .filter((x) => String(x?.kind) === "subscription")
-    .filter((x) => normalizeStr(x?.subscriberId) === subscriberId)
-    .filter((x) => String(x?.status) === "active")
-    .sort((a, b) => (Date.parse(b?.at || "") || 0) - (Date.parse(a?.at || "") || 0))[0];
+    bestEffortWriteAchievement({
+      subjectType: "fan",
+      subjectId: subscriberId,
+      message: `⭐ Subscription extended: ${plan}`,
+      stats: { amount, currency, periodDays },
+      meta: { plan, endsAt: newEnd },
+    });
 
-  if (!active) {
     return res.json({
       success: true,
-      updatedAt: nowIso(),
-      subscriberId,
-      cancelled: false,
-      message: "No active subscription found.",
+      updatedAt: storeLoad.store.updatedAt || at,
+      recorded: true,
+      mode: "extended",
+      subscription: active,
     });
   }
 
-  active.status = "cancelled";
-  active.cancelAt = nowIso();
+  const sub = {
+    id: makeId("sub"),
+    at,
+    updatedAt: at,
+    type: "subscription",
+    status: "active",
 
-  const nextStore = { ...st.store, items };
-  saveStore(nextStore);
+    subscriberId,
+    sessionId: sessionId || null,
+
+    plan,
+    artistId: targetArtistId || null,
+
+    currency,
+    amountInitial: amount,
+    amountTotal: amount,
+
+    startsAt,
+    endsAt,
+    periodDays,
+
+    provider: body.provider ? normalizeStr(body.provider) : "ledger",
+    providerRef: body.providerRef ? normalizeStr(body.providerRef) : null,
+
+    meta,
+    v: 1,
+  };
+
+  storeLoad.store.subs.push(sub);
+  persistStore(storeLoad.store);
+
+  appendJsonl(EVENTS_LOG, {
+    id: makeId("evt"),
+    at,
+    type: "subscribe",
+    artistId: targetArtistId || null,
+    trackId: null,
+    userId: null,
+    sessionId: sessionId || subscriberId,
+    watchMs: 0,
+    v: 1,
+    meta: { plan, amount, currency, startsAt, endsAt, subscriberId },
+  });
+
+  bestEffortWriteAchievement({
+    subjectType: "fan",
+    subjectId: subscriberId,
+    message: `⭐ Subscription started: ${plan}`,
+    stats: { amount, currency, periodDays },
+    meta: { plan, startsAt, endsAt },
+  });
 
   return res.json({
     success: true,
-    updatedAt: nowIso(),
-    subscriberId,
-    cancelled: true,
-    subscriptionId: active.id,
-    item: active,
+    updatedAt: storeLoad.store.updatedAt || at,
+    recorded: true,
+    subscription: sub,
   });
 });
 
-router.get("/subscriptions", (req, res) => {
-  const st = loadStore();
-  const subscriberId = normalizeStr(req.query.subscriberId);
-  const order = pickOrder(req.query.order);
-  const limit = limitInt(req.query.limit, 50, 1, 200);
+// -------------------------
+// GET /ownership
+// Checks if buyer owns an item (track/album/etc)
+// Query: buyerId, artistId, itemType, itemId
+// -------------------------
+router.get("/ownership", (req, res) => {
+  const buyerId = normalizeStr(req.query.buyerId || req.query.sessionId || "anon");
+  const artistId = normalizeStr(req.query.artistId || "");
+  const itemType = normalizeStr(req.query.itemType || "track");
+  const itemId = normalizeStr(req.query.itemId || "");
 
-  const results = listItems(st.store, { kind: "subscription", subscriberId: subscriberId || null, order, limit });
+  if (!isNonEmpty(buyerId) || !isNonEmpty(artistId) || !isNonEmpty(itemId)) {
+    return res.status(400).json({
+      success: false,
+      message: "Requires buyerId/sessionId, artistId, itemId.",
+      updatedAt: nowIso(),
+    });
+  }
 
-  res.json({
+  const storeLoad = ensureStore();
+  if (!storeLoad.ok) {
+    return res.status(500).json({ success: false, message: "Purchases store not available.", error: storeLoad.error, updatedAt: nowIso() });
+  }
+
+  const matches = (storeLoad.store.purchases || []).filter((p) => {
+    if (!p) return false;
+    if (p.buyerId !== buyerId) return false;
+    if (p.artistId !== artistId) return false;
+    if (p.itemType !== itemType) return false;
+    if (p.itemId !== itemId) return false;
+    return p.status === "captured";
+  });
+
+  const qty = matches.reduce((sum, p) => sum + (Number(p.qty || 0) || 0), 0);
+
+  return res.json({
     success: true,
-    updatedAt: st.store?.updatedAt || nowIso(),
-    filters: { subscriberId: subscriberId || null, order },
-    count: results.length,
-    results,
+    updatedAt: storeLoad.store.updatedAt || nowIso(),
+    buyerId,
+    artistId,
+    itemType,
+    itemId,
+    owned: qty > 0,
+    qty,
+    lastPurchaseAt: matches.length ? matches[matches.length - 1].at : null,
   });
 });
 
-router.get("/summary", (_req, res) => {
-  const st = loadStore();
-  const items = Array.isArray(st.store?.items) ? st.store.items : [];
+// -------------------------
+// GET /list
+// Lists purchases or subscriptions with filters
+// Query: kind=purchases|subs, buyerId, subscriberId, artistId, limit, order=asc|desc
+// -------------------------
+router.get("/list", (req, res) => {
+  const kind = normalizeStr(req.query.kind || "purchases"); // purchases | subs
+  const limit = clamp(asInt(req.query.limit, DEFAULTS.maxReturn), 1, DEFAULTS.maxReturn);
+  const order = normalizeStr(req.query.order || "desc");
 
-  const purchases = items.filter((x) => String(x?.kind) === "purchase");
-  const subs = items.filter((x) => String(x?.kind) === "subscription");
+  const buyerId = normalizeStr(req.query.buyerId || "");
+  const subscriberId = normalizeStr(req.query.subscriberId || "");
+  const artistId = normalizeStr(req.query.artistId || "");
 
-  const revenueMinor = purchases.reduce((acc, x) => acc + (Number(x?.amountMinor || 0) || 0), 0);
-  const activeSubs = subs.filter((x) => String(x?.status) === "active").length;
+  const storeLoad = ensureStore();
+  if (!storeLoad.ok) {
+    return res.status(500).json({ success: false, message: "Purchases store not available.", error: storeLoad.error, updatedAt: nowIso() });
+  }
 
-  res.json({
+  let arr = kind === "subs" ? (storeLoad.store.subs || []) : (storeLoad.store.purchases || []);
+  arr = arr.filter((x) => !!x);
+
+  if (kind === "purchases" && buyerId) arr = arr.filter((p) => p.buyerId === buyerId);
+  if (kind === "subs" && subscriberId) arr = arr.filter((s) => s.subscriberId === subscriberId);
+  if (artistId) arr = arr.filter((x) => (x.artistId || "") === artistId);
+
+  arr.sort((a, b) => {
+    const ta = Date.parse(a.at || a.updatedAt || 0) || 0;
+    const tb = Date.parse(b.at || b.updatedAt || 0) || 0;
+    return order === "asc" ? ta - tb : tb - ta;
+  });
+
+  return res.json({
     success: true,
-    updatedAt: st.store?.updatedAt || nowIso(),
-    counts: {
-      items: items.length,
-      purchases: purchases.length,
-      subscriptions: subs.length,
-      activeSubscriptions: activeSubs,
-    },
-    revenue: {
-      currency: "mixed",
-      totalAmountMinor: revenueMinor,
-    },
+    updatedAt: storeLoad.store.updatedAt || nowIso(),
+    filters: { kind, buyerId: buyerId || null, subscriberId: subscriberId || null, artistId: artistId || null, order },
+    count: Math.min(limit, arr.length),
+    results: arr.slice(0, limit),
+    cached: !!storeLoad.cached,
+    cacheAgeMs: Date.now() - cache.atMs,
   });
 });
 
