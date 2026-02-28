@@ -1,16 +1,20 @@
 // purchases.js
-// iBand Backend — Purchases / Ownership / Subscriptions (Phase H1)
+// iBand Backend — Purchases / Commerce Engine (v3)
 // Root-level router: mounted at /api/purchases
 //
-// Goals:
-// - Track/album purchases + simple subscriptions (session-scoped for now)
-// - Ownership state endpoint to power "⭐ Support Artist / 🎵 Buy Track / ✔ Owned / ▶ Play"
-// - Future-proof: idempotency, dedupe keys, atomic writes, stable JSON
+// Captain’s Protocol: full canonical, future-proof, Render-safe, always JSON.
 //
-// Storage (Render-safe):
-// - /var/data/iband/db/purchases.json
-//
-// Captain’s Protocol: full canonical file, no snippets, always JSON.
+// Provides:
+// - GET  /health
+// - GET  /list
+// - POST /record            ✅ (this fixes your "route not found")
+// - GET  /id/:id
+// - GET  /buyer/:buyerId
+// - GET  /artist/:artistId
+// - POST /subscribe
+// - POST /cancel-subscription
+// - GET  /subscriptions
+// - GET  /summary
 
 import fs from "fs";
 import path from "path";
@@ -23,41 +27,33 @@ const router = express.Router();
 // Config
 // -------------------------
 const SERVICE = "purchases";
-const VERSION = 1;
+const VERSION = 3;
 
 const DATA_DIR = process.env.IBAND_DATA_DIR || "/var/data/iband/db";
 const PURCHASES_FILE = process.env.IBAND_PURCHASES_FILE || path.join(DATA_DIR, "purchases.json");
+const ARTISTS_FILE = process.env.IBAND_ARTISTS_FILE || path.join(DATA_DIR, "artists.json");
 
-// cache
-const CACHE_TTL_MS = clampInt(process.env.IBAND_PURCHASES_CACHE_TTL_MS, 15000, 0, 300000);
+const CACHE_TTL_MS = clampInt(process.env.IBAND_PURCHASES_CACHE_TTL_MS, 15000, 1000, 300000);
 
-// limits
-const MAX_LIST_LIMIT = clampInt(process.env.IBAND_PURCHASES_MAX_LIST, 100, 1, 500);
-
-// pricing defaults (can be overridden later by Stripe)
-const DEFAULTS = {
-  currency: "GBP",
-  trackPrice: 0.99,
-  albumPrice: 6.99,
-  subMonthlyPrice: 7.99,
-  subYearlyPrice: 69.99,
+// -------------------------
+// Tiny cache (in-memory)
+// -------------------------
+const cache = {
+  atMs: 0,
+  store: null,
 };
 
 // -------------------------
-// Small utilities
+// Helpers
 // -------------------------
 function nowIso() {
   return new Date().toISOString();
 }
 
-function clamp(n, a, b) {
-  return Math.max(a, Math.min(b, n));
-}
-
-function clampInt(v, fallback, min, max) {
+function clampInt(v, def, min, max) {
   const n = Number(v);
-  if (!Number.isFinite(n)) return fallback;
-  return Math.floor(clamp(n, min, max));
+  if (!Number.isFinite(n)) return def;
+  return Math.max(min, Math.min(max, Math.floor(n)));
 }
 
 function safeJsonParse(str, fallback = null) {
@@ -70,7 +66,7 @@ function safeJsonParse(str, fallback = null) {
 
 function ensureDir(p) {
   try {
-    if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
+    fs.mkdirSync(p, { recursive: true });
     return { ok: true, error: null };
   } catch (e) {
     return { ok: false, error: e?.message || "EMKDIR" };
@@ -82,7 +78,7 @@ function readJsonIfExists(p) {
     if (!fs.existsSync(p)) return { ok: false, value: null, error: "ENOENT" };
     const raw = fs.readFileSync(p, "utf8");
     const val = safeJsonParse(raw, null);
-    if (!val || typeof val !== "object") return { ok: false, value: null, error: "EJSONPARSE" };
+    if (!val) return { ok: false, value: null, error: "EJSONPARSE" };
     return { ok: true, value: val, error: null };
   } catch (e) {
     return { ok: false, value: null, error: e?.message || "EREAD" };
@@ -90,225 +86,278 @@ function readJsonIfExists(p) {
 }
 
 function writeJsonAtomic(p, obj) {
+  const dir = path.dirname(p);
+  const mk = ensureDir(dir);
+  if (!mk.ok) throw new Error(mk.error || "EMKDIR");
+
   const tmp = `${p}.${crypto.randomBytes(6).toString("hex")}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(obj, null, 2));
   fs.renameSync(tmp, p);
 }
 
-function sha1(s) {
-  return crypto.createHash("sha1").update(String(s || "")).digest("hex");
+function sha1(input) {
+  return crypto.createHash("sha1").update(String(input)).digest("hex");
 }
 
-function normStr(s) {
+function normalizeStr(s) {
   return String(s || "").trim();
 }
 
-function isPositiveMoney(n) {
-  const x = Number(n);
-  return Number.isFinite(x) && x >= 0;
+function pickOrder(order) {
+  const o = String(order || "desc").toLowerCase();
+  return o === "asc" ? "asc" : "desc";
 }
 
-// -------------------------
-// In-memory cache (simple)
-// -------------------------
-const _cache = {
-  at: 0,
-  store: null,
-};
-
-function cacheGet() {
-  if (!_cache.store) return null;
-  const age = Date.now() - _cache.at;
-  if (age > CACHE_TTL_MS) return null;
-  return _cache.store;
-}
-
-function cacheSet(store) {
-  _cache.store = store;
-  _cache.at = Date.now();
-}
-
-function cacheClear() {
-  _cache.store = null;
-  _cache.at = 0;
+function limitInt(v, def, min, max) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return def;
+  return Math.max(min, Math.min(max, Math.floor(n)));
 }
 
 // -------------------------
 // Store shape
 // -------------------------
-// {
-//   version: 1,
-//   updatedAt: ISO,
-//   items: [ purchaseRecord... ],
-//   bySubject: { "fan:sess_123": [ids...] , "artist:abc": [ids...] },
-//   subs: { "fan:sess_123": { plan:"monthly", active:true, startedAt, expiresAt } }
-// }
-//
-// purchaseRecord:
-// {
-//   id, at,
-//   type: "purchase" | "subscription",
-//   productType: "track" | "album" | "sub_monthly" | "sub_yearly",
-//   subjectType: "fan" | "user" | "artist",
-//   subjectId: "sessionId|userId|artistId",
-//   artistId?, trackId?, albumId?,
-//   currency, amount,
-//   status: "paid" | "refunded" | "void",
-//   dedupeKey?,
-//   meta?
-// }
-
-// -------------------------
-// Load / Init store
-// -------------------------
-function defaultStore() {
+function blankStore() {
   return {
     version: 1,
     updatedAt: null,
-    items: [],
-    bySubject: {},
-    subs: {},
+    items: [], // purchases + subscriptions
+    index: {
+      byId: {},
+      byBuyer: {}, // buyerId -> [id...]
+      byArtist: {}, // artistId -> [id...]
+      bySubscriber: {}, // subscriberId -> [id...]
+      byDedupeKey: {}, // dedupeKey -> id
+      subsBySubscriber: {}, // subscriberId -> activeSubId (best effort)
+    },
   };
 }
 
-function normalizeStore(raw) {
-  const s = raw && typeof raw === "object" ? raw : {};
-  if (!Number.isFinite(Number(s.version))) s.version = 1;
-  if (!Array.isArray(s.items)) s.items = [];
-  if (!s.bySubject || typeof s.bySubject !== "object") s.bySubject = {};
-  if (!s.subs || typeof s.subs !== "object") s.subs = {};
-  if (typeof s.updatedAt !== "string") s.updatedAt = null;
-  return s;
+function isCacheValid() {
+  return cache.store && Date.now() - cache.atMs <= CACHE_TTL_MS;
+}
+
+function setCache(store) {
+  cache.store = store;
+  cache.atMs = Date.now();
+}
+
+function clearCache() {
+  cache.store = null;
+  cache.atMs = 0;
+}
+
+function rebuildIndexes(store) {
+  const st = store && typeof store === "object" ? store : blankStore();
+  if (!Array.isArray(st.items)) st.items = [];
+
+  st.index = {
+    byId: {},
+    byBuyer: {},
+    byArtist: {},
+    bySubscriber: {},
+    byDedupeKey: {},
+    subsBySubscriber: {},
+  };
+
+  for (const item of st.items) {
+    const id = String(item?.id || "");
+    if (!id) continue;
+    st.index.byId[id] = true;
+
+    const buyerId = normalizeStr(item?.buyerId);
+    const artistId = normalizeStr(item?.artistId);
+    const subscriberId = normalizeStr(item?.subscriberId);
+    const dedupeKey = normalizeStr(item?.dedupeKey);
+
+    if (buyerId) {
+      if (!st.index.byBuyer[buyerId]) st.index.byBuyer[buyerId] = [];
+      st.index.byBuyer[buyerId].push(id);
+    }
+    if (artistId) {
+      if (!st.index.byArtist[artistId]) st.index.byArtist[artistId] = [];
+      st.index.byArtist[artistId].push(id);
+    }
+    if (subscriberId) {
+      if (!st.index.bySubscriber[subscriberId]) st.index.bySubscriber[subscriberId] = [];
+      st.index.bySubscriber[subscriberId].push(id);
+    }
+    if (dedupeKey) {
+      if (!st.index.byDedupeKey[dedupeKey]) st.index.byDedupeKey[dedupeKey] = id;
+    }
+
+    if (String(item?.kind) === "subscription" && subscriberId) {
+      const status = String(item?.status || "active");
+      if (status === "active") st.index.subsBySubscriber[subscriberId] = id;
+    }
+  }
+
+  return st;
 }
 
 function loadStore() {
-  const cached = cacheGet();
-  if (cached) return { ok: true, store: cached, cached: true, error: null };
-
-  const dirOk = ensureDir(DATA_DIR);
-  if (!dirOk.ok) return { ok: false, store: null, cached: false, error: dirOk.error };
+  if (isCacheValid()) return { ok: true, store: cache.store, cached: true, cacheAgeMs: Date.now() - cache.atMs };
 
   const r = readJsonIfExists(PURCHASES_FILE);
   if (!r.ok) {
-    const s = defaultStore();
-    cacheSet(s);
-    return { ok: true, store: s, cached: false, error: r.error };
+    const st = blankStore();
+    setCache(st);
+    return { ok: true, store: st, cached: false, cacheAgeMs: 0, created: true, fileError: r.error };
   }
 
-  const s = normalizeStore(r.value);
-  cacheSet(s);
-  return { ok: true, store: s, cached: false, error: null };
+  const raw = r.value;
+  const st = rebuildIndexes(raw && typeof raw === "object" ? raw : blankStore());
+  setCache(st);
+
+  return { ok: true, store: st, cached: false, cacheAgeMs: 0, created: false, fileError: null };
 }
 
 function saveStore(store) {
-  const dirOk = ensureDir(DATA_DIR);
-  if (!dirOk.ok) return { ok: false, error: dirOk.error };
-
-  const s = normalizeStore(store);
-  s.updatedAt = nowIso();
-  writeJsonAtomic(PURCHASES_FILE, s);
-  cacheSet(s);
-  return { ok: true, error: null };
+  const st = rebuildIndexes(store);
+  st.updatedAt = nowIso();
+  writeJsonAtomic(PURCHASES_FILE, st);
+  setCache(st);
+  return st;
 }
 
-function subjectKey(subjectType, subjectId) {
-  return `${String(subjectType || "").toLowerCase()}:${String(subjectId || "").trim()}`;
+function statFile(p) {
+  try {
+    const s = fs.statSync(p);
+    return { ok: true, size: s.size, mtimeMs: s.mtimeMs, path: p };
+  } catch (e) {
+    return { ok: false, error: e?.code || e?.message || "ESTAT", path: p };
+  }
 }
 
-function addToIndex(store, rec) {
-  const key = subjectKey(rec.subjectType, rec.subjectId);
-  if (!store.bySubject[key]) store.bySubject[key] = [];
-  store.bySubject[key].push(rec.id);
+function loadArtistsMeta() {
+  const r = readJsonIfExists(ARTISTS_FILE);
+  if (!r.ok) return { ok: false, artistsLoaded: 0, error: r.error };
+
+  // wrapper-aware
+  const parsed = r.value;
+  let arr = [];
+  if (Array.isArray(parsed)) arr = parsed;
+  else if (parsed && typeof parsed === "object") {
+    if (Array.isArray(parsed.artists)) arr = parsed.artists;
+    else if (Array.isArray(parsed.data)) arr = parsed.data;
+    else if (Array.isArray(parsed.items)) arr = parsed.items;
+    else if (parsed.artists && typeof parsed.artists === "object") arr = Object.values(parsed.artists);
+    else arr = Object.values(parsed).filter((x) => x && typeof x === "object");
+  }
+
+  const artistsLoaded = arr.filter((a) => a && a.id).length;
+  return { ok: true, artistsLoaded, error: null };
 }
 
-function listForSubject(store, subjectType, subjectId) {
-  const key = subjectKey(subjectType, subjectId);
-  const ids = Array.isArray(store.bySubject[key]) ? store.bySubject[key] : [];
-  const map = new Map(store.items.map((x) => [x.id, x]));
-  return ids.map((id) => map.get(id)).filter(Boolean);
+// -------------------------
+// Validation + creation
+// -------------------------
+function makeId(prefix) {
+  return `${prefix}_${Date.now()}_${crypto.randomBytes(8).toString("hex")}`;
 }
 
-function findOwned(store, { subjectType, subjectId, productType, artistId, trackId, albumId }) {
-  const list = listForSubject(store, subjectType, subjectId);
-  return list.find((x) => {
-    if (x.status !== "paid") return false;
-    if (x.type !== "purchase") return false;
-    if (x.productType !== productType) return false;
-    if (productType === "track") {
-      return x.artistId === artistId && x.trackId === trackId;
+function computeDedupeKey(payload) {
+  // Dedupe over a short logical set so “double taps” don’t duplicate purchases.
+  const kind = normalizeStr(payload?.kind);
+  const buyerId = normalizeStr(payload?.buyerId);
+  const subscriberId = normalizeStr(payload?.subscriberId);
+  const artistId = normalizeStr(payload?.artistId);
+  const trackId = normalizeStr(payload?.trackId);
+  const albumId = normalizeStr(payload?.albumId);
+  const amountMinor = Number(payload?.amountMinor || 0) || 0;
+  const currency = normalizeStr(payload?.currency || "");
+  const source = normalizeStr(payload?.source || "");
+
+  return sha1(JSON.stringify({ kind, buyerId, subscriberId, artistId, trackId, albumId, amountMinor, currency, source }));
+}
+
+function validatePurchasePayload(body) {
+  const kind = normalizeStr(body?.kind);
+  if (!kind) return { ok: false, message: "Invalid payload: kind is required." };
+
+  if (kind !== "purchase" && kind !== "subscription") {
+    return { ok: false, message: "Invalid payload: kind must be 'purchase' or 'subscription'." };
+  }
+
+  if (kind === "purchase") {
+    const buyerId = normalizeStr(body?.buyerId);
+    const artistId = normalizeStr(body?.artistId);
+    if (!buyerId) return { ok: false, message: "Invalid purchase payload: buyerId is required." };
+    if (!artistId) return { ok: false, message: "Invalid purchase payload: artistId is required." };
+
+    const amountMinor = Number(body?.amountMinor || 0);
+    if (!Number.isFinite(amountMinor) || amountMinor < 0) {
+      return { ok: false, message: "Invalid purchase payload: amountMinor must be a number >= 0." };
     }
-    if (productType === "album") {
-      return x.artistId === artistId && x.albumId === albumId;
-    }
-    return false;
+
+    return { ok: true };
+  }
+
+  // subscription
+  const subscriberId = normalizeStr(body?.subscriberId);
+  if (!subscriberId) return { ok: false, message: "Invalid subscription payload: subscriberId is required." };
+
+  const plan = normalizeStr(body?.plan || "iband_unlimited");
+  const amountMinor = Number(body?.amountMinor || 0);
+  if (!Number.isFinite(amountMinor) || amountMinor < 0) {
+    return { ok: false, message: "Invalid subscription payload: amountMinor must be a number >= 0." };
+  }
+
+  return { ok: true, plan };
+}
+
+function addItemToStore(store, item, { allowDedupe = true } = {}) {
+  const st = rebuildIndexes(store);
+
+  const dedupeKey = normalizeStr(item?.dedupeKey);
+  if (allowDedupe && dedupeKey && st.index.byDedupeKey[dedupeKey]) {
+    const existingId = st.index.byDedupeKey[dedupeKey];
+    const existing = st.items.find((x) => x.id === existingId) || null;
+    return { saved: false, deduped: true, item: existing };
+  }
+
+  st.items.push(item);
+  const saved = saveStore(st);
+  const storedItem = saved.items.find((x) => x.id === item.id) || item;
+
+  return { saved: true, deduped: false, item: storedItem };
+}
+
+// -------------------------
+// Queries
+// -------------------------
+function listItems(store, filters) {
+  const kind = normalizeStr(filters?.kind);
+  const buyerId = normalizeStr(filters?.buyerId);
+  const subscriberId = normalizeStr(filters?.subscriberId);
+  const artistId = normalizeStr(filters?.artistId);
+  const order = pickOrder(filters?.order);
+  const limit = limitInt(filters?.limit, 50, 1, 200);
+
+  let arr = Array.isArray(store?.items) ? [...store.items] : [];
+
+  if (kind) arr = arr.filter((x) => String(x?.kind) === kind);
+  if (buyerId) arr = arr.filter((x) => normalizeStr(x?.buyerId) === buyerId);
+  if (subscriberId) arr = arr.filter((x) => normalizeStr(x?.subscriberId) === subscriberId);
+  if (artistId) arr = arr.filter((x) => normalizeStr(x?.artistId) === artistId);
+
+  arr.sort((a, b) => {
+    const ta = Date.parse(a?.at || "") || 0;
+    const tb = Date.parse(b?.at || "") || 0;
+    return order === "asc" ? ta - tb : tb - ta;
   });
-}
 
-function getSub(store, subjectType, subjectId) {
-  const key = subjectKey(subjectType, subjectId);
-  const s = store.subs[key];
-  if (!s || typeof s !== "object") return null;
-  return s;
-}
-
-function isSubActive(sub) {
-  if (!sub) return false;
-  if (sub.active !== true) return false;
-  if (!sub.expiresAt) return true;
-  const exp = Date.parse(sub.expiresAt);
-  if (!Number.isFinite(exp)) return true;
-  return Date.now() < exp;
-}
-
-function computeDedupeKey(rec) {
-  // stable: prevents duplicate purchases from repeated taps
-  const core = [
-    rec.type,
-    rec.productType,
-    rec.subjectType,
-    rec.subjectId,
-    rec.artistId || "",
-    rec.trackId || "",
-    rec.albumId || "",
-    rec.currency || "",
-    String(rec.amount ?? ""),
-  ].join("|");
-  return sha1(core);
+  return arr.slice(0, limit);
 }
 
 // -------------------------
-// Catalog (simple for Phase H1)
+// Endpoints
 // -------------------------
-function buildCatalog({ currency }) {
-  const cur = currency || DEFAULTS.currency;
-  return {
-    currency: cur,
-    products: [
-      { id: "track_default", productType: "track", label: "Buy Track", amount: DEFAULTS.trackPrice, currency: cur },
-      { id: "album_default", productType: "album", label: "Buy Album", amount: DEFAULTS.albumPrice, currency: cur },
-      { id: "sub_monthly", productType: "sub_monthly", label: "Unlimited (Monthly)", amount: DEFAULTS.subMonthlyPrice, currency: cur },
-      { id: "sub_yearly", productType: "sub_yearly", label: "Unlimited (Yearly)", amount: DEFAULTS.subYearlyPrice, currency: cur },
-    ],
-    note: "Phase H1 uses fixed prices. Stripe integration comes next.",
-  };
-}
-
-// -------------------------
-// Routes
-// -------------------------
-
-// Health
 router.get("/health", (_req, res) => {
   const st = loadStore();
-  const fileStat = (() => {
-    try {
-      if (!fs.existsSync(PURCHASES_FILE)) return { ok: false, error: "ENOENT", path: PURCHASES_FILE };
-      const stat = fs.statSync(PURCHASES_FILE);
-      return { ok: true, size: stat.size, mtimeMs: stat.mtimeMs, path: PURCHASES_FILE };
-    } catch (e) {
-      return { ok: false, error: e?.message || "ESTAT", path: PURCHASES_FILE };
-    }
-  })();
+  const artists = loadArtistsMeta();
+
+  const fileStat = statFile(PURCHASES_FILE);
 
   res.json({
     success: true,
@@ -317,380 +366,268 @@ router.get("/health", (_req, res) => {
     updatedAt: nowIso(),
     dataDir: DATA_DIR,
     file: fileStat,
-    store: st.ok
-      ? {
-          version: st.store.version,
-          updatedAt: st.store.updatedAt,
-          items: st.store.items.length,
-          subjectsIndexed: Object.keys(st.store.bySubject || {}).length,
-          subs: Object.keys(st.store.subs || {}).length,
-        }
-      : null,
-    cache: { ttlMs: CACHE_TTL_MS, cached: !!st.cached, cacheAgeMs: st.cached ? Date.now() - _cache.at : 0 },
+    store: {
+      version: st.store?.version ?? 1,
+      updatedAt: st.store?.updatedAt ?? null,
+      items: Array.isArray(st.store?.items) ? st.store.items.length : 0,
+      subjectsIndexed: st.store?.index ? Object.keys(st.store.index.byBuyer || {}).length : null,
+      subs: st.store?.index ? Object.keys(st.store.index.subsBySubscriber || {}).length : 0,
+    },
+    artists,
+    cache: {
+      ttlMs: CACHE_TTL_MS,
+      cached: !!st.cached,
+      cacheAgeMs: st.cacheAgeMs || 0,
+    },
   });
 });
 
-// Catalog
-router.get("/catalog", (req, res) => {
-  const currency = normStr(req.query.currency) || DEFAULTS.currency;
+router.get("/list", (req, res) => {
+  const st = loadStore();
+
+  const kind = normalizeStr(req.query.kind);
+  const buyerId = normalizeStr(req.query.buyerId);
+  const subscriberId = normalizeStr(req.query.subscriberId);
+  const artistId = normalizeStr(req.query.artistId);
+  const order = pickOrder(req.query.order);
+  const limit = limitInt(req.query.limit, 50, 1, 200);
+
+  const results = listItems(st.store, { kind, buyerId, subscriberId, artistId, order, limit });
+
   res.json({
     success: true,
-    updatedAt: nowIso(),
-    catalog: buildCatalog({ currency }),
-  });
-});
-
-// Subscription status (fan/session scope for now)
-router.get("/subscription", (req, res) => {
-  const subjectType = normStr(req.query.subjectType) || "fan";
-  const subjectId = normStr(req.query.subjectId);
-  if (!subjectId) {
-    return res.status(400).json({ success: false, message: "Missing subjectId.", updatedAt: nowIso() });
-  }
-
-  const st = loadStore();
-  if (!st.ok) return res.status(500).json({ success: false, message: "Store unavailable.", error: st.error, updatedAt: nowIso() });
-
-  const sub = getSub(st.store, subjectType, subjectId);
-  const active = isSubActive(sub);
-
-  return res.json({
-    success: true,
-    updatedAt: nowIso(),
-    subjectType,
-    subjectId,
-    subscription: sub
-      ? {
-          plan: sub.plan,
-          active: active,
-          startedAt: sub.startedAt || null,
-          expiresAt: sub.expiresAt || null,
-        }
-      : { active: false },
-  });
-});
-
-// Create/renew subscription (Phase H1 = mock, later = Stripe)
-router.post("/subscribe", (req, res) => {
-  const subjectType = normStr(req.body?.subjectType) || "fan";
-  const subjectId = normStr(req.body?.subjectId);
-  const plan = normStr(req.body?.plan) || "monthly"; // monthly|yearly
-
-  if (!subjectId) {
-    return res.status(400).json({ success: false, message: "Missing subjectId.", updatedAt: nowIso() });
-  }
-  if (!["monthly", "yearly"].includes(plan)) {
-    return res.status(400).json({ success: false, message: "Invalid plan. Use monthly or yearly.", updatedAt: nowIso() });
-  }
-
-  const st = loadStore();
-  if (!st.ok) return res.status(500).json({ success: false, message: "Store unavailable.", error: st.error, updatedAt: nowIso() });
-
-  const key = subjectKey(subjectType, subjectId);
-  const startedAt = nowIso();
-
-  const expiresAt = (() => {
-    const now = new Date();
-    if (plan === "monthly") now.setMonth(now.getMonth() + 1);
-    if (plan === "yearly") now.setFullYear(now.getFullYear() + 1);
-    return now.toISOString();
-  })();
-
-  st.store.subs[key] = { plan, active: true, startedAt, expiresAt };
-
-  // also record as an item (audit trail)
-  const amount = plan === "monthly" ? DEFAULTS.subMonthlyPrice : DEFAULTS.subYearlyPrice;
-  const rec = {
-    id: `sub_${Date.now()}_${crypto.randomBytes(8).toString("hex")}`,
-    at: startedAt,
-    type: "subscription",
-    productType: plan === "monthly" ? "sub_monthly" : "sub_yearly",
-    subjectType,
-    subjectId,
-    currency: DEFAULTS.currency,
-    amount,
-    status: "paid",
-    meta: { phase: "H1-mock" },
-  };
-  rec.dedupeKey = computeDedupeKey(rec);
-  st.store.items.push(rec);
-  addToIndex(st.store, rec);
-
-  const saved = saveStore(st.store);
-  if (!saved.ok) return res.status(500).json({ success: false, message: "Failed saving store.", error: saved.error, updatedAt: nowIso() });
-
-  return res.json({
-    success: true,
-    updatedAt: st.store.updatedAt || nowIso(),
-    subjectType,
-    subjectId,
-    subscription: { plan, active: true, startedAt, expiresAt },
-    recorded: true,
-    item: { id: rec.id, type: rec.type, productType: rec.productType, amount: rec.amount, currency: rec.currency, status: rec.status },
-  });
-});
-
-// Ownership state for a button on video UI
-// Example: /state?subjectType=fan&subjectId=fan_test_power&artistId=kofi-sky&trackId=palm-street
-router.get("/state", (req, res) => {
-  const subjectType = normStr(req.query.subjectType) || "fan";
-  const subjectId = normStr(req.query.subjectId);
-  const artistId = normStr(req.query.artistId);
-  const trackId = normStr(req.query.trackId);
-  const albumId = normStr(req.query.albumId);
-
-  if (!subjectId) return res.status(400).json({ success: false, message: "Missing subjectId.", updatedAt: nowIso() });
-  if (!artistId) return res.status(400).json({ success: false, message: "Missing artistId.", updatedAt: nowIso() });
-
-  const st = loadStore();
-  if (!st.ok) return res.status(500).json({ success: false, message: "Store unavailable.", error: st.error, updatedAt: nowIso() });
-
-  const sub = getSub(st.store, subjectType, subjectId);
-  const subActive = isSubActive(sub);
-
-  // subscription overrides ownership (unlimited access)
-  if (subActive) {
-    return res.json({
-      success: true,
-      updatedAt: nowIso(),
-      subjectType,
-      subjectId,
-      artistId,
-      trackId: trackId || null,
-      albumId: albumId || null,
-      mode: "subscription",
-      button: {
-        code: "play",
-        label: "▶ Play",
-        hint: "Unlimited access (subscription active).",
-        canBuy: false,
-      },
-      subscription: { plan: sub.plan, active: true, expiresAt: sub.expiresAt || null },
-    });
-  }
-
-  // track state if trackId provided, else album if albumId provided, else generic support
-  let owned = null;
-  if (trackId) {
-    owned = findOwned(st.store, { subjectType, subjectId, productType: "track", artistId, trackId, albumId: null });
-    if (owned) {
-      return res.json({
-        success: true,
-        updatedAt: nowIso(),
-        subjectType,
-        subjectId,
-        artistId,
-        trackId,
-        mode: "owned_track",
-        button: { code: "owned", label: "✔ Owned", hint: "Track already purchased.", canBuy: false },
-        owned: { id: owned.id, at: owned.at, amount: owned.amount, currency: owned.currency },
-      });
-    }
-    return res.json({
-      success: true,
-      updatedAt: nowIso(),
-      subjectType,
-      subjectId,
-      artistId,
-      trackId,
-      mode: "buy_track",
-      button: { code: "buy_track", label: "⭐ Support Artist", hint: "Buy this track and support the artist.", canBuy: true },
-      price: { amount: DEFAULTS.trackPrice, currency: DEFAULTS.currency },
-    });
-  }
-
-  if (albumId) {
-    owned = findOwned(st.store, { subjectType, subjectId, productType: "album", artistId, trackId: null, albumId });
-    if (owned) {
-      return res.json({
-        success: true,
-        updatedAt: nowIso(),
-        subjectType,
-        subjectId,
-        artistId,
-        albumId,
-        mode: "owned_album",
-        button: { code: "owned", label: "✔ Owned", hint: "Album already purchased.", canBuy: false },
-        owned: { id: owned.id, at: owned.at, amount: owned.amount, currency: owned.currency },
-      });
-    }
-    return res.json({
-      success: true,
-      updatedAt: nowIso(),
-      subjectType,
-      subjectId,
-      artistId,
-      albumId,
-      mode: "buy_album",
-      button: { code: "buy_album", label: "💿 Buy Album", hint: "Buy the full album.", canBuy: true },
-      price: { amount: DEFAULTS.albumPrice, currency: DEFAULTS.currency },
-    });
-  }
-
-  // fallback: generic support CTA
-  return res.json({
-    success: true,
-    updatedAt: nowIso(),
-    subjectType,
-    subjectId,
-    artistId,
-    mode: "support",
-    button: { code: "support", label: "⭐ Support Artist", hint: "Support this artist with a purchase.", canBuy: true },
-    options: [
-      { productType: "track", label: "Buy Track", amount: DEFAULTS.trackPrice, currency: DEFAULTS.currency },
-      { productType: "album", label: "Buy Album", amount: DEFAULTS.albumPrice, currency: DEFAULTS.currency },
-      { productType: "sub_monthly", label: "Unlimited (Monthly)", amount: DEFAULTS.subMonthlyPrice, currency: DEFAULTS.currency },
-    ],
-  });
-});
-
-// Buy endpoint (mock payment = recorded purchase)
-// POST /buy { subjectType, subjectId, productType, artistId, trackId?, albumId?, amount?, currency?, meta? }
-router.post("/buy", (req, res) => {
-  const subjectType = normStr(req.body?.subjectType) || "fan";
-  const subjectId = normStr(req.body?.subjectId);
-  const productType = normStr(req.body?.productType); // track|album
-  const artistId = normStr(req.body?.artistId);
-  const trackId = normStr(req.body?.trackId);
-  const albumId = normStr(req.body?.albumId);
-  const currency = normStr(req.body?.currency) || DEFAULTS.currency;
-
-  if (!subjectId) return res.status(400).json({ success: false, message: "Missing subjectId.", updatedAt: nowIso() });
-  if (!artistId) return res.status(400).json({ success: false, message: "Missing artistId.", updatedAt: nowIso() });
-  if (!["track", "album"].includes(productType)) {
-    return res.status(400).json({ success: false, message: "Invalid productType. Use track or album.", updatedAt: nowIso() });
-  }
-  if (productType === "track" && !trackId) {
-    return res.status(400).json({ success: false, message: "Missing trackId for track purchase.", updatedAt: nowIso() });
-  }
-  if (productType === "album" && !albumId) {
-    return res.status(400).json({ success: false, message: "Missing albumId for album purchase.", updatedAt: nowIso() });
-  }
-
-  const priceDefault = productType === "track" ? DEFAULTS.trackPrice : DEFAULTS.albumPrice;
-  const amount = isPositiveMoney(req.body?.amount) ? Number(req.body.amount) : priceDefault;
-
-  const st = loadStore();
-  if (!st.ok) return res.status(500).json({ success: false, message: "Store unavailable.", error: st.error, updatedAt: nowIso() });
-
-  // prevent duplicates
-  const existing = findOwned(st.store, { subjectType, subjectId, productType, artistId, trackId: trackId || null, albumId: albumId || null });
-  if (existing) {
-    return res.json({
-      success: true,
-      updatedAt: nowIso(),
-      recorded: false,
-      deduped: true,
-      reason: "already-owned",
-      purchase: { id: existing.id, at: existing.at, productType: existing.productType, amount: existing.amount, currency: existing.currency },
-      stateHint: "Use /state to render ✔ Owned.",
-    });
-  }
-
-  const at = nowIso();
-  const rec = {
-    id: `pur_${Date.now()}_${crypto.randomBytes(8).toString("hex")}`,
-    at,
-    type: "purchase",
-    productType,
-    subjectType,
-    subjectId,
-    artistId,
-    trackId: productType === "track" ? trackId : null,
-    albumId: productType === "album" ? albumId : null,
-    currency,
-    amount,
-    status: "paid",
-    meta: req.body?.meta && typeof req.body.meta === "object" ? req.body.meta : { phase: "H1-mock" },
-  };
-  rec.dedupeKey = computeDedupeKey(rec);
-
-  st.store.items.push(rec);
-  addToIndex(st.store, rec);
-
-  const saved = saveStore(st.store);
-  if (!saved.ok) return res.status(500).json({ success: false, message: "Failed saving store.", error: saved.error, updatedAt: nowIso() });
-
-  return res.json({
-    success: true,
-    updatedAt: st.store.updatedAt || nowIso(),
-    recorded: true,
-    deduped: false,
-    purchase: {
-      id: rec.id,
-      at: rec.at,
-      productType: rec.productType,
-      subjectType: rec.subjectType,
-      subjectId: rec.subjectId,
-      artistId: rec.artistId,
-      trackId: rec.trackId,
-      albumId: rec.albumId,
-      amount: rec.amount,
-      currency: rec.currency,
-      status: rec.status,
-      dedupeKey: rec.dedupeKey,
-    },
-    next: {
-      stateEndpoint: "/api/purchases/state",
-      hint: "Call /state to render ✔ Owned / Buy Album / Subscribe etc.",
-    },
-  });
-});
-
-// List purchases (filters)
-router.get("/list", (req, res) => {
-  const type = normStr(req.query.type) || null; // purchase|subscription
-  const subjectType = normStr(req.query.subjectType) || null;
-  const subjectId = normStr(req.query.subjectId) || null;
-  const artistId = normStr(req.query.artistId) || null;
-  const productType = normStr(req.query.productType) || null;
-  const order = normStr(req.query.order) || "desc";
-  const limit = clampInt(req.query.limit, 20, 1, MAX_LIST_LIMIT);
-
-  const st = loadStore();
-  if (!st.ok) return res.status(500).json({ success: false, message: "Store unavailable.", error: st.error, updatedAt: nowIso() });
-
-  let list = Array.isArray(st.store.items) ? [...st.store.items] : [];
-
-  if (type) list = list.filter((x) => x.type === type);
-  if (productType) list = list.filter((x) => x.productType === productType);
-  if (artistId) list = list.filter((x) => x.artistId === artistId);
-  if (subjectType) list = list.filter((x) => x.subjectType === subjectType);
-  if (subjectId) list = list.filter((x) => x.subjectId === subjectId);
-
-  list.sort((a, b) => (order === "asc" ? String(a.at).localeCompare(String(b.at)) : String(b.at).localeCompare(String(a.at))));
-  list = list.slice(0, limit);
-
-  return res.json({
-    success: true,
-    updatedAt: st.store.updatedAt || nowIso(),
-    filters: { type, productType, subjectType, subjectId, artistId, order, limit },
-    count: list.length,
-    results: list.map((x) => ({
-      id: x.id,
-      at: x.at,
-      type: x.type,
-      productType: x.productType,
-      subjectType: x.subjectType,
-      subjectId: x.subjectId,
-      artistId: x.artistId || null,
-      trackId: x.trackId || null,
-      albumId: x.albumId || null,
-      amount: x.amount,
-      currency: x.currency,
-      status: x.status,
-      dedupeKey: x.dedupeKey || null,
-      meta: x.meta || null,
-    })),
+    updatedAt: st.store?.updatedAt || nowIso(),
+    filters: { kind: kind || null, buyerId: buyerId || null, subscriberId: subscriberId || null, artistId: artistId || null, order },
+    count: results.length,
+    results,
     cached: !!st.cached,
-    cacheAgeMs: st.cached ? Date.now() - _cache.at : 0,
+    cacheAgeMs: st.cacheAgeMs || 0,
   });
 });
 
-// Clear cache (dev)
-router.post("/cache/clear", (_req, res) => {
-  cacheClear();
-  res.json({ success: true, updatedAt: nowIso(), cleared: true });
+// ✅ This is the missing endpoint you hit
+router.post("/record", (req, res) => {
+  const body = req.body || {};
+  const v = validatePurchasePayload(body);
+  if (!v.ok) {
+    return res.status(400).json({ success: false, message: v.message, updatedAt: nowIso() });
+  }
+
+  const st = loadStore();
+
+  const kind = normalizeStr(body.kind);
+  const at = nowIso();
+
+  const base = {
+    id: makeId("pur"),
+    at,
+    kind,
+    currency: normalizeStr(body.currency || "GBP"),
+    amountMinor: Number(body.amountMinor || 0) || 0,
+    source: normalizeStr(body.source || "unknown"),
+    meta: body.meta && typeof body.meta === "object" ? body.meta : null,
+    v: 1,
+  };
+
+  let item = null;
+
+  if (kind === "purchase") {
+    item = {
+      ...base,
+      buyerId: normalizeStr(body.buyerId),
+      artistId: normalizeStr(body.artistId),
+      trackId: normalizeStr(body.trackId) || null,
+      albumId: normalizeStr(body.albumId) || null,
+      productType: normalizeStr(body.productType || (body.albumId ? "album" : "track")) || "track",
+      status: "paid",
+    };
+  } else {
+    // subscription
+    item = {
+      ...base,
+      id: makeId("sub"),
+      subscriberId: normalizeStr(body.subscriberId),
+      plan: normalizeStr(body.plan || "iband_unlimited"),
+      status: normalizeStr(body.status || "active"),
+      period: normalizeStr(body.period || "monthly"),
+      renewsAt: body.renewsAt ? String(body.renewsAt) : null,
+      cancelAt: body.cancelAt ? String(body.cancelAt) : null,
+    };
+  }
+
+  const dedupeKey = normalizeStr(body.dedupeKey) || computeDedupeKey(item);
+  item.dedupeKey = dedupeKey;
+
+  const saved = addItemToStore(st.store, item, { allowDedupe: true });
+
+  return res.json({
+    success: true,
+    updatedAt: nowIso(),
+    recorded: saved.saved,
+    deduped: saved.deduped,
+    item: saved.item,
+  });
+});
+
+router.get("/id/:id", (req, res) => {
+  const st = loadStore();
+  const id = normalizeStr(req.params.id);
+
+  const found = (st.store?.items || []).find((x) => String(x?.id) === id) || null;
+
+  res.json({
+    success: true,
+    updatedAt: st.store?.updatedAt || nowIso(),
+    id,
+    found: !!found,
+    item: found,
+  });
+});
+
+router.get("/buyer/:buyerId", (req, res) => {
+  const st = loadStore();
+  const buyerId = normalizeStr(req.params.buyerId);
+  const limit = limitInt(req.query.limit, 50, 1, 200);
+  const order = pickOrder(req.query.order);
+
+  const results = listItems(st.store, { kind: "purchase", buyerId, order, limit });
+
+  res.json({
+    success: true,
+    updatedAt: st.store?.updatedAt || nowIso(),
+    buyerId,
+    count: results.length,
+    results,
+  });
+});
+
+router.get("/artist/:artistId", (req, res) => {
+  const st = loadStore();
+  const artistId = normalizeStr(req.params.artistId);
+  const limit = limitInt(req.query.limit, 50, 1, 200);
+  const order = pickOrder(req.query.order);
+
+  const results = listItems(st.store, { kind: "purchase", artistId, order, limit });
+
+  res.json({
+    success: true,
+    updatedAt: st.store?.updatedAt || nowIso(),
+    artistId,
+    count: results.length,
+    results,
+  });
+});
+
+router.post("/subscribe", (req, res) => {
+  const body = req.body || {};
+  body.kind = "subscription";
+
+  const v = validatePurchasePayload(body);
+  if (!v.ok) {
+    return res.status(400).json({ success: false, message: v.message, updatedAt: nowIso() });
+  }
+
+  // Default monthly sub (future-proof fields)
+  const now = new Date();
+  const renew = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+  const payload = {
+    ...body,
+    plan: normalizeStr(body.plan || "iband_unlimited"),
+    status: normalizeStr(body.status || "active"),
+    period: normalizeStr(body.period || "monthly"),
+    renewsAt: body.renewsAt || renew.toISOString(),
+    amountMinor: Number(body.amountMinor || 0) || 0,
+    currency: normalizeStr(body.currency || "GBP"),
+    source: normalizeStr(body.source || "demo"),
+  };
+
+  // reuse record logic
+  req.body = payload;
+  return router.handle(req, res);
+});
+
+router.post("/cancel-subscription", (req, res) => {
+  const st = loadStore();
+  const subscriberId = normalizeStr(req.body?.subscriberId);
+  if (!subscriberId) {
+    return res.status(400).json({ success: false, message: "subscriberId is required.", updatedAt: nowIso() });
+  }
+
+  const items = Array.isArray(st.store?.items) ? [...st.store.items] : [];
+  const active = items
+    .filter((x) => String(x?.kind) === "subscription")
+    .filter((x) => normalizeStr(x?.subscriberId) === subscriberId)
+    .filter((x) => String(x?.status) === "active")
+    .sort((a, b) => (Date.parse(b?.at || "") || 0) - (Date.parse(a?.at || "") || 0))[0];
+
+  if (!active) {
+    return res.json({
+      success: true,
+      updatedAt: nowIso(),
+      subscriberId,
+      cancelled: false,
+      message: "No active subscription found.",
+    });
+  }
+
+  active.status = "cancelled";
+  active.cancelAt = nowIso();
+
+  const nextStore = { ...st.store, items };
+  saveStore(nextStore);
+
+  return res.json({
+    success: true,
+    updatedAt: nowIso(),
+    subscriberId,
+    cancelled: true,
+    subscriptionId: active.id,
+    item: active,
+  });
+});
+
+router.get("/subscriptions", (req, res) => {
+  const st = loadStore();
+  const subscriberId = normalizeStr(req.query.subscriberId);
+  const order = pickOrder(req.query.order);
+  const limit = limitInt(req.query.limit, 50, 1, 200);
+
+  const results = listItems(st.store, { kind: "subscription", subscriberId: subscriberId || null, order, limit });
+
+  res.json({
+    success: true,
+    updatedAt: st.store?.updatedAt || nowIso(),
+    filters: { subscriberId: subscriberId || null, order },
+    count: results.length,
+    results,
+  });
+});
+
+router.get("/summary", (_req, res) => {
+  const st = loadStore();
+  const items = Array.isArray(st.store?.items) ? st.store.items : [];
+
+  const purchases = items.filter((x) => String(x?.kind) === "purchase");
+  const subs = items.filter((x) => String(x?.kind) === "subscription");
+
+  const revenueMinor = purchases.reduce((acc, x) => acc + (Number(x?.amountMinor || 0) || 0), 0);
+  const activeSubs = subs.filter((x) => String(x?.status) === "active").length;
+
+  res.json({
+    success: true,
+    updatedAt: st.store?.updatedAt || nowIso(),
+    counts: {
+      items: items.length,
+      purchases: purchases.length,
+      subscriptions: subs.length,
+      activeSubscriptions: activeSubs,
+    },
+    revenue: {
+      currency: "mixed",
+      totalAmountMinor: revenueMinor,
+    },
+  });
 });
 
 export default router;
