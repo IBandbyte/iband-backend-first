@@ -33,7 +33,10 @@ app.use("/api/medals", medalsRouter);
 app.use("/api/recs", recsRouter);
 app.use("/api/flash-medals", flashMedalsRouter);
 app.use("/api/achievements", achievementsRouter);
+
+// Purchases / Commerce (alias)
 app.use("/api/purchases", purchasesRouter);
+app.use("/api/commerce", purchasesRouter);
 
 // ---- 404 ----
 app.use((req, res) => {
