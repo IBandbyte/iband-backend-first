@@ -1,11 +1,8 @@
 /**
  * recs.js (Phase H3.1) - ESM
  * --------------------------
- * Monetisation-aware recommendations feed without internal HTTP fetch.
- *
- * Reads:
- * - artists.json
- * - monetisation-signals.jsonl + weights
+ * Monetisation-aware recommendations feed using persistent Render disk:
+ *   /var/data/iband/db/monetisation
  *
  * Endpoints:
  * - GET /api/recs/health
@@ -24,16 +21,18 @@ const __dirname = path.dirname(__filename);
 const router = express.Router();
 
 // ----------------------------
-// Data paths
+// Artists (persistent disk preferred)
 // ----------------------------
 const DEFAULT_DATA_DIR = process.env.IBAND_DATA_DIR || "/var/data/iband/db";
 const FALLBACK_LOCAL_DIR = path.join(__dirname, "data", "db");
 const ARTISTS_FILE = process.env.IBAND_ARTISTS_FILE || "artists.json";
 
-// Monetisation files (same as monetisationSignals.js)
-const DATA_DIR = path.join(__dirname, "data");
-const EVENTS_DIR = path.join(DATA_DIR, "events");
-const CONFIG_DIR = path.join(DATA_DIR, "config");
+// ----------------------------
+// Monetisation (PERSISTENT DISK)
+// ----------------------------
+const MON_DIR = path.join(DEFAULT_DATA_DIR, "monetisation");
+const EVENTS_DIR = path.join(MON_DIR, "events");
+const CONFIG_DIR = path.join(MON_DIR, "config");
 const SIGNALS_JSONL = path.join(EVENTS_DIR, "monetisation-signals.jsonl");
 const WEIGHTS_JSON = path.join(CONFIG_DIR, "monetisation-weights.json");
 
@@ -49,17 +48,16 @@ const FEED = {
   freshnessWeight: 0.35
 };
 
-// caches
+// ----------------------------
+// Caches
+// ----------------------------
 const CACHE = { ttlMs: 10_000, map: new Map() };
 const MON_CACHE = {
   ttlMs: 10_000,
   lastAt: 0,
   key: "",
-  // artistId -> { monetisationScore, rawScore, events, uniqueFans, totalAmountMinor }
-  byArtist: new Map(),
-  // fanId|artistId -> affinityScore
-  affinity: new Map(),
-  weights: null
+  byArtist: new Map(), // artistId -> monetisation summary
+  affinity: new Map()  // fanId|artistId -> affinityScore
 };
 
 // ----------------------------
@@ -81,7 +79,6 @@ const DEFAULT_WEIGHTS = {
     refund: -12
   },
   spendMultipliers: { multiplier: 4 },
-  loyalty: { repeatBuyerBonus: 8, streakBonusPerWeek: 2, maxStreakWeeksCounted: 12 },
   decay: { halfLifeDays: 21, maxLookbackDays: 120 },
   limits: { maxLineScan: 150000, maxReadBytes: 25 * 1024 * 1024 }
 };
@@ -249,7 +246,11 @@ function normalizeMonScore(rawScore) {
 
 async function buildMonetisationIndex({ lookbackDays }) {
   const weights = await readWeights();
-  const lb = clamp(Number(lookbackDays) || Number(weights.decay?.maxLookbackDays ?? 120) || 120, 1, 365);
+  const lb = clamp(
+    Number(lookbackDays) || Number(weights.decay?.maxLookbackDays ?? 120) || 120,
+    1,
+    365
+  );
 
   const maxBytes =
     Number(weights.limits?.maxReadBytes ?? DEFAULT_WEIGHTS.limits.maxReadBytes) ||
@@ -262,8 +263,7 @@ async function buildMonetisationIndex({ lookbackDays }) {
   const lines = await safeReadJsonlLines(SIGNALS_JSONL, maxBytes);
 
   const byArtist = new Map();
-  const fanSets = new Map();
-  const affinity = new Map(); // key fanId|artistId -> rawAffinity
+  const affinity = new Map(); // fanId|artistId -> rawAffinity
 
   let scanned = 0;
   for (let i = lines.length - 1; i >= 0; i--) {
@@ -277,18 +277,14 @@ async function buildMonetisationIndex({ lookbackDays }) {
     const s = computeEventScore(evt, weights);
     const amt = Number(evt.amountMinor) || 0;
 
-    if (!byArtist.has(evt.artistId)) {
-      byArtist.set(evt.artistId, { rawScore: 0, events: 0, totalAmountMinor: 0 });
-      fanSets.set(evt.artistId, new Set());
-    }
-
-    const row = byArtist.get(evt.artistId);
+    const row = byArtist.get(evt.artistId) || { rawScore: 0, events: 0, totalAmountMinor: 0, fanSet: new Set() };
     row.rawScore += s;
     row.events += 1;
     row.totalAmountMinor += amt;
+    if (evt.fanId) row.fanSet.add(evt.fanId);
+    byArtist.set(evt.artistId, row);
 
     if (evt.fanId) {
-      fanSets.get(evt.artistId).add(evt.fanId);
       const k = `${evt.fanId}|${evt.artistId}`;
       affinity.set(k, (affinity.get(k) || 0) + s);
     }
@@ -296,23 +292,21 @@ async function buildMonetisationIndex({ lookbackDays }) {
 
   const out = new Map();
   for (const [artistId, row] of byArtist.entries()) {
-    const uniqueFans = fanSets.get(artistId)?.size || 0;
     out.set(artistId, {
       monetisationScore: normalizeMonScore(row.rawScore),
       rawScore: row.rawScore,
       events: row.events,
-      uniqueFans,
+      uniqueFans: row.fanSet.size,
       totalAmountMinor: row.totalAmountMinor
     });
   }
 
-  // normalize affinity the same way (0..100)
   const affOut = new Map();
   for (const [k, raw] of affinity.entries()) {
     affOut.set(k, normalizeMonScore(raw));
   }
 
-  return { byArtist: out, affinity: affOut, weights, lookbackDays: lb };
+  return { byArtist: out, affinity: affOut, lookbackDays: lb };
 }
 
 async function getMonetisationAndAffinity(artistId, fanId, lookbackDays = 120) {
@@ -320,24 +314,15 @@ async function getMonetisationAndAffinity(artistId, fanId, lookbackDays = 120) {
   const now = Date.now();
 
   if (MON_CACHE.byArtist.size && MON_CACHE.key === key && now - MON_CACHE.lastAt < MON_CACHE.ttlMs) {
-    const mon = MON_CACHE.byArtist.get(artistId) || {
-      monetisationScore: 0,
-      rawScore: 0,
-      events: 0,
-      uniqueFans: 0,
-      totalAmountMinor: 0
-    };
-
+    const mon = MON_CACHE.byArtist.get(artistId) || { monetisationScore: 0 };
     const affKey = fanId ? `${fanId}|${artistId}` : "";
     const affinityScore = fanId ? (MON_CACHE.affinity.get(affKey) || 0) : 0;
-
     return { monetisationScore: mon.monetisationScore, affinityScore };
   }
 
   const built = await buildMonetisationIndex({ lookbackDays });
   MON_CACHE.byArtist = built.byArtist;
   MON_CACHE.affinity = built.affinity;
-  MON_CACHE.weights = built.weights;
   MON_CACHE.key = key;
   MON_CACHE.lastAt = now;
 
@@ -383,13 +368,6 @@ function diversify(list) {
 router.get("/health", async (req, res) => {
   const artistsPath = await resolveArtistsPath();
 
-  let artistsStat = null;
-  try {
-    artistsStat = await fsp.stat(artistsPath);
-  } catch {
-    artistsStat = null;
-  }
-
   let monStat = null;
   try {
     monStat = await fsp.stat(SIGNALS_JSONL);
@@ -401,21 +379,14 @@ router.get("/health", async (req, res) => {
     success: true,
     service: "recs",
     phase: "H3.1",
-    artistsFile: {
-      path: artistsPath,
-      ok: !!artistsStat,
-      size: artistsStat ? artistsStat.size : 0,
-      mtimeMs: artistsStat ? artistsStat.mtimeMs : null
-    },
+    monetisationStorageDir: MON_DIR,
     monetisationFile: {
       path: SIGNALS_JSONL,
       ok: !!monStat,
       size: monStat ? monStat.size : 0,
       mtimeMs: monStat ? monStat.mtimeMs : null
     },
-    weights: FEED,
-    cache: { ttlMs: CACHE.ttlMs },
-    monCache: { ttlMs: MON_CACHE.ttlMs },
+    artistsFilePath: artistsPath,
     updatedAt: nowIso()
   });
 });
@@ -450,12 +421,7 @@ router.get("/feed", async (req, res) => {
       ? await getMonetisationAndAffinity(id, fanId, lookbackDays)
       : { monetisationScore: 0, affinityScore: 0 };
 
-    const feedScore = computeFeedScore({
-      votes,
-      monetisationScore,
-      affinityScore,
-      updatedAt
-    });
+    const feedScore = computeFeedScore({ votes, monetisationScore, affinityScore, updatedAt });
 
     rows.push({
       id,
@@ -489,7 +455,6 @@ router.get("/feed", async (req, res) => {
   };
 
   CACHE.map.set(cacheKey, { at: now, value: payload });
-
   return res.json(payload);
 });
 
