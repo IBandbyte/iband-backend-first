@@ -1,24 +1,19 @@
 /**
- * monetisationSignals.js (Phase H3)
- * --------------------------------
- * Purpose:
- * - Record monetisation-related events into a JSONL stream (temporary storage before DB)
- * - Provide aggregation endpoints for:
- *   - artist monetisation score
- *   - fan loyalty/spend profile
- *   - weights config (read/update)
- * - Provide a single "score" endpoint the algorithm can call efficiently
- *
- * Storage:
- * - data/events/monetisation-signals.jsonl
- * - data/config/monetisation-weights.json
+ * monetisationSignals.js (Phase H3) - ESM
+ * --------------------------------------
+ * Records monetisation-related events into a JSONL stream (temporary before DB)
+ * Provides aggregation endpoints for artist monetisation + fan loyalty.
  */
 
-const express = require("express");
-const fs = require("fs");
-const fsp = require("fs/promises");
-const path = require("path");
-const crypto = require("crypto");
+import express from "express";
+import fs from "fs";
+import fsp from "fs/promises";
+import path from "path";
+import crypto from "crypto";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const router = express.Router();
 
@@ -38,7 +33,6 @@ const WEIGHTS_JSON = path.join(CONFIG_DIR, "monetisation-weights.json");
 const DEFAULT_WEIGHTS = {
   version: 1,
   updatedAt: new Date().toISOString(),
-  // Base weights: tune later
   eventWeights: {
     track_purchase: 8,
     album_purchase: 18,
@@ -51,38 +45,29 @@ const DEFAULT_WEIGHTS = {
     voucher_redeem: 5,
     refund: -12
   },
-  // Spend boosts (GBP-equivalent, but keep currency in events)
   spendMultipliers: {
-    // score += log1p(amountMinor / 100) * multiplier
     multiplier: 4
   },
-  // Loyalty boosts
   loyalty: {
-    repeatBuyerBonus: 8, // if fan has >=2 purchases for this artist in window
-    streakBonusPerWeek: 2, // optional if you later add streak events
+    repeatBuyerBonus: 8,
+    streakBonusPerWeek: 2,
     maxStreakWeeksCounted: 12
   },
-  // Time decay (half-life)
   decay: {
     halfLifeDays: 21,
-    // Only consider last N days in aggregation for performance (JSONL scanning still applies)
     maxLookbackDays: 120
   },
-  // Safeguards
   limits: {
     maxBodyBytes: 25_000,
-    maxLineScan: 150_000, // max JSONL lines to scan in one request (safety)
-    maxReadBytes: 25 * 1024 * 1024 // 25MB safety read cap
+    maxLineScan: 150_000,
+    maxReadBytes: 25 * 1024 * 1024
   }
 };
 
 // ----------------------------
-// Small in-memory rate limiter (good enough for MVP)
+// Simple in-memory rate limiter
 // ----------------------------
-const RATE = {
-  windowMs: 30_000,
-  max: 120
-};
+const RATE = { windowMs: 30_000, max: 120 };
 const rateBuckets = new Map();
 
 function rateLimit(req, res, next) {
@@ -144,7 +129,6 @@ async function readWeights() {
   try {
     const raw = await fsp.readFile(WEIGHTS_JSON, "utf8");
     const parsed = JSON.parse(raw);
-    // minimal sanity
     if (!parsed || typeof parsed !== "object" || !parsed.eventWeights) throw new Error("bad_weights");
     return parsed;
   } catch {
@@ -155,10 +139,7 @@ async function readWeights() {
 
 async function writeWeights(nextWeights) {
   await ensureDirs();
-  const payload = {
-    ...nextWeights,
-    updatedAt: nowIso()
-  };
+  const payload = { ...nextWeights, updatedAt: nowIso() };
   await fsp.writeFile(WEIGHTS_JSON, JSON.stringify(payload, null, 2), "utf8");
   return payload;
 }
@@ -170,7 +151,6 @@ function parseMoneyAmountMinor(amountMinor) {
 }
 
 function eventIdFor(evt) {
-  // deterministic-ish id so duplicates can be detected client-side if needed
   const base = [
     evt.type,
     evt.artistId || "",
@@ -195,18 +175,14 @@ function normalizeEvent(body) {
     fanId: (body.fanId || "").toString().trim(),
     trackId: (body.trackId || "").toString().trim(),
     albumId: (body.albumId || "").toString().trim(),
-    // integer minor units: pennies/cents
     amountMinor: parseMoneyAmountMinor(body.amountMinor),
     currency: (body.currency || "").toString().trim().toUpperCase() || "GBP",
-    // optional metadata (kept small)
     source: (body.source || "ui").toString().trim(),
     ref: (body.ref || "").toString().trim(),
     meta: typeof body.meta === "object" && body.meta ? body.meta : {}
   };
 
-  // compute id (allow override)
   evt.id = (body.id || "").toString().trim() || eventIdFor(evt);
-
   return evt;
 }
 
@@ -228,8 +204,7 @@ function validateEvent(evt) {
     return { ok: false, message: "Invalid or missing 'type'." };
   }
   if (!evt.artistId) return { ok: false, message: "Missing 'artistId'." };
-  // fanId is optional for some system events, but recommended
-  // require for user-initiated purchases/tips/gifts
+
   const fanRequired = new Set([
     "track_purchase",
     "album_purchase",
@@ -246,7 +221,6 @@ function validateEvent(evt) {
     return { ok: false, message: "Missing 'fanId'." };
   }
 
-  // amount expectations
   const moneyish = new Set([
     "track_purchase",
     "album_purchase",
@@ -258,19 +232,17 @@ function validateEvent(evt) {
     "voucher_redeem",
     "refund"
   ]);
+
   if (moneyish.has(evt.type)) {
     if (!Number.isFinite(evt.amountMinor)) return { ok: false, message: "Invalid 'amountMinor'." };
-    // allow 0 for cancel events (but moneyish list excludes cancel)
     if (evt.type !== "refund" && evt.amountMinor < 0) {
       return { ok: false, message: "'amountMinor' must be >= 0." };
     }
     if (evt.type === "refund" && evt.amountMinor > 0) {
-      // refunds should be negative or zero (we store negative to simplify)
       evt.amountMinor = -Math.abs(evt.amountMinor);
     }
   }
 
-  // optional track/album requirement
   if (evt.type === "track_purchase" && !evt.trackId) {
     return { ok: false, message: "Missing 'trackId' for track_purchase." };
   }
@@ -278,7 +250,6 @@ function validateEvent(evt) {
     return { ok: false, message: "Missing 'albumId' for album_purchase." };
   }
 
-  // meta size guard
   try {
     const metaBytes = Buffer.byteLength(JSON.stringify(evt.meta || {}), "utf8");
     if (metaBytes > 6000) return { ok: false, message: "'meta' too large." };
@@ -300,7 +271,6 @@ async function safeReadJsonlLines(filePath, maxBytes) {
   try {
     const stat = await fsp.stat(filePath);
     if (stat.size > maxBytes) {
-      // read only the tail if huge (simple approach: read last maxBytes)
       const fd = await fsp.open(filePath, "r");
       try {
         const start = Math.max(0, stat.size - maxBytes);
@@ -326,7 +296,6 @@ function decayFactor(eventTsIso, halfLifeDays) {
   const ageDays = ageMs / (1000 * 60 * 60 * 24);
   if (ageDays <= 0) return 1;
   const halfLife = Math.max(1, Number(halfLifeDays) || 21);
-  // exponential decay: 0.5^(age/halfLife)
   return Math.pow(0.5, ageDays / halfLife);
 }
 
@@ -343,14 +312,13 @@ function computeEventScore(evt, weights) {
   const halfLifeDays = Number(weights.decay?.halfLifeDays ?? 21) || 21;
   const df = decayFactor(evt.ts, halfLifeDays);
 
-  // money boost uses log1p in major units
   const amountMajor = (Number(evt.amountMinor) || 0) / 100;
-  const moneyBoost = Math.log1p(Math.abs(amountMajor)) * (Number(weights.spendMultipliers?.multiplier ?? 4) || 4);
+  const moneyBoost =
+    Math.log1p(Math.abs(amountMajor)) *
+    (Number(weights.spendMultipliers?.multiplier ?? 4) || 4);
 
-  // For refunds, moneyBoost is negative direction
   const moneySigned = evt.type === "refund" ? -Math.abs(moneyBoost) : moneyBoost;
 
-  // Some event types are not money-based (cancel)
   const moneyish = new Set([
     "track_purchase",
     "album_purchase",
@@ -371,28 +339,9 @@ function initArtistAgg() {
   return {
     artistId: "",
     lookbackDays: 0,
-    totals: {
-      events: 0,
-      uniqueFans: 0,
-      totalAmountMinor: 0,
-      score: 0
-    },
+    totals: { events: 0, uniqueFans: 0, totalAmountMinor: 0, score: 0 },
     byType: {},
     topFans: [],
-    updatedAt: nowIso()
-  };
-}
-
-function initFanAgg() {
-  return {
-    fanId: "",
-    totals: {
-      events: 0,
-      uniqueArtists: 0,
-      totalAmountMinor: 0
-    },
-    byType: {},
-    byArtist: {},
     updatedAt: nowIso()
   };
 }
@@ -414,14 +363,13 @@ function pushTopFan(list, fanId, amountMinor, score, max = 8) {
 // ----------------------------
 function isAdmin(req) {
   const token = (req.headers["x-admin-token"] || "").toString().trim();
-  // If env exists, enforce it. Otherwise allow updates (dev mode).
   const expected = process.env.ADMIN_TOKEN ? process.env.ADMIN_TOKEN.toString().trim() : "";
   if (!expected) return true;
   return token && token === expected;
 }
 
 // ----------------------------
-// Middleware guards
+// Middleware
 // ----------------------------
 router.use(rateLimit);
 
@@ -429,20 +377,11 @@ router.use(rateLimit);
 // Routes
 // ----------------------------
 
-/**
- * GET /api/monetisation/weights
- * Returns current weights config (used by UI/admin + debugging)
- */
 router.get("/weights", async (req, res) => {
   const weights = await readWeights();
   return res.json({ success: true, weights });
 });
 
-/**
- * PUT /api/monetisation/weights
- * Admin update weights config
- * Header: x-admin-token (if ADMIN_TOKEN is set in env)
- */
 router.put("/weights", async (req, res) => {
   if (!isAdmin(req)) {
     return res.status(401).json({ success: false, error: "unauthorized" });
@@ -451,7 +390,6 @@ router.put("/weights", async (req, res) => {
   const incoming = req.body || {};
   const current = await readWeights();
 
-  // allow partial updates but keep structure
   const next = {
     ...current,
     ...incoming,
@@ -462,7 +400,6 @@ router.put("/weights", async (req, res) => {
     limits: { ...current.limits, ...(incoming.limits || {}) }
   };
 
-  // sanity clamps
   next.decay.halfLifeDays = clamp(Number(next.decay.halfLifeDays) || 21, 1, 365);
   next.decay.maxLookbackDays = clamp(Number(next.decay.maxLookbackDays) || 120, 7, 365);
   next.spendMultipliers.multiplier = clamp(Number(next.spendMultipliers.multiplier) || 4, 0, 50);
@@ -471,22 +408,14 @@ router.put("/weights", async (req, res) => {
   return res.json({ success: true, weights: saved });
 });
 
-/**
- * POST /api/monetisation/signals
- * Record a monetisation event to JSONL.
- *
- * Body:
- * {
- *   type, ts?, artistId, fanId?, trackId?, albumId?,
- *   amountMinor?, currency?, source?, ref?, meta?
- * }
- */
 router.post("/signals", async (req, res) => {
-  // body size safety (Express json limit is set in server.js too, this is extra)
   try {
     const bytes = Buffer.byteLength(JSON.stringify(req.body || {}), "utf8");
     const weights = await readWeights();
-    const maxBody = Number(weights.limits?.maxBodyBytes ?? DEFAULT_WEIGHTS.limits.maxBodyBytes) || DEFAULT_WEIGHTS.limits.maxBodyBytes;
+    const maxBody =
+      Number(weights.limits?.maxBodyBytes ?? DEFAULT_WEIGHTS.limits.maxBodyBytes) ||
+      DEFAULT_WEIGHTS.limits.maxBodyBytes;
+
     if (bytes > maxBody) {
       return res.status(413).json({ success: false, error: "payload_too_large" });
     }
@@ -500,15 +429,12 @@ router.post("/signals", async (req, res) => {
     return res.status(400).json({ success: false, error: "validation_error", message: v.message });
   }
 
-  // normalize refunds to negative amounts for consistency
   if (evt.type === "refund") {
     evt.amountMinor = -Math.abs(evt.amountMinor || 0);
   }
 
-  // append
   await appendJsonl(SIGNALS_JSONL, evt);
 
-  // lightweight response for UI
   return res.json({
     success: true,
     message: "Signal recorded.",
@@ -520,12 +446,6 @@ router.post("/signals", async (req, res) => {
   });
 });
 
-/**
- * GET /api/monetisation/artist/:artistId
- * Aggregates signals into artist monetisation profile.
- * Query:
- *  - days (default: weights.decay.maxLookbackDays)
- */
 router.get("/artist/:artistId", async (req, res) => {
   const artistId = (req.params.artistId || "").toString().trim();
   if (!artistId) return res.status(400).json({ success: false, error: "missing_artistId" });
@@ -539,25 +459,27 @@ router.get("/artist/:artistId", async (req, res) => {
 
   const lines = await safeReadJsonlLines(
     SIGNALS_JSONL,
-    Number(weights.limits?.maxReadBytes ?? DEFAULT_WEIGHTS.limits.maxReadBytes) || DEFAULT_WEIGHTS.limits.maxReadBytes
+    Number(weights.limits?.maxReadBytes ?? DEFAULT_WEIGHTS.limits.maxReadBytes) ||
+      DEFAULT_WEIGHTS.limits.maxReadBytes
   );
 
-  const maxLines = Number(weights.limits?.maxLineScan ?? DEFAULT_WEIGHTS.limits.maxLineScan) || DEFAULT_WEIGHTS.limits.maxLineScan;
+  const maxLines =
+    Number(weights.limits?.maxLineScan ?? DEFAULT_WEIGHTS.limits.maxLineScan) ||
+    DEFAULT_WEIGHTS.limits.maxLineScan;
 
   const agg = initArtistAgg();
   agg.artistId = artistId;
   agg.lookbackDays = lookbackDays;
 
   const fanSet = new Set();
-
   let scanned = 0;
+
   for (let i = lines.length - 1; i >= 0; i--) {
     scanned += 1;
     if (scanned > maxLines) break;
 
     const evt = safeJsonParse(lines[i]);
     if (!evt || evt.artistId !== artistId) continue;
-
     if (!withinLookback(evt.ts, lookbackDays)) continue;
 
     const s = computeEventScore(evt, weights);
@@ -579,18 +501,11 @@ router.get("/artist/:artistId", async (req, res) => {
 
   agg.totals.uniqueFans = fanSet.size;
 
-  // Loyalty bonus: repeat buyers in window
-  const repeatThreshold = 2;
   const repeatBonus = Number(weights.loyalty?.repeatBuyerBonus ?? 8) || 8;
-
   let repeatBuyers = 0;
   for (const f of agg.topFans) {
-    // proxy for repeat-ness: if fan has score contribution high enough, but better is counting events
-    // We'll compute a simple repeat count from byType purchase events per fan (needs scan)
-    // MVP: repeat buyer if they appear in topFans with amountMinor != 0 AND score > some threshold
     if (Math.abs(f.amountMinor) >= 200 && f.score >= 10) repeatBuyers += 1;
   }
-
   const loyaltyBoost = Math.min(repeatBuyers, 10) * repeatBonus;
   agg.totals.score += loyaltyBoost;
 
@@ -599,17 +514,10 @@ router.get("/artist/:artistId", async (req, res) => {
   return res.json({
     success: true,
     artist: agg,
-    debug: {
-      scannedLines: scanned,
-      loyaltyBoost
-    }
+    debug: { scannedLines: scanned, loyaltyBoost }
   });
 });
 
-/**
- * GET /api/monetisation/fan/:fanId
- * Aggregates fan monetisation behaviour across artists.
- */
 router.get("/fan/:fanId", async (req, res) => {
   const fanId = (req.params.fanId || "").toString().trim();
   if (!fanId) return res.status(400).json({ success: false, error: "missing_fanId" });
@@ -623,13 +531,21 @@ router.get("/fan/:fanId", async (req, res) => {
 
   const lines = await safeReadJsonlLines(
     SIGNALS_JSONL,
-    Number(weights.limits?.maxReadBytes ?? DEFAULT_WEIGHTS.limits.maxReadBytes) || DEFAULT_WEIGHTS.limits.maxReadBytes
+    Number(weights.limits?.maxReadBytes ?? DEFAULT_WEIGHTS.limits.maxReadBytes) ||
+      DEFAULT_WEIGHTS.limits.maxReadBytes
   );
 
-  const maxLines = Number(weights.limits?.maxLineScan ?? DEFAULT_WEIGHTS.limits.maxLineScan) || DEFAULT_WEIGHTS.limits.maxLineScan;
+  const maxLines =
+    Number(weights.limits?.maxLineScan ?? DEFAULT_WEIGHTS.limits.maxLineScan) ||
+    DEFAULT_WEIGHTS.limits.maxLineScan;
 
-  const agg = initFanAgg();
-  agg.fanId = fanId;
+  const agg = {
+    fanId,
+    totals: { events: 0, uniqueArtists: 0, totalAmountMinor: 0 },
+    byType: {},
+    byArtist: {},
+    updatedAt: nowIso()
+  };
 
   const artistSet = new Set();
   let scanned = 0;
@@ -640,10 +556,10 @@ router.get("/fan/:fanId", async (req, res) => {
 
     const evt = safeJsonParse(lines[i]);
     if (!evt || evt.fanId !== fanId) continue;
-
     if (!withinLookback(evt.ts, lookbackDays)) continue;
 
     const amt = Number(evt.amountMinor) || 0;
+
     agg.totals.events += 1;
     agg.totals.totalAmountMinor += amt;
 
@@ -669,16 +585,9 @@ router.get("/fan/:fanId", async (req, res) => {
   });
 });
 
-/**
- * GET /api/monetisation/score/:artistId?fanId=xyz&days=30
- * Fast algorithm endpoint:
- * - returns a single monetisationScore number + lightweight signals summary
- * - optionally includes fanAffinity score (if fanId provided)
- */
 router.get("/score/:artistId", async (req, res) => {
   const artistId = (req.params.artistId || "").toString().trim();
   const fanId = (req.query.fanId || "").toString().trim();
-
   if (!artistId) return res.status(400).json({ success: false, error: "missing_artistId" });
 
   const weights = await readWeights();
@@ -690,19 +599,20 @@ router.get("/score/:artistId", async (req, res) => {
 
   const lines = await safeReadJsonlLines(
     SIGNALS_JSONL,
-    Number(weights.limits?.maxReadBytes ?? DEFAULT_WEIGHTS.limits.maxReadBytes) || DEFAULT_WEIGHTS.limits.maxReadBytes
+    Number(weights.limits?.maxReadBytes ?? DEFAULT_WEIGHTS.limits.maxReadBytes) ||
+      DEFAULT_WEIGHTS.limits.maxReadBytes
   );
 
-  const maxLines = Number(weights.limits?.maxLineScan ?? DEFAULT_WEIGHTS.limits.maxLineScan) || DEFAULT_WEIGHTS.limits.maxLineScan;
+  const maxLines =
+    Number(weights.limits?.maxLineScan ?? DEFAULT_WEIGHTS.limits.maxLineScan) ||
+    DEFAULT_WEIGHTS.limits.maxLineScan;
 
   let scanned = 0;
-
   let score = 0;
   let totalAmountMinor = 0;
   let events = 0;
   const uniqueFans = new Set();
 
-  // fan affinity (how monetised is THIS fan for THIS artist)
   let fanAffinity = 0;
   let fanAmountMinor = 0;
   let fanEvents = 0;
@@ -731,8 +641,6 @@ router.get("/score/:artistId", async (req, res) => {
     }
   }
 
-  // simple normalization for UI/algorithm stability
-  // keep in 0..100 (soft cap) but still expose rawScore
   const normalized = clamp(Math.round(score), -50, 250);
   const monetisationScore = clamp(normalized, 0, 100);
 
@@ -764,9 +672,6 @@ router.get("/score/:artistId", async (req, res) => {
   });
 });
 
-/**
- * GET /api/monetisation/health
- */
 router.get("/health", async (req, res) => {
   await ensureDirs();
   const weights = await readWeights();
@@ -780,4 +685,4 @@ router.get("/health", async (req, res) => {
   });
 });
 
-module.exports = router;
+export default router;
