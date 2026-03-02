@@ -23,7 +23,11 @@ app.use(express.json({ limit: "2mb" }));
 
 // ---- Health ----
 app.get("/", (_req, res) => {
-  res.json({ status: "ok", uptime: process.uptime(), timestamp: new Date().toISOString() });
+  res.json({
+    status: "ok",
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+  });
 });
 
 // ---- Routers ----
@@ -34,7 +38,7 @@ app.use("/api/recs", recsRouter);
 app.use("/api/flash-medals", flashMedalsRouter);
 app.use("/api/achievements", achievementsRouter);
 
-// Purchases / Commerce (alias)
+// Commerce (primary + alias)
 app.use("/api/purchases", purchasesRouter);
 app.use("/api/commerce", purchasesRouter);
 
