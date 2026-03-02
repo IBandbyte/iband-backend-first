@@ -1,58 +1,124 @@
-// server.js
-// iBand Backend — Root Server (canonical)
-// Captain’s Protocol: full file replacements only.
+/**
+ * server.js (root-level backend)
+ * ------------------------------
+ * Future-proof Express server for iBand (Render)
+ * - Safe-load route modules (won't crash if a module is missing)
+ * - Production-ready middleware, logging, error handling
+ */
 
-import express from "express";
-import cors from "cors";
-
-import votesRouter from "./votes.js";
-import rankingRouter from "./ranking.js";
-import medalsRouter from "./medals.js";
-import recsRouter from "./recs.js";
-import flashMedalsRouter from "./flashMedals.js";
-import achievementsRouter from "./achievements.js";
-import purchasesRouter from "./purchases.js";
+const express = require("express");
+const cors = require("cors");
+const fs = require("fs");
+const path = require("path");
 
 const app = express();
 
-const PORT = process.env.PORT || 10000;
+// Render / proxies
+app.set("trust proxy", 1);
 
-// ---- Middleware ----
-app.use(cors());
-app.use(express.json({ limit: "2mb" }));
+// Basic request id for logs
+app.use((req, res, next) => {
+  req.id = (Math.random().toString(16).slice(2) + Date.now().toString(16)).slice(0, 16);
+  res.setHeader("x-request-id", req.id);
+  next();
+});
 
-// ---- Health ----
-app.get("/", (_req, res) => {
+// CORS (lock down later with allowlist)
+app.use(
+  cors({
+    origin: "*",
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Admin-Token", "X-Requested-With"]
+  })
+);
+
+// Body parsing (keep modest for iPhone testing + safety)
+app.use(express.json({ limit: "200kb" }));
+app.use(express.urlencoded({ extended: true, limit: "200kb" }));
+
+// Simple access log
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on("finish", () => {
+    const ms = Date.now() - start;
+    console.log(
+      `[${new Date().toISOString()}] ${req.ip} ${req.method} ${req.originalUrl} -> ${res.statusCode} (${ms}ms) id=${req.id}`
+    );
+  });
+  next();
+});
+
+// Health
+app.get("/", (req, res) => {
   res.json({
-    status: "ok",
-    uptime: process.uptime(),
-    timestamp: new Date().toISOString(),
+    success: true,
+    service: "iband-backend",
+    env: process.env.NODE_ENV || "development",
+    ts: new Date().toISOString()
   });
 });
 
-// ---- Routers ----
-app.use("/api/votes", votesRouter);
-app.use("/api/ranking", rankingRouter);
-app.use("/api/medals", medalsRouter);
-app.use("/api/recs", recsRouter);
-app.use("/api/flash-medals", flashMedalsRouter);
-app.use("/api/achievements", achievementsRouter);
+app.get("/health", (req, res) => {
+  res.json({ success: true, status: "ok", ts: new Date().toISOString() });
+});
 
-// Commerce (primary + alias)
-app.use("/api/purchases", purchasesRouter);
-app.use("/api/commerce", purchasesRouter);
+// Safe-load helper (prevents server crash if a file is missing)
+function mountIfExists({ file, mountPath }) {
+  try {
+    const full = path.join(__dirname, file);
+    if (!fs.existsSync(full)) {
+      console.warn(`Route module missing: ${file} (skipped)`);
+      return;
+    }
+    const mod = require(full);
+    if (typeof mod !== "function") {
+      console.warn(`Route module invalid (not a router): ${file} (skipped)`);
+      return;
+    }
+    app.use(mountPath, mod);
+    console.log(`Mounted ${file} at ${mountPath}`);
+  } catch (err) {
+    console.error(`Failed to mount ${file} at ${mountPath}`, err);
+  }
+}
 
-// ---- 404 ----
+// ------------------------------
+// Mount existing iBand systems (root-level files)
+// ------------------------------
+mountIfExists({ file: "votes.js", mountPath: "/api/votes" });
+mountIfExists({ file: "ranking.js", mountPath: "/api/ranking" });
+mountIfExists({ file: "medals.js", mountPath: "/api/medals" });
+mountIfExists({ file: "recs.js", mountPath: "/api/recs" });
+
+mountIfExists({ file: "flashMedals.js", mountPath: "/api/flash-medals" });
+mountIfExists({ file: "achievements.js", mountPath: "/api/achievements" });
+
+mountIfExists({ file: "purchases.js", mountPath: "/api/purchases" });
+
+// Phase H3: Monetisation Signals Engine
+mountIfExists({ file: "monetisationSignals.js", mountPath: "/api/monetisation" });
+
+// 404
 app.use((req, res) => {
   res.status(404).json({
     success: false,
-    message: "API route not found.",
-    path: req.originalUrl,
-    updatedAt: new Date().toISOString(),
+    error: "not_found",
+    path: req.originalUrl
   });
 });
 
+// Error handler
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  console.error("Unhandled error:", err);
+  res.status(500).json({
+    success: false,
+    error: "server_error",
+    message: "Something went wrong."
+  });
+});
+
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
-  console.log(`iBand backend listening on port ${PORT}`);
-  console.log("our service is live 🎉");
+  console.log(`iBand backend running on port ${PORT}`);
 });
