@@ -1,8 +1,11 @@
 /**
  * monetisationSignals.js (Phase H3) - ESM
  * --------------------------------------
- * Records monetisation-related events into a JSONL stream (temporary before DB)
- * Provides aggregation endpoints for artist monetisation + fan loyalty.
+ * IMPORTANT: Uses persistent Render disk:
+ *   /var/data/iband/db/monetisation
+ *
+ * Records monetisation-related events into a JSONL stream and provides
+ * aggregation endpoints + weights management.
  */
 
 import express from "express";
@@ -10,19 +13,16 @@ import fs from "fs";
 import fsp from "fs/promises";
 import path from "path";
 import crypto from "crypto";
-import { fileURLToPath } from "url";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const router = express.Router();
 
 // ----------------------------
-// Paths / storage
+// Persistent storage base
 // ----------------------------
-const DATA_DIR = path.join(__dirname, "data");
-const EVENTS_DIR = path.join(DATA_DIR, "events");
-const CONFIG_DIR = path.join(DATA_DIR, "config");
+const PERSIST_DIR = process.env.IBAND_DATA_DIR || "/var/data/iband/db";
+const MON_DIR = path.join(PERSIST_DIR, "monetisation");
+const EVENTS_DIR = path.join(MON_DIR, "events");
+const CONFIG_DIR = path.join(MON_DIR, "config");
 
 const SIGNALS_JSONL = path.join(EVENTS_DIR, "monetisation-signals.jsonl");
 const WEIGHTS_JSON = path.join(CONFIG_DIR, "monetisation-weights.json");
@@ -45,9 +45,7 @@ const DEFAULT_WEIGHTS = {
     voucher_redeem: 5,
     refund: -12
   },
-  spendMultipliers: {
-    multiplier: 4
-  },
+  spendMultipliers: { multiplier: 4 },
   loyalty: {
     repeatBuyerBonus: 8,
     streakBonusPerWeek: 2,
@@ -65,7 +63,7 @@ const DEFAULT_WEIGHTS = {
 };
 
 // ----------------------------
-// Simple in-memory rate limiter
+// Rate limiter (MVP)
 // ----------------------------
 const RATE = { windowMs: 30_000, max: 120 };
 const rateBuckets = new Map();
@@ -75,6 +73,7 @@ function rateLimit(req, res, next) {
     (req.headers["x-forwarded-for"] || "").toString().split(",")[0].trim() ||
     req.ip ||
     "unknown";
+
   const now = Date.now();
   const bucket = rateBuckets.get(key) || { count: 0, resetAt: now + RATE.windowMs };
 
@@ -262,8 +261,7 @@ function validateEvent(evt) {
 
 async function appendJsonl(filePath, obj) {
   await ensureDirs();
-  const line = JSON.stringify(obj);
-  await fsp.appendFile(filePath, line + "\n", "utf8");
+  await fsp.appendFile(filePath, JSON.stringify(obj) + "\n", "utf8");
 }
 
 async function safeReadJsonlLines(filePath, maxBytes) {
@@ -331,31 +329,12 @@ function computeEventScore(evt, weights) {
     "refund"
   ]);
 
-  const total = (base + (moneyish.has(evt.type) ? moneySigned : 0)) * df;
-  return total;
+  return (base + (moneyish.has(evt.type) ? moneySigned : 0)) * df;
 }
 
-function initArtistAgg() {
-  return {
-    artistId: "",
-    lookbackDays: 0,
-    totals: { events: 0, uniqueFans: 0, totalAmountMinor: 0, score: 0 },
-    byType: {},
-    topFans: [],
-    updatedAt: nowIso()
-  };
-}
-
-function pushTopFan(list, fanId, amountMinor, score, max = 8) {
-  const existing = list.find((x) => x.fanId === fanId);
-  if (existing) {
-    existing.amountMinor += amountMinor;
-    existing.score += score;
-  } else {
-    list.push({ fanId, amountMinor, score });
-  }
-  list.sort((a, b) => b.score - a.score);
-  if (list.length > max) list.length = max;
+function normalizeMonScore(rawScore) {
+  const normalized = clamp(Math.round(rawScore), -50, 250);
+  return clamp(normalized, 0, 100);
 }
 
 // ----------------------------
@@ -376,7 +355,6 @@ router.use(rateLimit);
 // ----------------------------
 // Routes
 // ----------------------------
-
 router.get("/weights", async (req, res) => {
   const weights = await readWeights();
   return res.json({ success: true, weights });
@@ -429,9 +407,7 @@ router.post("/signals", async (req, res) => {
     return res.status(400).json({ success: false, error: "validation_error", message: v.message });
   }
 
-  if (evt.type === "refund") {
-    evt.amountMinor = -Math.abs(evt.amountMinor || 0);
-  }
+  if (evt.type === "refund") evt.amountMinor = -Math.abs(evt.amountMinor || 0);
 
   await appendJsonl(SIGNALS_JSONL, evt);
 
@@ -443,145 +419,6 @@ router.post("/signals", async (req, res) => {
     artistId: evt.artistId,
     fanId: evt.fanId || null,
     ts: evt.ts
-  });
-});
-
-router.get("/artist/:artistId", async (req, res) => {
-  const artistId = (req.params.artistId || "").toString().trim();
-  if (!artistId) return res.status(400).json({ success: false, error: "missing_artistId" });
-
-  const weights = await readWeights();
-  const lookbackDays = clamp(
-    Number(req.query.days) || Number(weights.decay?.maxLookbackDays ?? 120) || 120,
-    1,
-    365
-  );
-
-  const lines = await safeReadJsonlLines(
-    SIGNALS_JSONL,
-    Number(weights.limits?.maxReadBytes ?? DEFAULT_WEIGHTS.limits.maxReadBytes) ||
-      DEFAULT_WEIGHTS.limits.maxReadBytes
-  );
-
-  const maxLines =
-    Number(weights.limits?.maxLineScan ?? DEFAULT_WEIGHTS.limits.maxLineScan) ||
-    DEFAULT_WEIGHTS.limits.maxLineScan;
-
-  const agg = initArtistAgg();
-  agg.artistId = artistId;
-  agg.lookbackDays = lookbackDays;
-
-  const fanSet = new Set();
-  let scanned = 0;
-
-  for (let i = lines.length - 1; i >= 0; i--) {
-    scanned += 1;
-    if (scanned > maxLines) break;
-
-    const evt = safeJsonParse(lines[i]);
-    if (!evt || evt.artistId !== artistId) continue;
-    if (!withinLookback(evt.ts, lookbackDays)) continue;
-
-    const s = computeEventScore(evt, weights);
-    const amt = Number(evt.amountMinor) || 0;
-
-    agg.totals.events += 1;
-    agg.totals.totalAmountMinor += amt;
-    agg.totals.score += s;
-
-    if (evt.fanId) fanSet.add(evt.fanId);
-
-    agg.byType[evt.type] = agg.byType[evt.type] || { events: 0, score: 0, totalAmountMinor: 0 };
-    agg.byType[evt.type].events += 1;
-    agg.byType[evt.type].score += s;
-    agg.byType[evt.type].totalAmountMinor += amt;
-
-    if (evt.fanId) pushTopFan(agg.topFans, evt.fanId, amt, s, 8);
-  }
-
-  agg.totals.uniqueFans = fanSet.size;
-
-  const repeatBonus = Number(weights.loyalty?.repeatBuyerBonus ?? 8) || 8;
-  let repeatBuyers = 0;
-  for (const f of agg.topFans) {
-    if (Math.abs(f.amountMinor) >= 200 && f.score >= 10) repeatBuyers += 1;
-  }
-  const loyaltyBoost = Math.min(repeatBuyers, 10) * repeatBonus;
-  agg.totals.score += loyaltyBoost;
-
-  agg.updatedAt = nowIso();
-
-  return res.json({
-    success: true,
-    artist: agg,
-    debug: { scannedLines: scanned, loyaltyBoost }
-  });
-});
-
-router.get("/fan/:fanId", async (req, res) => {
-  const fanId = (req.params.fanId || "").toString().trim();
-  if (!fanId) return res.status(400).json({ success: false, error: "missing_fanId" });
-
-  const weights = await readWeights();
-  const lookbackDays = clamp(
-    Number(req.query.days) || Number(weights.decay?.maxLookbackDays ?? 120) || 120,
-    1,
-    365
-  );
-
-  const lines = await safeReadJsonlLines(
-    SIGNALS_JSONL,
-    Number(weights.limits?.maxReadBytes ?? DEFAULT_WEIGHTS.limits.maxReadBytes) ||
-      DEFAULT_WEIGHTS.limits.maxReadBytes
-  );
-
-  const maxLines =
-    Number(weights.limits?.maxLineScan ?? DEFAULT_WEIGHTS.limits.maxLineScan) ||
-    DEFAULT_WEIGHTS.limits.maxLineScan;
-
-  const agg = {
-    fanId,
-    totals: { events: 0, uniqueArtists: 0, totalAmountMinor: 0 },
-    byType: {},
-    byArtist: {},
-    updatedAt: nowIso()
-  };
-
-  const artistSet = new Set();
-  let scanned = 0;
-
-  for (let i = lines.length - 1; i >= 0; i--) {
-    scanned += 1;
-    if (scanned > maxLines) break;
-
-    const evt = safeJsonParse(lines[i]);
-    if (!evt || evt.fanId !== fanId) continue;
-    if (!withinLookback(evt.ts, lookbackDays)) continue;
-
-    const amt = Number(evt.amountMinor) || 0;
-
-    agg.totals.events += 1;
-    agg.totals.totalAmountMinor += amt;
-
-    if (evt.artistId) {
-      artistSet.add(evt.artistId);
-      agg.byArtist[evt.artistId] = agg.byArtist[evt.artistId] || { events: 0, totalAmountMinor: 0 };
-      agg.byArtist[evt.artistId].events += 1;
-      agg.byArtist[evt.artistId].totalAmountMinor += amt;
-    }
-
-    agg.byType[evt.type] = agg.byType[evt.type] || { events: 0, totalAmountMinor: 0 };
-    agg.byType[evt.type].events += 1;
-    agg.byType[evt.type].totalAmountMinor += amt;
-  }
-
-  agg.totals.uniqueArtists = artistSet.size;
-  agg.updatedAt = nowIso();
-
-  return res.json({
-    success: true,
-    fan: agg,
-    debug: { scannedLines: scanned, lookbackDays }
   });
 });
 
@@ -597,15 +434,15 @@ router.get("/score/:artistId", async (req, res) => {
     365
   );
 
-  const lines = await safeReadJsonlLines(
-    SIGNALS_JSONL,
+  const maxBytes =
     Number(weights.limits?.maxReadBytes ?? DEFAULT_WEIGHTS.limits.maxReadBytes) ||
-      DEFAULT_WEIGHTS.limits.maxReadBytes
-  );
+    DEFAULT_WEIGHTS.limits.maxReadBytes;
 
   const maxLines =
     Number(weights.limits?.maxLineScan ?? DEFAULT_WEIGHTS.limits.maxLineScan) ||
     DEFAULT_WEIGHTS.limits.maxLineScan;
+
+  const lines = await safeReadJsonlLines(SIGNALS_JSONL, maxBytes);
 
   let scanned = 0;
   let score = 0;
@@ -631,7 +468,6 @@ router.get("/score/:artistId", async (req, res) => {
     score += s;
     totalAmountMinor += amt;
     events += 1;
-
     if (evt.fanId) uniqueFans.add(evt.fanId);
 
     if (fanId && evt.fanId === fanId) {
@@ -641,11 +477,8 @@ router.get("/score/:artistId", async (req, res) => {
     }
   }
 
-  const normalized = clamp(Math.round(score), -50, 250);
-  const monetisationScore = clamp(normalized, 0, 100);
-
-  const fanAffinityNorm = clamp(Math.round(fanAffinity), -20, 120);
-  const fanAffinityScore = clamp(fanAffinityNorm, 0, 100);
+  const monetisationScore = normalizeMonScore(score);
+  const fanAffinityScore = normalizeMonScore(fanAffinity);
 
   return res.json({
     success: true,
@@ -668,7 +501,7 @@ router.get("/score/:artistId", async (req, res) => {
         }
       : null,
     updatedAt: nowIso(),
-    debug: { scannedLines: scanned }
+    debug: { scannedLines: scanned, storageDir: MON_DIR }
   });
 });
 
@@ -676,10 +509,24 @@ router.get("/health", async (req, res) => {
   await ensureDirs();
   const weights = await readWeights();
   const exists = fs.existsSync(SIGNALS_JSONL);
+
+  let stat = null;
+  try {
+    stat = await fsp.stat(SIGNALS_JSONL);
+  } catch {
+    stat = null;
+  }
+
   return res.json({
     success: true,
     service: "monetisation",
-    eventsFileExists: exists,
+    storageDir: MON_DIR,
+    eventsFile: {
+      path: SIGNALS_JSONL,
+      ok: !!stat,
+      size: stat ? stat.size : 0,
+      mtimeMs: stat ? stat.mtimeMs : null
+    },
     weightsVersion: weights.version || 1,
     ts: nowIso()
   });
