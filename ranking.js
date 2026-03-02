@@ -1,24 +1,14 @@
 /**
  * ranking.js (Phase H3.1) - ESM
  * -----------------------------
- * Production ranking with Monetisation Signals Engine integration.
- * IMPORTANT: No internal HTTP fetch calls (Render reliability).
- *
- * Reads:
- * - artists.json (Render disk preferred)
- * - monetisation-signals.jsonl + weights (created by monetisationSignals.js)
- *
- * Outputs:
- * - /api/ranking/top
- * - /api/ranking/artist/:artistId
- * - /api/ranking/health
+ * Ranking engine that reads monetisation from persistent disk
+ * (/var/data/iband/db/monetisation) so deploys do not reset scores.
  */
 
 import express from "express";
 import fs from "fs";
 import fsp from "fs/promises";
 import path from "path";
-import crypto from "crypto";
 import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -26,53 +16,31 @@ const __dirname = path.dirname(__filename);
 
 const router = express.Router();
 
-// ----------------------------
-// Data paths
-// ----------------------------
+// Artists storage
 const DEFAULT_DATA_DIR = process.env.IBAND_DATA_DIR || "/var/data/iband/db";
 const FALLBACK_LOCAL_DIR = path.join(__dirname, "data", "db");
 const ARTISTS_FILE = process.env.IBAND_ARTISTS_FILE || "artists.json";
 
-// Monetisation (must match monetisationSignals.js locations)
-const DATA_DIR = path.join(__dirname, "data");
-const EVENTS_DIR = path.join(DATA_DIR, "events");
-const CONFIG_DIR = path.join(DATA_DIR, "config");
+// Monetisation persistent storage
+const MON_DIR = path.join(DEFAULT_DATA_DIR, "monetisation");
+const EVENTS_DIR = path.join(MON_DIR, "events");
+const CONFIG_DIR = path.join(MON_DIR, "config");
 const SIGNALS_JSONL = path.join(EVENTS_DIR, "monetisation-signals.jsonl");
 const WEIGHTS_JSON = path.join(CONFIG_DIR, "monetisation-weights.json");
 
-// ----------------------------
 // Ranking tuning
-// ----------------------------
 const SCORE_WEIGHTS = {
   votesWeight: 1.0,
-  monetisationWeight: 3.0, // composite uses monetisationScore (0..100)
-  freshnessWeight: 0.4, // freshnessBoost * 100 * freshnessWeight
+  monetisationWeight: 3.0,
+  freshnessWeight: 0.4,
   floorVotes: 0,
   maxBoostedScore: 100000
 };
 
-// ----------------------------
-// Caches
-// ----------------------------
-const CACHE = {
-  ttlMs: 12_000,
-  lastAt: 0,
-  lastKey: "",
-  lastValue: null
-};
+// cache
+const CACHE = { ttlMs: 12_000, lastAt: 0, lastKey: "", lastValue: null };
+const MON_CACHE = { ttlMs: 10_000, lastAt: 0, key: "", byArtist: new Map() };
 
-const MON_CACHE = {
-  ttlMs: 10_000,
-  lastAt: 0,
-  key: "",
-  // map artistId -> { monetisationScore, rawScore, events, uniqueFans, totalAmountMinor }
-  byArtist: new Map(),
-  weights: null
-};
-
-// ----------------------------
-// Defaults (fallback if missing weights file)
-// ----------------------------
 const DEFAULT_WEIGHTS = {
   version: 1,
   updatedAt: new Date().toISOString(),
@@ -89,14 +57,10 @@ const DEFAULT_WEIGHTS = {
     refund: -12
   },
   spendMultipliers: { multiplier: 4 },
-  loyalty: { repeatBuyerBonus: 8, streakBonusPerWeek: 2, maxStreakWeeksCounted: 12 },
   decay: { halfLifeDays: 21, maxLookbackDays: 120 },
   limits: { maxLineScan: 150000, maxReadBytes: 25 * 1024 * 1024 }
 };
 
-// ----------------------------
-// Helpers
-// ----------------------------
 function nowIso() {
   return new Date().toISOString();
 }
@@ -251,12 +215,11 @@ function computeEventScore(evt, weights) {
 }
 
 function normalizeMonScore(rawScore) {
-  // same approach as monetisationSignals.js score endpoint
   const normalized = clamp(Math.round(rawScore), -50, 250);
   return clamp(normalized, 0, 100);
 }
 
-async function buildMonetisationIndex({ lookbackDays }) {
+async function buildMonetisationIndex(lookbackDays) {
   const weights = await readWeights();
   const lb = clamp(Number(lookbackDays) || Number(weights.decay?.maxLookbackDays ?? 120) || 120, 1, 365);
 
@@ -269,9 +232,7 @@ async function buildMonetisationIndex({ lookbackDays }) {
     DEFAULT_WEIGHTS.limits.maxLineScan;
 
   const lines = await safeReadJsonlLines(SIGNALS_JSONL, maxBytes);
-
   const byArtist = new Map();
-  const fanSets = new Map();
 
   let scanned = 0;
   for (let i = lines.length - 1; i >= 0; i--) {
@@ -285,61 +246,42 @@ async function buildMonetisationIndex({ lookbackDays }) {
     const s = computeEventScore(evt, weights);
     const amt = Number(evt.amountMinor) || 0;
 
-    if (!byArtist.has(evt.artistId)) {
-      byArtist.set(evt.artistId, { rawScore: 0, events: 0, totalAmountMinor: 0 });
-      fanSets.set(evt.artistId, new Set());
-    }
-
-    const row = byArtist.get(evt.artistId);
+    const row = byArtist.get(evt.artistId) || { rawScore: 0, events: 0, totalAmountMinor: 0, fanSet: new Set() };
     row.rawScore += s;
     row.events += 1;
     row.totalAmountMinor += amt;
-
-    if (evt.fanId) fanSets.get(evt.artistId).add(evt.fanId);
+    if (evt.fanId) row.fanSet.add(evt.fanId);
+    byArtist.set(evt.artistId, row);
   }
 
-  // finalize
   const out = new Map();
   for (const [artistId, row] of byArtist.entries()) {
-    const uniqueFans = fanSets.get(artistId)?.size || 0;
     out.set(artistId, {
       monetisationScore: normalizeMonScore(row.rawScore),
       rawScore: row.rawScore,
       events: row.events,
-      uniqueFans,
+      uniqueFans: row.fanSet.size,
       totalAmountMinor: row.totalAmountMinor
     });
   }
 
-  return { byArtist: out, weights, lookbackDays: lb };
+  return out;
 }
 
-async function getMonetisationForArtist(artistId, lookbackDays = 120) {
+async function getMonetisationForArtist(artistId, lookbackDays) {
   const key = `lb:${lookbackDays}`;
   const now = Date.now();
+
   if (MON_CACHE.byArtist.size && MON_CACHE.key === key && now - MON_CACHE.lastAt < MON_CACHE.ttlMs) {
-    return MON_CACHE.byArtist.get(artistId) || {
-      monetisationScore: 0,
-      rawScore: 0,
-      events: 0,
-      uniqueFans: 0,
-      totalAmountMinor: 0
-    };
+    return MON_CACHE.byArtist.get(artistId) || { monetisationScore: 0 };
   }
 
-  const built = await buildMonetisationIndex({ lookbackDays });
-  MON_CACHE.byArtist = built.byArtist;
-  MON_CACHE.weights = built.weights;
+  const built = await buildMonetisationIndex(lookbackDays);
+  MON_CACHE.byArtist = built;
   MON_CACHE.key = key;
   MON_CACHE.lastAt = now;
 
-  return MON_CACHE.byArtist.get(artistId) || {
-    monetisationScore: 0,
-    rawScore: 0,
-    events: 0,
-    uniqueFans: 0,
-    totalAmountMinor: 0
-  };
+  return MON_CACHE.byArtist.get(artistId) || { monetisationScore: 0 };
 }
 
 function computeCompositeScore({ votes, monetisationScore, updatedAt }) {
@@ -355,19 +297,8 @@ function computeCompositeScore({ votes, monetisationScore, updatedAt }) {
   return clamp(composite, 0, SCORE_WEIGHTS.maxBoostedScore);
 }
 
-// ----------------------------
-// Routes
-// ----------------------------
-
 router.get("/health", async (req, res) => {
   const artistsPath = await resolveArtistsPath();
-
-  let artistsStat = null;
-  try {
-    artistsStat = await fsp.stat(artistsPath);
-  } catch {
-    artistsStat = null;
-  }
 
   let monStat = null;
   try {
@@ -380,20 +311,14 @@ router.get("/health", async (req, res) => {
     success: true,
     service: "ranking",
     phase: "H3.1",
-    artistsFile: {
-      path: artistsPath,
-      ok: !!artistsStat,
-      size: artistsStat ? artistsStat.size : 0,
-      mtimeMs: artistsStat ? artistsStat.mtimeMs : null
-    },
+    monetisationStorageDir: MON_DIR,
     monetisationFile: {
       path: SIGNALS_JSONL,
       ok: !!monStat,
       size: monStat ? monStat.size : 0,
       mtimeMs: monStat ? monStat.mtimeMs : null
     },
-    weights: SCORE_WEIGHTS,
-    monCache: { ttlMs: MON_CACHE.ttlMs },
+    artistsFilePath: artistsPath,
     updatedAt: nowIso()
   });
 });
@@ -447,13 +372,7 @@ router.get("/top", async (req, res) => {
   const payload = {
     success: true,
     list: rows.slice(0, limit),
-    meta: {
-      limit,
-      includeMonetisation,
-      days: lookbackDays,
-      scored: rows.length,
-      updatedAt: nowIso()
-    },
+    meta: { limit, includeMonetisation, days: lookbackDays, scored: rows.length, updatedAt: nowIso() },
     cache: { hit: false, ttlMs: CACHE.ttlMs }
   };
 
@@ -462,63 +381,6 @@ router.get("/top", async (req, res) => {
   CACHE.lastValue = payload;
 
   return res.json(payload);
-});
-
-router.get("/artist/:artistId", async (req, res) => {
-  const artistId = (req.params.artistId || "").toString().trim();
-  if (!artistId) return res.status(400).json({ success: false, error: "missing_artistId" });
-
-  const window = clamp(Number(req.query.window) || 3, 1, 10);
-  const includeMonetisation = String(req.query.includeMonetisation ?? "true") !== "false";
-  const lookbackDays = clamp(Number(req.query.days) || 120, 1, 365);
-
-  const artistsPath = await resolveArtistsPath();
-  const raw = await readJsonSafe(artistsPath, []);
-  const artists = asArrayArtists(raw);
-
-  const rows = [];
-  for (const a of artists) {
-    const id = (a.id || a.artistId || a.slug || "").toString();
-    if (!id) continue;
-
-    const votes = Number(a.votes ?? a.voteCount ?? 0) || 0;
-    const updatedAt = a.updatedAt || a.lastActiveAt || a.modifiedAt || null;
-
-    const mon = includeMonetisation ? await getMonetisationForArtist(id, lookbackDays) : { monetisationScore: 0 };
-
-    const compositeScore = computeCompositeScore({
-      votes,
-      monetisationScore: mon.monetisationScore,
-      updatedAt
-    });
-
-    rows.push({
-      id,
-      name: a.name || a.artistName || id,
-      votes,
-      monetisationScore: mon.monetisationScore,
-      compositeScore,
-      updatedAt
-    });
-  }
-
-  rows.sort((x, y) => y.compositeScore - x.compositeScore);
-
-  const idx = rows.findIndex((x) => x.id === artistId);
-  if (idx === -1) return res.status(404).json({ success: false, error: "artist_not_found", artistId });
-
-  const start = Math.max(0, idx - window);
-  const end = Math.min(rows.length, idx + window + 1);
-
-  return res.json({
-    success: true,
-    artistId,
-    rank: idx + 1,
-    total: rows.length,
-    row: rows[idx],
-    around: rows.slice(start, end),
-    meta: { window, includeMonetisation, days: lookbackDays, updatedAt: nowIso() }
-  });
 });
 
 export default router;
