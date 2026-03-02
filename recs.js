@@ -1,966 +1,289 @@
-// recs.js
-// iBand Backend — Recs Mix (v7 / Step 6.2 Phase D medals-in-feed)
-// Root-level router: mounted at /api/recs
-//
-// Phase D Fix:
-// - /api/recs/health shows medals integrated, but /mix payload lacked artist.medal
-// - This file now attaches artist.medal for EVERY result item (ranked/explore/fill)
-//
-// Captain’s Protocol: full canonical, future-proof, Render-safe, always JSON.
-// No snippets. No add-ins. Full-file replacement only.
+/**
+ * recs.js (Phase H3.1) - ESM
+ * --------------------------
+ * Purpose:
+ * - Provide recommendation/feed endpoints
+ * - Incorporate monetisation score + fan affinity into ranking for discovery
+ *
+ * Endpoints:
+ * - GET /api/recs/health
+ * - GET /api/recs/feed?fanId=&limit=&includeMonetisation=true
+ */
 
-import fs from "fs";
-import path from "path";
-import crypto from "crypto";
 import express from "express";
+import fs from "fs";
+import fsp from "fs/promises";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const router = express.Router();
 
-// -------------------------
-// Config (safe defaults)
-// -------------------------
-const SERVICE = "recs-mix";
-const VERSION = 29; // Step 6.2 Phase D (medals in feed payload)
+// ----------------------------
+// Config / storage
+// ----------------------------
+const DEFAULT_DATA_DIR = process.env.IBAND_DATA_DIR || "/var/data/iband/db";
+const FALLBACK_LOCAL_DIR = path.join(__dirname, "data", "db");
+const ARTISTS_FILE = process.env.IBAND_ARTISTS_FILE || "artists.json";
 
-const DATA_DIR = process.env.IBAND_DATA_DIR || "/var/data/iband/db";
-const EVENTS_AGG = process.env.IBAND_EVENTS_AGG || path.join(DATA_DIR, "events-agg.json");
-const ARTISTS_FILE_CANON = path.join(DATA_DIR, "artists.json");
-const EVENT_LOG = process.env.IBAND_EVENTS_LOG || path.join(DATA_DIR, "events.jsonl");
-
-// Rotation state on disk (persistent)
-const STATE_FILE = process.env.IBAND_RECS_STATE || path.join(DATA_DIR, "recs-state.json");
-
-// Gentle explore tuning defaults
-const DEFAULTS = {
-  explorePct: 0.2,
-  forceExploreMin: 1,
-  injectSlots: [3],
-
-  genreCap: 2,
-  locationCap: 3,
-
-  fatigueStep: 0.04,
-  fatigueMin: 0.84,
-
-  taste: {
-    topK: 3,
-    genreBoost: 2,
-    locationBoost: 1,
-    watchMsPerPoint: 5000,
-  },
-
-  coldStartBase: 1.5,
-  coldStartTasteBoostMax: 3,
-
-  exploreRotation: {
-    cooldownMin: 60,
-    historyMax: 20,
-  },
-
-  maxReturn: 50,
-  tailKb: 512,
-  maxLines: 2500,
-
-  exploreExcludeIds: ["demo"],
+const FEED = {
+  maxLimit: 60,
+  defaultLimit: 25,
+  // weights for feed score
+  votesWeight: 1.0,
+  monetisationWeight: 2.2,
+  affinityWeight: 1.4,
+  freshnessWeight: 0.35
 };
 
-// -------------------------
-// Phase D: medals config (aligned with medals v2)
-// -------------------------
-const MEDALS = {
-  cacheTtlMs: 30_000,
-  tiers: {
-    goldTopPct: 0.05,
-    silverTopPct: 0.2,
-    bronzeTopPct: 0.5,
-    certifiedRest: true,
-  },
-  unlock: {
-    minTotalVotes: 250,
-    minUniqueVoteSessions: 50,
-    minActiveArtists: 15,
-    mode: "combined (agg totals + jsonl unique sessions + artists active)",
-  },
-  palette: {
-    gold: { tier: "gold", label: "Gold", emoji: "🥇", hex: "#D4AF37" },
-    silver: { tier: "silver", label: "Silver", emoji: "🥈", hex: "#C0C0C0" },
-    bronze: { tier: "bronze", label: "Bronze", emoji: "🥉", hex: "#CD7F32" },
-    certified: { tier: "certified", label: "Certified", emoji: "🎸", hex: "#6C63FF" },
-  },
+// caching
+const CACHE = {
+  ttlMs: 10_000,
+  map: new Map() // key -> { at, value }
 };
 
-// -------------------------
+// ----------------------------
 // Helpers
-// -------------------------
+// ----------------------------
 function nowIso() {
   return new Date().toISOString();
 }
 
-function clamp(n, a, b) {
-  return Math.max(a, Math.min(b, n));
+function clamp(n, min, max) {
+  return Math.max(min, Math.min(max, n));
 }
 
-function safeJsonParse(str, fallback = null) {
+async function fileExists(p) {
   try {
-    return JSON.parse(str);
+    await fsp.access(p, fs.constants.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function resolveArtistsPath() {
+  const p1 = path.join(DEFAULT_DATA_DIR, ARTISTS_FILE);
+  if (await fileExists(p1)) return p1;
+
+  const p2 = path.join(FALLBACK_LOCAL_DIR, ARTISTS_FILE);
+  if (await fileExists(p2)) return p2;
+
+  const p3 = path.join(__dirname, ARTISTS_FILE);
+  if (await fileExists(p3)) return p3;
+
+  return p1;
+}
+
+async function readJsonSafe(p, fallback) {
+  try {
+    const raw = await fsp.readFile(p, "utf8");
+    return JSON.parse(raw);
   } catch {
     return fallback;
   }
 }
 
-function readJsonIfExists(p) {
-  try {
-    if (!fs.existsSync(p)) return { ok: false, value: null, error: "ENOENT" };
-    const raw = fs.readFileSync(p, "utf8");
-    const val = safeJsonParse(raw, null);
-    if (!val) return { ok: false, value: null, error: "EJSONPARSE" };
-    return { ok: true, value: val, error: null };
-  } catch (e) {
-    return { ok: false, value: null, error: e?.message || "EREAD" };
+function asArrayArtists(data) {
+  if (Array.isArray(data)) return data;
+  if (data && typeof data === "object") {
+    if (Array.isArray(data.artists)) return data.artists;
+    if (Array.isArray(data.items)) return data.items;
   }
-}
-
-function writeJsonAtomic(p, obj) {
-  const tmp = `${p}.${crypto.randomBytes(6).toString("hex")}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(obj, null, 2));
-  fs.renameSync(tmp, p);
-}
-
-function normalizeStr(s) {
-  return String(s || "")
-    .trim()
-    .toLowerCase();
-}
-
-function normalizeGenre(genre) {
-  const g = normalizeStr(genre);
-  if (!g) return [];
-  return g
-    .split(/[\/,]/g)
-    .map((x) => normalizeStr(x))
-    .filter(Boolean);
-}
-
-function normalizeLocation(loc) {
-  return normalizeStr(loc);
-}
-
-function uniq(arr) {
-  return Array.from(new Set(arr));
-}
-
-function pickInjectSlots(count, injectSlots) {
-  const slots = (injectSlots || [])
-    .map((n) => Number(n))
-    .filter((n) => Number.isFinite(n) && n >= 1 && n <= count);
-
-  if (count <= 12) return uniq(slots.length ? slots : [3]).slice(0, 2);
-  return uniq(slots.length ? slots : [3, 8]).slice(0, 6);
-}
-
-function deriveExploreCount(feedCount, explorePct, forceExploreMin) {
-  const pct = clamp(Number(explorePct ?? DEFAULTS.explorePct), 0, 1);
-  const min = clamp(Number(forceExploreMin ?? DEFAULTS.forceExploreMin), 0, 10);
-
-  const derived = Math.round(feedCount * pct);
-  const capped = feedCount <= 12 ? clamp(derived, 0, 2) : derived;
-
-  return Math.max(min, capped);
-}
-
-// --------- Wrapper-aware artists extraction ----------
-function extractArtistsArray(parsed) {
-  // Supported shapes:
-  // 1) [ ...artists ]
-  // 2) { "id1": {...}, "id2": {...} }  (keyed object)
-  // 3) { success:true, artists:[...] }
-  // 4) { data:[...] } / { items:[...] } / { results:[...] } / { list:[...] }
-  // 5) { artists: { ...keyed... } }
-  if (!parsed) return [];
-
-  if (Array.isArray(parsed)) return parsed;
-
-  if (parsed && typeof parsed === "object") {
-    const candidates = ["artists", "data", "items", "results", "list"];
-    for (const k of candidates) {
-      const v = parsed[k];
-      if (Array.isArray(v)) return v;
-      if (v && typeof v === "object" && !Array.isArray(v)) {
-        const maybeVals = Object.values(v).filter((x) => x && typeof x === "object");
-        if (maybeVals.length) return maybeVals;
-      }
-    }
-
-    const vals = Object.values(parsed).filter((x) => x && typeof x === "object");
-    if (vals.length && !("id" in parsed && "name" in parsed)) {
-      if (vals.length > 1) return vals;
-      if (vals.length === 1 && typeof vals[0] === "object") return vals;
-    }
-  }
-
   return [];
 }
 
-function loadArtists() {
-  const a = readJsonIfExists(ARTISTS_FILE_CANON);
-  if (!a.ok) return { ok: false, artists: [], error: a.error, selected: { path: ARTISTS_FILE_CANON } };
+function freshnessBoost(updatedAtIso) {
+  if (!updatedAtIso) return 0;
+  const t = new Date(updatedAtIso).getTime();
+  if (!Number.isFinite(t)) return 0;
 
-  const rawArtists = extractArtistsArray(a.value);
+  const ageMs = Date.now() - t;
+  if (ageMs <= 0) return 1;
 
-  const normalized = rawArtists
-    .map((x) => ({
-      id: String(x?.id || "").trim(),
-      name: x?.name ?? null,
-      imageUrl: x?.imageUrl ?? null,
-      genre: x?.genre ?? null,
-      location: x?.location ?? null,
-      bio: x?.bio ?? null,
-      socials: x?.socials ?? null,
-      tracks: Array.isArray(x?.tracks) ? x.tracks : [],
-      status: x?.status ?? "active",
-      createdAt: x?.createdAt ?? null,
-      updatedAt: x?.updatedAt ?? null,
-    }))
-    .filter((x) => x.id);
-
-  return { ok: true, artists: normalized, error: null, selected: { path: ARTISTS_FILE_CANON } };
+  const ageDays = ageMs / (1000 * 60 * 60 * 24);
+  return clamp(1 - ageDays / 21, 0, 1);
 }
 
-// -------------------------
-// Agg + events tail
-// -------------------------
-function loadAgg() {
-  const a = readJsonIfExists(EVENTS_AGG);
-  if (!a.ok) return { ok: false, agg: null, error: a.error };
-  return { ok: true, agg: a.value || null, error: null };
-}
-
-function tailLines(filePath, maxBytes, maxLines) {
+async function fetchWithTimeout(url, ms = 1600) {
+  const ctrl = new AbortController();
+  const to = setTimeout(() => ctrl.abort(), ms);
   try {
-    if (!fs.existsSync(filePath)) return { ok: false, lines: [], error: "ENOENT" };
-
-    const stat = fs.statSync(filePath);
-    const size = stat.size;
-    const readSize = Math.min(size, maxBytes);
-
-    const fd = fs.openSync(filePath, "r");
-    const buffer = Buffer.alloc(readSize);
-    fs.readSync(fd, buffer, 0, readSize, size - readSize);
-    fs.closeSync(fd);
-
-    const text = buffer.toString("utf8");
-    const lines = text
-      .split("\n")
-      .map((l) => l.trim())
-      .filter(Boolean);
-
-    return { ok: true, lines: lines.slice(-maxLines), error: null };
-  } catch (e) {
-    return { ok: false, lines: [], error: e?.message || "ETAIL" };
+    const res = await fetch(url, { signal: ctrl.signal });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(to);
   }
 }
 
-function parseEventsJsonlLines(lines) {
-  const events = [];
-  for (const ln of lines) {
-    const obj = safeJsonParse(ln, null);
-    if (obj && typeof obj === "object" && obj.type && obj.artistId) {
-      events.push(obj);
-    }
-  }
-  return events;
+function localBaseUrl() {
+  const port = process.env.PORT || 10000;
+  return `http://127.0.0.1:${port}`;
 }
 
-// -------------------------
-// Signals + taste
-// -------------------------
-function buildSessionSignals(events, sessionId) {
-  const sid = String(sessionId || "").trim();
-  if (!sid) return { seen: 0, engagedPoints: 0, watchMs: 0, byArtist: {} };
+async function getMonetisation(req, artistId, fanId) {
+  const base = localBaseUrl();
+  const qs = fanId ? `?fanId=${encodeURIComponent(fanId)}` : "";
+  const url = `${base}/api/monetisation/score/${encodeURIComponent(artistId)}${qs}`;
+  const json = await fetchWithTimeout(url, 1600);
 
-  const byArtist = {};
-  const typePts = { view: 1, replay: 2, like: 2, save: 3, share: 4, follow: 5, comment: 2, vote: 1 };
+  const monetisationScore = clamp(Number(json?.monetisation?.monetisationScore ?? 0) || 0, 0, 100);
+  const affinityScore = clamp(Number(json?.fan?.fanAffinityScore ?? 0) || 0, 0, 100);
 
-  let seen = 0;
-  let engagedPoints = 0;
-  let watchMs = 0;
-
-  for (const ev of events) {
-    if (String(ev.sessionId || "") !== sid) continue;
-
-    const aid = String(ev.artistId || "");
-    if (!aid) continue;
-
-    const t = String(ev.type || "").toLowerCase();
-    const pts = typePts[t] || 0;
-
-    if (!byArtist[aid]) byArtist[aid] = { seen: 0, engagedPoints: 0, watchMs: 0, counts: {} };
-    byArtist[aid].seen += 1;
-    byArtist[aid].counts[t] = (byArtist[aid].counts[t] || 0) + 1;
-    byArtist[aid].engagedPoints += pts;
-
-    const wm = Number(ev.watchMs || 0);
-    if (Number.isFinite(wm) && wm > 0) {
-      byArtist[aid].watchMs += wm;
-      watchMs += wm;
-    }
-
-    engagedPoints += pts;
-    seen += 1;
-  }
-
-  return { seen, engagedPoints, watchMs, byArtist };
+  return { monetisationScore, affinityScore };
 }
 
-function buildTasteProfile(artistsById, signals, tasteCfg) {
-  const topK = clamp(Number(tasteCfg?.topK ?? DEFAULTS.taste.topK), 1, 10);
-  const watchMsPerPoint = clamp(Number(tasteCfg?.watchMsPerPoint ?? DEFAULTS.taste.watchMsPerPoint), 1000, 60000);
+function computeFeedScore({ votes, monetisationScore, affinityScore, updatedAt }) {
+  const v = Number(votes) || 0;
+  const m = clamp(Number(monetisationScore) || 0, 0, 100);
+  const a = clamp(Number(affinityScore) || 0, 0, 100);
+  const f = freshnessBoost(updatedAt);
 
-  const genreScore = {};
-  const locScore = {};
+  const score =
+    v * FEED.votesWeight +
+    m * FEED.monetisationWeight +
+    a * FEED.affinityWeight +
+    f * FEED.freshnessWeight * 100;
 
-  for (const [artistId, sig] of Object.entries(signals.byArtist || {})) {
-    const a = artistsById[artistId];
-    if (!a) continue;
-
-    const ptsFromWatch = Math.floor((Number(sig.watchMs || 0) || 0) / watchMsPerPoint);
-    const pts = (Number(sig.engagedPoints || 0) || 0) + ptsFromWatch;
-
-    const genres = normalizeGenre(a.genre);
-    const loc = normalizeLocation(a.location);
-
-    for (const g of genres) genreScore[g] = (genreScore[g] || 0) + pts;
-    if (loc) locScore[loc] = (locScore[loc] || 0) + pts;
-  }
-
-  const topGenres = Object.entries(genreScore)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, topK)
-    .map(([g]) => g);
-
-  const topLocations = Object.entries(locScore)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, topK)
-    .map(([l]) => l);
-
-  return { topGenres, topLocations };
+  return clamp(score, 0, 100000);
 }
 
-// -------------------------
-// Ranking base list (simple trending-like score)
-// -------------------------
-function calcBaseScoreFromAgg(aggArtist, weights) {
-  if (!aggArtist) return 0;
-  const life = aggArtist?.lifetime || {};
-  const w = weights || {};
-
-  const sum =
-    (Number(life.views || 0) || 0) * (Number(w.view || 1) || 1) +
-    (Number(life.replays || 0) || 0) * (Number(w.replay || 2.5) || 2.5) +
-    (Number(life.likes || 0) || 0) * (Number(w.like || 1.5) || 1.5) +
-    (Number(life.saves || 0) || 0) * (Number(w.save || 3.5) || 3.5) +
-    (Number(life.shares || 0) || 0) * (Number(w.share || 4.5) || 4.5) +
-    (Number(life.follows || 0) || 0) * (Number(w.follow || 5) || 5) +
-    (Number(life.comments || 0) || 0) * (Number(w.comment || 2) || 2) +
-    (Number(life.votes || 0) || 0) * (Number(w.vote || 1) || 1);
-
-  const watchMs = Number(life.watchMs || 0) || 0;
-  const watchPoints = watchMs / 10000;
-
-  return sum + watchPoints;
-}
-
-function freshnessMultiplier(lastAtIso, halfLifeHours) {
-  if (!lastAtIso) return 0.9;
-  const last = Date.parse(lastAtIso);
-  if (!Number.isFinite(last)) return 0.9;
-
-  const now = Date.now();
-  const ageMs = Math.max(0, now - last);
-  const ageHours = ageMs / (1000 * 60 * 60);
-  const hl = clamp(Number(halfLifeHours || 24), 1, 168);
-
-  return Math.pow(0.5, ageHours / hl);
-}
-
-function buildRankedList(artists, agg, cfg) {
-  const weights = (cfg?.weights && typeof cfg.weights === "object") ? cfg.weights : {};
-  const halfLifeHours = clamp(Number(cfg?.halfLifeHours ?? 24), 1, 168);
-  const aggArtists = (agg && agg.artists && typeof agg.artists === "object") ? agg.artists : {};
-
-  const results = artists
-    .filter((a) => a.status !== "deleted")
-    .map((a) => {
-      const aa = aggArtists[a.id] || null;
-      const base = calcBaseScoreFromAgg(aa, weights);
-      const fresh = freshnessMultiplier(aa?.lastAt, halfLifeHours);
-      const score = base * fresh;
-
-      const lifetime = aa?.lifetime || {
-        views: 0, replays: 0, likes: 0, saves: 0, shares: 0, follows: 0, comments: 0, votes: 0, watchMs: 0,
-      };
-
-      return {
-        artistId: a.id,
-        baseScore: Number.isFinite(base) ? base : 0,
-        score: Number.isFinite(score) ? score : 0,
-        lastAt: aa?.lastAt || null,
-        metrics: {
-          views: Number(lifetime.views || 0) || 0,
-          replays: Number(lifetime.replays || 0) || 0,
-          likes: Number(lifetime.likes || 0) || 0,
-          saves: Number(lifetime.saves || 0) || 0,
-          shares: Number(lifetime.shares || 0) || 0,
-          follows: Number(lifetime.follows || 0) || 0,
-          comments: Number(lifetime.comments || 0) || 0,
-          votes: Number(lifetime.votes || 0) || 0,
-          watchMs: Number(lifetime.watchMs || 0) || 0,
-        },
-        artist: { id: a.id, name: a.name, imageUrl: a.imageUrl, genre: a.genre, location: a.location },
-      };
-    })
-    .sort((x, y) => y.score - x.score);
-
-  return results;
-}
-
-// -------------------------
-// Phase D: medals engine (in-file, no imports)
-// -------------------------
-function computeUnlockStatus({ agg, events, artists }) {
-  const req = MEDALS.unlock;
-
-  const aggArtists = (agg && agg.artists && typeof agg.artists === "object") ? agg.artists : {};
-  let totalVotes = 0;
-
-  for (const aa of Object.values(aggArtists)) {
-    const v = Number(aa?.lifetime?.votes || 0) || 0;
-    totalVotes += v;
-  }
-
-  const uniqueVoteSessionsSet = new Set();
-  for (const ev of events || []) {
-    if (String(ev?.type || "").toLowerCase() !== "vote") continue;
-    const sid = String(ev?.sessionId || "").trim();
-    if (sid) uniqueVoteSessionsSet.add(sid);
-  }
-
-  const activeArtists = (artists || []).filter((a) => (a?.status || "active") !== "deleted").length;
-
-  const progress = {
-    totalVotes: {
-      have: totalVotes,
-      need: req.minTotalVotes,
-      pct: req.minTotalVotes > 0 ? clamp(totalVotes / req.minTotalVotes, 0, 1) : 1,
-      ok: totalVotes >= req.minTotalVotes,
-    },
-    uniqueVoteSessions: {
-      have: uniqueVoteSessionsSet.size,
-      need: req.minUniqueVoteSessions,
-      pct: req.minUniqueVoteSessions > 0 ? clamp(uniqueVoteSessionsSet.size / req.minUniqueVoteSessions, 0, 1) : 1,
-      ok: uniqueVoteSessionsSet.size >= req.minUniqueVoteSessions,
-    },
-    activeArtists: {
-      have: activeArtists,
-      need: req.minActiveArtists,
-      pct: req.minActiveArtists > 0 ? clamp(activeArtists / req.minActiveArtists, 0, 1) : 1,
-      ok: activeArtists >= req.minActiveArtists,
-    },
-  };
-
-  const overallPct = Number(((progress.totalVotes.pct + progress.uniqueVoteSessions.pct + progress.activeArtists.pct) / 3).toFixed(6));
-
-  const medalsUnlocked = Boolean(progress.totalVotes.ok && progress.uniqueVoteSessions.ok && progress.activeArtists.ok);
-
-  return {
-    medalsUnlocked,
-    overallPct,
-    requirements: {
-      minTotalVotes: req.minTotalVotes,
-      minUniqueVoteSessions: req.minUniqueVoteSessions,
-      minActiveArtists: req.minActiveArtists,
-    },
-    progress,
-  };
-}
-
-function medalForRank(rank1, total, medalsUnlocked) {
-  if (!medalsUnlocked) return MEDALS.palette.certified;
-
-  const t = Math.max(1, Number(total || 1));
-  const r = Math.max(1, Number(rank1 || 1));
-  const pct01 = (r - 1) / t; // 0.0 for #1
-
-  if (pct01 < MEDALS.tiers.goldTopPct) return MEDALS.palette.gold;
-  if (pct01 < MEDALS.tiers.silverTopPct) return MEDALS.palette.silver;
-  if (pct01 < MEDALS.tiers.bronzeTopPct) return MEDALS.palette.bronze;
-
-  return MEDALS.palette.certified;
-}
-
-function attachMedalsToArtistObjects(rankedList, medalsUnlocked) {
-  const total = rankedList.length || 0;
-  const byArtistId = {};
-
-  for (let i = 0; i < rankedList.length; i++) {
-    const row = rankedList[i];
-    const rank = i + 1;
-    const medal = medalForRank(rank, total, medalsUnlocked);
-    byArtistId[row.artistId] = medal;
-  }
-
-  return byArtistId;
-}
-
-// -------------------------
-// Rotation state
-// -------------------------
-function loadState() {
-  const st = readJsonIfExists(STATE_FILE);
-  if (!st.ok) return { ok: true, state: { v: 1, updatedAt: null, sessions: {} }, created: true };
-  const s = st.value && typeof st.value === "object" ? st.value : { v: 1, sessions: {} };
-  if (!s.sessions || typeof s.sessions !== "object") s.sessions = {};
-  return { ok: true, state: s, created: false };
-}
-
-function getSessionExploreHistory(state, sessionId) {
-  const sid = String(sessionId || "").trim() || "_anon";
-  if (!state.sessions[sid]) state.sessions[sid] = { explore: [], updatedAt: null };
-  if (!Array.isArray(state.sessions[sid].explore)) state.sessions[sid].explore = [];
-  return { sid, hist: state.sessions[sid].explore };
-}
-
-function pruneExploreHistory(hist, cooldownMin, historyMax) {
-  const now = Date.now();
-  const cooldownMs = clamp(Number(cooldownMin || DEFAULTS.exploreRotation.cooldownMin), 1, 1440) * 60 * 1000;
-
-  const kept = (hist || [])
-    .filter((x) => x && x.id && x.at)
-    .filter((x) => {
-      const t = Date.parse(x.at);
-      if (!Number.isFinite(t)) return false;
-      return now - t <= cooldownMs;
-    });
-
-  const max = clamp(Number(historyMax || DEFAULTS.exploreRotation.historyMax), 1, 200);
-  return kept.slice(-max);
-}
-
-function recordExplorePick(state, sessionId, artistId) {
-  const { sid, hist } = getSessionExploreHistory(state, sessionId);
-  const next = Array.isArray(hist) ? hist : [];
-  next.push({ id: artistId, at: nowIso() });
-  state.sessions[sid].explore = next;
-  state.sessions[sid].updatedAt = nowIso();
-  state.updatedAt = nowIso();
-}
-
-function computeFatigueMultiplier(signalsByArtist, fatigueStep, fatigueMin, artistId) {
-  const seen = Number(signalsByArtist?.[artistId]?.seen || 0) || 0;
-  const step = clamp(Number(fatigueStep ?? DEFAULTS.fatigueStep), 0, 0.25);
-  const min = clamp(Number(fatigueMin ?? DEFAULTS.fatigueMin), 0.5, 1);
-  const mult = 1 - seen * step;
-  return clamp(mult, min, 1);
-}
-
-function tasteBoostForArtist(taste, artist, tasteCfg) {
-  const genreBoost = clamp(Number(tasteCfg?.genreBoost ?? DEFAULTS.taste.genreBoost), 0, 10);
-  const locationBoost = clamp(Number(tasteCfg?.locationBoost ?? DEFAULTS.taste.locationBoost), 0, 10);
-
-  const gTokens = normalizeGenre(artist?.genre);
-  const loc = normalizeLocation(artist?.location);
-
-  let boost = 0;
-  for (const tg of taste.topGenres || []) if (gTokens.includes(normalizeStr(tg))) boost += genreBoost;
-  for (const tl of taste.topLocations || []) if (loc && loc === normalizeStr(tl)) boost += locationBoost;
-
-  return boost;
-}
-
-function isColdStart(aggArtists, artistId) {
-  const aa = aggArtists?.[artistId] || null;
-  if (!aa) return true;
-  const life = aa.lifetime || {};
-  const total =
-    (Number(life.views || 0) || 0) +
-    (Number(life.replays || 0) || 0) +
-    (Number(life.likes || 0) || 0) +
-    (Number(life.saves || 0) || 0) +
-    (Number(life.shares || 0) || 0) +
-    (Number(life.follows || 0) || 0) +
-    (Number(life.comments || 0) || 0) +
-    (Number(life.votes || 0) || 0) +
-    (Number(life.watchMs || 0) || 0);
-  return total === 0;
-}
-
-function chooseExploreCandidates({ allArtists, ranked, aggArtists, taste, cfg, alreadyChosenIds, prunedHistory }) {
-  const excludeIds = uniq([...(cfg.exploreExcludeIds || DEFAULTS.exploreExcludeIds || [])].map(String));
-  const recently = new Set((prunedHistory || []).map((x) => x.id));
-
-  const tasteCfg = cfg.taste || DEFAULTS.taste;
-
-  const pool = allArtists
-    .filter((a) => a && a.id)
-    .filter((a) => !excludeIds.includes(a.id))
-    .filter((a) => !alreadyChosenIds.has(a.id))
-    .filter((a) => a.status !== "deleted");
-
-  const scored = pool.map((a) => {
-    const cold = isColdStart(aggArtists, a.id);
-    const tBoost = tasteBoostForArtist(taste, a, tasteCfg);
-    const tasteMatch = tBoost > 0;
-
-    const base = cold ? Number(cfg.coldStartBase ?? DEFAULTS.coldStartBase) : 0;
-    const maxTasteBoost = clamp(Number(cfg.coldStartTasteBoostMax ?? DEFAULTS.coldStartTasteBoostMax), 0, 10);
-    const coldTasteBoost = cold ? clamp(tBoost, 0, maxTasteBoost) : 0;
-
-    const recentPenalty = recently.has(a.id) ? -9999 : 0;
-    const rankedEntry = ranked.find((r) => r.artistId === a.id);
-    const rankedScore = rankedEntry ? rankedEntry.score : 0;
-
-    const score =
-      recentPenalty +
-      (cold ? 1000 : 0) +
-      (tasteMatch ? 100 : 0) +
-      coldTasteBoost * 10 +
-      base * 3 +
-      Math.log10(1 + Math.max(0, rankedScore));
-
-    return { artist: a, exploreScore: score, coldStart: cold, tasteBoost: tBoost, recentlyShown: recently.has(a.id) };
-  });
-
-  scored.sort((x, y) => y.exploreScore - x.exploreScore);
-  return scored;
-}
-
-function applyCaps(list, genreCap, locationCap) {
-  const gCap = clamp(Number(genreCap ?? DEFAULTS.genreCap), 1, 10);
-  const lCap = clamp(Number(locationCap ?? DEFAULTS.locationCap), 1, 20);
-
-  const gCount = {};
-  const lCount = {};
-
-  const kept = [];
-  const rejected = [];
+function diversify(list) {
+  // light diversity pass: avoid 10 same-genre in a row
+  const out = [];
+  const genreCounts = new Map();
 
   for (const item of list) {
-    const gTokens = normalizeGenre(item?.artist?.genre);
-    const loc = normalizeLocation(item?.artist?.location);
-
-    const gKey = gTokens.length ? gTokens[0] : "";
-    const lKey = loc || "";
-
-    const gOk = !gKey || (gCount[gKey] || 0) < gCap;
-    const lOk = !lKey || (lCount[lKey] || 0) < lCap;
-
-    if (gOk && lOk) {
-      kept.push(item);
-      if (gKey) gCount[gKey] = (gCount[gKey] || 0) + 1;
-      if (lKey) lCount[lKey] = (lCount[lKey] || 0) + 1;
-    } else {
-      rejected.push(item);
-    }
+    const g = (item.genre || "").toLowerCase();
+    const c = genreCounts.get(g) || 0;
+    // soft cap per genre
+    if (c >= 8) continue;
+    genreCounts.set(g, c + 1);
+    out.push(item);
   }
-
-  return { kept, rejected };
+  return out;
 }
 
-function artistWithMedal(artistObj, medal) {
-  const a = artistObj || {};
-  return {
-    id: a.id,
-    name: a.name ?? null,
-    imageUrl: a.imageUrl ?? null,
-    genre: a.genre ?? null,
-    location: a.location ?? null,
-    medal: medal || MEDALS.palette.certified,
-  };
-}
+// ----------------------------
+// Routes
+// ----------------------------
 
-// -------------------------
-// Health endpoint
-// -------------------------
-router.get("/health", (_req, res) => {
-  const artistsLoad = loadArtists();
-  const aggLoad = loadAgg();
-  const st = readJsonIfExists(STATE_FILE);
-  const artistsRaw = readJsonIfExists(ARTISTS_FILE_CANON);
-
-  const maxBytes = clamp(Number(DEFAULTS.tailKb), 16, 4096) * 1024;
-  const tail = tailLines(EVENT_LOG, maxBytes, clamp(Number(DEFAULTS.maxLines), 100, 20000));
-  const events = tail.ok ? parseEventsJsonlLines(tail.lines) : [];
-  const unlockStatus = computeUnlockStatus({
-    agg: aggLoad.ok ? aggLoad.agg : null,
-    events,
-    artists: artistsLoad.ok ? artistsLoad.artists : [],
-  });
-
-  res.json({
-    success: true,
-    service: SERVICE,
-    version: VERSION,
-    updatedAt: nowIso(),
-    sources: {
-      dataDir: DATA_DIR,
-      eventsAgg: EVENTS_AGG,
-      artistsFile: ARTISTS_FILE_CANON,
-      eventLog: EVENT_LOG,
-      stateFile: STATE_FILE,
-      stateFileOk: st.ok,
-      artistsFileOk: artistsRaw.ok,
-      artistsFileTopKeys:
-        artistsRaw.ok && artistsRaw.value && typeof artistsRaw.value === "object" && !Array.isArray(artistsRaw.value)
-          ? Object.keys(artistsRaw.value).slice(0, 10)
-          : Array.isArray(artistsRaw.value)
-            ? ["<array>"]
-            : null,
-    },
-    artistsLoaded: artistsLoad.ok ? artistsLoad.artists.length : 0,
-    aggOk: aggLoad.ok,
-    medals: {
-      integrated: true,
-      medalsUnlocked: unlockStatus.medalsUnlocked,
-      unlockStatus,
-    },
-    configDefaults: {
-      explorePct: DEFAULTS.explorePct,
-      forceExploreMin: DEFAULTS.forceExploreMin,
-      injectSlots: DEFAULTS.injectSlots,
-      genreCap: DEFAULTS.genreCap,
-      locationCap: DEFAULTS.locationCap,
-      fatigueStep: DEFAULTS.fatigueStep,
-      fatigueMin: DEFAULTS.fatigueMin,
-      taste: DEFAULTS.taste,
-      coldStartBase: DEFAULTS.coldStartBase,
-      exploreRotation: DEFAULTS.exploreRotation,
-      exploreExcludeIds: DEFAULTS.exploreExcludeIds,
-    },
-  });
-});
-
-// -------------------------
-// Main endpoint: /mix
-// -------------------------
-router.get("/mix", (req, res) => {
-  const sessionId = String(req.query.sessionId || "").trim() || "anon";
-  const maxReturn = clamp(Number(req.query.maxReturn || DEFAULTS.maxReturn), 1, DEFAULTS.maxReturn);
-
-  const artistsLoad = loadArtists();
-  if (!artistsLoad.ok) {
-    return res.status(500).json({
-      success: false,
-      message: "Artists file not available.",
-      error: artistsLoad.error,
-      updatedAt: nowIso(),
-    });
-  }
-
-  const aggLoad = loadAgg();
-  const agg = aggLoad.ok ? aggLoad.agg : null;
-  const aggArtists = (agg && agg.artists && typeof agg.artists === "object") ? agg.artists : {};
-
-  const feedCount = Math.min(artistsLoad.artists.length, maxReturn);
-
-  // events tail for session signals + medals unlock
-  const maxBytes = clamp(Number(DEFAULTS.tailKb), 16, 4096) * 1024;
-  const tail = tailLines(EVENT_LOG, maxBytes, clamp(Number(DEFAULTS.maxLines), 100, 20000));
-  const events = tail.ok ? parseEventsJsonlLines(tail.lines) : [];
-
-  const signals = buildSessionSignals(events, sessionId);
-
-  const artistsById = {};
-  for (const a of artistsLoad.artists) artistsById[a.id] = a;
-
-  const taste = buildTasteProfile(artistsById, signals, DEFAULTS.taste);
-
-  const unlockStatus = computeUnlockStatus({ agg, events, artists: artistsLoad.artists });
-  const medalsUnlocked = unlockStatus.medalsUnlocked;
-
-  const cfg = {
-    explorePct: DEFAULTS.explorePct,
-    genreCap: DEFAULTS.genreCap,
-    locationCap: DEFAULTS.locationCap,
-    fatigueStep: DEFAULTS.fatigueStep,
-    fatigueMin: DEFAULTS.fatigueMin,
-    exploreNudge: 1.02,
-    forceExploreMin: DEFAULTS.forceExploreMin,
-    coldStartBase: DEFAULTS.coldStartBase,
-    coldStartTasteBoostMax: DEFAULTS.coldStartTasteBoostMax,
-    taste: DEFAULTS.taste,
-    exploreRotation: DEFAULTS.exploreRotation,
-    exploreExcludeIds: DEFAULTS.exploreExcludeIds,
-  };
-
-  const rankedRaw = buildRankedList(artistsLoad.artists, agg, {
-    halfLifeHours: 24,
-    weights: { view: 1, replay: 2.5, like: 1.5, save: 3.5, share: 4.5, follow: 5, comment: 2, vote: 1 },
-  });
-
-  // Build medals by artistId from ranked ordering
-  const medalByArtistId = attachMedalsToArtistObjects(rankedRaw, medalsUnlocked);
-
-  const injectSlots = pickInjectSlots(feedCount, DEFAULTS.injectSlots);
-  const exploreCount = deriveExploreCount(feedCount, cfg.explorePct, cfg.forceExploreMin);
-
-  const enrichedRanked = rankedRaw.map((r) => {
-    const aid = r.artistId;
-    const sig = signals.byArtist?.[aid] || null;
-
-    const engaged = Number(sig?.engagedPoints || 0) || 0;
-    const watchMs = Number(sig?.watchMs || 0) || 0;
-
-    const personalization = 1 + engaged / 30 + watchMs / 120000;
-    const fatigue = computeFatigueMultiplier(signals.byArtist, cfg.fatigueStep, cfg.fatigueMin, aid);
-
-    const medal = medalByArtistId[aid] || MEDALS.palette.certified;
-
-    return {
-      ...r,
-      // attach medal immediately to keep it through the pipeline
-      artist: artistWithMedal(r.artist, medal),
-      multipliers: { personalization: Number(personalization.toFixed(6)), fatigue: Number(fatigue.toFixed(6)) },
-      score: r.score * personalization * fatigue,
-      source: "ranked",
-      explain: {
-        sessionId,
-        seen: Number(sig?.seen || 0) || 0,
-        engagedPoints: engaged,
-        watchMs,
-        lastAt: r.lastAt,
-      },
-    };
-  });
-
-  enrichedRanked.sort((a, b) => b.score - a.score);
-
-  const capped = applyCaps(enrichedRanked, cfg.genreCap, cfg.locationCap);
-  let baseList = capped.kept.slice(0, feedCount);
-
-  if (baseList.length < feedCount) {
-    const needed = feedCount - baseList.length;
-    baseList = baseList.concat(capped.rejected.slice(0, needed));
-  }
-
-  const chosen = new Set(baseList.map((x) => x.artistId));
-
-  const stLoad = loadState();
-  const state = stLoad.state;
-  const { sid, hist } = getSessionExploreHistory(state, sessionId);
-  const pruned = pruneExploreHistory(hist, cfg.exploreRotation.cooldownMin, cfg.exploreRotation.historyMax);
-  state.sessions[sid].explore = pruned;
-
-  const exploreScored = chooseExploreCandidates({
-    allArtists: artistsLoad.artists,
-    ranked: enrichedRanked,
-    aggArtists,
-    taste,
-    cfg,
-    alreadyChosenIds: chosen,
-    prunedHistory: pruned,
-  });
-
-  const injections = [];
-  const maxExploreToInject = Math.min(exploreCount, injectSlots.length ? injectSlots.length : 1);
-
-  for (let i = 0; i < maxExploreToInject; i++) {
-    const cand = exploreScored[i];
-    if (!cand || !cand.artist || !cand.artist.id) continue;
-
-    const a = cand.artist;
-    const base = cand.coldStart ? Number(cfg.coldStartBase) : 0;
-    const tBoost = clamp(Number(cand.tasteBoost || 0), 0, Number(cfg.coldStartTasteBoostMax || 3));
-    const computedBase = cand.coldStart ? base * Math.max(1, tBoost) : base;
-
-    const medal = medalByArtistId[a.id] || MEDALS.palette.certified;
-
-    injections.push({
-      artistId: a.id,
-      artist: artistWithMedal(
-        { id: a.id, name: a.name, imageUrl: a.imageUrl, genre: a.genre, location: a.location },
-        medal
-      ),
-      baseScore: Number((cand.coldStart ? computedBase : 0).toFixed(6)),
-      score: Number((cand.coldStart ? computedBase : 0).toFixed(6)),
-      lastAt: null,
-      metrics: { views: 0, replays: 0, likes: 0, saves: 0, shares: 0, follows: 0, comments: 0, votes: 0, watchMs: 0 },
-      source: cand.coldStart ? "explore" : "explore-relaxed",
-      explain: {
-        sessionId,
-        explore: true,
-        taste,
-        rotation: { cooldownMin: cfg.exploreRotation.cooldownMin, recentExploreCount: pruned.length },
-        coldStart: cand.coldStart
-          ? { applied: true, base: cfg.coldStartBase, tasteBoost: tBoost, computedBase: Number(computedBase.toFixed(6)) }
-          : null,
-      },
-    });
-
-    chosen.add(a.id);
-    recordExplorePick(state, sessionId, a.id);
-  }
-
+/**
+ * GET /api/recs/health
+ */
+router.get("/health", async (req, res) => {
+  const artistsPath = await resolveArtistsPath();
+  let stat = null;
   try {
-    writeJsonAtomic(STATE_FILE, state);
+    stat = await fsp.stat(artistsPath);
   } catch {
-    // best effort
+    stat = null;
   }
-
-  let final = [...baseList];
-
-  for (let i = 0; i < injections.length; i++) {
-    const slot = injectSlots[i] || injectSlots[0] || 3;
-    const idx = clamp(slot - 1, 0, Math.max(0, final.length - 1));
-    final.splice(idx, 1, injections[i]);
-  }
-
-  if (final.length < feedCount) {
-    const need = feedCount - final.length;
-    const leftovers = enrichedRanked.filter((x) => !final.some((y) => y.artistId === x.artistId));
-    final = final.concat(leftovers.slice(0, need));
-  }
-
-  // fill should be rare; only if absolutely unavoidable
-  if (final.length < feedCount) {
-    const need = feedCount - final.length;
-    const remaining = artistsLoad.artists
-      .filter((a) => a && a.id)
-      .filter((a) => !final.some((y) => y.artistId === a.id))
-      .slice(0, need)
-      .map((a) => {
-        const medal = medalByArtistId[a.id] || MEDALS.palette.certified;
-        return {
-          artistId: a.id,
-          artist: artistWithMedal({ id: a.id, name: a.name, imageUrl: a.imageUrl, genre: a.genre, location: a.location }, medal),
-          baseScore: 0,
-          score: 0,
-          lastAt: null,
-          metrics: { views: 0, replays: 0, likes: 0, saves: 0, shares: 0, follows: 0, comments: 0, votes: 0, watchMs: 0 },
-          source: "fill",
-          explain: { sessionId, filler: true },
-        };
-      });
-
-    final = final.concat(remaining);
-  }
-
-  final = final.slice(0, feedCount);
 
   return res.json({
     success: true,
-    version: VERSION,
-    updatedAt: agg?.updatedAt || nowIso(),
-    sessionId,
-    medalsUnlocked,
-    unlockStatus,
-    count: final.length,
-    results: final.map((x) => ({
-      artist: x.artist, // ✅ always includes medal now
-      score: Number((x.score ?? 0).toFixed(6)),
-      metrics: x.metrics || {},
-      source: x.source || "ranked",
-    })),
+    service: "recs",
+    phase: "H3.1",
+    artistsFile: {
+      path: artistsPath,
+      ok: !!stat,
+      size: stat ? stat.size : 0,
+      mtimeMs: stat ? stat.mtimeMs : null
+    },
+    weights: FEED,
+    cache: { ttlMs: CACHE.ttlMs },
+    updatedAt: nowIso()
   });
+});
+
+/**
+ * GET /api/recs/feed
+ * Query:
+ *  - fanId (optional)
+ *  - limit (default 25, max 60)
+ *  - includeMonetisation (default true)
+ */
+router.get("/feed", async (req, res) => {
+  const fanId = (req.query.fanId || "").toString().trim();
+  const limit = clamp(Number(req.query.limit) || FEED.defaultLimit, 1, FEED.maxLimit);
+  const includeMonetisation = String(req.query.includeMonetisation ?? "true") !== "false";
+
+  const cacheKey = `feed|${fanId || "anon"}|${limit}|${includeMonetisation}`;
+  const hit = CACHE.map.get(cacheKey);
+  const now = Date.now();
+
+  if (hit && now - hit.at < CACHE.ttlMs) {
+    return res.json({ ...hit.value, cache: { hit: true, ttlMs: CACHE.ttlMs } });
+  }
+
+  const artistsPath = await resolveArtistsPath();
+  const raw = await readJsonSafe(artistsPath, []);
+  const artists = asArrayArtists(raw);
+
+  const baseRows = artists
+    .map((a) => {
+      const id = (a.id || a.artistId || a.slug || "").toString();
+      const votes = Number(a.votes ?? a.voteCount ?? 0) || 0;
+      const updatedAt = a.updatedAt || a.lastActiveAt || a.modifiedAt || null;
+
+      return {
+        id,
+        name: a.name || a.artistName || id,
+        genre: a.genre || a.primaryGenre || "",
+        location: a.location || "",
+        imageUrl: a.imageUrl || a.image || "",
+        votes,
+        updatedAt
+      };
+    })
+    .filter((x) => x.id);
+
+  const rows = [];
+  for (const r of baseRows) {
+    const { monetisationScore, affinityScore } = includeMonetisation
+      ? await getMonetisation(req, r.id, fanId)
+      : { monetisationScore: 0, affinityScore: 0 };
+
+    const feedScore = computeFeedScore({
+      votes: r.votes,
+      monetisationScore,
+      affinityScore,
+      updatedAt: r.updatedAt
+    });
+
+    rows.push({
+      ...r,
+      monetisationScore,
+      affinityScore,
+      feedScore
+    });
+  }
+
+  rows.sort((a, b) => b.feedScore - a.feedScore);
+
+  const diversified = diversify(rows).slice(0, limit);
+
+  const payload = {
+    success: true,
+    feed: diversified,
+    meta: {
+      fanId: fanId || null,
+      limit,
+      includeMonetisation,
+      scored: rows.length,
+      updatedAt: nowIso()
+    },
+    cache: { hit: false, ttlMs: CACHE.ttlMs }
+  };
+
+  CACHE.map.set(cacheKey, { at: now, value: payload });
+
+  return res.json(payload);
 });
 
 export default router;
