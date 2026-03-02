@@ -1,22 +1,22 @@
 // purchases.js
-// iBand Backend — Purchases / Subscriptions / Ownership (Phase H2 — Creator Economy wiring)
+// iBand Backend — Purchases / Subscriptions / Ownership / Commerce Intelligence (Phase H2)
 // Root-level router: mounted at /api/purchases (and alias /api/commerce)
 //
 // Captain’s Protocol:
-// - Full canonical file
+// - Full canonical file replacements only
 // - Future-proof endpoints
-// - Render-safe
+// - Render-safe file persistence
 // - Always JSON
 //
-// What this adds (Phase H2):
-// - purchases.json persistent store (auto-created)
-// - Record purchase + subscription events
-// - Ownership lookup
-// - Emit events into events.jsonl (so ranking / flash medals can react later)
-// - Optional auto-write into achievements.json (if achievements engine is present)
+// Phase H2 adds:
+// ✅ GET /intelligence  -> single endpoint for UI + algorithm to instantly know:
+//    - ownsTrack, ownsAlbum, hasSubscription, supporterLevel, recommendedAction
+// ✅ Aliases for stability:
+//    - POST /record  -> /purchase
+//    - POST /sub     -> /subscribe
+// ✅ Strong query flexibility (buyerId | sessionId | fanId)
 //
-// NOTE: We do NOT do real Stripe yet. This is a "ledger + events" layer.
-// Stripe can be wired later without changing the API surface.
+// NOTE: Still "ledger + events" (no Stripe yet). Stripe can be wired later without changing API surface.
 
 import fs from "fs";
 import path from "path";
@@ -29,7 +29,7 @@ const router = express.Router();
 // Config
 // -------------------------
 const SERVICE = "purchases";
-const VERSION = 3; // Phase H2 + /record compat alias
+const VERSION = 4; // Phase H2 Intelligence Endpoint
 
 const DATA_DIR = process.env.IBAND_DATA_DIR || "/var/data/iband/db";
 
@@ -55,9 +55,22 @@ const DEFAULTS = {
   // Events tail
   tailKb: 512,
   maxLines: 3000,
+
+  // Intelligence scoring (soft / tunable)
+  supporter: {
+    earlySupporterMinSpend: 0.99, // anyone who bought at least once
+    supporterMinSpend: 10,
+    superfanMinSpend: 50,
+  },
+
+  // Subscription plan naming conventions (soft)
+  plans: {
+    unlimited: "iband_unlimited",
+    artistTierPrefix: "artist_tier_", // future
+  },
 };
 
-// In-memory cache for health + store read (tiny perf)
+// In-memory cache for store read
 const cache = {
   atMs: 0,
   store: null,
@@ -138,16 +151,13 @@ function asInt(n, def = 0) {
 }
 
 function ensureStore() {
-  // Load with cache
   const now = Date.now();
   if (cache.store && now - cache.atMs < DEFAULTS.cacheTtlMs) {
     return { ok: true, store: cache.store, cached: true };
   }
 
   const dirOk = ensureDir(DATA_DIR);
-  if (!dirOk.ok) {
-    return { ok: false, error: dirOk.error, store: null, cached: false };
-  }
+  if (!dirOk.ok) return { ok: false, error: dirOk.error, store: null, cached: false };
 
   const r = readJsonIfExists(PURCHASES_FILE);
   if (!r.ok) {
@@ -168,9 +178,7 @@ function ensureStore() {
   }
 
   const v = r.value && typeof r.value === "object" ? r.value : null;
-  if (!v) {
-    return { ok: false, error: "EBAD_STORE", store: null, cached: false };
-  }
+  if (!v) return { ok: false, error: "EBAD_STORE", store: null, cached: false };
 
   if (!Array.isArray(v.purchases)) v.purchases = [];
   if (!Array.isArray(v.subs)) v.subs = [];
@@ -202,7 +210,6 @@ function loadArtistsIndex() {
   const r = readJsonIfExists(ARTISTS_FILE);
   if (!r.ok) return { ok: false, artistsById: {}, artistsLoaded: 0, error: r.error };
 
-  // wrapper-aware: { artists:[...] }
   const parsed = r.value;
   let arr = [];
   if (Array.isArray(parsed)) arr = parsed;
@@ -229,7 +236,6 @@ function loadArtistsIndex() {
 }
 
 function bestEffortWriteAchievement(payload) {
-  // Payload shape: { subjectType, subjectId, message, title, medal, stats, meta }
   try {
     if (!fs.existsSync(ACHIEVEMENTS_FILE)) return { ok: false, skipped: true, reason: "ACH_FILE_MISSING" };
     const r = readJsonIfExists(ACHIEVEMENTS_FILE);
@@ -254,7 +260,6 @@ function bestEffortWriteAchievement(payload) {
       subject: payload.subject ?? null,
       meta: payload.meta ?? null,
       v: 1,
-      // weak dedupe (same msg + subject)
       dedupeKey: sha1(`${payload.subjectType}:${payload.subjectId}:${payload.message || ""}`),
     };
 
@@ -268,9 +273,250 @@ function bestEffortWriteAchievement(payload) {
   }
 }
 
+function resolveBuyerIdFromQuery(q) {
+  return normalizeStr(q.buyerId || q.fanId || q.sessionId || q.subscriberId || "anon");
+}
+
+function activeSubscriptionFor(subs, subscriberId, plan, artistIdOrNull) {
+  const nowMs = Date.now();
+  return (subs || []).some((s) => {
+    if (!s || s.status !== "active") return false;
+    if (s.subscriberId !== subscriberId) return false;
+
+    const e = Date.parse(s.endsAt);
+    if (!Number.isFinite(e) || e <= nowMs) return false;
+
+    // Unlimited always valid
+    if (plan === DEFAULTS.plans.unlimited && s.plan === DEFAULTS.plans.unlimited) return true;
+
+    // Artist tier: must match artistId
+    if (plan && plan.startsWith(DEFAULTS.plans.artistTierPrefix)) {
+      if (s.plan !== plan) return false;
+      if ((s.artistId || "") !== (artistIdOrNull || "")) return false;
+      return true;
+    }
+
+    // Generic: match exact plan string
+    if (plan) return s.plan === plan;
+
+    return false;
+  });
+}
+
+function ownsItem(purchases, buyerId, artistId, itemType, itemId) {
+  const matches = (purchases || []).filter((p) => {
+    if (!p || p.status !== "captured") return false;
+    if (p.buyerId !== buyerId) return false;
+    if (p.artistId !== artistId) return false;
+    if (p.itemType !== itemType) return false;
+    if (p.itemId !== itemId) return false;
+    return true;
+  });
+
+  const qty = matches.reduce((sum, p) => sum + (Number(p.qty || 0) || 0), 0);
+  const lastAt = matches.length ? matches[matches.length - 1].at : null;
+  return { owned: qty > 0, qty, lastAt, matches };
+}
+
+function calcSupporterLevel(purchases, buyerId, artistId) {
+  const items = (purchases || []).filter((p) => {
+    if (!p || p.status !== "captured") return false;
+    if (p.buyerId !== buyerId) return false;
+    if (p.artistId !== artistId) return false;
+    return true;
+  });
+
+  const spend = asMoney(items.reduce((sum, p) => sum + (Number(p.amount || 0) || 0), 0));
+  const count = items.length;
+
+  let level = "none";
+  if (spend >= DEFAULTS.supporter.superfanMinSpend) level = "superfan";
+  else if (spend >= DEFAULTS.supporter.supporterMinSpend) level = "supporter";
+  else if (spend >= DEFAULTS.supporter.earlySupporterMinSpend) level = "early-supporter";
+
+  return { level, spend, count };
+}
+
 // -------------------------
-// Core handler: Purchase
-// (used by POST /purchase and compat alias POST /record)
+// Health
+// -------------------------
+router.get("/health", (_req, res) => {
+  const st = readJsonIfExists(PURCHASES_FILE);
+  const store = ensureStore();
+  const artists = loadArtistsIndex();
+
+  res.json({
+    success: true,
+    service: SERVICE,
+    version: VERSION,
+    updatedAt: nowIso(),
+    dataDir: DATA_DIR,
+    file: st.ok
+      ? {
+          ok: true,
+          size: (() => {
+            try {
+              return fs.statSync(PURCHASES_FILE).size;
+            } catch {
+              return null;
+            }
+          })(),
+          mtimeMs: (() => {
+            try {
+              return fs.statSync(PURCHASES_FILE).mtimeMs;
+            } catch {
+              return null;
+            }
+          })(),
+          path: PURCHASES_FILE,
+        }
+      : { ok: false, error: st.error, path: PURCHASES_FILE },
+    store: store.ok
+      ? {
+          version: store.store.version || 1,
+          updatedAt: store.store.updatedAt || null,
+          items: Array.isArray(store.store.purchases) ? store.store.purchases.length : 0,
+          subjectsIndexed: null,
+          subs: Array.isArray(store.store.subs) ? store.store.subs.length : 0,
+        }
+      : null,
+    artists: { ok: artists.ok, artistsLoaded: artists.artistsLoaded, error: artists.error },
+    cache: { ttlMs: DEFAULTS.cacheTtlMs, cached: !!store.cached, cacheAgeMs: Date.now() - cache.atMs },
+  });
+});
+
+// -------------------------
+// GET /intelligence  (Phase H2)
+// One endpoint for frontend UI + algorithm to instantly know commerce state.
+//
+// Query:
+// - fanId | buyerId | sessionId  (required)
+// - artistId (required)
+// - trackId (optional)  [or itemId with itemType=track]
+// - albumId (optional)
+// - plan (optional; default iband_unlimited)
+// -------------------------
+router.get("/intelligence", (req, res) => {
+  const buyerId = resolveBuyerIdFromQuery(req.query);
+  const artistId = normalizeStr(req.query.artistId || "");
+
+  const trackId = normalizeStr(req.query.trackId || "");
+  const albumId = normalizeStr(req.query.albumId || "");
+
+  // Back-compat: itemType/itemId (if frontend sends that)
+  const itemType = normalizeStr(req.query.itemType || "");
+  const itemId = normalizeStr(req.query.itemId || "");
+
+  const plan = normalizeStr(req.query.plan || DEFAULTS.plans.unlimited);
+
+  if (!isNonEmpty(buyerId) || !isNonEmpty(artistId)) {
+    return res.status(400).json({
+      success: false,
+      message: "Requires buyerId/fanId/sessionId and artistId.",
+      updatedAt: nowIso(),
+    });
+  }
+
+  const storeLoad = ensureStore();
+  if (!storeLoad.ok) {
+    return res.status(500).json({
+      success: false,
+      message: "Purchases store not available.",
+      error: storeLoad.error,
+      updatedAt: nowIso(),
+    });
+  }
+
+  const artists = loadArtistsIndex();
+  const artist = artists.artistsById?.[artistId] || { id: artistId, name: null, genre: null, location: null, imageUrl: null };
+
+  // Determine target track/album ids
+  const resolvedTrackId = trackId || (itemType === "track" ? itemId : "");
+  const resolvedAlbumId = albumId || (itemType === "album" ? itemId : "");
+
+  // Ownership
+  const ownsTrack = resolvedTrackId
+    ? ownsItem(storeLoad.store.purchases, buyerId, artistId, "track", resolvedTrackId)
+    : { owned: false, qty: 0, lastAt: null };
+
+  const ownsAlbum = resolvedAlbumId
+    ? ownsItem(storeLoad.store.purchases, buyerId, artistId, "album", resolvedAlbumId)
+    : { owned: false, qty: 0, lastAt: null };
+
+  // Subscription
+  const hasUnlimited = activeSubscriptionFor(storeLoad.store.subs, buyerId, DEFAULTS.plans.unlimited, null);
+  const hasArtistTier = plan && plan.startsWith(DEFAULTS.plans.artistTierPrefix)
+    ? activeSubscriptionFor(storeLoad.store.subs, buyerId, plan, artistId)
+    : false;
+
+  const hasSubscription = !!hasUnlimited || !!hasArtistTier;
+
+  // Supporter level
+  const supporter = calcSupporterLevel(storeLoad.store.purchases, buyerId, artistId);
+
+  // Recommended action (UI + logic)
+  // Priority:
+  // 1) If subscription => stream
+  // 2) If owns track => play
+  // 3) If owns album => play
+  // 4) Else => buy track (or buy album if only album available)
+  let recommendedAction = "buy_track";
+  if (hasSubscription) recommendedAction = "stream";
+  else if (ownsTrack.owned) recommendedAction = "play_track";
+  else if (ownsAlbum.owned) recommendedAction = "play_album";
+  else if (!resolvedTrackId && resolvedAlbumId) recommendedAction = "buy_album";
+
+  // UI flags (simple, frontend-ready)
+  const ui = {
+    trackButton: ownsTrack.owned ? "added" : resolvedTrackId ? "buy" : "hidden",
+    albumButton: ownsAlbum.owned ? "added" : resolvedAlbumId ? "buy" : "hidden",
+    streaming: hasSubscription,
+    recommendedAction,
+  };
+
+  // Emit an algorithm signal event (non-invasive)
+  // This does NOT force engagement; it simply gives ranking engine more signal options later.
+  appendJsonl(EVENTS_LOG, {
+    id: makeId("evt"),
+    at: nowIso(),
+    type: "commerce_intelligence",
+    artistId,
+    trackId: resolvedTrackId || null,
+    userId: null,
+    sessionId: buyerId,
+    watchMs: 0,
+    v: 1,
+    meta: {
+      ownsTrack: ownsTrack.owned,
+      ownsAlbum: ownsAlbum.owned,
+      hasSubscription,
+      supporterLevel: supporter.level,
+      recommendedAction,
+    },
+  });
+
+  return res.json({
+    success: true,
+    updatedAt: storeLoad.store.updatedAt || nowIso(),
+    buyerId,
+    artistId,
+    trackId: resolvedTrackId || null,
+    albumId: resolvedAlbumId || null,
+    plan,
+    ownsTrack: { owned: ownsTrack.owned, qty: ownsTrack.qty, lastPurchaseAt: ownsTrack.lastAt || null },
+    ownsAlbum: { owned: ownsAlbum.owned, qty: ownsAlbum.qty, lastPurchaseAt: ownsAlbum.lastAt || null },
+    hasSubscription,
+    supporter: supporter,
+    ui,
+    artist,
+    cached: !!storeLoad.cached,
+    cacheAgeMs: Date.now() - cache.atMs,
+  });
+});
+
+// -------------------------
+// POST /purchase
+// Records a purchase (track/album/merch/ticket/tip/subscription-pass)
 // -------------------------
 function handlePurchase(req, res) {
   const body = req.body || {};
@@ -284,15 +530,14 @@ function handlePurchase(req, res) {
   const qty = clamp(asInt(body.qty, 1), 1, DEFAULTS.maxQtyPerPurchase);
 
   const currency = normalizeStr(body.currency || "GBP").toUpperCase();
-  const amount = asMoney(body.amount || 0); // total gross amount (not net)
-  const platformFeePct = clamp(Number(body.platformFeePct ?? 10), 0, 50); // default 10% (tunable)
+  const amount = asMoney(body.amount || 0);
+  const platformFeePct = clamp(Number(body.platformFeePct ?? 10), 0, 50);
   const platformFee = asMoney((amount * platformFeePct) / 100);
   const artistNet = asMoney(Math.max(0, amount - platformFee));
 
   const sessionId = normalizeStr(body.sessionId || "");
   const meta = body.meta && typeof body.meta === "object" ? body.meta : null;
 
-  // Validation
   if (!isNonEmpty(buyerId)) {
     return res.status(400).json({ success: false, message: "Invalid purchase payload. buyerId/sessionId required.", updatedAt: nowIso() });
   }
@@ -317,7 +562,6 @@ function handlePurchase(req, res) {
   const at = nowIso();
   const id = makeId("pur");
 
-  // Dedupe key: same buyer + item + artist within 2 minutes
   const dedupeKey = sha1(`${buyerType}:${buyerId}:${artistId}:${itemType}:${itemId}:${qty}:${currency}:${amount}`);
   const dedupeWindowMs = 2 * 60 * 1000;
   const nowMs = Date.now();
@@ -355,7 +599,7 @@ function handlePurchase(req, res) {
     platformFee,
     artistNet,
 
-    status: "captured", // later: pending|captured|refunded|disputed
+    status: "captured",
     provider: body.provider ? normalizeStr(body.provider) : "ledger",
     providerRef: body.providerRef ? normalizeStr(body.providerRef) : null,
 
@@ -367,7 +611,6 @@ function handlePurchase(req, res) {
   storeLoad.store.purchases.push(purchase);
   persistStore(storeLoad.store);
 
-  // Emit event to events.jsonl (so ranking/flash-medals can react later)
   const event = {
     id: makeId("evt"),
     at,
@@ -393,7 +636,6 @@ function handlePurchase(req, res) {
 
   const evWrite = appendJsonl(EVENTS_LOG, event);
 
-  // Best-effort achievements (fan + artist)
   const achFan = bestEffortWriteAchievement({
     subjectType: "fan",
     subjectId: buyerId,
@@ -426,77 +668,20 @@ function handlePurchase(req, res) {
   });
 }
 
-// -------------------------
-// Health
-// -------------------------
-router.get("/health", (_req, res) => {
-  const st = readJsonIfExists(PURCHASES_FILE);
-  const store = ensureStore();
-  const artists = loadArtistsIndex();
-
-  res.json({
-    success: true,
-    service: SERVICE,
-    version: VERSION,
-    updatedAt: nowIso(),
-    dataDir: DATA_DIR,
-    file: st.ok
-      ? {
-          ok: true,
-          size: (() => {
-            try {
-              const s = fs.statSync(PURCHASES_FILE);
-              return s.size;
-            } catch {
-              return null;
-            }
-          })(),
-          mtimeMs: (() => {
-            try {
-              const s = fs.statSync(PURCHASES_FILE);
-              return s.mtimeMs;
-            } catch {
-              return null;
-            }
-          })(),
-          path: PURCHASES_FILE,
-        }
-      : { ok: false, error: st.error, path: PURCHASES_FILE },
-    store: store.ok
-      ? {
-          version: store.store.version || 1,
-          updatedAt: store.store.updatedAt || null,
-          items: Array.isArray(store.store.purchases) ? store.store.purchases.length : 0,
-          subjectsIndexed: null, // reserved (we can add an index later)
-          subs: Array.isArray(store.store.subs) ? store.store.subs.length : 0,
-        }
-      : null,
-    artists: { ok: artists.ok, artistsLoaded: artists.artistsLoaded, error: artists.error },
-    cache: { ttlMs: DEFAULTS.cacheTtlMs, cached: !!store.cached, cacheAgeMs: Date.now() - cache.atMs },
-  });
-});
-
-// -------------------------
-// POST /purchase
-// -------------------------
 router.post("/purchase", express.json({ limit: "200kb" }), handlePurchase);
-
-// -------------------------
-// POST /record  (compat alias)
-// Some earlier notes/tests used /record — we support it to avoid Hoppscotch pain.
-// -------------------------
+// Alias (you previously tried /record)
 router.post("/record", express.json({ limit: "200kb" }), handlePurchase);
 
 // -------------------------
 // POST /subscribe
 // Records a subscription (fan -> iBand unlimited OR fan -> specific artist tier later)
 // -------------------------
-router.post("/subscribe", express.json({ limit: "200kb" }), (req, res) => {
+function handleSubscribe(req, res) {
   const body = req.body || {};
 
   const subscriberId = normalizeStr(body.subscriberId || body.sessionId || "anon");
-  const plan = normalizeStr(body.plan || "iband_unlimited"); // iband_unlimited | artist_tier_* (future)
-  const targetArtistId = normalizeStr(body.artistId || ""); // optional (artist-tier subs)
+  const plan = normalizeStr(body.plan || DEFAULTS.plans.unlimited);
+  const targetArtistId = normalizeStr(body.artistId || "");
   const currency = normalizeStr(body.currency || "GBP").toUpperCase();
   const amount = asMoney(body.amount || 0);
 
@@ -520,7 +705,6 @@ router.post("/subscribe", express.json({ limit: "200kb" }), (req, res) => {
     return res.status(500).json({ success: false, message: "Purchases store not available.", error: storeLoad.error, updatedAt: nowIso() });
   }
 
-  // If same subscriber already active on same plan, extend instead of adding new
   const nowMs = Date.now();
   const active = (storeLoad.store.subs || []).find((s) => {
     if (!s) return false;
@@ -628,15 +812,18 @@ router.post("/subscribe", express.json({ limit: "200kb" }), (req, res) => {
     recorded: true,
     subscription: sub,
   });
-});
+}
+
+router.post("/subscribe", express.json({ limit: "200kb" }), handleSubscribe);
+// Alias (short)
+router.post("/sub", express.json({ limit: "200kb" }), handleSubscribe);
 
 // -------------------------
 // GET /ownership
-// Checks if buyer owns an item (track/album/etc)
-// Query: buyerId, artistId, itemType, itemId
+// Query: buyerId/sessionId, artistId, itemType, itemId
 // -------------------------
 router.get("/ownership", (req, res) => {
-  const buyerId = normalizeStr(req.query.buyerId || req.query.sessionId || "anon");
+  const buyerId = resolveBuyerIdFromQuery(req.query);
   const artistId = normalizeStr(req.query.artistId || "");
   const itemType = normalizeStr(req.query.itemType || "track");
   const itemId = normalizeStr(req.query.itemId || "");
@@ -654,16 +841,7 @@ router.get("/ownership", (req, res) => {
     return res.status(500).json({ success: false, message: "Purchases store not available.", error: storeLoad.error, updatedAt: nowIso() });
   }
 
-  const matches = (storeLoad.store.purchases || []).filter((p) => {
-    if (!p) return false;
-    if (p.buyerId !== buyerId) return false;
-    if (p.artistId !== artistId) return false;
-    if (p.itemType !== itemType) return false;
-    if (p.itemId !== itemId) return false;
-    return p.status === "captured";
-  });
-
-  const qty = matches.reduce((sum, p) => sum + (Number(p.qty || 0) || 0), 0);
+  const o = ownsItem(storeLoad.store.purchases, buyerId, artistId, itemType, itemId);
 
   return res.json({
     success: true,
@@ -672,15 +850,14 @@ router.get("/ownership", (req, res) => {
     artistId,
     itemType,
     itemId,
-    owned: qty > 0,
-    qty,
-    lastPurchaseAt: matches.length ? matches[matches.length - 1].at : null,
+    owned: o.owned,
+    qty: o.qty,
+    lastPurchaseAt: o.lastAt,
   });
 });
 
 // -------------------------
 // GET /list
-// Lists purchases or subscriptions with filters
 // Query: kind=purchases|subs, buyerId, subscriberId, artistId, limit, order=asc|desc
 // -------------------------
 router.get("/list", (req, res) => {
