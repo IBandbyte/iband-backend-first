@@ -1,15 +1,19 @@
 /**
- * server.js (root-level backend)
- * ------------------------------
+ * server.js (ESM - because package.json has "type":"module")
+ * ----------------------------------------------------------
  * Future-proof Express server for iBand (Render)
- * - Safe-load route modules (won't crash if a module is missing)
- * - Production-ready middleware, logging, error handling
+ * - Safe-load route modules without crashing deploys
+ * - Supports both ESM and CommonJS route files via dynamic import
  */
 
-const express = require("express");
-const cors = require("cors");
-const fs = require("fs");
-const path = require("path");
+import express from "express";
+import cors from "cors";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath, pathToFileURL } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 
@@ -32,7 +36,7 @@ app.use(
   })
 );
 
-// Body parsing (keep modest for iPhone testing + safety)
+// Body parsing
 app.use(express.json({ limit: "200kb" }));
 app.use(express.urlencoded({ extended: true, limit: "200kb" }));
 
@@ -62,63 +66,79 @@ app.get("/health", (req, res) => {
   res.json({ success: true, status: "ok", ts: new Date().toISOString() });
 });
 
-// Safe-load helper (prevents server crash if a file is missing)
-function mountIfExists({ file, mountPath }) {
+// Safe-load helper (prevents server crash if a file is missing or invalid)
+// Supports:
+// - ESM: export default router
+// - CJS: module.exports = router  (import() will expose it as default in Node)
+async function mountIfExists({ file, mountPath }) {
   try {
-    const full = path.join(__dirname, file);
-    if (!fs.existsSync(full)) {
+    const fullPath = path.join(__dirname, file);
+    if (!fs.existsSync(fullPath)) {
       console.warn(`Route module missing: ${file} (skipped)`);
       return;
     }
-    const mod = require(full);
-    if (typeof mod !== "function") {
+
+    const modUrl = pathToFileURL(fullPath).href;
+    const imported = await import(modUrl);
+
+    // If ESM: default export
+    // If CJS: Node exposes module.exports as default
+    const router = imported?.default ?? imported;
+
+    if (typeof router !== "function") {
       console.warn(`Route module invalid (not a router): ${file} (skipped)`);
       return;
     }
-    app.use(mountPath, mod);
+
+    app.use(mountPath, router);
     console.log(`Mounted ${file} at ${mountPath}`);
   } catch (err) {
     console.error(`Failed to mount ${file} at ${mountPath}`, err);
   }
 }
 
-// ------------------------------
-// Mount existing iBand systems (root-level files)
-// ------------------------------
-mountIfExists({ file: "votes.js", mountPath: "/api/votes" });
-mountIfExists({ file: "ranking.js", mountPath: "/api/ranking" });
-mountIfExists({ file: "medals.js", mountPath: "/api/medals" });
-mountIfExists({ file: "recs.js", mountPath: "/api/recs" });
+// Bootstrap (so we can await mounts)
+async function start() {
+  // ------------------------------
+  // Mount existing iBand systems (root-level files)
+  // ------------------------------
+  await mountIfExists({ file: "votes.js", mountPath: "/api/votes" });
+  await mountIfExists({ file: "ranking.js", mountPath: "/api/ranking" });
+  await mountIfExists({ file: "medals.js", mountPath: "/api/medals" });
+  await mountIfExists({ file: "recs.js", mountPath: "/api/recs" });
 
-mountIfExists({ file: "flashMedals.js", mountPath: "/api/flash-medals" });
-mountIfExists({ file: "achievements.js", mountPath: "/api/achievements" });
+  await mountIfExists({ file: "flashMedals.js", mountPath: "/api/flash-medals" });
+  await mountIfExists({ file: "achievements.js", mountPath: "/api/achievements" });
 
-mountIfExists({ file: "purchases.js", mountPath: "/api/purchases" });
+  await mountIfExists({ file: "purchases.js", mountPath: "/api/purchases" });
 
-// Phase H3: Monetisation Signals Engine
-mountIfExists({ file: "monetisationSignals.js", mountPath: "/api/monetisation" });
+  // Phase H3: Monetisation Signals Engine
+  await mountIfExists({ file: "monetisationSignals.js", mountPath: "/api/monetisation" });
 
-// 404
-app.use((req, res) => {
-  res.status(404).json({
-    success: false,
-    error: "not_found",
-    path: req.originalUrl
+  // 404
+  app.use((req, res) => {
+    res.status(404).json({
+      success: false,
+      error: "not_found",
+      path: req.originalUrl
+    });
   });
-});
 
-// Error handler
-// eslint-disable-next-line no-unused-vars
-app.use((err, req, res, next) => {
-  console.error("Unhandled error:", err);
-  res.status(500).json({
-    success: false,
-    error: "server_error",
-    message: "Something went wrong."
+  // Error handler
+  // eslint-disable-next-line no-unused-vars
+  app.use((err, req, res, next) => {
+    console.error("Unhandled error:", err);
+    res.status(500).json({
+      success: false,
+      error: "server_error",
+      message: "Something went wrong."
+    });
   });
-});
 
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => {
-  console.log(`iBand backend running on port ${PORT}`);
-});
+  const PORT = process.env.PORT || 10000;
+  app.listen(PORT, () => {
+    console.log(`iBand backend running on port ${PORT}`);
+  });
+}
+
+start();
