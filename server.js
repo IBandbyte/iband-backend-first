@@ -12,6 +12,7 @@
  * - /api/purchases
  * - /api/monetisation
  * - /api/shares   (Phase H4)
+ * - /api/trends   (Phase H4)
  */
 
 import express from "express";
@@ -26,6 +27,7 @@ import achievementsRouter from "./achievements.js";
 import purchasesRouter from "./purchases.js";
 import monetisationRouter from "./monetisationSignals.js";
 import sharesRouter from "./shares.js";
+import trendsRouter from "./trends.js";
 
 const app = express();
 
@@ -60,6 +62,7 @@ app.use("/api/achievements", achievementsRouter);
 app.use("/api/purchases", purchasesRouter);
 app.use("/api/monetisation", monetisationRouter);
 app.use("/api/shares", sharesRouter);
+app.use("/api/trends", trendsRouter);
 
 // ----------------------------
 // 404
