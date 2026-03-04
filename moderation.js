@@ -3,12 +3,6 @@
  * ---------------------------------------
  * Phase H5.1 – Access Control + Strikes Engine
  *
- * Goals:
- * - Enforce "ambassador forum only" access later (without coupling to UI)
- * - Auto-suspend on violations (24h extraction)
- * - 3 strikes within rolling window => 6 month ban
- * - Support scoped moderation (global / artist / forum / room)
- *
  * Storage (Render persistent disk):
  * - /var/data/iband/db/moderation/strikes.jsonl
  * - /var/data/iband/db/moderation/bans.jsonl
@@ -38,13 +32,13 @@ const LIMITS = {
   maxLineScan: 180_000
 };
 
-// Policy (future-proof defaults)
+// Policy defaults (future-proof)
 const POLICY = {
-  strikeWindowDays: 180, // rolling window for 3 strikes rule
+  strikeWindowDays: 180, // rolling window for 3-strike rule
   autoSuspendHours: 24,  // 24h extraction for any strike
   banOnStrikes: 3,
   banDays: 180,          // 6 months
-  dedupeWindowMs: 5 * 60 * 1000 // 5 minutes dedupe for same strike payload
+  dedupeWindowMs: 5 * 60 * 1000 // 5 minutes
 };
 
 const ALLOWED_SCOPES = new Set(["global", "artist", "forum", "room"]);
@@ -81,7 +75,7 @@ function bodyBytes(body) {
   }
 }
 
-async function safeReadJsonlLines(filePath, maxBytes) {
+async function readJsonlLines(filePath, maxBytes) {
   await ensureDirs();
   try {
     const stat = await fsp.stat(filePath);
@@ -112,8 +106,7 @@ async function appendJsonl(filePath, obj) {
 function withinLookback(tsIso, days) {
   const t = new Date(tsIso).getTime();
   if (!Number.isFinite(t)) return false;
-  const ageMs = Date.now() - t;
-  return ageMs <= days * 86400000;
+  return Date.now() - t <= days * 86400000;
 }
 
 function normalizeScope(input) {
@@ -125,7 +118,7 @@ function scopeKey({ scope, artistId, roomId }) {
   const s = normalizeScope(scope);
   if (s === "artist") return `artist:${(artistId || "").toString().trim() || "unknown"}`;
   if (s === "room") return `room:${(roomId || "").toString().trim() || "unknown"}`;
-  if (s === "forum") return `forum:${(artistId || "").toString().trim() || "general"}`; // forums can be per artist
+  if (s === "forum") return `forum:${(artistId || "").toString().trim() || "general"}`;
   return "global";
 }
 
@@ -152,12 +145,6 @@ function isActiveBan(ban, nowMs) {
   return nowMs < untilMs && ban.active !== false;
 }
 
-function isActiveSuspension(strike, nowMs) {
-  const untilMs = parseUntil(strike.suspendUntil);
-  if (!untilMs) return false;
-  return nowMs < untilMs;
-}
-
 function normalizeStrikeBody(body) {
   const ts = nowIso();
   const fanId = (body.fanId || "").toString().trim();
@@ -171,7 +158,6 @@ function normalizeStrikeBody(body) {
   const message = (body.message || "").toString().trim();
   const evidence = (body.evidence || body.meta?.evidence || "").toString().trim();
   const createdBy = (body.createdBy || "system").toString().trim();
-
   const severity = clamp(Number(body.severity) || 1, 1, 3);
 
   const dedupeKey = sha256([fanId, key, reasonCode, message, evidence, severity].join("|")).slice(0, 24);
@@ -190,7 +176,8 @@ function normalizeStrikeBody(body) {
     evidence: evidence || null,
     severity,
     createdBy,
-    dedupeKey
+    dedupeKey,
+    suspendUntil: addHours(ts, POLICY.autoSuspendHours)
   };
 }
 
@@ -213,18 +200,39 @@ function validateStrike(evt) {
   return { ok: true };
 }
 
+async function recentDuplicateStrike(dedupeKey, fanId, key) {
+  const nowMs = Date.now();
+  const lines = await readJsonlLines(STRIKES_FILE, LIMITS.maxReadBytes);
+
+  let scanned = 0;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    scanned += 1;
+    if (scanned > 6000) break;
+
+    const evt = safeJson(lines[i]);
+    if (!evt || evt.type !== "strike") continue;
+    if ((evt.fanId || "").toString().trim() !== fanId) continue;
+    if ((evt.scopeKey || "") !== key) continue;
+    if ((evt.dedupeKey || "") !== dedupeKey) continue;
+
+    const t = new Date(evt.ts).getTime();
+    if (!Number.isFinite(t)) continue;
+    return nowMs - t <= POLICY.dedupeWindowMs;
+  }
+
+  return false;
+}
+
 async function computeStatus({ fanId, scope, artistId, roomId }) {
   const key = scopeKey({ scope, artistId, roomId });
   const nowMs = Date.now();
 
-  // Read recent data
-  const strikeLines = await safeReadJsonlLines(STRIKES_FILE, LIMITS.maxReadBytes);
-  const banLines = await safeReadJsonlLines(BANS_FILE, LIMITS.maxReadBytes);
+  const strikeLines = await readJsonlLines(STRIKES_FILE, LIMITS.maxReadBytes);
+  const banLines = await readJsonlLines(BANS_FILE, LIMITS.maxReadBytes);
 
   let scannedStrikes = 0;
   let scannedBans = 0;
 
-  // Rolling strikes (fan + scopeKey)
   const strikes = [];
   let activeSuspensionUntil = null;
 
@@ -240,19 +248,15 @@ async function computeStatus({ fanId, scope, artistId, roomId }) {
 
     strikes.push(evt);
 
-    if (evt.suspendUntil) {
-      const untilMs = parseUntil(evt.suspendUntil);
-      if (untilMs && untilMs > nowMs) {
-        if (!activeSuspensionUntil || untilMs > parseUntil(activeSuspensionUntil)) {
-          activeSuspensionUntil = evt.suspendUntil;
-        }
+    const untilMs = evt.suspendUntil ? parseUntil(evt.suspendUntil) : null;
+    if (untilMs && untilMs > nowMs) {
+      if (!activeSuspensionUntil || untilMs > parseUntil(activeSuspensionUntil)) {
+        activeSuspensionUntil = evt.suspendUntil;
       }
     }
   }
 
-  // Active bans for scopeKey (fan + key)
   let activeBan = null;
-
   for (let i = banLines.length - 1; i >= 0; i--) {
     scannedBans += 1;
     if (scannedBans > LIMITS.maxLineScan) break;
@@ -268,83 +272,40 @@ async function computeStatus({ fanId, scope, artistId, roomId }) {
     }
   }
 
-  const strikesCount = strikes.length;
-  const nextStrikeAt = strikesCount + 1;
-  const banThreshold = POLICY.banOnStrikes;
-
   const isSuspended = !!activeSuspensionUntil && parseUntil(activeSuspensionUntil) > nowMs;
   const isBanned = !!activeBan;
-
-  const allowed = !isBanned && !isSuspended;
+  const allowed = !isSuspended && !isBanned;
 
   return {
     fanId,
-    scopeKey: key,
     scope: normalizeScope(scope),
+    scopeKey: key,
     artistId: (artistId || "").toString().trim() || null,
     roomId: (roomId || "").toString().trim() || null,
-
     allowed,
-
     strikes: {
-      count: strikesCount,
+      count: strikes.length,
       windowDays: POLICY.strikeWindowDays,
-      nextStrikeAt,
-      banThreshold,
-      recent: strikes
-        .slice(0, 25)
-        .map((s) => ({
-          id: s.id,
-          ts: s.ts,
-          reasonCode: s.reasonCode,
-          severity: s.severity,
-          suspendUntil: s.suspendUntil || null,
-          createdBy: s.createdBy || "system"
-        }))
+      banThreshold: POLICY.banOnStrikes,
+      recent: strikes.slice(0, 25).map((s) => ({
+        id: s.id,
+        ts: s.ts,
+        reasonCode: s.reasonCode,
+        severity: s.severity,
+        suspendUntil: s.suspendUntil || null,
+        createdBy: s.createdBy || "system"
+      }))
     },
-
-    suspension: {
-      active: isSuspended,
-      until: activeSuspensionUntil || null
-    },
-
+    suspension: { active: isSuspended, until: activeSuspensionUntil || null },
     ban: {
       active: isBanned,
       until: activeBan ? activeBan.until : null,
       reason: activeBan ? activeBan.reasonCode || "threshold" : null,
       createdBy: activeBan ? activeBan.createdBy || "system" : null
     },
-
     updatedAt: nowIso(),
-    debug: {
-      scannedStrikesLines: scannedStrikes,
-      scannedBansLines: scannedBans
-    }
+    debug: { scannedStrikesLines: scannedStrikes, scannedBansLines: scannedBans }
   };
-}
-
-async function recentDuplicateStrike(dedupeKey, fanId, key) {
-  const nowMs = Date.now();
-  const lines = await safeReadJsonlLines(STRIKES_FILE, LIMITS.maxReadBytes);
-  let scanned = 0;
-
-  for (let i = lines.length - 1; i >= 0; i--) {
-    scanned += 1;
-    if (scanned > 6000) break; // small local scan for dedupe
-
-    const evt = safeJson(lines[i]);
-    if (!evt || evt.type !== "strike") continue;
-    if ((evt.fanId || "").toString().trim() !== fanId) continue;
-    if ((evt.scopeKey || "") !== key) continue;
-    if ((evt.dedupeKey || "") !== dedupeKey) continue;
-
-    const t = new Date(evt.ts).getTime();
-    if (!Number.isFinite(t)) continue;
-    if (nowMs - t <= POLICY.dedupeWindowMs) return true;
-    return false;
-  }
-
-  return false;
 }
 
 // ----------------------------
@@ -356,17 +317,8 @@ router.get("/health", async (req, res) => {
   let strikesStat = null;
   let bansStat = null;
 
-  try {
-    strikesStat = await fsp.stat(STRIKES_FILE);
-  } catch {
-    strikesStat = null;
-  }
-
-  try {
-    bansStat = await fsp.stat(BANS_FILE);
-  } catch {
-    bansStat = null;
-  }
+  try { strikesStat = await fsp.stat(STRIKES_FILE); } catch { strikesStat = null; }
+  try { bansStat = await fsp.stat(BANS_FILE); } catch { bansStat = null; }
 
   return res.json({
     success: true,
@@ -374,18 +326,8 @@ router.get("/health", async (req, res) => {
     phase: "H5.1",
     storageDir: MOD_DIR,
     files: {
-      strikes: {
-        path: STRIKES_FILE,
-        ok: !!strikesStat,
-        size: strikesStat ? strikesStat.size : 0,
-        mtimeMs: strikesStat ? strikesStat.mtimeMs : null
-      },
-      bans: {
-        path: BANS_FILE,
-        ok: !!bansStat,
-        size: bansStat ? bansStat.size : 0,
-        mtimeMs: bansStat ? bansStat.mtimeMs : null
-      }
+      strikes: { path: STRIKES_FILE, ok: !!strikesStat, size: strikesStat ? strikesStat.size : 0, mtimeMs: strikesStat ? strikesStat.mtimeMs : null },
+      bans: { path: BANS_FILE, ok: !!bansStat, size: bansStat ? bansStat.size : 0, mtimeMs: bansStat ? bansStat.mtimeMs : null }
     },
     policy: POLICY,
     limits: LIMITS,
@@ -401,26 +343,18 @@ router.get("/status/fan/:fanId", async (req, res) => {
   const artistId = (req.query.artistId || "").toString().trim();
   const roomId = (req.query.roomId || "").toString().trim();
 
-  const out = await computeStatus({ fanId, scope, artistId, roomId });
-  return res.json({ success: true, ...out });
+  const status = await computeStatus({ fanId, scope, artistId, roomId });
+  return res.json({ success: true, ...status });
 });
 
 router.post("/strike", async (req, res) => {
   const bytes = bodyBytes(req.body);
-  if (bytes > LIMITS.maxBodyBytes) {
-    return res.status(413).json({ success: false, error: "payload_too_large" });
-  }
+  if (bytes > LIMITS.maxBodyBytes) return res.status(413).json({ success: false, error: "payload_too_large" });
 
   const evt = normalizeStrikeBody(req.body || {});
   const v = validateStrike(evt);
-  if (!v.ok) {
-    return res.status(400).json({ success: false, error: "validation_error", message: v.message });
-  }
+  if (!v.ok) return res.status(400).json({ success: false, error: "validation_error", message: v.message });
 
-  // auto-suspend (24h) on any strike
-  evt.suspendUntil = addHours(evt.ts, POLICY.autoSuspendHours);
-
-  // dedupe identical strikes
   const dup = await recentDuplicateStrike(evt.dedupeKey, evt.fanId, evt.scopeKey);
   if (dup) {
     return res.json({
@@ -435,7 +369,6 @@ router.post("/strike", async (req, res) => {
 
   await appendJsonl(STRIKES_FILE, evt);
 
-  // compute strikes count after append (within window)
   const status = await computeStatus({
     fanId: evt.fanId,
     scope: evt.scope,
@@ -443,7 +376,6 @@ router.post("/strike", async (req, res) => {
     roomId: evt.roomId || ""
   });
 
-  // threshold ban if strikes >= 3
   let banIssued = false;
   let banRecord = null;
 
@@ -482,29 +414,19 @@ router.post("/strike", async (req, res) => {
       ts: evt.ts
     },
     banIssued,
-    ban: banRecord
-      ? {
-          id: banRecord.id,
-          until: banRecord.until,
-          scopeKey: banRecord.scopeKey,
-          reasonCode: banRecord.reasonCode
-        }
-      : null
+    ban: banRecord ? { id: banRecord.id, until: banRecord.until, scopeKey: banRecord.scopeKey, reasonCode: banRecord.reasonCode } : null
   });
 });
 
 router.post("/unban", async (req, res) => {
   const bytes = bodyBytes(req.body);
-  if (bytes > LIMITS.maxBodyBytes) {
-    return res.status(413).json({ success: false, error: "payload_too_large" });
-  }
+  if (bytes > LIMITS.maxBodyBytes) return res.status(413).json({ success: false, error: "payload_too_large" });
 
   const body = normalizeUnbanBody(req.body || {});
   if (!body.fanId) return res.status(400).json({ success: false, error: "missing_fanId" });
 
   const key = scopeKey({ scope: body.scope, artistId: body.artistId, roomId: body.roomId });
 
-  // Write a "ban" record with active:false to override (append-only log)
   const record = {
     id: crypto.randomBytes(12).toString("hex"),
     type: "ban",
