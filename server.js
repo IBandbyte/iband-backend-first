@@ -1,6 +1,6 @@
 // server.js (ESM) — iBand backend (root-level structure)
-// Phase H5.2: Adds Community Rooms foundation routes with safe module mounting.
-// NOTE: This file is designed to NEVER crash deploy if an optional route module is missing.
+// Phase H5.3: Adds Fan Identity routes with safe module mounting.
+// This file is designed to NEVER crash deploy if an optional route module is missing.
 
 import express from "express";
 import cors from "cors";
@@ -18,11 +18,9 @@ const STARTED_AT = new Date().toISOString();
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 const NODE_ENV = process.env.NODE_ENV || "production";
 
-// Allow list origins if you want later. For now we keep it permissive for rapid iteration.
 const app = express();
 app.set("trust proxy", 1);
 
-// Basic hardening headers (minimal, no extra deps)
 app.use((req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
@@ -43,7 +41,6 @@ app.use(
 app.use(express.json({ limit: "250kb" }));
 app.use(express.urlencoded({ extended: true, limit: "250kb" }));
 
-// ---------- Helpers ----------
 function jsonOk(res, payload) {
   res.status(200).json(payload);
 }
@@ -53,7 +50,6 @@ function jsonError(res, status, error, extra = {}) {
 }
 
 async function safeImportLocal(modulePath) {
-  // modulePath should be a relative path like "./rooms.js"
   const abs = path.resolve(__dirname, modulePath);
   if (!fs.existsSync(abs)) return { ok: false, reason: "missing_file", abs };
 
@@ -87,7 +83,6 @@ async function safeMount({ basePath, modulePath, exportName = "default" }) {
   return { mounted: true };
 }
 
-// ---------- Root / Health ----------
 app.get("/", (req, res) => {
   jsonOk(res, {
     success: true,
@@ -108,40 +103,29 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// ---------- Mount routes (safe) ----------
-/**
- * IMPORTANT:
- * We mount modules defensively so Render deploy NEVER fails when an optional file is missing.
- * This also prevents repeats of the "Cannot find module ... imported from server.js" crash.
- */
 const mounts = [
-  // Core / legacy
   { basePath: "/api/artists", modulePath: "./artists.js" },
   { basePath: "/api/votes", modulePath: "./votes.js" },
   { basePath: "/api/ranking", modulePath: "./ranking.js" },
   { basePath: "/api/medals", modulePath: "./medals.js" },
   { basePath: "/api/recs", modulePath: "./recs.js" },
 
-  // Engagement
   { basePath: "/api/flash-medals", modulePath: "./flashMedals.js" },
   { basePath: "/api/achievements", modulePath: "./achievements.js" },
 
-  // Creator economy
   { basePath: "/api/purchases", modulePath: "./purchases.js" },
-
-  // Monetisation signals
   { basePath: "/api/monetisation", modulePath: "./monetisationSignals.js" },
 
-  // Sharing / Trends
   { basePath: "/api/shares", modulePath: "./shares.js" },
   { basePath: "/api/trends", modulePath: "./trends.js" },
 
-  // Ambassadors + Moderation
   { basePath: "/api/ambassadors", modulePath: "./ambassadors.js" },
   { basePath: "/api/moderation", modulePath: "./moderation.js" },
 
-  // Phase H5.2 — Rooms (NEW)
   { basePath: "/api/rooms", modulePath: "./rooms.js" },
+
+  // Phase H5.3 — Fan Identity
+  { basePath: "/api/fans", modulePath: "./fanProfiles.js" },
 ];
 
 (async () => {
@@ -150,12 +134,10 @@ const mounts = [
     await safeMount(m);
   }
 
-  // 404 handler (after mounts)
   app.use((req, res) => {
     jsonError(res, 404, "not_found", { path: req.originalUrl });
   });
 
-  // Error handler
   // eslint-disable-next-line no-unused-vars
   app.use((err, req, res, next) => {
     console.error("[unhandled_error]", err);
@@ -169,6 +151,5 @@ const mounts = [
   });
 })().catch((err) => {
   console.error("[boot_fatal]", err);
-  // Hard exit so Render restarts cleanly
   process.exit(1);
 });
