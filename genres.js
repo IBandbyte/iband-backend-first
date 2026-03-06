@@ -12,9 +12,8 @@
 // - genre_suggest
 // - genre_use (share/vote/purchase/upload tag usage)
 //
-// Trending / Emerging:
-// - computed via decay scoring of usage events
-// - "emerging" favours NEW genres with accelerating activity
+// IMPORTANT: Route order matters in Express.
+// /trending and /emerging MUST be defined before /:genreId
 
 import express from "express";
 import fs from "fs";
@@ -201,9 +200,9 @@ async function scanEventsForScores({ days, mode }) {
   }
 
   const stat = fs.statSync(EVENTS_FILE);
-  // protect memory: if file huge, still read but cap by maxReadBytes
   const size = stat.size;
   const readBytes = Math.min(size, LIMITS.maxReadBytes);
+
   const fd = await fsp.open(EVENTS_FILE, "r");
   const buf = Buffer.alloc(readBytes);
   await fd.read(buf, 0, readBytes, Math.max(0, size - readBytes));
@@ -211,6 +210,7 @@ async function scanEventsForScores({ days, mode }) {
 
   const text = buf.toString("utf8");
   const lines = text.split("\n").filter(Boolean);
+
   const nowMs = Date.now();
   const cutoffMs = nowMs - lookbackDays * 24 * 60 * 60 * 1000;
 
@@ -232,7 +232,7 @@ async function scanEventsForScores({ days, mode }) {
 
     const ts = Date.parse(ev.ts || "");
     if (!Number.isFinite(ts)) continue;
-    if (ts < cutoffMs) break; // events are append-only and roughly ordered
+    if (ts < cutoffMs) break;
 
     if (ev.type !== "genre_use") continue;
 
@@ -381,13 +381,11 @@ router.post("/suggest", async (req, res) => {
 
   const store = await readStore();
 
-  // prevent dupes across both lists
   const existsGenre = store.genres.find((g) => (g.slug || "").toLowerCase() === slug.toLowerCase());
   if (existsGenre) return bad(res, 409, "genre_exists", { genre: existsGenre });
 
   const existsSuggestion = store.suggestions.find((s) => (s.slug || "").toLowerCase() === slug.toLowerCase());
   if (existsSuggestion) {
-    // bump votes/endorsers
     existsSuggestion.endorsers = uniq([...(existsSuggestion.endorsers || []), fanId]).slice(0, 200);
     existsSuggestion.count = (existsSuggestion.count || 1) + 1;
     existsSuggestion.updatedAt = nowIso();
@@ -471,17 +469,7 @@ router.get("/list", async (req, res) => {
   });
 });
 
-// Get genre by id
-router.get("/:genreId", async (req, res) => {
-  const genreId = safeStr(req.params.genreId, 80);
-  const store = await readStore();
-  const genre = store.genres.find((g) => g.id === genreId);
-  if (!genre) return bad(res, 404, "genre_not_found", { genreId });
-  ok(res, { success: true, genre, ts: nowIso() });
-});
-
 // Record a genre usage signal (fan tagging a track/share/vote/purchase/upload)
-// This is the KEY input for trending/emerging genre detection.
 router.post("/use", async (req, res) => {
   const body = req.body || {};
   const bytes = Buffer.byteLength(JSON.stringify(body), "utf8");
@@ -502,7 +490,6 @@ router.post("/use", async (req, res) => {
   const genre = store.genres.find((g) => g.id === genreId);
   if (!genre) return bad(res, 404, "genre_not_found", { genreId });
 
-  // Update counters for lightweight UI stats
   genre.counters = genre.counters || {
     uses: 0,
     shares: 0,
@@ -552,7 +539,7 @@ router.post("/use", async (req, res) => {
   });
 });
 
-// Trending genres
+// Trending genres  ✅ MUST COME BEFORE /:genreId
 router.get("/trending", async (req, res) => {
   const days = clampInt(req.query.days, 1, TUNING.maxLookbackDays, 30);
   const limit = clampInt(req.query.limit, 1, LIMITS.maxList, 10);
@@ -590,7 +577,7 @@ router.get("/trending", async (req, res) => {
   });
 });
 
-// Emerging genres (short half-life + birth bonus)
+// Emerging genres ✅ MUST COME BEFORE /:genreId
 router.get("/emerging", async (req, res) => {
   const days = clampInt(req.query.days, 1, TUNING.maxLookbackDays, 14);
   const limit = clampInt(req.query.limit, 1, LIMITS.maxList, 10);
@@ -608,9 +595,10 @@ router.get("/emerging", async (req, res) => {
       const createdMs = Date.parse(g.createdAt || "") || 0;
       const ageDays = createdMs ? daysBetween(nowMs, createdMs) : 9999;
 
-      // birth bonus for genres created recently (encourages surfacing new genres)
       const birthBonus =
-        ageDays <= TUNING.emergingBirthBonusDays ? (TUNING.emergingBirthBonusDays - ageDays) / TUNING.emergingBirthBonusDays : 0;
+        ageDays <= TUNING.emergingBirthBonusDays
+          ? (TUNING.emergingBirthBonusDays - ageDays) / TUNING.emergingBirthBonusDays
+          : 0;
 
       const score = base * (1 + birthBonus);
 
@@ -639,6 +627,15 @@ router.get("/emerging", async (req, res) => {
       ts: nowIso(),
     },
   });
+});
+
+// Get genre by id ✅ MUST COME AFTER /trending and /emerging
+router.get("/:genreId", async (req, res) => {
+  const genreId = safeStr(req.params.genreId, 80);
+  const store = await readStore();
+  const genre = store.genres.find((g) => g.id === genreId);
+  if (!genre) return bad(res, 404, "genre_not_found", { genreId });
+  ok(res, { success: true, genre, ts: nowIso() });
 });
 
 export default router;
