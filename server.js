@@ -1,5 +1,5 @@
 // server.js (ESM) — iBand backend (root-level structure)
-// Phase H5.3: Adds Fan Identity routes with safe module mounting.
+// Phase H6.1: Adds Genres routes with safe module mounting.
 // This file is designed to NEVER crash deploy if an optional route module is missing.
 
 import express from "express";
@@ -124,8 +124,10 @@ const mounts = [
 
   { basePath: "/api/rooms", modulePath: "./rooms.js" },
 
-  // Phase H5.3 — Fan Identity
   { basePath: "/api/fans", modulePath: "./fanProfiles.js" },
+
+  // Phase H6.1 — Genres
+  { basePath: "/api/genres", modulePath: "./genres.js" },
 ];
 
 (async () => {
