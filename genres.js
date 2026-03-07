@@ -1,13 +1,14 @@
-// genres.js (ESM) — Phase H6.2 Genre Discovery Engine
+// genres.js (ESM) — Phase H6.3 Genre Discovery Engine
 // Purpose:
 // - Genre registry (official + community-created)
 // - Fan suggestions for new genres
 // - Usage signals for trending/emerging detection
 // - Top artists by genre
 // - Genre room intelligence
+// - Genre room creation flow
 //
 // IMPORTANT: Route order matters in Express.
-// /trending, /emerging, /:genreId/artists, /:genreId/rooms MUST be before /:genreId
+// /trending, /emerging, /:genreId/artists, /:genreId/rooms, /:genreId/rooms/create MUST be before /:genreId
 
 import express from "express";
 import fs from "fs";
@@ -18,8 +19,8 @@ import crypto from "crypto";
 const router = express.Router();
 
 const SERVICE = "genres";
-const PHASE = "H6.2";
-const VERSION = 3;
+const PHASE = "H6.3";
+const VERSION = 4;
 
 const DB_ROOT = process.env.IBAND_DATA_DIR || "/var/data/iband/db";
 const STORAGE_DIR = path.join(DB_ROOT, "genres");
@@ -40,6 +41,8 @@ const ARTISTS_FILE_CANDIDATES = [
 // rooms store
 const ROOMS_DIR = path.join(DB_ROOT, "rooms");
 const ROOMS_FILE = path.join(ROOMS_DIR, "rooms.json");
+const ROOMS_EVENTS_DIR = path.join(ROOMS_DIR, "events");
+const ROOMS_EVENTS_FILE = path.join(ROOMS_EVENTS_DIR, "rooms-events.jsonl");
 
 const LIMITS = {
   maxBodyBytes: 25000,
@@ -112,6 +115,8 @@ function uniq(values) {
 async function ensureDirs() {
   await fsp.mkdir(STORAGE_DIR, { recursive: true });
   await fsp.mkdir(EVENTS_DIR, { recursive: true });
+  await fsp.mkdir(ROOMS_DIR, { recursive: true });
+  await fsp.mkdir(ROOMS_EVENTS_DIR, { recursive: true });
 
   if (!fs.existsSync(GENRES_FILE)) {
     await fsp.writeFile(
@@ -122,6 +127,21 @@ async function ensureDirs() {
           updatedAt: nowIso(),
           genres: [],
           suggestions: [],
+        },
+        null,
+        2
+      )
+    );
+  }
+
+  if (!fs.existsSync(ROOMS_FILE)) {
+    await fsp.writeFile(
+      ROOMS_FILE,
+      JSON.stringify(
+        {
+          version: 1,
+          updatedAt: nowIso(),
+          rooms: [],
         },
         null,
         2
@@ -150,6 +170,11 @@ async function writeStore(store) {
 async function appendEvent(obj) {
   await ensureDirs();
   await fsp.appendFile(EVENTS_FILE, JSON.stringify(obj) + "\n", "utf8");
+}
+
+async function appendRoomsEvent(obj) {
+  await ensureDirs();
+  await fsp.appendFile(ROOMS_EVENTS_FILE, JSON.stringify(obj) + "\n", "utf8");
 }
 
 function ok(res, payload) {
@@ -364,6 +389,16 @@ async function readRoomsStore() {
   } catch {
     return [];
   }
+}
+
+async function writeRoomsStore(rooms) {
+  await ensureDirs();
+  const payload = {
+    version: 1,
+    updatedAt: nowIso(),
+    rooms,
+  };
+  await fsp.writeFile(ROOMS_FILE, JSON.stringify(payload, null, 2), "utf8");
 }
 
 function roomMatchesGenre(room, genre) {
@@ -806,6 +841,104 @@ router.get("/:genreId/artists", async (req, res) => {
       artistsLoaded: artists.length,
       ts: nowIso(),
     },
+  });
+});
+
+// Create a room for a genre
+router.post("/:genreId/rooms/create", async (req, res) => {
+  const genreId = safeStr(req.params.genreId, 80);
+  const body = req.body || {};
+  const bytes = Buffer.byteLength(JSON.stringify(body), "utf8");
+  if (bytes > LIMITS.maxBodyBytes) return bad(res, 413, "payload_too_large");
+
+  const fanId = safeStr(body.fanId, 80);
+  if (!fanId) return bad(res, 400, "missing_fanId");
+
+  const store = await readStore();
+  const genre = store.genres.find((g) => g.id === genreId);
+  if (!genre) return bad(res, 404, "genre_not_found", { genreId });
+
+  const fanProfile = await getFanProfile(fanId);
+  const permissions = fanProfile ? deriveFanPermissions(fanProfile) : null;
+
+  if (!permissions || !permissions.canCreateGenreRoom) {
+    return bad(res, 403, "insufficient_permissions", {
+      message: "This fan cannot create genre rooms.",
+      fanId,
+    });
+  }
+
+  const rooms = await readRoomsStore();
+
+  const existing = rooms.find((room) => roomMatchesGenre(room, genre));
+  if (existing) {
+    return bad(res, 409, "genre_room_exists", {
+      room: {
+        id: existing.id,
+        name: existing.name,
+        tags: existing.tags || [],
+      },
+    });
+  }
+
+  const roomName = safeStr(body.name, 80) || `${genre.name} Room`;
+  const roomDescription =
+    safeStr(body.description, 240) ||
+    `Community room for ${genre.name} fans, discussion, discovery, and artist support.`;
+
+  const roomTags = uniq([genre.slug, genre.name, ...(genre.tags || []), ...(body.tags || [])]).slice(0, LIMITS.maxTags);
+
+  const room = {
+    id: `room_${makeId()}`,
+    name: roomName,
+    description: roomDescription,
+    type: "genre",
+    visibility: safeStr(body.visibility, 20) || "public",
+    status: "active",
+    ambassadorOnly: Boolean(body.ambassadorOnly || false),
+    tags: roomTags,
+    artistId: safeStr(body.artistId, 80) || null,
+    createdByFanId: fanId,
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+    counters: {
+      joins: 0,
+      messages: 0,
+    },
+    genreContext: {
+      genreId: genre.id,
+      genreName: genre.name,
+      genreSlug: genre.slug,
+    },
+  };
+
+  rooms.unshift(room);
+  await writeRoomsStore(rooms);
+
+  await appendRoomsEvent({
+    id: makeId(),
+    type: "room_create",
+    roomId: room.id,
+    createdByFanId: fanId,
+    artistId: room.artistId,
+    ts: room.createdAt,
+    meta: {
+      source: "genres.create-room",
+      genreId: genre.id,
+      genreSlug: genre.slug,
+      note: safeStr(body.note, 120) || null,
+    },
+  });
+
+  ok(res, {
+    success: true,
+    message: "Genre room created.",
+    room,
+    permissions: {
+      canCreateGenreRoom: permissions.canCreateGenreRoom,
+      canHostRoom: permissions.canHostRoom,
+    },
+    ts: nowIso(),
   });
 });
 
