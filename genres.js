@@ -1,19 +1,21 @@
-// genres.js (ESM) — Phase H6.1 Genre Discovery Engine (Registry + Signals)
+// genres.js (ESM) — Phase H6.2 Genre Discovery Engine (Registry + Signals + Top Artists)
 // Purpose:
 // - Genre registry (official + community-created)
-// - Fan suggestions for new genres (queue-like)
+// - Fan suggestions for new genres
 // - Usage signals for trending/emerging detection
+// - Top artists by genre
+//
 // Storage:
 // - /var/data/iband/db/genres/genres.json
 // - /var/data/iband/db/genres/events/genre-events.jsonl
 //
-// Signals (recorded as JSONL events):
-// - genre_create
-// - genre_suggest
-// - genre_use (share/vote/purchase/upload tag usage)
+// Reads:
+// - /var/data/iband/db/fans/fan-profiles.json
+// - /var/data/iband/db/artists/artists.json (preferred)
+//   fallback: /var/data/iband/db/artists.json
 //
 // IMPORTANT: Route order matters in Express.
-// /trending and /emerging MUST be defined before /:genreId
+// /trending, /emerging, /:genreId/artists MUST be defined before /:genreId
 
 import express from "express";
 import fs from "fs";
@@ -24,8 +26,8 @@ import crypto from "crypto";
 const router = express.Router();
 
 const SERVICE = "genres";
-const PHASE = "H6.1";
-const VERSION = 1;
+const PHASE = "H6.2";
+const VERSION = 2;
 
 const DB_ROOT = process.env.IBAND_DATA_DIR || "/var/data/iband/db";
 const STORAGE_DIR = path.join(DB_ROOT, "genres");
@@ -33,9 +35,15 @@ const GENRES_FILE = path.join(STORAGE_DIR, "genres.json");
 const EVENTS_DIR = path.join(STORAGE_DIR, "events");
 const EVENTS_FILE = path.join(EVENTS_DIR, "genre-events.jsonl");
 
-// Read fan profiles directly to avoid internal router coupling
+// fan store
 const FANS_DIR = path.join(DB_ROOT, "fans");
 const FAN_PROFILES_FILE = path.join(FANS_DIR, "fan-profiles.json");
+
+// artist store candidates
+const ARTISTS_FILE_CANDIDATES = [
+  path.join(DB_ROOT, "artists", "artists.json"),
+  path.join(DB_ROOT, "artists.json"),
+];
 
 const LIMITS = {
   maxBodyBytes: 25000,
@@ -48,7 +56,6 @@ const LIMITS = {
 };
 
 const TUNING = {
-  // Score weights by event kind
   weights: {
     share: 6,
     vote: 2,
@@ -57,11 +64,10 @@ const TUNING = {
     room_post: 1,
     other: 1,
   },
-  // time decay
   halfLifeDaysTrending: 14,
   halfLifeDaysEmerging: 5,
+  halfLifeDaysArtists: 21,
   maxLookbackDays: 120,
-  // emerging preference for recent birth
   emergingBirthBonusDays: 30,
 };
 
@@ -186,12 +192,10 @@ function daysBetween(nowMs, thenMs) {
 }
 
 function decayWeight(ageDays, halfLifeDays) {
-  // weight = 0.5^(age/halfLife)
   return Math.pow(0.5, ageDays / Math.max(0.0001, halfLifeDays));
 }
 
 async function scanEventsForScores({ days, mode }) {
-  // mode: "trending" | "emerging"
   const lookbackDays = clampInt(days, 1, TUNING.maxLookbackDays, 30);
   const halfLife = mode === "emerging" ? TUNING.halfLifeDaysEmerging : TUNING.halfLifeDaysTrending;
 
@@ -241,7 +245,6 @@ async function scanEventsForScores({ days, mode }) {
 
     const ageDays = daysBetween(nowMs, ts);
     const base = Number(ev.weight) || 1;
-
     const w = decayWeight(ageDays, halfLife) * base;
 
     scores.set(genreId, (scores.get(genreId) || 0) + w);
@@ -249,6 +252,95 @@ async function scanEventsForScores({ days, mode }) {
   }
 
   return { scores, counts, scannedLines: scanned };
+}
+
+async function readArtistsStore() {
+  for (const filePath of ARTISTS_FILE_CANDIDATES) {
+    try {
+      if (!fs.existsSync(filePath)) continue;
+      const raw = await fsp.readFile(filePath, "utf8");
+      const parsed = JSON.parse(raw || "{}");
+
+      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed.artists)) return parsed.artists;
+      if (Array.isArray(parsed.list)) return parsed.list;
+    } catch {
+      // try next candidate
+    }
+  }
+  return [];
+}
+
+function normalizeArtistRow(row) {
+  return {
+    id: safeStr(row.id || row.artistId, 80),
+    name: safeStr(row.name, 120) || "Unknown Artist",
+    genre: safeStr(row.genre, 120) || null,
+    location: safeStr(row.location, 120) || null,
+    imageUrl: safeStr(row.imageUrl, 500) || null,
+    votes: Number(row.votes) || 0,
+    updatedAt: row.updatedAt || null,
+  };
+}
+
+async function scanGenreArtistScores({ genreId, days }) {
+  const lookbackDays = clampInt(days, 1, TUNING.maxLookbackDays, 30);
+  const halfLife = TUNING.halfLifeDaysArtists;
+
+  if (!fs.existsSync(EVENTS_FILE)) {
+    return { scores: new Map(), uses: new Map(), scannedLines: 0 };
+  }
+
+  const stat = fs.statSync(EVENTS_FILE);
+  const size = stat.size;
+  const readBytes = Math.min(size, LIMITS.maxReadBytes);
+
+  const fd = await fsp.open(EVENTS_FILE, "r");
+  const buf = Buffer.alloc(readBytes);
+  await fd.read(buf, 0, readBytes, Math.max(0, size - readBytes));
+  await fd.close();
+
+  const text = buf.toString("utf8");
+  const lines = text.split("\n").filter(Boolean);
+
+  const nowMs = Date.now();
+  const cutoffMs = nowMs - lookbackDays * 24 * 60 * 60 * 1000;
+
+  const scores = new Map();
+  const uses = new Map();
+
+  let scanned = 0;
+
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    scanned += 1;
+    if (scanned > LIMITS.maxLineScan) break;
+
+    let ev;
+    try {
+      ev = JSON.parse(lines[i]);
+    } catch {
+      continue;
+    }
+
+    const ts = Date.parse(ev.ts || "");
+    if (!Number.isFinite(ts)) continue;
+    if (ts < cutoffMs) break;
+
+    if (ev.type !== "genre_use") continue;
+    if (safeStr(ev.genreId, 80) !== genreId) continue;
+
+    const artistId = safeStr(ev.artistId, 80);
+    if (!artistId) continue;
+
+    const ageDays = daysBetween(nowMs, ts);
+    const base = Number(ev.weight) || 1;
+    const w = decayWeight(ageDays, halfLife) * base;
+
+    scores.set(artistId, (scores.get(artistId) || 0) + w);
+    uses.set(artistId, (uses.get(artistId) || 0) + 1);
+  }
+
+  return { scores, uses, scannedLines: scanned };
 }
 
 // ---------- Routes ----------
@@ -292,7 +384,7 @@ router.get("/health", async (req, res) => {
   });
 });
 
-// Create genre (ambassador gold/silver OR verifiedCreatorFan)
+// Create genre
 router.post("/create", async (req, res) => {
   const body = req.body || {};
   const bytes = Buffer.byteLength(JSON.stringify(body), "utf8");
@@ -330,7 +422,7 @@ router.post("/create", async (req, res) => {
     slug,
     description,
     tags,
-    status: "active", // active | archived
+    status: "active",
     createdByFanId: fanId,
     createdByTier: tierInfo.tier,
     createdAt: nowIso(),
@@ -362,7 +454,7 @@ router.post("/create", async (req, res) => {
   ok(res, { success: true, message: "Genre created.", genre });
 });
 
-// Suggest genre (anyone)
+// Suggest genre
 router.post("/suggest", async (req, res) => {
   const body = req.body || {};
   const bytes = Buffer.byteLength(JSON.stringify(body), "utf8");
@@ -415,7 +507,7 @@ router.post("/suggest", async (req, res) => {
     slug,
     description,
     tags,
-    status: "pending", // pending | approved | rejected
+    status: "pending",
     count: 1,
     endorsers: [fanId],
     createdByFanId: fanId,
@@ -440,7 +532,7 @@ router.post("/suggest", async (req, res) => {
   ok(res, { success: true, message: "Suggestion recorded.", suggestion });
 });
 
-// List genres (+ optional includeSuggestions)
+// List genres
 router.get("/list", async (req, res) => {
   const store = await readStore();
 
@@ -451,8 +543,8 @@ router.get("/list", async (req, res) => {
   let genres = store.genres.slice();
   if (q) {
     genres = genres.filter((g) => {
-      const a = `${g.name || ""} ${g.slug || ""} ${(g.tags || []).join(" ")}`.toLowerCase();
-      return a.includes(q);
+      const hay = `${g.name || ""} ${g.slug || ""} ${(g.tags || []).join(" ")}`.toLowerCase();
+      return hay.includes(q);
     });
   }
 
@@ -469,7 +561,7 @@ router.get("/list", async (req, res) => {
   });
 });
 
-// Record a genre usage signal (fan tagging a track/share/vote/purchase/upload)
+// Record genre usage
 router.post("/use", async (req, res) => {
   const body = req.body || {};
   const bytes = Buffer.byteLength(JSON.stringify(body), "utf8");
@@ -480,7 +572,7 @@ router.post("/use", async (req, res) => {
   const artistId = safeStr(body.artistId, 80) || null;
   const trackId = safeStr(body.trackId, 80) || null;
 
-  const kind = safeStr(body.kind, 20).toLowerCase() || "other"; // share|vote|purchase|upload|room_post|other
+  const kind = safeStr(body.kind, 20).toLowerCase() || "other";
   const weight = Number(body.weight) || TUNING.weights[kind] || TUNING.weights.other;
 
   if (!genreId) return bad(res, 400, "missing_genreId");
@@ -539,7 +631,7 @@ router.post("/use", async (req, res) => {
   });
 });
 
-// Trending genres  ✅ MUST COME BEFORE /:genreId
+// Trending genres
 router.get("/trending", async (req, res) => {
   const days = clampInt(req.query.days, 1, TUNING.maxLookbackDays, 30);
   const limit = clampInt(req.query.limit, 1, LIMITS.maxList, 10);
@@ -548,20 +640,16 @@ router.get("/trending", async (req, res) => {
   const { scores, counts, scannedLines } = await scanEventsForScores({ days, mode: "trending" });
 
   const ranked = store.genres
-    .map((g) => {
-      const score = scores.get(g.id) || 0;
-      const c = counts.get(g.id) || 0;
-      return {
-        id: g.id,
-        name: g.name,
-        slug: g.slug,
-        score,
-        uses: c,
-        counters: g.counters || {},
-        updatedAt: g.updatedAt,
-        createdAt: g.createdAt,
-      };
-    })
+    .map((g) => ({
+      id: g.id,
+      name: g.name,
+      slug: g.slug,
+      score: scores.get(g.id) || 0,
+      uses: counts.get(g.id) || 0,
+      counters: g.counters || {},
+      updatedAt: g.updatedAt,
+      createdAt: g.createdAt,
+    }))
     .filter((x) => x.score > 0)
     .sort((a, b) => b.score - a.score);
 
@@ -577,7 +665,7 @@ router.get("/trending", async (req, res) => {
   });
 });
 
-// Emerging genres ✅ MUST COME BEFORE /:genreId
+// Emerging genres
 router.get("/emerging", async (req, res) => {
   const days = clampInt(req.query.days, 1, TUNING.maxLookbackDays, 14);
   const limit = clampInt(req.query.limit, 1, LIMITS.maxList, 10);
@@ -591,22 +679,17 @@ router.get("/emerging", async (req, res) => {
     .map((g) => {
       const base = scores.get(g.id) || 0;
       const c = counts.get(g.id) || 0;
-
       const createdMs = Date.parse(g.createdAt || "") || 0;
       const ageDays = createdMs ? daysBetween(nowMs, createdMs) : 9999;
-
       const birthBonus =
         ageDays <= TUNING.emergingBirthBonusDays
           ? (TUNING.emergingBirthBonusDays - ageDays) / TUNING.emergingBirthBonusDays
           : 0;
-
-      const score = base * (1 + birthBonus);
-
       return {
         id: g.id,
         name: g.name,
         slug: g.slug,
-        score,
+        score: base * (1 + birthBonus),
         uses: c,
         ageDays: Math.max(0, ageDays),
         counters: g.counters || {},
@@ -629,7 +712,63 @@ router.get("/emerging", async (req, res) => {
   });
 });
 
-// Get genre by id ✅ MUST COME AFTER /trending and /emerging
+// Top artists for a genre ✅ must come before /:genreId
+router.get("/:genreId/artists", async (req, res) => {
+  const genreId = safeStr(req.params.genreId, 80);
+  const days = clampInt(req.query.days, 1, TUNING.maxLookbackDays, 30);
+  const limit = clampInt(req.query.limit, 1, LIMITS.maxList, 10);
+
+  const store = await readStore();
+  const genre = store.genres.find((g) => g.id === genreId);
+  if (!genre) return bad(res, 404, "genre_not_found", { genreId });
+
+  const artistsRaw = await readArtistsStore();
+  const artists = artistsRaw.map(normalizeArtistRow).filter((a) => a.id);
+
+  const { scores, uses, scannedLines } = await scanGenreArtistScores({ genreId, days });
+
+  const ranked = artists
+    .map((artist) => {
+      const genreScore = scores.get(artist.id) || 0;
+      const genreUses = uses.get(artist.id) || 0;
+      const voteBoost = (Number(artist.votes) || 0) * 0.05;
+      const compositeScore = genreScore + voteBoost;
+
+      return {
+        id: artist.id,
+        name: artist.name,
+        genre: artist.genre,
+        location: artist.location,
+        imageUrl: artist.imageUrl,
+        votes: artist.votes,
+        genreUses,
+        genreScore,
+        compositeScore,
+        updatedAt: artist.updatedAt,
+      };
+    })
+    .filter((x) => x.genreScore > 0 || x.genreUses > 0)
+    .sort((a, b) => b.compositeScore - a.compositeScore);
+
+  ok(res, {
+    success: true,
+    genre: {
+      id: genre.id,
+      name: genre.name,
+      slug: genre.slug,
+    },
+    days,
+    list: ranked.slice(0, limit),
+    meta: {
+      limit,
+      scannedLines,
+      artistsLoaded: artists.length,
+      ts: nowIso(),
+    },
+  });
+});
+
+// Get genre by id ✅ after specific routes
 router.get("/:genreId", async (req, res) => {
   const genreId = safeStr(req.params.genreId, 80);
   const store = await readStore();
