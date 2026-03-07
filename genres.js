@@ -1,21 +1,13 @@
-// genres.js (ESM) — Phase H6.2 Genre Discovery Engine (Registry + Signals + Top Artists)
+// genres.js (ESM) — Phase H6.2 Genre Discovery Engine
 // Purpose:
 // - Genre registry (official + community-created)
 // - Fan suggestions for new genres
 // - Usage signals for trending/emerging detection
 // - Top artists by genre
-//
-// Storage:
-// - /var/data/iband/db/genres/genres.json
-// - /var/data/iband/db/genres/events/genre-events.jsonl
-//
-// Reads:
-// - /var/data/iband/db/fans/fan-profiles.json
-// - /var/data/iband/db/artists/artists.json (preferred)
-//   fallback: /var/data/iband/db/artists.json
+// - Genre room intelligence
 //
 // IMPORTANT: Route order matters in Express.
-// /trending, /emerging, /:genreId/artists MUST be defined before /:genreId
+// /trending, /emerging, /:genreId/artists, /:genreId/rooms MUST be before /:genreId
 
 import express from "express";
 import fs from "fs";
@@ -27,7 +19,7 @@ const router = express.Router();
 
 const SERVICE = "genres";
 const PHASE = "H6.2";
-const VERSION = 2;
+const VERSION = 3;
 
 const DB_ROOT = process.env.IBAND_DATA_DIR || "/var/data/iband/db";
 const STORAGE_DIR = path.join(DB_ROOT, "genres");
@@ -44,6 +36,10 @@ const ARTISTS_FILE_CANDIDATES = [
   path.join(DB_ROOT, "artists", "artists.json"),
   path.join(DB_ROOT, "artists.json"),
 ];
+
+// rooms store
+const ROOMS_DIR = path.join(DB_ROOT, "rooms");
+const ROOMS_FILE = path.join(ROOMS_DIR, "rooms.json");
 
 const LIMITS = {
   maxBodyBytes: 25000,
@@ -164,15 +160,22 @@ function bad(res, status, error, extra = {}) {
   res.status(status).json({ success: false, error, ...extra });
 }
 
-async function getFanTier(fanId) {
+async function getFanProfile(fanId) {
   try {
-    if (!fanId) return { tier: "none", verified: false };
-
-    if (!fs.existsSync(FAN_PROFILES_FILE)) return { tier: "none", verified: false };
+    if (!fanId) return null;
+    if (!fs.existsSync(FAN_PROFILES_FILE)) return null;
     const raw = await fsp.readFile(FAN_PROFILES_FILE, "utf8");
     const parsed = JSON.parse(raw || "{}");
     const profiles = Array.isArray(parsed.profiles) ? parsed.profiles : [];
-    const p = profiles.find((x) => x.fanId === fanId);
+    return profiles.find((x) => x.fanId === fanId) || null;
+  } catch {
+    return null;
+  }
+}
+
+async function getFanTier(fanId) {
+  try {
+    const p = await getFanProfile(fanId);
     if (!p) return { tier: "none", verified: false };
     return {
       tier: safeStr(p.ambassadorTier, 20).toLowerCase() || "none",
@@ -185,6 +188,17 @@ async function getFanTier(fanId) {
 
 function canCreateGenre({ tier, verified }) {
   return tier === "gold" || tier === "silver" || verified === true;
+}
+
+function deriveFanPermissions(profile) {
+  const tier = safeStr(profile?.ambassadorTier, 20).toLowerCase();
+  return {
+    canCreateGenreRoom: tier === "gold" || tier === "silver" || Boolean(profile?.verifiedCreatorFan),
+    canSuggestGenreRoom: true,
+    canCreateCommunityRoom: true,
+    canJoinAmbassadorRooms: tier === "gold" || tier === "silver" || tier === "bronze",
+    canHostRoom: tier === "gold" || tier === "silver",
+  };
 }
 
 function daysBetween(nowMs, thenMs) {
@@ -237,7 +251,6 @@ async function scanEventsForScores({ days, mode }) {
     const ts = Date.parse(ev.ts || "");
     if (!Number.isFinite(ts)) continue;
     if (ts < cutoffMs) break;
-
     if (ev.type !== "genre_use") continue;
 
     const genreId = safeStr(ev.genreId, 80);
@@ -325,7 +338,6 @@ async function scanGenreArtistScores({ genreId, days }) {
     const ts = Date.parse(ev.ts || "");
     if (!Number.isFinite(ts)) continue;
     if (ts < cutoffMs) break;
-
     if (ev.type !== "genre_use") continue;
     if (safeStr(ev.genreId, 80) !== genreId) continue;
 
@@ -341,6 +353,35 @@ async function scanGenreArtistScores({ genreId, days }) {
   }
 
   return { scores, uses, scannedLines: scanned };
+}
+
+async function readRoomsStore() {
+  try {
+    if (!fs.existsSync(ROOMS_FILE)) return [];
+    const raw = await fsp.readFile(ROOMS_FILE, "utf8");
+    const parsed = JSON.parse(raw || "{}");
+    return Array.isArray(parsed.rooms) ? parsed.rooms : [];
+  } catch {
+    return [];
+  }
+}
+
+function roomMatchesGenre(room, genre) {
+  const name = safeStr(room?.name, 120).toLowerCase();
+  const desc = safeStr(room?.description, 240).toLowerCase();
+  const tags = Array.isArray(room?.tags) ? room.tags.map((t) => safeStr(t, 40).toLowerCase()) : [];
+
+  const slug = safeStr(genre?.slug, 80).toLowerCase();
+  const genreName = safeStr(genre?.name, 80).toLowerCase();
+
+  return (
+    tags.includes(slug) ||
+    tags.includes(genreName) ||
+    name.includes(genreName) ||
+    name.includes(slug) ||
+    desc.includes(genreName) ||
+    desc.includes(slug)
+  );
 }
 
 // ---------- Routes ----------
@@ -412,7 +453,6 @@ router.post("/create", async (req, res) => {
   const tags = uniq(body.tags || []).slice(0, LIMITS.maxTags);
 
   const store = await readStore();
-
   const exists = store.genres.find((g) => (g.slug || "").toLowerCase() === slug.toLowerCase());
   if (exists) return bad(res, 409, "genre_exists", { genre: exists });
 
@@ -685,6 +725,7 @@ router.get("/emerging", async (req, res) => {
         ageDays <= TUNING.emergingBirthBonusDays
           ? (TUNING.emergingBirthBonusDays - ageDays) / TUNING.emergingBirthBonusDays
           : 0;
+
       return {
         id: g.id,
         name: g.name,
@@ -712,7 +753,7 @@ router.get("/emerging", async (req, res) => {
   });
 });
 
-// Top artists for a genre ✅ must come before /:genreId
+// Top artists for a genre
 router.get("/:genreId/artists", async (req, res) => {
   const genreId = safeStr(req.params.genreId, 80);
   const days = clampInt(req.query.days, 1, TUNING.maxLookbackDays, 30);
@@ -768,7 +809,76 @@ router.get("/:genreId/artists", async (req, res) => {
   });
 });
 
-// Get genre by id ✅ after specific routes
+// Genre room intelligence
+router.get("/:genreId/rooms", async (req, res) => {
+  const genreId = safeStr(req.params.genreId, 80);
+  const fanId = safeStr(req.query.fanId, 80);
+  const limit = clampInt(req.query.limit, 1, LIMITS.maxList, 20);
+
+  const store = await readStore();
+  const genre = store.genres.find((g) => g.id === genreId);
+  if (!genre) return bad(res, 404, "genre_not_found", { genreId });
+
+  const rooms = await readRoomsStore();
+  const linkedRooms = rooms
+    .filter((room) => roomMatchesGenre(room, genre))
+    .sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")))
+    .slice(0, limit)
+    .map((room) => ({
+      id: room.id,
+      name: room.name,
+      description: room.description || null,
+      type: room.type || "community",
+      visibility: room.visibility || "public",
+      ambassadorOnly: Boolean(room.ambassadorOnly),
+      tags: Array.isArray(room.tags) ? room.tags : [],
+      artistId: room.artistId || null,
+      counters: room.counters || { joins: 0, messages: 0 },
+      updatedAt: room.updatedAt || null,
+      matchReason: "name_or_tag",
+    }));
+
+  const fanProfile = fanId ? await getFanProfile(fanId) : null;
+  const permissions = fanProfile ? deriveFanPermissions(fanProfile) : null;
+
+  const hasExistingPublicGenreRoom = linkedRooms.some(
+    (room) => room.type === "genre" || (room.tags || []).map((t) => String(t).toLowerCase()).includes(genre.slug)
+  );
+
+  const suggestion = {
+    shouldSuggestCreate: !hasExistingPublicGenreRoom,
+    suggestedRoomName: `${genre.name} Room`,
+    suggestedTags: uniq([genre.slug, genre.name, ...(genre.tags || [])]).slice(0, LIMITS.maxTags),
+    suggestedType: "genre",
+  };
+
+  ok(res, {
+    success: true,
+    genre: {
+      id: genre.id,
+      name: genre.name,
+      slug: genre.slug,
+      tags: genre.tags || [],
+    },
+    rooms: linkedRooms,
+    permissions: permissions
+      ? {
+          canCreateGenreRoom: permissions.canCreateGenreRoom,
+          canSuggestGenreRoom: permissions.canSuggestGenreRoom,
+          canHostRoom: permissions.canHostRoom,
+        }
+      : null,
+    suggestion,
+    meta: {
+      totalRooms: linkedRooms.length,
+      limit,
+      fanId: fanId || null,
+      ts: nowIso(),
+    },
+  });
+});
+
+// Get genre by id
 router.get("/:genreId", async (req, res) => {
   const genreId = safeStr(req.params.genreId, 80);
   const store = await readStore();
