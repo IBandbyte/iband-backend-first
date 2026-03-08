@@ -1,157 +1,88 @@
-// server.js (ESM) — iBand backend (root-level structure)
-// Phase H7.1: Adds Countries routes with safe module mounting.
-// This file is designed to NEVER crash deploy if an optional route module is missing.
-
 import express from "express";
 import cors from "cors";
-import fs from "fs";
-import path from "path";
-import { fileURLToPath, pathToFileURL } from "url";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import artistsRouter from "./artists.js";
+import votesRouter from "./votes.js";
+import commentsRouter from "./comments.js";
 
-const APP_NAME = "iband-backend-first";
-const VERSION = 1;
-const STARTED_AT = new Date().toISOString();
+import monetisationRouter from "./monetisation.js";
+import sharesRouter from "./shares.js";
+import trendsRouter from "./trends.js";
 
-const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
-const NODE_ENV = process.env.NODE_ENV || "production";
+import ambassadorsRouter from "./ambassadors.js";
+import moderationRouter from "./moderation.js";
+
+import roomsRouter from "./rooms.js";
+import fansRouter from "./fans.js";
+
+import genresRouter from "./genres.js";
+import countriesRouter from "./countries.js";
+
+import discoveryRouter from "./discovery.js";
 
 const app = express();
-app.set("trust proxy", 1);
 
-app.use((req, res, next) => {
-  res.setHeader("X-Content-Type-Options", "nosniff");
-  res.setHeader("X-Frame-Options", "DENY");
-  res.setHeader("Referrer-Policy", "no-referrer");
-  res.setHeader("Permissions-Policy", "geolocation=(), microphone=(), camera=()");
-  next();
-});
+app.use(cors());
+app.use(express.json({ limit: "25kb" }));
 
-app.use(
-  cors({
-    origin: true,
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
-  })
-);
-
-app.use(express.json({ limit: "250kb" }));
-app.use(express.urlencoded({ extended: true, limit: "250kb" }));
-
-function jsonOk(res, payload) {
-  res.status(200).json(payload);
-}
-
-function jsonError(res, status, error, extra = {}) {
-  res.status(status).json({ success: false, error, ...extra });
-}
-
-async function safeImportLocal(modulePath) {
-  const abs = path.resolve(__dirname, modulePath);
-  if (!fs.existsSync(abs)) return { ok: false, reason: "missing_file", abs };
-
-  try {
-    const modUrl = pathToFileURL(abs).href;
-    const mod = await import(modUrl);
-    return { ok: true, mod, abs };
-  } catch (err) {
-    return { ok: false, reason: "import_error", abs, err };
-  }
-}
-
-async function safeMount({ basePath, modulePath, exportName = "default" }) {
-  const loaded = await safeImportLocal(modulePath);
-
-  if (!loaded.ok) {
-    console.warn(
-      `[mount:skip] ${basePath} -> ${modulePath} (${loaded.reason}) ${loaded.abs || ""}`
-    );
-    return { mounted: false, reason: loaded.reason };
-  }
-
-  const candidate = loaded.mod?.[exportName] ?? loaded.mod?.router ?? loaded.mod;
-  if (!candidate) {
-    console.warn(`[mount:skip] ${basePath} -> ${modulePath} (no_export_found)`);
-    return { mounted: false, reason: "no_export_found" };
-  }
-
-  app.use(basePath, candidate);
-  console.log(`[mount:ok] ${basePath} -> ${modulePath}`);
-  return { mounted: true };
-}
+/* ---------- ROOT ---------- */
 
 app.get("/", (req, res) => {
-  jsonOk(res, {
-    success: true,
-    app: APP_NAME,
-    env: NODE_ENV,
-    version: VERSION,
-    startedAt: STARTED_AT,
+  res.json({
+    service: "iBand Backend",
+    status: "running",
+    version: "H8",
+    ts: new Date().toISOString()
   });
 });
 
-app.get("/api/health", (req, res) => {
-  jsonOk(res, {
-    success: true,
-    app: APP_NAME,
-    env: NODE_ENV,
-    startedAt: STARTED_AT,
-    ts: new Date().toISOString(),
-  });
-});
+/* ---------- CORE ---------- */
 
-const mounts = [
-  { basePath: "/api/artists", modulePath: "./artists.js" },
-  { basePath: "/api/votes", modulePath: "./votes.js" },
-  { basePath: "/api/ranking", modulePath: "./ranking.js" },
-  { basePath: "/api/medals", modulePath: "./medals.js" },
-  { basePath: "/api/recs", modulePath: "./recs.js" },
+app.use("/api/artists", artistsRouter);
+app.use("/api/votes", votesRouter);
+app.use("/api/comments", commentsRouter);
 
-  { basePath: "/api/flash-medals", modulePath: "./flashMedals.js" },
-  { basePath: "/api/achievements", modulePath: "./achievements.js" },
+/* ---------- MONETISATION ---------- */
 
-  { basePath: "/api/purchases", modulePath: "./purchases.js" },
-  { basePath: "/api/monetisation", modulePath: "./monetisationSignals.js" },
+app.use("/api/monetisation", monetisationRouter);
 
-  { basePath: "/api/shares", modulePath: "./shares.js" },
-  { basePath: "/api/trends", modulePath: "./trends.js" },
+/* ---------- SHARES / TRENDS ---------- */
 
-  { basePath: "/api/ambassadors", modulePath: "./ambassadors.js" },
-  { basePath: "/api/moderation", modulePath: "./moderation.js" },
+app.use("/api/shares", sharesRouter);
+app.use("/api/trends", trendsRouter);
 
-  { basePath: "/api/rooms", modulePath: "./rooms.js" },
-  { basePath: "/api/fans", modulePath: "./fanProfiles.js" },
-  { basePath: "/api/genres", modulePath: "./genres.js" },
+/* ---------- AMBASSADORS ---------- */
 
-  // Phase H7.1 — Countries / Regions
-  { basePath: "/api/countries", modulePath: "./countries.js" },
-];
+app.use("/api/ambassadors", ambassadorsRouter);
 
-(async () => {
-  for (const m of mounts) {
-    // eslint-disable-next-line no-await-in-loop
-    await safeMount(m);
-  }
+/* ---------- MODERATION ---------- */
 
-  app.use((req, res) => {
-    jsonError(res, 404, "not_found", { path: req.originalUrl });
-  });
+app.use("/api/moderation", moderationRouter);
 
-  // eslint-disable-next-line no-unused-vars
-  app.use((err, req, res, next) => {
-    console.error("[unhandled_error]", err);
-    jsonError(res, 500, "server_error", {
-      message: NODE_ENV === "production" ? "Internal Server Error" : String(err?.message || err),
-    });
-  });
+/* ---------- ROOMS ---------- */
 
-  app.listen(PORT, () => {
-    console.log(`[boot] ${APP_NAME} listening on port ${PORT} (${NODE_ENV})`);
-  });
-})().catch((err) => {
-  console.error("[boot_fatal]", err);
-  process.exit(1);
+app.use("/api/rooms", roomsRouter);
+
+/* ---------- FAN PROFILES ---------- */
+
+app.use("/api/fans", fansRouter);
+
+/* ---------- GENRES ---------- */
+
+app.use("/api/genres", genresRouter);
+
+/* ---------- COUNTRIES ---------- */
+
+app.use("/api/countries", countriesRouter);
+
+/* ---------- GLOBAL DISCOVERY ---------- */
+
+app.use("/api/discovery", discoveryRouter);
+
+/* ---------- START SERVER ---------- */
+
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+  console.log(`iBand backend running on port ${PORT}`);
 });
