@@ -6,16 +6,16 @@ import path from "path";
 const router = express.Router();
 
 const SERVICE = "discovery";
-const PHASE = "H8";
-const VERSION = 1;
+const PHASE = "H9.1";
+const VERSION = 2;
 
 const DB_ROOT = process.env.IBAND_DATA_DIR || "/var/data/iband/db";
 
-const GENRE_EVENTS = path.join(DB_ROOT, "genres/events/genre-events.jsonl");
-const COUNTRY_EVENTS = path.join(DB_ROOT, "countries/country-events.jsonl");
-
 const GENRES_FILE = path.join(DB_ROOT, "genres/genres.json");
 const COUNTRIES_FILE = path.join(DB_ROOT, "countries/countries.json");
+
+const GENRE_EVENTS = path.join(DB_ROOT, "genres/events/genre-events.jsonl");
+const COUNTRY_EVENTS = path.join(DB_ROOT, "countries/country-events.jsonl");
 
 const ARTISTS_FILE_CANDIDATES = [
   path.join(DB_ROOT, "artists/artists.json"),
@@ -23,71 +23,74 @@ const ARTISTS_FILE_CANDIDATES = [
 ];
 
 const LIMITS = {
-  maxReadBytes: 20 * 1024 * 1024,
-  maxLineScan: 200000
+  maxReadBytes: 20 * 1024 * 1024
 };
 
-const TUNING = {
-  weights: {
-    share: 6,
-    vote: 2,
-    purchase: 10,
-    upload: 4,
-    room_post: 1,
-    other: 1
-  },
-  halfLifeDays: 14,
-  maxLookbackDays: 120
-};
+const HALF_LIFE_DAYS = 14;
 
 function nowIso() {
   return new Date().toISOString();
 }
 
 function decay(ageDays) {
-  return Math.pow(0.5, ageDays / TUNING.halfLifeDays);
+  return Math.pow(0.5, ageDays / HALF_LIFE_DAYS);
 }
 
 async function readJson(file) {
   try {
     const raw = await fsp.readFile(file, "utf8");
     const data = JSON.parse(raw || "{}");
+
     if (Array.isArray(data)) return data;
     if (Array.isArray(data.genres)) return data.genres;
     if (Array.isArray(data.countries)) return data.countries;
     if (Array.isArray(data.artists)) return data.artists;
+
     return [];
   } catch {
     return [];
   }
 }
 
+async function readArtists() {
+
+  for (const file of ARTISTS_FILE_CANDIDATES) {
+    if (fs.existsSync(file)) {
+      return await readJson(file);
+    }
+  }
+
+  return [];
+}
+
 async function scanEvents(file) {
+
   if (!fs.existsSync(file)) return [];
 
   const stat = fs.statSync(file);
   const readBytes = Math.min(stat.size, LIMITS.maxReadBytes);
 
   const fd = await fsp.open(file, "r");
+
   const buf = Buffer.alloc(readBytes);
+
   await fd.read(buf, 0, readBytes, Math.max(0, stat.size - readBytes));
+
   await fd.close();
 
   return buf
     .toString("utf8")
     .split("\n")
     .filter(Boolean)
-    .map(line => {
+    .map(l => {
       try {
-        return JSON.parse(line);
+        return JSON.parse(l);
       } catch {
         return null;
       }
     })
     .filter(Boolean);
 }
-
-/* ---------- HEALTH ---------- */
 
 router.get("/health", async (req, res) => {
 
@@ -108,18 +111,24 @@ router.get("/health", async (req, res) => {
 
 });
 
-/* ---------- GLOBAL GENRES ---------- */
+/* ---------- WORLD MUSIC MAP ---------- */
 
-router.get("/global/genres", async (req, res) => {
+router.get("/world-map", async (req, res) => {
 
+  const countries = await readJson(COUNTRIES_FILE);
   const genres = await readJson(GENRES_FILE);
-  const events = await scanEvents(GENRE_EVENTS);
+  const artists = await readArtists();
 
-  const scores = {};
+  const genreEvents = await scanEvents(GENRE_EVENTS);
+  const countryEvents = await scanEvents(COUNTRY_EVENTS);
+
+  const genreScores = {};
+  const artistScores = {};
+  const countryScores = {};
 
   const now = Date.now();
 
-  for (const ev of events) {
+  for (const ev of genreEvents) {
 
     const ts = Date.parse(ev.ts || "");
     if (!ts) continue;
@@ -130,45 +139,11 @@ router.get("/global/genres", async (req, res) => {
     const id = ev.genreId;
     if (!id) continue;
 
-    scores[id] = (scores[id] || 0) + weight;
+    genreScores[id] = (genreScores[id] || 0) + weight;
 
   }
 
-  const ranked = genres
-    .map(g => ({
-      id: g.id,
-      name: g.name,
-      score: scores[g.id] || 0
-    }))
-    .sort((a,b)=> b.score - a.score);
-
-  res.json({
-    success: true,
-    list: ranked.slice(0,10),
-    ts: nowIso()
-  });
-
-});
-
-/* ---------- GLOBAL ARTISTS ---------- */
-
-router.get("/global/artists", async (req, res) => {
-
-  let artists = [];
-
-  for (const file of ARTISTS_FILE_CANDIDATES) {
-    if (fs.existsSync(file)) {
-      artists = await readJson(file);
-      break;
-    }
-  }
-
-  const events = await scanEvents(COUNTRY_EVENTS);
-
-  const scores = {};
-  const now = Date.now();
-
-  for (const ev of events) {
+  for (const ev of countryEvents) {
 
     const ts = Date.parse(ev.ts || "");
     if (!ts) continue;
@@ -176,24 +151,49 @@ router.get("/global/artists", async (req, res) => {
     const ageDays = (now - ts) / (1000 * 60 * 60 * 24);
     const weight = decay(ageDays);
 
-    const id = ev.artistId;
-    if (!id) continue;
+    if (ev.artistId) {
+      artistScores[ev.artistId] = (artistScores[ev.artistId] || 0) + weight;
+    }
 
-    scores[id] = (scores[id] || 0) + weight;
+    if (ev.countryId) {
+      countryScores[ev.countryId] = (countryScores[ev.countryId] || 0) + weight;
+    }
 
   }
 
-  const ranked = artists
-    .map(a => ({
-      id: a.id,
-      name: a.name,
-      score: scores[a.id] || 0
-    }))
-    .sort((a,b)=> b.score - a.score);
+  const result = countries.map(country => {
+
+    const topArtist = artists
+      .map(a => ({
+        id: a.id,
+        name: a.name,
+        score: artistScores[a.id] || 0
+      }))
+      .sort((a,b)=> b.score - a.score)[0];
+
+    const topGenre = genres
+      .map(g => ({
+        id: g.id,
+        name: g.name,
+        score: genreScores[g.id] || 0
+      }))
+      .sort((a,b)=> b.score - a.score)[0];
+
+    return {
+      country: country.name,
+      flag: country.flag,
+      topArtist: topArtist ? topArtist.name : null,
+      topGenre: topGenre ? topGenre.name : null,
+      activity: countryScores[country.id] || 0
+    };
+
+  });
+
+  const ranked = result.sort((a,b)=> b.activity - a.activity);
 
   res.json({
     success: true,
-    list: ranked.slice(0,10),
+    countries: ranked.slice(0,20),
     ts: nowIso()
   });
 
