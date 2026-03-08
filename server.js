@@ -1,5 +1,5 @@
 // server.js (ESM) — iBand backend (root-level structure)
-// Phase H6.1: Adds Genres routes with safe module mounting.
+// Phase H7.1: Adds Countries routes with safe module mounting.
 // This file is designed to NEVER crash deploy if an optional route module is missing.
 
 import express from "express";
@@ -123,11 +123,11 @@ const mounts = [
   { basePath: "/api/moderation", modulePath: "./moderation.js" },
 
   { basePath: "/api/rooms", modulePath: "./rooms.js" },
-
   { basePath: "/api/fans", modulePath: "./fanProfiles.js" },
-
-  // Phase H6.1 — Genres
   { basePath: "/api/genres", modulePath: "./genres.js" },
+
+  // Phase H7.1 — Countries / Regions
+  { basePath: "/api/countries", modulePath: "./countries.js" },
 ];
 
 (async () => {
