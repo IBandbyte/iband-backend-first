@@ -1,5 +1,5 @@
 // server.js (ESM) — iBand backend (root-level structure)
-// Phase H11: World Map engine mounted with safe module loader.
+// Phase H12: Breakouts engine mounted with safe module loader.
 
 import express from "express";
 import cors from "cors";
@@ -138,10 +138,14 @@ const mounts = [
 
   // World Map Engine (H11)
   { basePath: "/api/world-map", modulePath: "./world-map.js" },
+
+  // Breakout Detection Engine (H12)
+  { basePath: "/api/breakouts", modulePath: "./breakouts.js" },
 ];
 
 (async () => {
   for (const m of mounts) {
+    // eslint-disable-next-line no-await-in-loop
     await safeMount(m);
   }
 
@@ -149,6 +153,7 @@ const mounts = [
     jsonError(res, 404, "not_found", { path: req.originalUrl });
   });
 
+  // eslint-disable-next-line no-unused-vars
   app.use((err, req, res, next) => {
     console.error("[unhandled_error]", err);
     jsonError(res, 500, "server_error", {
