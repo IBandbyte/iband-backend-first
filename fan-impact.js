@@ -1,120 +1,86 @@
+// fan-impact.js
+// Phase H15 — Fan Impact Engine
+// Calculates which fans have the biggest influence on an artist's growth.
+
 import express from "express";
 import fs from "fs";
 import path from "path";
 
 const router = express.Router();
 
-const SERVICE = "fan-impact";
-const PHASE = "H15";
-const VERSION = 2;
+const SHARES_FILE = "/var/data/iband/db/shares/events/shares.jsonl";
 
-const DATA_DIR = "/var/data/iband/db";
-
-function readJSONL(file) {
+function safeReadLines(file) {
   try {
     if (!fs.existsSync(file)) return [];
-
-    const lines = fs
-      .readFileSync(file, "utf8")
-      .split("\n")
-      .filter(Boolean);
-
-    return lines.map((l) => {
-      try {
-        return JSON.parse(l);
-      } catch {
-        return null;
-      }
-    }).filter(Boolean);
-
+    const raw = fs.readFileSync(file, "utf8");
+    if (!raw) return [];
+    return raw.split("\n").filter(Boolean);
   } catch {
     return [];
   }
 }
 
-/*
-Health
-*/
 router.get("/health", (req, res) => {
-
   res.json({
     success: true,
-    service: SERVICE,
-    phase: PHASE,
-    version: VERSION,
+    service: "fan-impact",
+    phase: "H15",
+    version: 1,
     ts: new Date().toISOString()
   });
-
 });
 
-/*
-Fan impact leaderboard
-*/
 router.get("/artist/:artistId", (req, res) => {
-
   try {
+    const { artistId } = req.params;
 
-    const artistId = req.params.artistId;
+    const lines = safeReadLines(SHARES_FILE);
 
-    const sharesFile = path.join(
-      DATA_DIR,
-      "shares/events/shares.jsonl"
-    );
+    const scores = {};
 
-    const purchasesFile = path.join(
-      DATA_DIR,
-      "purchases/events/purchases.jsonl"
-    );
+    for (const line of lines) {
+      let event;
 
-    const shares = readJSONL(sharesFile);
-    const purchases = readJSONL(purchasesFile);
+      try {
+        event = JSON.parse(line);
+      } catch {
+        continue;
+      }
 
-    const impact = {};
+      if (event.artistId !== artistId) continue;
 
-    for (const s of shares) {
+      // IMPORTANT FIX
+      if (!event.fanId) continue;
 
-      if (s.artistId !== artistId) continue;
+      const fanId = event.fanId;
 
-      const fan = s.fanId;
+      if (!scores[fanId]) scores[fanId] = 0;
 
-      impact[fan] = (impact[fan] || 0) + 6;
-
+      // share weight
+      scores[fanId] += 6;
     }
 
-    for (const p of purchases) {
-
-      if (p.artistId !== artistId) continue;
-
-      const fan = p.fanId;
-
-      impact[fan] = (impact[fan] || 0) + 10;
-
-    }
-
-    const results = Object.entries(impact).map(([fanId, score]) => ({
-      fanId,
-      impactScore: score
-    }));
-
-    results.sort((a, b) => b.impactScore - a.impactScore);
+    const list = Object.entries(scores)
+      .map(([fanId, impactScore]) => ({
+        fanId,
+        impactScore
+      }))
+      .sort((a, b) => b.impactScore - a.impactScore);
 
     res.json({
       success: true,
       artistId,
-      list: results.slice(0, 20),
+      list,
       ts: new Date().toISOString()
     });
-
   } catch (err) {
-
     res.status(500).json({
       success: false,
       error: "fan_impact_failed",
       message: err.message
     });
-
   }
-
 });
 
 export default router;
