@@ -6,28 +6,34 @@ const router = express.Router();
 
 const SERVICE = "fan-impact";
 const PHASE = "H15";
-const VERSION = 1;
+const VERSION = 2;
 
 const DATA_DIR = "/var/data/iband/db";
 
-function safeNum(v) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
-}
-
-function readJSON(file) {
+function readJSONL(file) {
   try {
     if (!fs.existsSync(file)) return [];
-    const raw = JSON.parse(fs.readFileSync(file, "utf8"));
-    if (Array.isArray(raw)) return raw;
-    return [];
+
+    const lines = fs
+      .readFileSync(file, "utf8")
+      .split("\n")
+      .filter(Boolean);
+
+    return lines.map((l) => {
+      try {
+        return JSON.parse(l);
+      } catch {
+        return null;
+      }
+    }).filter(Boolean);
+
   } catch {
     return [];
   }
 }
 
 /*
-Health check
+Health
 */
 router.get("/health", (req, res) => {
 
@@ -50,11 +56,18 @@ router.get("/artist/:artistId", (req, res) => {
 
     const artistId = req.params.artistId;
 
-    const sharesFile = path.join(DATA_DIR, "shares/shares.json");
-    const purchasesFile = path.join(DATA_DIR, "purchases/purchases.json");
+    const sharesFile = path.join(
+      DATA_DIR,
+      "shares/events/shares.jsonl"
+    );
 
-    const shares = readJSON(sharesFile);
-    const purchases = readJSON(purchasesFile);
+    const purchasesFile = path.join(
+      DATA_DIR,
+      "purchases/events/purchases.jsonl"
+    );
+
+    const shares = readJSONL(sharesFile);
+    const purchases = readJSONL(purchasesFile);
 
     const impact = {};
 
