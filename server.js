@@ -1,5 +1,5 @@
-// server.js (ESM) — iBand backend
-// Phase H13: Cross-border radar mounted
+// server.js (ESM) — iBand backend (root-level structure)
+// Phase H15: Adds Fan Impact Engine
 
 import express from "express";
 import cors from "cors";
@@ -53,7 +53,10 @@ function jsonError(res, status, error, extra = {}) {
 
 async function safeImportLocal(modulePath) {
   const abs = path.resolve(__dirname, modulePath);
-  if (!fs.existsSync(abs)) return { ok: false, reason: "missing_file", abs };
+
+  if (!fs.existsSync(abs)) {
+    return { ok: false, reason: "missing_file", abs };
+  }
 
   try {
     const modUrl = pathToFileURL(abs).href;
@@ -78,11 +81,12 @@ async function safeMount({ basePath, modulePath, exportName = "default" }) {
     loaded.mod?.[exportName] ?? loaded.mod?.router ?? loaded.mod;
 
   if (!candidate) {
-    console.warn(`[mount:skip] ${basePath} -> ${modulePath} (no_export_found)`);
+    console.warn(`[mount:skip] ${basePath} -> ${modulePath} (no export)`);
     return;
   }
 
   app.use(basePath, candidate);
+
   console.log(`[mount:ok] ${basePath} -> ${modulePath}`);
 }
 
@@ -107,7 +111,6 @@ app.get("/api/health", (req, res) => {
 });
 
 const mounts = [
-
   { basePath: "/api/artists", modulePath: "./artists.js" },
   { basePath: "/api/votes", modulePath: "./votes.js" },
   { basePath: "/api/ranking", modulePath: "./ranking.js" },
@@ -128,20 +131,23 @@ const mounts = [
 
   { basePath: "/api/rooms", modulePath: "./rooms.js" },
   { basePath: "/api/fans", modulePath: "./fanProfiles.js" },
+
   { basePath: "/api/genres", modulePath: "./genres.js" },
   { basePath: "/api/countries", modulePath: "./countries.js" },
 
   { basePath: "/api/discovery", modulePath: "./discovery.js" },
+
   { basePath: "/api/world-map", modulePath: "./world-map.js" },
   { basePath: "/api/breakouts", modulePath: "./breakouts.js" },
+  { basePath: "/api/cross-border", modulePath: "./cross-border.js" },
 
-  // H13 Cross-Border Radar
-  { basePath: "/api/cross-border", modulePath: "./cross-border.js" }
+  { basePath: "/api/momentum", modulePath: "./momentum.js" },
 
+  // H15 — Fan Impact Engine
+  { basePath: "/api/fan-impact", modulePath: "./fan-impact.js" },
 ];
 
 (async () => {
-
   for (const m of mounts) {
     await safeMount(m);
   }
@@ -150,8 +156,21 @@ const mounts = [
     jsonError(res, 404, "not_found", { path: req.originalUrl });
   });
 
+  app.use((err, req, res, next) => {
+    console.error("[unhandled_error]", err);
+
+    jsonError(res, 500, "server_error", {
+      message:
+        NODE_ENV === "production"
+          ? "Internal Server Error"
+          : String(err?.message || err),
+    });
+  });
+
   app.listen(PORT, () => {
     console.log(`[boot] ${APP_NAME} listening on port ${PORT}`);
   });
-
-})();
+})().catch((err) => {
+  console.error("[boot_fatal]", err);
+  process.exit(1);
+});
