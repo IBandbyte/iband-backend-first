@@ -29,9 +29,6 @@ function countryActivity(c) {
   );
 }
 
-/*
-Health check
-*/
 router.get("/health", (req, res) => {
   res.json({
     success: true,
@@ -42,27 +39,24 @@ router.get("/health", (req, res) => {
   });
 });
 
-/*
-World map discovery
-*/
 router.get("/", (req, res) => {
   try {
     const countriesFile = path.join(DATA_DIR, "countries/countries.json");
     const countries = readJSON(countriesFile);
 
-    const regionMap = {};
+    const regions = {};
 
     for (const c of countries) {
       const region = c.subregion || c.region || "Other";
 
-      if (!regionMap[region]) {
-        regionMap[region] = {
+      if (!regions[region]) {
+        regions[region] = {
           region,
           countries: []
         };
       }
 
-      regionMap[region].countries.push({
+      regions[region].countries.push({
         name: c.name,
         code: c.code,
         flag: c.flag || "",
@@ -73,7 +67,7 @@ router.get("/", (req, res) => {
 
     res.json({
       success: true,
-      regions: Object.values(regionMap),
+      regions: Object.values(regions),
       ts: new Date().toISOString()
     });
 
