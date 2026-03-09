@@ -1,5 +1,5 @@
-// server.js (ESM) — iBand backend (root-level structure)
-// Phase H12: Breakouts engine mounted with safe module loader.
+// server.js (ESM) — iBand backend
+// Phase H13: Cross-border radar mounted
 
 import express from "express";
 import cors from "cors";
@@ -69,11 +69,9 @@ async function safeMount({ basePath, modulePath, exportName = "default" }) {
 
   if (!loaded.ok) {
     console.warn(
-      `[mount:skip] ${basePath} -> ${modulePath} (${loaded.reason}) ${
-        loaded.abs || ""
-      }`
+      `[mount:skip] ${basePath} -> ${modulePath} (${loaded.reason})`
     );
-    return { mounted: false, reason: loaded.reason };
+    return;
   }
 
   const candidate =
@@ -81,12 +79,11 @@ async function safeMount({ basePath, modulePath, exportName = "default" }) {
 
   if (!candidate) {
     console.warn(`[mount:skip] ${basePath} -> ${modulePath} (no_export_found)`);
-    return { mounted: false, reason: "no_export_found" };
+    return;
   }
 
   app.use(basePath, candidate);
   console.log(`[mount:ok] ${basePath} -> ${modulePath}`);
-  return { mounted: true };
 }
 
 app.get("/", (req, res) => {
@@ -110,6 +107,7 @@ app.get("/api/health", (req, res) => {
 });
 
 const mounts = [
+
   { basePath: "/api/artists", modulePath: "./artists.js" },
   { basePath: "/api/votes", modulePath: "./votes.js" },
   { basePath: "/api/ranking", modulePath: "./ranking.js" },
@@ -133,19 +131,18 @@ const mounts = [
   { basePath: "/api/genres", modulePath: "./genres.js" },
   { basePath: "/api/countries", modulePath: "./countries.js" },
 
-  // Discovery Engine
   { basePath: "/api/discovery", modulePath: "./discovery.js" },
-
-  // World Map Engine (H11)
   { basePath: "/api/world-map", modulePath: "./world-map.js" },
-
-  // Breakout Detection Engine (H12)
   { basePath: "/api/breakouts", modulePath: "./breakouts.js" },
+
+  // H13 Cross-Border Radar
+  { basePath: "/api/cross-border", modulePath: "./cross-border.js" }
+
 ];
 
 (async () => {
+
   for (const m of mounts) {
-    // eslint-disable-next-line no-await-in-loop
     await safeMount(m);
   }
 
@@ -153,21 +150,8 @@ const mounts = [
     jsonError(res, 404, "not_found", { path: req.originalUrl });
   });
 
-  // eslint-disable-next-line no-unused-vars
-  app.use((err, req, res, next) => {
-    console.error("[unhandled_error]", err);
-    jsonError(res, 500, "server_error", {
-      message:
-        NODE_ENV === "production"
-          ? "Internal Server Error"
-          : String(err?.message || err),
-    });
+  app.listen(PORT, () => {
+    console.log(`[boot] ${APP_NAME} listening on port ${PORT}`);
   });
 
-  app.listen(PORT, () => {
-    console.log(`[boot] ${APP_NAME} listening on port ${PORT} (${NODE_ENV})`);
-  });
-})().catch((err) => {
-  console.error("[boot_fatal]", err);
-  process.exit(1);
-});
+})();
