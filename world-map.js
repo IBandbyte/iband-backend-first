@@ -13,7 +13,13 @@ const DATA_DIR = "/var/data/iband/db";
 function readJSON(file) {
   try {
     if (!fs.existsSync(file)) return [];
-    return JSON.parse(fs.readFileSync(file, "utf8"));
+    const raw = JSON.parse(fs.readFileSync(file, "utf8"));
+
+    // support both formats
+    if (Array.isArray(raw)) return raw;
+    if (Array.isArray(raw.countries)) return raw.countries;
+
+    return [];
   } catch {
     return [];
   }
@@ -29,6 +35,9 @@ function countryActivity(c) {
   );
 }
 
+/*
+Health check
+*/
 router.get("/health", (req, res) => {
   res.json({
     success: true,
@@ -39,14 +48,19 @@ router.get("/health", (req, res) => {
   });
 });
 
+/*
+World map discovery
+*/
 router.get("/", (req, res) => {
   try {
+
     const countriesFile = path.join(DATA_DIR, "countries/countries.json");
     const countries = readJSON(countriesFile);
 
     const regions = {};
 
     for (const c of countries) {
+
       const region = c.subregion || c.region || "Other";
 
       if (!regions[region]) {
@@ -63,11 +77,13 @@ router.get("/", (req, res) => {
         activity: countryActivity(c),
         topGenre: c.localGenres?.[0] || null
       });
+
     }
 
     res.json({
       success: true,
       regions: Object.values(regions),
+      countriesLoaded: countries.length,
       ts: new Date().toISOString()
     });
 
