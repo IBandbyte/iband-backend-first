@@ -1,40 +1,59 @@
+import express from "express";
 import fs from "fs";
 import path from "path";
 
+const router = express.Router();
+
+const SERVICE = "world-map";
+const PHASE = "H11";
+const VERSION = 1;
+
 const DATA_DIR = "/var/data/iband/db";
-const COUNTRIES_FILE = path.join(DATA_DIR, "countries/countries.json");
-const GENRES_FILE = path.join(DATA_DIR, "genres/genres.json");
 
 function readJSON(file) {
   try {
+    if (!fs.existsSync(file)) return [];
     return JSON.parse(fs.readFileSync(file, "utf8"));
-  } catch (err) {
+  } catch {
     return [];
   }
 }
 
-function calculateCountryActivity(country) {
-  if (!country.counters) return 0;
-
-  const c = country.counters;
-
+function countryActivity(c) {
+  const x = c?.counters || {};
   return (
-    (c.shares || 0) * 6 +
-    (c.votes || 0) * 2 +
-    (c.purchases || 0) * 10 +
-    (c.uploads || 0) * 4
+    (x.shares || 0) * 6 +
+    (x.votes || 0) * 2 +
+    (x.purchases || 0) * 10 +
+    (x.uploads || 0) * 4
   );
 }
 
-export function worldMapDiscovery(req, res) {
+/*
+Health check
+*/
+router.get("/health", (req, res) => {
+  res.json({
+    success: true,
+    service: SERVICE,
+    phase: PHASE,
+    version: VERSION,
+    ts: new Date().toISOString()
+  });
+});
+
+/*
+World map discovery
+*/
+router.get("/", (req, res) => {
   try {
-    const countries = readJSON(COUNTRIES_FILE);
-    const genres = readJSON(GENRES_FILE);
+    const countriesFile = path.join(DATA_DIR, "countries/countries.json");
+    const countries = readJSON(countriesFile);
 
     const regionMap = {};
 
-    for (const country of countries) {
-      const region = country.subregion || country.region || "Other";
+    for (const c of countries) {
+      const region = c.subregion || c.region || "Other";
 
       if (!regionMap[region]) {
         regionMap[region] = {
@@ -43,32 +62,21 @@ export function worldMapDiscovery(req, res) {
         };
       }
 
-      const activity = calculateCountryActivity(country);
-
-      const topGenre =
-        country.localGenres && country.localGenres.length
-          ? country.localGenres[0]
-          : null;
-
       regionMap[region].countries.push({
-        name: country.name,
-        flag: country.flag || "",
-        code: country.code,
-        activity,
-        topGenre
+        name: c.name,
+        code: c.code,
+        flag: c.flag || "",
+        activity: countryActivity(c),
+        topGenre: c.localGenres?.[0] || null
       });
     }
 
-    const regions = Object.values(regionMap);
-
     res.json({
       success: true,
-      regions,
-      meta: {
-        regions: regions.length,
-        ts: new Date().toISOString()
-      }
+      regions: Object.values(regionMap),
+      ts: new Date().toISOString()
     });
+
   } catch (err) {
     res.status(500).json({
       success: false,
@@ -76,4 +84,6 @@ export function worldMapDiscovery(req, res) {
       message: err.message
     });
   }
-}
+});
+
+export default router;
