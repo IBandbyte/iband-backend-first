@@ -1,5 +1,5 @@
 // server.js (ESM) — iBand backend (root-level structure)
-// Phase H19: Adds Viral Surge Detection engine.
+// Phase H20: Adds Discovery Boost Engine.
 
 import express from "express";
 import cors from "cors";
@@ -149,9 +149,10 @@ const mounts = [
   { basePath: "/api/trend-starter", modulePath: "./trend-starter.js" },
 
   { basePath: "/api/momentum-charts", modulePath: "./momentum-charts.js" },
-
-  // H19 — Viral Surge Detection
   { basePath: "/api/surge", modulePath: "./surge-detector.js" },
+
+  // H20 — Discovery Boost Engine
+  { basePath: "/api/discovery-boost", modulePath: "./discovery-boost.js" },
 ];
 
 (async () => {
