@@ -1,5 +1,5 @@
 // server.js (ESM) — iBand backend (root-level structure)
-// Phase H16: Adds Fan Power Index engine.
+// Phase H17: Adds Trend Starter Detector engine.
 
 import express from "express";
 import cors from "cors";
@@ -145,9 +145,10 @@ const mounts = [
   { basePath: "/api/velocity", modulePath: "./velocity.js" },
 
   { basePath: "/api/fan-impact", modulePath: "./fan-impact.js" },
-
-  // H16 — Fan Power Index
   { basePath: "/api/fan-power", modulePath: "./fan-power.js" },
+
+  // H17 — Trend Starter Detector
+  { basePath: "/api/trend-starter", modulePath: "./trend-starter.js" },
 ];
 
 (async () => {
