@@ -1,5 +1,5 @@
 // server.js (ESM) — iBand backend (root-level structure)
-// Phase H15: Adds Fan Impact Engine
+// Phase H16: Adds Fan Power Index engine.
 
 import express from "express";
 import cors from "cors";
@@ -142,9 +142,12 @@ const mounts = [
   { basePath: "/api/cross-border", modulePath: "./cross-border.js" },
 
   { basePath: "/api/momentum", modulePath: "./momentum.js" },
+  { basePath: "/api/velocity", modulePath: "./velocity.js" },
 
-  // H15 — Fan Impact Engine
   { basePath: "/api/fan-impact", modulePath: "./fan-impact.js" },
+
+  // H16 — Fan Power Index
+  { basePath: "/api/fan-power", modulePath: "./fan-power.js" },
 ];
 
 (async () => {
