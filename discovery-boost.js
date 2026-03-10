@@ -119,6 +119,7 @@ function computeSurgeMap() {
 
   function ensureArtist(artistId) {
     if (!artistId) return null;
+
     if (!map[artistId]) {
       map[artistId] = {
         artistId,
@@ -127,6 +128,7 @@ function computeSurgeMap() {
         surgeScore: 0
       };
     }
+
     return map[artistId];
   }
 
