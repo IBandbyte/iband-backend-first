@@ -1,5 +1,5 @@
 // server.js (ESM) — iBand backend (root-level structure)
-// Phase H17: Adds Trend Starter Detector engine.
+// Phase H18: Adds Momentum Chart Engine.
 
 import express from "express";
 import cors from "cors";
@@ -146,9 +146,10 @@ const mounts = [
 
   { basePath: "/api/fan-impact", modulePath: "./fan-impact.js" },
   { basePath: "/api/fan-power", modulePath: "./fan-power.js" },
-
-  // H17 — Trend Starter Detector
   { basePath: "/api/trend-starter", modulePath: "./trend-starter.js" },
+
+  // H18 — Momentum Chart Engine
+  { basePath: "/api/momentum-charts", modulePath: "./momentum-charts.js" },
 ];
 
 (async () => {
