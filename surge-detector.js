@@ -18,7 +18,6 @@ function readJSONL(file) {
     if (!fs.existsSync(file)) return [];
 
     const raw = fs.readFileSync(file, "utf8");
-
     if (!raw) return [];
 
     return raw
@@ -66,7 +65,7 @@ router.get("/health", (req, res) => {
 });
 
 /*
-Detect surge activity
+Detect artist surge activity in the last hour
 */
 router.get("/artists", (req, res) => {
   try {
@@ -74,12 +73,12 @@ router.get("/artists", (req, res) => {
     const purchaseEvents = readJSONL(PURCHASES_FILE);
 
     const now = Date.now();
-    const oneHour = 60 * 60 * 1000;
+    const oneHourMs = 60 * 60 * 1000;
 
     const surge = {};
 
-    function add(artistId, weight) {
-      if (!artistId) return;
+    function ensureArtist(artistId) {
+      if (!artistId) return null;
 
       if (!surge[artistId]) {
         surge[artistId] = {
@@ -90,27 +89,31 @@ router.get("/artists", (req, res) => {
         };
       }
 
-      surge[artistId].surgeScore += weight;
+      return surge[artistId];
     }
 
     for (const ev of shareEvents) {
-      const ts = safeTs(ev.ts);
+      const ts = safeTs(ev?.ts);
       if (!ts) continue;
+      if (now - ts > oneHourMs) continue;
 
-      if (now - ts <= oneHour) {
-        add(ev.artistId, 6);
-        surge[ev.artistId].shareSignals += 1;
-      }
+      const row = ensureArtist(ev.artistId);
+      if (!row) continue;
+
+      row.shareSignals += 1;
+      row.surgeScore += 6;
     }
 
     for (const ev of purchaseEvents) {
-      const ts = safeTs(ev.ts);
+      const ts = safeTs(ev?.ts);
       if (!ts) continue;
+      if (now - ts > oneHourMs) continue;
 
-      if (now - ts <= oneHour) {
-        add(ev.artistId, 10);
-        surge[ev.artistId].purchaseSignals += 1;
-      }
+      const row = ensureArtist(ev.artistId);
+      if (!row) continue;
+
+      row.purchaseSignals += 1;
+      row.surgeScore += 10;
     }
 
     const list = Object.values(surge)
