@@ -1,5 +1,5 @@
 // server.js (ESM) — iBand backend (root-level structure)
-// Phase H20: Adds Discovery Boost Engine.
+// Phase H21: Adds Rising Now Feed Engine.
 
 import express from "express";
 import cors from "cors";
@@ -151,8 +151,10 @@ const mounts = [
   { basePath: "/api/momentum-charts", modulePath: "./momentum-charts.js" },
   { basePath: "/api/surge", modulePath: "./surge-detector.js" },
 
-  // H20 — Discovery Boost Engine
   { basePath: "/api/discovery-boost", modulePath: "./discovery-boost.js" },
+
+  // H21 — Rising Now Feed Engine
+  { basePath: "/api/rising-now", modulePath: "./rising-now.js" },
 ];
 
 (async () => {
