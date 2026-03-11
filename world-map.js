@@ -1,99 +1,129 @@
 import express from "express";
-import fs from "fs";
-import path from "path";
 
 const router = express.Router();
 
-const SERVICE = "world-map";
-const PHASE = "H11";
-const VERSION = 1;
+/*
+|--------------------------------------------------------------------------
+| World Map Activity Engine
+|--------------------------------------------------------------------------
+| Provides map-ready country activity data for iBand discovery.
+| Data can later be connected to countryEngine signals or a database.
+|--------------------------------------------------------------------------
+*/
 
-const DATA_DIR = "/var/data/iband/db";
+/*
+|--------------------------------------------------------------------------
+| Temporary in-memory activity store
+|--------------------------------------------------------------------------
+*/
 
-function readJSON(file) {
-  try {
-    if (!fs.existsSync(file)) return [];
-    const raw = JSON.parse(fs.readFileSync(file, "utf8"));
+const worldActivity = {};
 
-    // support both formats
-    if (Array.isArray(raw)) return raw;
-    if (Array.isArray(raw.countries)) return raw.countries;
+/*
+|--------------------------------------------------------------------------
+| Helpers
+|--------------------------------------------------------------------------
+*/
 
-    return [];
-  } catch {
-    return [];
+function ensureCountry(country) {
+  if (!worldActivity[country]) {
+    worldActivity[country] = {
+      country,
+      signals: 0,
+      lastActivity: null,
+    };
   }
 }
 
-function countryActivity(c) {
-  const x = c?.counters || {};
-  return (
-    (x.shares || 0) * 6 +
-    (x.votes || 0) * 2 +
-    (x.purchases || 0) * 10 +
-    (x.uploads || 0) * 4
-  );
-}
-
 /*
-Health check
+|--------------------------------------------------------------------------
+| GET
+| Map activity summary
+|--------------------------------------------------------------------------
 */
-router.get("/health", (req, res) => {
-  res.json({
+
+router.get("/activity", (req, res) => {
+  const countries = Object.values(worldActivity).sort(
+    (a, b) => b.signals - a.signals
+  );
+
+  return res.json({
     success: true,
-    service: SERVICE,
-    phase: PHASE,
-    version: VERSION,
-    ts: new Date().toISOString()
+    count: countries.length,
+    countries,
   });
 });
 
 /*
-World map discovery
+|--------------------------------------------------------------------------
+| GET
+| Single country activity
+|--------------------------------------------------------------------------
 */
-router.get("/", (req, res) => {
-  try {
 
-    const countriesFile = path.join(DATA_DIR, "countries/countries.json");
-    const countries = readJSON(countriesFile);
+router.get("/country/:country", (req, res) => {
+  const country = req.params.country;
 
-    const regions = {};
-
-    for (const c of countries) {
-
-      const region = c.subregion || c.region || "Other";
-
-      if (!regions[region]) {
-        regions[region] = {
-          region,
-          countries: []
-        };
-      }
-
-      regions[region].countries.push({
-        name: c.name,
-        code: c.code,
-        flag: c.flag || "",
-        activity: countryActivity(c),
-        topGenre: c.localGenres?.[0] || null
-      });
-
-    }
-
-    res.json({
+  if (!worldActivity[country]) {
+    return res.json({
       success: true,
-      regions: Object.values(regions),
-      countriesLoaded: countries.length,
-      ts: new Date().toISOString()
-    });
-
-  } catch (err) {
-    res.status(500).json({
-      success: false,
-      error: "world_map_failed",
-      message: err.message
+      country,
+      signals: 0,
+      message: "No activity recorded yet.",
     });
   }
+
+  return res.json({
+    success: true,
+    ...worldActivity[country],
+  });
+});
+
+/*
+|--------------------------------------------------------------------------
+| POST
+| Record world activity signal
+|--------------------------------------------------------------------------
+*/
+
+router.post("/signal", (req, res) => {
+  const { country } = req.body;
+
+  if (!country) {
+    return res.status(400).json({
+      success: false,
+      message: "country is required",
+    });
+  }
+
+  ensureCountry(country);
+
+  worldActivity[country].signals += 1;
+  worldActivity[country].lastActivity = new Date().toISOString();
+
+  return res.json({
+    success: true,
+    message: "World map signal recorded",
+    country: worldActivity[country],
+  });
+});
+
+/*
+|--------------------------------------------------------------------------
+| GET
+| Top countries
+|--------------------------------------------------------------------------
+*/
+
+router.get("/top", (req, res) => {
+  const countries = Object.values(worldActivity)
+    .sort((a, b) => b.signals - a.signals)
+    .slice(0, 20);
+
+  return res.json({
+    success: true,
+    countries,
+  });
 });
 
 export default router;
