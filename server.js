@@ -66,7 +66,7 @@ app.get("/", (req, res) => {
     platform: "iBandbyte",
     company: "iBandbyte Ltd",
     environment: NODE_ENV,
-    version: "H7-country-engine-mount-safe",
+    version: "H9-cross-border-momentum",
     message: "iBand backend is live.",
     rankingPhilosophy: {
       popularityVisible: true,
@@ -113,6 +113,7 @@ app.get("/api", (req, res) => {
       "/api/world-map",
       "/api/breakouts",
       "/api/cross-border",
+      "/api/cross-border-momentum",
       "/api/momentum",
       "/api/velocity",
       "/api/fan-impact",
@@ -122,7 +123,7 @@ app.get("/api", (req, res) => {
       "/api/surge",
       "/api/discovery-boost",
       "/api/rising-now",
-      "/api/country-engine",
+      "/api/country-engine"
     ],
   });
 });
@@ -133,6 +134,7 @@ app.get("/api", (req, res) => {
 |--------------------------------------------------------------------------
 */
 async function startServer() {
+
   await mountRoute("/api/artists", "./artists.js");
   await mountRoute("/api/votes", "./votes.js");
   await mountRoute("/api/ranking", "./ranking.js");
@@ -154,6 +156,15 @@ async function startServer() {
   await mountRoute("/api/world-map", "./world-map.js");
   await mountRoute("/api/breakouts", "./breakouts.js");
   await mountRoute("/api/cross-border", "./cross-border.js");
+
+  /*
+  |--------------------------------------------------------------------------
+  | H9 Cross-Border Momentum Engine
+  |--------------------------------------------------------------------------
+  */
+
+  await mountRoute("/api/cross-border-momentum", "./cross-border-momentum.js");
+
   await mountRoute("/api/momentum", "./momentum.js");
   await mountRoute("/api/velocity", "./velocity.js");
   await mountRoute("/api/fan-impact", "./fan-impact.js");
@@ -164,11 +175,6 @@ async function startServer() {
   await mountRoute("/api/discovery-boost", "./discovery-boost.js");
   await mountRoute("/api/rising-now", "./rising-now.js");
 
-  /*
-  |--------------------------------------------------------------------------
-  | H7 Country Engine
-  |--------------------------------------------------------------------------
-  */
   await mountRoute("/api/country-engine", "./countryEngine.js");
 
   /*
