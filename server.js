@@ -23,159 +23,96 @@ app.use(express.urlencoded({ extended: true }));
 
 /*
 |--------------------------------------------------------------------------
-| Safe route mounting helper
+| Safe route loading helper
 |--------------------------------------------------------------------------
 */
-async function mountRoute(basePath, importPath) {
+async function tryLoadRoute(importPath) {
   try {
     const mod = await import(importPath);
-    const router = mod.default || mod;
-
-    if (!router) {
-      console.log(`[mount:skip] ${basePath} -> ${importPath} (no_router_export)`);
-      return;
-    }
-
-    app.use(basePath, router);
-    console.log(`[mount:ok] ${basePath} -> ${importPath}`);
+    return mod.default || mod;
   } catch (error) {
-    if (
-      error?.code === "ERR_MODULE_NOT_FOUND" ||
-      error?.code === "MODULE_NOT_FOUND"
-    ) {
-      console.log(`[mount:skip] ${basePath} -> ${importPath} (missing_file)`);
-      return;
-    }
-
-    console.log(
-      `[mount:skip] ${basePath} -> ${importPath} (${error?.code || "load_error"})`
-    );
+    console.warn(`[route-loader] Could not load ${importPath}: ${error.message}`);
+    return null;
   }
 }
 
 /*
 |--------------------------------------------------------------------------
-| Base routes
-|--------------------------------------------------------------------------
-*/
-app.get("/", (req, res) => {
-  return res.status(200).json({
-    success: true,
-    service: "iband-backend-first",
-    app: "iBand",
-    platform: "iBandbyte",
-    company: "iBandbyte Ltd",
-    environment: NODE_ENV,
-    version: "H9-cross-border-momentum",
-    message: "iBand backend is live.",
-    rankingPhilosophy: {
-      popularityVisible: true,
-      momentumPrimary: true,
-    },
-    now: new Date().toISOString(),
-  });
-});
-
-app.get("/health", (req, res) => {
-  return res.status(200).json({
-    success: true,
-    status: "ok",
-    service: "iband-backend-first",
-    environment: NODE_ENV,
-    uptimeSec: Math.floor(process.uptime()),
-    now: new Date().toISOString(),
-  });
-});
-
-app.get("/api", (req, res) => {
-  return res.status(200).json({
-    success: true,
-    message: "iBand API root",
-    availableGroups: [
-      "/api/artists",
-      "/api/votes",
-      "/api/ranking",
-      "/api/medals",
-      "/api/recs",
-      "/api/flash-medals",
-      "/api/achievements",
-      "/api/purchases",
-      "/api/monetisation",
-      "/api/shares",
-      "/api/trends",
-      "/api/ambassadors",
-      "/api/moderation",
-      "/api/rooms",
-      "/api/fans",
-      "/api/genres",
-      "/api/countries",
-      "/api/discovery",
-      "/api/world-map",
-      "/api/breakouts",
-      "/api/cross-border",
-      "/api/cross-border-momentum",
-      "/api/momentum",
-      "/api/velocity",
-      "/api/fan-impact",
-      "/api/fan-power",
-      "/api/trend-starter",
-      "/api/momentum-charts",
-      "/api/surge",
-      "/api/discovery-boost",
-      "/api/rising-now",
-      "/api/country-engine"
-    ],
-  });
-});
-
-/*
-|--------------------------------------------------------------------------
-| Bootstrap route mounting
+| Bootstrap routes and start server
 |--------------------------------------------------------------------------
 */
 async function startServer() {
 
-  await mountRoute("/api/artists", "./artists.js");
-  await mountRoute("/api/votes", "./votes.js");
-  await mountRoute("/api/ranking", "./ranking.js");
-  await mountRoute("/api/medals", "./medals.js");
-  await mountRoute("/api/recs", "./recs.js");
-  await mountRoute("/api/flash-medals", "./flashMedals.js");
-  await mountRoute("/api/achievements", "./achievements.js");
-  await mountRoute("/api/purchases", "./purchases.js");
-  await mountRoute("/api/monetisation", "./monetisationSignals.js");
-  await mountRoute("/api/shares", "./shares.js");
-  await mountRoute("/api/trends", "./trends.js");
-  await mountRoute("/api/ambassadors", "./ambassadors.js");
-  await mountRoute("/api/moderation", "./moderation.js");
-  await mountRoute("/api/rooms", "./rooms.js");
-  await mountRoute("/api/fans", "./fanProfiles.js");
-  await mountRoute("/api/genres", "./genres.js");
-  await mountRoute("/api/countries", "./countries.js");
-  await mountRoute("/api/discovery", "./discovery.js");
-  await mountRoute("/api/world-map", "./world-map.js");
-  await mountRoute("/api/breakouts", "./breakouts.js");
-  await mountRoute("/api/cross-border", "./cross-border.js");
+  const artistsRoute = await tryLoadRoute("./artists.js");
+  const countryEngineRoute = await tryLoadRoute("./countryEngine.js");
+  const worldMapRoute = await tryLoadRoute("./world-map.js");
+  const crossBorderRoute = await tryLoadRoute("./cross-border.js");
+  const mapActivityRoute = await tryLoadRoute("./mapActivity.js");
 
   /*
   |--------------------------------------------------------------------------
-  | H9 Cross-Border Momentum Engine
+  | Base routes
+  |--------------------------------------------------------------------------
+  */
+  app.get("/", (req, res) => {
+    return res.status(200).json({
+      success: true,
+      name: "iBandbyte API",
+      app: "iBand",
+      platform: "iBandbyte",
+      company: "iBandbyte Ltd",
+      environment: NODE_ENV,
+      version: "H10-map-activity",
+      message: "iBand backend is live.",
+      modules: {
+        artists: Boolean(artistsRoute),
+        countryEngine: Boolean(countryEngineRoute),
+        worldMap: Boolean(worldMapRoute),
+        crossBorder: Boolean(crossBorderRoute),
+        mapActivity: Boolean(mapActivityRoute)
+      },
+      timestamps: {
+        now: new Date().toISOString(),
+      },
+    });
+  });
+
+  app.get("/health", (req, res) => {
+    return res.status(200).json({
+      success: true,
+      status: "ok",
+      service: "iband-backend",
+      environment: NODE_ENV,
+      uptimeSec: Math.floor(process.uptime()),
+      now: new Date().toISOString(),
+    });
+  });
+
+  app.get("/api", (req, res) => {
+    return res.status(200).json({
+      success: true,
+      message: "iBand API root",
+      availableGroups: [
+        "/api/artists",
+        "/api/country-engine",
+        "/api/world-map",
+        "/api/cross-border",
+        "/api/map-activity"
+      ],
+    });
+  });
+
+  /*
+  |--------------------------------------------------------------------------
+  | Mounted route groups
   |--------------------------------------------------------------------------
   */
 
-  await mountRoute("/api/cross-border-momentum", "./cross-border-momentum.js");
-
-  await mountRoute("/api/momentum", "./momentum.js");
-  await mountRoute("/api/velocity", "./velocity.js");
-  await mountRoute("/api/fan-impact", "./fan-impact.js");
-  await mountRoute("/api/fan-power", "./fan-power.js");
-  await mountRoute("/api/trend-starter", "./trend-starter.js");
-  await mountRoute("/api/momentum-charts", "./momentum-charts.js");
-  await mountRoute("/api/surge", "./surge-detector.js");
-  await mountRoute("/api/discovery-boost", "./discovery-boost.js");
-  await mountRoute("/api/rising-now", "./rising-now.js");
-
-  await mountRoute("/api/country-engine", "./countryEngine.js");
+  if (artistsRoute) app.use("/api/artists", artistsRoute);
+  if (countryEngineRoute) app.use("/api/country-engine", countryEngineRoute);
+  if (worldMapRoute) app.use("/api/world-map", worldMapRoute);
+  if (crossBorderRoute) app.use("/api/cross-border", crossBorderRoute);
+  if (mapActivityRoute) app.use("/api/map-activity", mapActivityRoute);
 
   /*
   |--------------------------------------------------------------------------
@@ -211,7 +148,8 @@ async function startServer() {
   |--------------------------------------------------------------------------
   */
   app.listen(PORT, () => {
-    console.log(`[boot] iband-backend-first listening on port ${PORT}`);
+    console.log(`[boot] iband-backend listening on port ${PORT}`);
+    console.log(`[env] ${NODE_ENV}`);
   });
 }
 
