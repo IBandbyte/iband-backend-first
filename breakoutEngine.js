@@ -1,15 +1,24 @@
-/**
- * ==========================================================
- * iBand Breakout Engine
- * Detects viral momentum and breakout explosions
- * ==========================================================
- */
+/*
+|--------------------------------------------------------------------------
+| iBand Breakout Engine
+|--------------------------------------------------------------------------
+| Detects viral momentum and breakout explosions.
+| This engine powers:
+| - Momentum charts
+| - Breakout Explosion system
+| - Global discovery boosts
+| - Future push notifications
+|--------------------------------------------------------------------------
+*/
 
 const breakoutStore = {}
 
-/**
- * Momentum thresholds
- */
+/*
+|--------------------------------------------------------------------------
+| Breakout levels
+|--------------------------------------------------------------------------
+*/
+
 const BREAKOUT_LEVELS = [
   {
     level: "quiet",
@@ -43,10 +52,13 @@ const BREAKOUT_LEVELS = [
   }
 ]
 
-/**
- * Record engagement signal
- */
-function recordSignal(artistId, type, value = 1) {
+/*
+|--------------------------------------------------------------------------
+| Record engagement signal
+|--------------------------------------------------------------------------
+*/
+
+export function recordBreakoutSignal(artistId, type, value = 1) {
 
   if (!artistId) return null
 
@@ -73,10 +85,13 @@ function recordSignal(artistId, type, value = 1) {
   return signal
 }
 
-/**
- * Determine breakout level
- */
-function getBreakoutLevel(score) {
+/*
+|--------------------------------------------------------------------------
+| Determine breakout level
+|--------------------------------------------------------------------------
+*/
+
+export function getBreakoutLevel(score) {
 
   let stage = BREAKOUT_LEVELS[0]
 
@@ -89,10 +104,13 @@ function getBreakoutLevel(score) {
   return stage
 }
 
-/**
- * Get artist momentum
- */
-function getArtistMomentum(artistId) {
+/*
+|--------------------------------------------------------------------------
+| Get artist momentum
+|--------------------------------------------------------------------------
+*/
+
+export function getArtistBreakout(artistId) {
 
   const artist = breakoutStore[artistId]
 
@@ -113,10 +131,13 @@ function getArtistMomentum(artistId) {
   }
 }
 
-/**
- * Get all breakout artists
- */
-function getAllMomentum() {
+/*
+|--------------------------------------------------------------------------
+| Get all breakout artists
+|--------------------------------------------------------------------------
+*/
+
+export function getAllBreakouts() {
 
   const results = []
 
@@ -136,21 +157,17 @@ function getAllMomentum() {
   return results
 }
 
-/**
- * Get top trending artists
- */
-function getTopArtists(limit = 10) {
+/*
+|--------------------------------------------------------------------------
+| Get top trending artists
+|--------------------------------------------------------------------------
+*/
 
-  const all = getAllMomentum()
+export function getTopBreakouts(limit = 10) {
+
+  const all = getAllBreakouts()
 
   return all
     .sort((a, b) => b.score - a.score)
     .slice(0, limit)
-}
-
-module.exports = {
-  recordSignal,
-  getArtistMomentum,
-  getAllMomentum,
-  getTopArtists
 }
