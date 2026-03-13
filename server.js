@@ -114,8 +114,6 @@ app.get("/api", (req, res) => {
       "/api/breakouts",
       "/api/cross-border",
       "/api/cross-border-momentum",
-      "/api/momentum",
-      "/api/velocity",
       "/api/fan-impact",
       "/api/fan-power",
       "/api/trend-starter",
@@ -127,9 +125,9 @@ app.get("/api", (req, res) => {
       "/api/map-activity",
       "/api/breakout",
       "/api/signal-weight"
-    ],
+    ]
   });
-}
+});
 
 /*
 |--------------------------------------------------------------------------
@@ -194,7 +192,7 @@ async function startServer() {
       success: false,
       message: "Route not found.",
       method: req.method,
-      path: req.originalUrl,
+      path: req.originalUrl
     });
   });
 
@@ -208,7 +206,7 @@ async function startServer() {
 
     return res.status(error.status || 500).json({
       success: false,
-      message: error.message || "Internal server error.",
+      message: error.message || "Internal server error."
     });
   });
 
