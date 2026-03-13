@@ -66,7 +66,7 @@ app.get("/", (req, res) => {
     platform: "iBandbyte",
     company: "iBandbyte Ltd",
     environment: NODE_ENV,
-    version: "H11-breakout-mounted",
+    version: "H12-signal-weight-ready",
     message: "iBand backend is live.",
     rankingPhilosophy: {
       popularityVisible: true,
@@ -125,10 +125,11 @@ app.get("/api", (req, res) => {
       "/api/rising-now",
       "/api/country-engine",
       "/api/map-activity",
-      "/api/breakout"
+      "/api/breakout",
+      "/api/signal-weight"
     ],
   });
-});
+}
 
 /*
 |--------------------------------------------------------------------------
@@ -136,6 +137,7 @@ app.get("/api", (req, res) => {
 |--------------------------------------------------------------------------
 */
 async function startServer() {
+
   await mountRoute("/api/artists", "./artists.js");
   await mountRoute("/api/votes", "./votes.js");
   await mountRoute("/api/ranking", "./ranking.js");
@@ -155,27 +157,32 @@ async function startServer() {
   await mountRoute("/api/countries", "./countries.js");
   await mountRoute("/api/discovery", "./discovery.js");
   await mountRoute("/api/world-map", "./world-map.js");
+
   await mountRoute("/api/breakouts", "./breakouts.js");
   await mountRoute("/api/cross-border", "./cross-border.js");
   await mountRoute("/api/cross-border-momentum", "./cross-border-momentum.js");
-  await mountRoute("/api/momentum", "./momentum.js");
-  await mountRoute("/api/velocity", "./velocity.js");
+
   await mountRoute("/api/fan-impact", "./fan-impact.js");
   await mountRoute("/api/fan-power", "./fan-power.js");
+
   await mountRoute("/api/trend-starter", "./trend-starter.js");
   await mountRoute("/api/momentum-charts", "./momentum-charts.js");
   await mountRoute("/api/surge", "./surge-detector.js");
+
   await mountRoute("/api/discovery-boost", "./discovery-boost.js");
   await mountRoute("/api/rising-now", "./rising-now.js");
+
   await mountRoute("/api/country-engine", "./countryEngine.js");
   await mountRoute("/api/map-activity", "./mapActivity.js");
 
+  await mountRoute("/api/breakout", "./breakouts.js");
+
   /*
   |--------------------------------------------------------------------------
-  | H11 Breakout API
+  | H12 Signal Weight Engine
   |--------------------------------------------------------------------------
   */
-  await mountRoute("/api/breakout", "./breakouts.js");
+  await mountRoute("/api/signal-weight", "./signalWeight.js");
 
   /*
   |--------------------------------------------------------------------------
@@ -213,6 +220,7 @@ async function startServer() {
   app.listen(PORT, () => {
     console.log(`[boot] iband-backend-first listening on port ${PORT}`);
   });
+
 }
 
 startServer().catch((error) => {
