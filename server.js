@@ -66,7 +66,7 @@ app.get("/", (req, res) => {
     platform: "iBandbyte",
     company: "iBandbyte Ltd",
     environment: NODE_ENV,
-    version: "H11-breakout-server-ready",
+    version: "H11-breakout-mounted",
     message: "iBand backend is live.",
     rankingPhilosophy: {
       popularityVisible: true,
@@ -175,7 +175,7 @@ async function startServer() {
   | H11 Breakout API
   |--------------------------------------------------------------------------
   */
-  await mountRoute("/api/breakout", "./breakout.js");
+  await mountRoute("/api/breakout", "./breakouts.js");
 
   /*
   |--------------------------------------------------------------------------
