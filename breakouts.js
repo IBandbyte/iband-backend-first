@@ -1,151 +1,124 @@
 import express from "express";
-import fs from "fs";
-import path from "path";
+import {
+  recordBreakoutSignal,
+  getArtistBreakout,
+  getAllBreakouts,
+  getTopBreakouts
+} from "./breakoutEngine.js";
 
 const router = express.Router();
 
-const SERVICE = "breakouts";
-const PHASE = "H12";
-const VERSION = 2;
-
-const DATA_DIR = "/var/data/iband/db";
-
-const ARTISTS_FILE_CANDIDATES = [
-  path.join(DATA_DIR, "artists", "artists.json"),
-  path.join(DATA_DIR, "artists.json")
-];
-
-function readJSON(file) {
-  try {
-    if (!fs.existsSync(file)) return [];
-    const raw = JSON.parse(fs.readFileSync(file, "utf8"));
-
-    if (Array.isArray(raw)) return raw;
-    if (Array.isArray(raw.artists)) return raw.artists;
-    if (Array.isArray(raw.list)) return raw.list;
-    if (Array.isArray(raw.countries)) return raw.countries;
-    if (Array.isArray(raw.genres)) return raw.genres;
-
-    return [];
-  } catch {
-    return [];
-  }
-}
-
-function readArtists() {
-  for (const file of ARTISTS_FILE_CANDIDATES) {
-    if (fs.existsSync(file)) {
-      return readJSON(file);
-    }
-  }
-  return [];
-}
-
-function safeNum(v) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
-}
-
-function artistBreakoutScore(artist) {
-  const counters = artist?.counters || {};
-
-  return (
-    safeNum(artist?.votes) * 2 +
-    safeNum(counters.shares) * 6 +
-    safeNum(counters.votes) * 2 +
-    safeNum(counters.purchases) * 10 +
-    safeNum(counters.uploads) * 4
-  );
-}
-
-function genreBreakoutScore(genre) {
-  const counters = genre?.counters || {};
-
-  return (
-    safeNum(counters.shares) * 6 +
-    safeNum(counters.votes) * 2 +
-    safeNum(counters.purchases) * 10 +
-    safeNum(counters.uploads) * 4 +
-    safeNum(counters.uses)
-  );
-}
+/*
+|--------------------------------------------------------------------------
+| H11 Breakout API
+|--------------------------------------------------------------------------
+| Routes:
+| - GET  /api/breakout
+| - GET  /api/breakout/top
+| - GET  /api/breakout/:artistId
+| - POST /api/breakout/signal
+|--------------------------------------------------------------------------
+*/
 
 /*
-Health check
+|--------------------------------------------------------------------------
+| GET
+| Root summary
+|--------------------------------------------------------------------------
 */
-router.get("/health", (req, res) => {
-  res.json({
+router.get("/", (req, res) => {
+  const all = getAllBreakouts();
+
+  return res.json({
     success: true,
-    service: SERVICE,
-    phase: PHASE,
-    version: VERSION,
-    ts: new Date().toISOString()
+    message: "H11 Breakout API live.",
+    trackedArtists: all.length,
+    routes: [
+      "/api/breakout",
+      "/api/breakout/top",
+      "/api/breakout/:artistId",
+      "/api/breakout/signal"
+    ]
   });
 });
 
 /*
-Breakout artists
+|--------------------------------------------------------------------------
+| GET
+| Top breakout artists
+|--------------------------------------------------------------------------
 */
-router.get("/artists", (req, res) => {
-  try {
-    const artists = readArtists();
+router.get("/top", (req, res) => {
+  const limitRaw = Number(req.query.limit);
+  const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? limitRaw : 10;
 
-    const breakout = artists
-      .map((a) => ({
-        id: a.id,
-        name: a.name,
-        genre: a.genre || null,
-        location: a.location || null,
-        score: artistBreakoutScore(a)
-      }))
-      .filter((a) => a.id && a.name && a.score > 0)
-      .sort((a, b) => b.score - a.score);
+  const artists = getTopBreakouts(limit);
 
-    res.json({
-      success: true,
-      list: breakout.slice(0, 10),
-      artistsLoaded: artists.length,
-      ts: new Date().toISOString()
-    });
-  } catch (err) {
-    res.status(500).json({
-      success: false,
-      error: "breakout_failed",
-      message: err.message
-    });
-  }
+  return res.json({
+    success: true,
+    count: artists.length,
+    artists
+  });
 });
 
 /*
-Breakout genres
+|--------------------------------------------------------------------------
+| GET
+| Single artist breakout status
+|--------------------------------------------------------------------------
 */
-router.get("/genres", (req, res) => {
-  try {
-    const genresFile = path.join(DATA_DIR, "genres", "genres.json");
-    const genres = readJSON(genresFile);
+router.get("/:artistId", (req, res) => {
+  const artistId = String(req.params.artistId || "").trim();
 
-    const breakout = genres
-      .map((g) => ({
-        id: g.id,
-        name: g.name,
-        score: genreBreakoutScore(g)
-      }))
-      .filter((g) => g.id && g.name && g.score > 0)
-      .sort((a, b) => b.score - a.score);
-
-    res.json({
-      success: true,
-      list: breakout.slice(0, 10),
-      genresLoaded: genres.length,
-      ts: new Date().toISOString()
-    });
-  } catch (err) {
-    res.status(500).json({
+  if (!artistId) {
+    return res.status(400).json({
       success: false,
-      error: "genre_breakout_failed",
-      message: err.message
+      message: "artistId is required"
     });
   }
+
+  const result = getArtistBreakout(artistId);
+
+  return res.json({
+    success: true,
+    ...result
+  });
+});
+
+/*
+|--------------------------------------------------------------------------
+| POST
+| Record breakout signal
+|--------------------------------------------------------------------------
+*/
+router.post("/signal", (req, res) => {
+  const { artistId, type, value } = req.body;
+
+  if (!artistId) {
+    return res.status(400).json({
+      success: false,
+      message: "artistId is required"
+    });
+  }
+
+  const numericValue = Number(value);
+  const safeValue =
+    Number.isFinite(numericValue) && numericValue > 0 ? numericValue : 1;
+
+  const signal = recordBreakoutSignal(
+    String(artistId).trim(),
+    String(type || "play").trim(),
+    safeValue
+  );
+
+  const breakout = getArtistBreakout(String(artistId).trim());
+
+  return res.json({
+    success: true,
+    message: "Breakout signal recorded.",
+    signal,
+    breakout
+  });
 });
 
 export default router;
