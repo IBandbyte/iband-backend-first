@@ -66,7 +66,7 @@ app.get("/", (req, res) => {
     platform: "iBandbyte",
     company: "iBandbyte Ltd",
     environment: NODE_ENV,
-    version: "H13-breakout-explosion-ready",
+    version: "H14-map-intelligence-ready",
     message: "iBand backend is live.",
     rankingPhilosophy: {
       popularityVisible: true,
@@ -125,7 +125,8 @@ app.get("/api", (req, res) => {
       "/api/map-activity",
       "/api/breakout",
       "/api/signal-weight",
-      "/api/explosion"
+      "/api/explosion",
+      "/api/map-intelligence"
     ]
   });
 });
@@ -174,13 +175,14 @@ async function startServer() {
   await mountRoute("/api/map-activity", "./mapActivity.js");
   await mountRoute("/api/breakout", "./breakouts.js");
   await mountRoute("/api/signal-weight", "./signalWeight.js");
+  await mountRoute("/api/explosion", "./explosion.js");
 
   /*
   |--------------------------------------------------------------------------
-  | H13 Breakout Explosion Detector
+  | H14 Global Breakout Map Intelligence Engine
   |--------------------------------------------------------------------------
   */
-  await mountRoute("/api/explosion", "./explosion.js");
+  await mountRoute("/api/map-intelligence", "./mapIntelligence.js");
 
   /*
   |--------------------------------------------------------------------------
