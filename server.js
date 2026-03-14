@@ -66,7 +66,7 @@ app.get("/", (req, res) => {
     platform: "iBandbyte",
     company: "iBandbyte Ltd",
     environment: NODE_ENV,
-    version: "H12-signal-weight-ready",
+    version: "H13-breakout-explosion-ready",
     message: "iBand backend is live.",
     rankingPhilosophy: {
       popularityVisible: true,
@@ -124,7 +124,8 @@ app.get("/api", (req, res) => {
       "/api/country-engine",
       "/api/map-activity",
       "/api/breakout",
-      "/api/signal-weight"
+      "/api/signal-weight",
+      "/api/explosion"
     ]
   });
 });
@@ -135,7 +136,6 @@ app.get("/api", (req, res) => {
 |--------------------------------------------------------------------------
 */
 async function startServer() {
-
   await mountRoute("/api/artists", "./artists.js");
   await mountRoute("/api/votes", "./votes.js");
   await mountRoute("/api/ranking", "./ranking.js");
@@ -172,15 +172,15 @@ async function startServer() {
 
   await mountRoute("/api/country-engine", "./countryEngine.js");
   await mountRoute("/api/map-activity", "./mapActivity.js");
-
   await mountRoute("/api/breakout", "./breakouts.js");
+  await mountRoute("/api/signal-weight", "./signalWeight.js");
 
   /*
   |--------------------------------------------------------------------------
-  | H12 Signal Weight Engine
+  | H13 Breakout Explosion Detector
   |--------------------------------------------------------------------------
   */
-  await mountRoute("/api/signal-weight", "./signalWeight.js");
+  await mountRoute("/api/explosion", "./explosion.js");
 
   /*
   |--------------------------------------------------------------------------
@@ -218,7 +218,6 @@ async function startServer() {
   app.listen(PORT, () => {
     console.log(`[boot] iband-backend-first listening on port ${PORT}`);
   });
-
 }
 
 startServer().catch((error) => {
