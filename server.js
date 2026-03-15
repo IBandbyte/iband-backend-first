@@ -11,6 +11,7 @@ const NODE_ENV = process.env.NODE_ENV || "development";
 | Core middleware
 |--------------------------------------------------------------------------
 */
+
 app.use(
   cors({
     origin: true,
@@ -23,9 +24,10 @@ app.use(express.urlencoded({ extended: true }));
 
 /*
 |--------------------------------------------------------------------------
-| Safe route mounting helper
+| Safe dynamic route mounting
 |--------------------------------------------------------------------------
 */
+
 async function mountRoute(basePath, importPath) {
   try {
     const mod = await import(importPath);
@@ -55,95 +57,103 @@ async function mountRoute(basePath, importPath) {
 
 /*
 |--------------------------------------------------------------------------
-| Base routes
+| Root
 |--------------------------------------------------------------------------
 */
+
 app.get("/", (req, res) => {
-  return res.status(200).json({
+  return res.json({
     success: true,
     service: "iband-backend-first",
     app: "iBand",
     platform: "iBandbyte",
     company: "iBandbyte Ltd",
     environment: NODE_ENV,
-    version: "H22-discovery-missions-ready",
+    version: "H23-explorer-rank-engine",
     message: "iBand backend is live.",
-    rankingPhilosophy: {
-      popularityVisible: true,
-      momentumPrimary: true
-    },
     now: new Date().toISOString()
   });
 });
 
+/*
+|--------------------------------------------------------------------------
+| Health
+|--------------------------------------------------------------------------
+*/
+
 app.get("/health", (req, res) => {
-  return res.status(200).json({
+  return res.json({
     success: true,
     status: "ok",
-    service: "iband-backend-first",
-    environment: NODE_ENV,
     uptimeSec: Math.floor(process.uptime()),
     now: new Date().toISOString()
   });
 });
 
+/*
+|--------------------------------------------------------------------------
+| API root
+|--------------------------------------------------------------------------
+*/
+
 app.get("/api", (req, res) => {
-  return res.status(200).json({
+  return res.json({
     success: true,
     message: "iBand API root",
-    availableGroups: [
-      "/api/artists",
-      "/api/votes",
-      "/api/ranking",
-      "/api/medals",
-      "/api/recs",
-      "/api/flash-medals",
-      "/api/achievements",
-      "/api/purchases",
-      "/api/monetisation",
-      "/api/shares",
-      "/api/trends",
-      "/api/ambassadors",
-      "/api/moderation",
-      "/api/rooms",
-      "/api/fans",
-      "/api/genres",
-      "/api/countries",
-      "/api/discovery",
-      "/api/world-map",
-      "/api/breakouts",
-      "/api/cross-border",
-      "/api/cross-border-momentum",
-      "/api/fan-impact",
-      "/api/fan-power",
-      "/api/trend-starter",
-      "/api/momentum-charts",
-      "/api/surge",
-      "/api/discovery-boost",
-      "/api/rising-now",
-      "/api/country-engine",
-      "/api/map-activity",
-      "/api/breakout",
-      "/api/signal-weight",
-      "/api/explosion",
-      "/api/map-intelligence",
-      "/api/radar",
-      "/api/map-feed",
-      "/api/alerts",
-      "/api/live-heat",
-      "/api/spin",
-      "/api/adventure",
-      "/api/warp-drive",
-      "/api/missions"
+    modules: [
+      "artists",
+      "votes",
+      "ranking",
+      "medals",
+      "recs",
+      "flash-medals",
+      "achievements",
+      "purchases",
+      "monetisation",
+      "shares",
+      "trends",
+      "ambassadors",
+      "moderation",
+      "rooms",
+      "fans",
+      "genres",
+      "countries",
+      "discovery",
+      "world-map",
+      "breakouts",
+      "cross-border",
+      "cross-border-momentum",
+      "fan-impact",
+      "fan-power",
+      "trend-starter",
+      "momentum-charts",
+      "surge",
+      "discovery-boost",
+      "rising-now",
+      "country-engine",
+      "map-activity",
+      "signal-weight",
+      "explosion",
+      "map-intelligence",
+      "radar",
+      "map-feed",
+      "alerts",
+      "live-heat",
+      "spin",
+      "adventure",
+      "warp-drive",
+      "missions",
+      "explorer-rank"
     ]
   });
 });
 
 /*
 |--------------------------------------------------------------------------
-| Bootstrap route mounting
+| Boot route mounting
 |--------------------------------------------------------------------------
 */
+
 async function startServer() {
   await mountRoute("/api/artists", "./artists.js");
   await mountRoute("/api/votes", "./votes.js");
@@ -190,55 +200,29 @@ async function startServer() {
   await mountRoute("/api/alerts", "./alerts.js");
   await mountRoute("/api/live-heat", "./liveHeat.js");
   await mountRoute("/api/spin", "./spin.js");
+
   await mountRoute("/api/adventure", "./discoveryAdventure.js");
   await mountRoute("/api/warp-drive", "./warpDrive.js");
-
-  /*
-  |--------------------------------------------------------------------------
-  | H22 Discovery Missions Engine
-  |--------------------------------------------------------------------------
-  */
   await mountRoute("/api/missions", "./missions.js");
 
   /*
   |--------------------------------------------------------------------------
-  | 404 handler
+  | H23 Explorer Rank Engine
   |--------------------------------------------------------------------------
   */
+
+  await mountRoute("/api/explorer-rank", "./explorerRank.js");
+
   app.use((req, res) => {
     return res.status(404).json({
       success: false,
-      message: "Route not found.",
-      method: req.method,
-      path: req.originalUrl
+      message: "Route not found"
     });
   });
 
-  /*
-  |--------------------------------------------------------------------------
-  | Global error handler
-  |--------------------------------------------------------------------------
-  */
-  app.use((error, req, res, next) => {
-    console.error("[server-error]", error);
-
-    return res.status(error.status || 500).json({
-      success: false,
-      message: error.message || "Internal server error."
-    });
-  });
-
-  /*
-  |--------------------------------------------------------------------------
-  | Server start
-  |--------------------------------------------------------------------------
-  */
   app.listen(PORT, () => {
     console.log(`[boot] iband-backend-first listening on port ${PORT}`);
   });
 }
 
-startServer().catch((error) => {
-  console.error("[startup-error]", error);
-  process.exit(1);
-});
+startServer();
