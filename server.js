@@ -8,7 +8,7 @@ const NODE_ENV = process.env.NODE_ENV || "development";
 
 /*
 |--------------------------------------------------------------------------
-| Core middleware
+| Middleware
 |--------------------------------------------------------------------------
 */
 
@@ -69,7 +69,7 @@ app.get("/", (req, res) => {
     platform: "iBandbyte",
     company: "iBandbyte Ltd",
     environment: NODE_ENV,
-    version: "H28-global-momentum-pulse-engine",
+    version: "H29-global-heat-map-engine",
     message: "iBand backend is live.",
     now: new Date().toISOString()
   });
@@ -148,10 +148,11 @@ app.get("/api", (req, res) => {
       "rewards",
       "hidden-gems",
       "global-feed",
-      "momentum-pulse"
+      "momentum-pulse",
+      "heat-map"
     ]
   });
-});
+}
 
 /*
 |--------------------------------------------------------------------------
@@ -160,6 +161,7 @@ app.get("/api", (req, res) => {
 */
 
 async function startServer() {
+
   await mountRoute("/api/artists", "./artists.js");
   await mountRoute("/api/votes", "./votes.js");
   await mountRoute("/api/ranking", "./ranking.js");
@@ -214,14 +216,15 @@ async function startServer() {
   await mountRoute("/api/rewards", "./rewards.js");
   await mountRoute("/api/hidden-gems", "./hiddenGems.js");
   await mountRoute("/api/global-feed", "./globalFeed.js");
+  await mountRoute("/api/momentum-pulse", "./momentumPulse.js");
 
   /*
   |--------------------------------------------------------------------------
-  | H28 Global Momentum Pulse Engine
+  | H29 Global Heat Map Engine
   |--------------------------------------------------------------------------
   */
 
-  await mountRoute("/api/momentum-pulse", "./momentumPulse.js");
+  await mountRoute("/api/heat-map", "./heatMap.js");
 
   app.use((req, res) => {
     return res.status(404).json({
@@ -233,6 +236,7 @@ async function startServer() {
   app.listen(PORT, () => {
     console.log(`[boot] iband-backend-first listening on port ${PORT}`);
   });
+
 }
 
 startServer();
