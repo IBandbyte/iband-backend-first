@@ -66,7 +66,7 @@ app.get("/", (req, res) => {
     platform: "iBandbyte",
     company: "iBandbyte Ltd",
     environment: NODE_ENV,
-    version: "H17-breakout-alert-ready",
+    version: "H18-live-event-heat-ready",
     message: "iBand backend is live.",
     rankingPhilosophy: {
       popularityVisible: true,
@@ -129,7 +129,8 @@ app.get("/api", (req, res) => {
       "/api/map-intelligence",
       "/api/radar",
       "/api/map-feed",
-      "/api/alerts"
+      "/api/alerts",
+      "/api/live-heat"
     ]
   });
 });
@@ -182,13 +183,14 @@ async function startServer() {
   await mountRoute("/api/map-intelligence", "./mapIntelligence.js");
   await mountRoute("/api/radar", "./radar.js");
   await mountRoute("/api/map-feed", "./mapFeed.js");
+  await mountRoute("/api/alerts", "./alerts.js");
 
   /*
   |--------------------------------------------------------------------------
-  | H17 Breakout Alert System
+  | H18 Live Event Heat System
   |--------------------------------------------------------------------------
   */
-  await mountRoute("/api/alerts", "./alerts.js");
+  await mountRoute("/api/live-heat", "./liveHeat.js");
 
   /*
   |--------------------------------------------------------------------------
