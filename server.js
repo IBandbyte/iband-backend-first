@@ -152,7 +152,7 @@ app.get("/api", (req, res) => {
       "heat-map"
     ]
   });
-}
+});
 
 /*
 |--------------------------------------------------------------------------
@@ -161,7 +161,6 @@ app.get("/api", (req, res) => {
 */
 
 async function startServer() {
-
   await mountRoute("/api/artists", "./artists.js");
   await mountRoute("/api/votes", "./votes.js");
   await mountRoute("/api/ranking", "./ranking.js");
@@ -236,7 +235,6 @@ async function startServer() {
   app.listen(PORT, () => {
     console.log(`[boot] iband-backend-first listening on port ${PORT}`);
   });
-
 }
 
 startServer();
