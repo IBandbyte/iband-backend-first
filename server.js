@@ -69,7 +69,7 @@ app.get("/", (req, res) => {
     platform: "iBandbyte",
     company: "iBandbyte Ltd",
     environment: NODE_ENV,
-    version: "H23-explorer-rank-engine",
+    version: "H24-discovery-xp-engine",
     message: "iBand backend is live.",
     now: new Date().toISOString()
   });
@@ -143,7 +143,8 @@ app.get("/api", (req, res) => {
       "adventure",
       "warp-drive",
       "missions",
-      "explorer-rank"
+      "explorer-rank",
+      "xp"
     ]
   });
 });
@@ -204,14 +205,15 @@ async function startServer() {
   await mountRoute("/api/adventure", "./discoveryAdventure.js");
   await mountRoute("/api/warp-drive", "./warpDrive.js");
   await mountRoute("/api/missions", "./missions.js");
+  await mountRoute("/api/explorer-rank", "./explorerRank.js");
 
   /*
   |--------------------------------------------------------------------------
-  | H23 Explorer Rank Engine
+  | H24 Discovery XP Engine
   |--------------------------------------------------------------------------
   */
 
-  await mountRoute("/api/explorer-rank", "./explorerRank.js");
+  await mountRoute("/api/xp", "./xp.js");
 
   app.use((req, res) => {
     return res.status(404).json({
