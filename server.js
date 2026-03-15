@@ -69,7 +69,7 @@ app.get("/", (req, res) => {
     platform: "iBandbyte",
     company: "iBandbyte Ltd",
     environment: NODE_ENV,
-    version: "H32-breakout-explosion-engine",
+    version: "H33-global-shockwave-engine",
     message: "iBand backend is live.",
     now: new Date().toISOString()
   });
@@ -152,7 +152,8 @@ app.get("/api", (req, res) => {
       "heat-map",
       "breakout-probability",
       "breakout-alerts",
-      "breakout-explosions"
+      "breakout-explosions",
+      "shockwaves"
     ]
   });
 });
@@ -164,7 +165,6 @@ app.get("/api", (req, res) => {
 */
 
 async function startServer() {
-
   await mountRoute("/api/artists", "./artists.js");
   await mountRoute("/api/votes", "./votes.js");
   await mountRoute("/api/ranking", "./ranking.js");
@@ -223,14 +223,15 @@ async function startServer() {
   await mountRoute("/api/heat-map", "./heatMap.js");
   await mountRoute("/api/breakout-probability", "./breakoutProbability.js");
   await mountRoute("/api/breakout-alerts", "./breakoutAlerts.js");
+  await mountRoute("/api/breakout-explosions", "./breakoutExplosions.js");
 
   /*
   |--------------------------------------------------------------------------
-  | H32 Breakout Explosion Engine
+  | H33 Global Shockwave Engine
   |--------------------------------------------------------------------------
   */
 
-  await mountRoute("/api/breakout-explosions", "./breakoutExplosions.js");
+  await mountRoute("/api/shockwaves", "./shockwaves.js");
 
   app.use((req, res) => {
     return res.status(404).json({
@@ -242,7 +243,6 @@ async function startServer() {
   app.listen(PORT, () => {
     console.log(`[boot] iband-backend-first listening on port ${PORT}`);
   });
-
 }
 
 startServer();
