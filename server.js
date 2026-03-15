@@ -66,7 +66,7 @@ app.get("/", (req, res) => {
     platform: "iBandbyte",
     company: "iBandbyte Ltd",
     environment: NODE_ENV,
-    version: "H21-warp-drive-ready",
+    version: "H20-H21-adventure-warp-ready",
     message: "iBand backend is live.",
     rankingPhilosophy: {
       popularityVisible: true,
@@ -132,6 +132,7 @@ app.get("/api", (req, res) => {
       "/api/alerts",
       "/api/live-heat",
       "/api/spin",
+      "/api/adventure",
       "/api/warp-drive"
     ]
   });
@@ -188,6 +189,13 @@ async function startServer() {
   await mountRoute("/api/alerts", "./alerts.js");
   await mountRoute("/api/live-heat", "./liveHeat.js");
   await mountRoute("/api/spin", "./spin.js");
+
+  /*
+  |--------------------------------------------------------------------------
+  | H20 Discovery Adventure Engine
+  |--------------------------------------------------------------------------
+  */
+  await mountRoute("/api/adventure", "./discoveryAdventure.js");
 
   /*
   |--------------------------------------------------------------------------
