@@ -69,7 +69,7 @@ app.get("/", (req, res) => {
     platform: "iBandbyte",
     company: "iBandbyte Ltd",
     environment: NODE_ENV,
-    version: "H29-global-heat-map-engine",
+    version: "H30-breakout-probability-engine",
     message: "iBand backend is live.",
     now: new Date().toISOString()
   });
@@ -149,7 +149,8 @@ app.get("/api", (req, res) => {
       "hidden-gems",
       "global-feed",
       "momentum-pulse",
-      "heat-map"
+      "heat-map",
+      "breakout-probability"
     ]
   });
 });
@@ -161,6 +162,7 @@ app.get("/api", (req, res) => {
 */
 
 async function startServer() {
+
   await mountRoute("/api/artists", "./artists.js");
   await mountRoute("/api/votes", "./votes.js");
   await mountRoute("/api/ranking", "./ranking.js");
@@ -216,14 +218,15 @@ async function startServer() {
   await mountRoute("/api/hidden-gems", "./hiddenGems.js");
   await mountRoute("/api/global-feed", "./globalFeed.js");
   await mountRoute("/api/momentum-pulse", "./momentumPulse.js");
+  await mountRoute("/api/heat-map", "./heatMap.js");
 
   /*
   |--------------------------------------------------------------------------
-  | H29 Global Heat Map Engine
+  | H30 Breakout Probability Engine
   |--------------------------------------------------------------------------
   */
 
-  await mountRoute("/api/heat-map", "./heatMap.js");
+  await mountRoute("/api/breakout-probability", "./breakoutProbability.js");
 
   app.use((req, res) => {
     return res.status(404).json({
@@ -235,6 +238,7 @@ async function startServer() {
   app.listen(PORT, () => {
     console.log(`[boot] iband-backend-first listening on port ${PORT}`);
   });
+
 }
 
 startServer();
