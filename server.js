@@ -1,179 +1,240 @@
-// =====================================================
-// iBand Backend Server
-// Captain's Protocol Canonical Server
-// =====================================================
+import express from "express";
+import cors from "cors";
 
-const express = require("express")
-const cors = require("cors")
+const app = express();
 
-const app = express()
+const PORT = process.env.PORT || 10000;
+const NODE_ENV = process.env.NODE_ENV || "development";
 
-// =====================================================
-// Middleware
-// =====================================================
+/*
+|--------------------------------------------------------------------------
+| Core middleware
+|--------------------------------------------------------------------------
+*/
+app.use(
+  cors({
+    origin: true,
+    credentials: true
+  })
+);
 
-app.use(cors())
-app.use(express.json())
+app.use(express.json({ limit: "2mb" }));
+app.use(express.urlencoded({ extended: true }));
 
-// =====================================================
-// Safe Route Mount Helper
-// Prevents crashes if a module is missing
-// =====================================================
-
-function mount(path, file) {
+/*
+|--------------------------------------------------------------------------
+| Safe route mounting helper
+|--------------------------------------------------------------------------
+*/
+async function mountRoute(basePath, importPath) {
   try {
-    const router = require(file)
-    app.use(path, router)
-    console.log(`[mount:ok] ${path} -> ${file}`)
-  } catch (err) {
-    console.log(`[mount:skip] ${path} -> ${file} (missing_file)`)
+    const mod = await import(importPath);
+    const router = mod.default || mod;
+
+    if (!router) {
+      console.log(`[mount:skip] ${basePath} -> ${importPath} (no_router_export)`);
+      return;
+    }
+
+    app.use(basePath, router);
+    console.log(`[mount:ok] ${basePath} -> ${importPath}`);
+  } catch (error) {
+    if (
+      error?.code === "ERR_MODULE_NOT_FOUND" ||
+      error?.code === "MODULE_NOT_FOUND"
+    ) {
+      console.log(`[mount:skip] ${basePath} -> ${importPath} (missing_file)`);
+      return;
+    }
+
+    console.log(
+      `[mount:skip] ${basePath} -> ${importPath} (${error?.code || "load_error"})`
+    );
   }
 }
 
-// =====================================================
-// Core Artist System
-// =====================================================
-
-mount("/api/artists", "./artists.js")
-mount("/api/votes", "./votes.js")
-mount("/api/ranking", "./ranking.js")
-
-// =====================================================
-// Gamification Systems
-// =====================================================
-
-mount("/api/medals", "./medals.js")
-mount("/api/flash-medals", "./flashMedals.js")
-mount("/api/achievements", "./achievements.js")
-
-// =====================================================
-// Monetisation Systems
-// =====================================================
-
-mount("/api/purchases", "./purchases.js")
-mount("/api/monetisation", "./monetisationSignals.js")
-
-// =====================================================
-// Social Interaction
-// =====================================================
-
-mount("/api/shares", "./shares.js")
-mount("/api/trends", "./trends.js")
-mount("/api/ambassadors", "./ambassadors.js")
-mount("/api/moderation", "./moderation.js")
-mount("/api/rooms", "./rooms.js")
-mount("/api/fans", "./fanProfiles.js")
-
-// =====================================================
-// Discovery Systems
-// =====================================================
-
-mount("/api/genres", "./genres.js")
-mount("/api/countries", "./countries.js")
-mount("/api/discovery", "./discovery.js")
-
-// =====================================================
-// Global Music Map
-// =====================================================
-
-mount("/api/world-map", "./world-map.js")
-mount("/api/breakouts", "./breakouts.js")
-mount("/api/cross-border", "./cross-border.js")
-mount("/api/cross-border-momentum", "./cross-border-momentum.js")
-
-// =====================================================
-// Fan Impact Systems
-// =====================================================
-
-mount("/api/fan-impact", "./fan-impact.js")
-mount("/api/fan-power", "./fan-power.js")
-mount("/api/trend-starter", "./trend-starter.js")
-
-// =====================================================
-// Charts
-// =====================================================
-
-mount("/api/momentum-charts", "./momentum-charts.js")
-
-// =====================================================
-// Detection Engines
-// =====================================================
-
-mount("/api/surge", "./surge-detector.js")
-mount("/api/discovery-boost", "./discovery-boost.js")
-mount("/api/rising-now", "./rising-now.js")
-
-// =====================================================
-// Country Engines
-// =====================================================
-
-mount("/api/country-engine", "./countryEngine.js")
-
-// =====================================================
-// Map Intelligence Engines
-// =====================================================
-
-mount("/api/map-activity", "./mapActivity.js")
-mount("/api/breakout", "./breakouts.js")
-mount("/api/signal-weight", "./signalWeight.js")
-mount("/api/explosion", "./explosion.js")
-mount("/api/map-intelligence", "./mapIntelligence.js")
-
-// =====================================================
-// Radar System
-// =====================================================
-
-mount("/api/radar", "./radar.js")
-
-// =====================================================
-// Global Map Feed
-// =====================================================
-
-mount("/api/map-feed", "./mapFeed.js")
-
-// =====================================================
-// Breakout Alert System
-// =====================================================
-
-mount("/api/alerts", "./alerts.js")
-
-// =====================================================
-// Live Event Heat System
-// =====================================================
-
-mount("/api/live-heat", "./liveHeat.js")
-
-// =====================================================
-// Spin The Globe Discovery
-// =====================================================
-
-mount("/api/spin", "./spin.js")
-
-// =====================================================
-// Warp Drive Discovery Engine 🚀
-// =====================================================
-
-mount("/api/warp-drive", "./warpDrive.js")
-
-// =====================================================
-// Root Health Check
-// =====================================================
-
+/*
+|--------------------------------------------------------------------------
+| Base routes
+|--------------------------------------------------------------------------
+*/
 app.get("/", (req, res) => {
-  res.json({
+  return res.status(200).json({
     success: true,
-    service: "iBand Backend",
-    status: "running",
-    version: "Captain Protocol Server"
-  })
-})
+    service: "iband-backend-first",
+    app: "iBand",
+    platform: "iBandbyte",
+    company: "iBandbyte Ltd",
+    environment: NODE_ENV,
+    version: "H21-warp-drive-ready",
+    message: "iBand backend is live.",
+    rankingPhilosophy: {
+      popularityVisible: true,
+      momentumPrimary: true
+    },
+    now: new Date().toISOString()
+  });
+});
 
-// =====================================================
-// Server Start
-// =====================================================
+app.get("/health", (req, res) => {
+  return res.status(200).json({
+    success: true,
+    status: "ok",
+    service: "iband-backend-first",
+    environment: NODE_ENV,
+    uptimeSec: Math.floor(process.uptime()),
+    now: new Date().toISOString()
+  });
+});
 
-const PORT = process.env.PORT || 10000
+app.get("/api", (req, res) => {
+  return res.status(200).json({
+    success: true,
+    message: "iBand API root",
+    availableGroups: [
+      "/api/artists",
+      "/api/votes",
+      "/api/ranking",
+      "/api/medals",
+      "/api/recs",
+      "/api/flash-medals",
+      "/api/achievements",
+      "/api/purchases",
+      "/api/monetisation",
+      "/api/shares",
+      "/api/trends",
+      "/api/ambassadors",
+      "/api/moderation",
+      "/api/rooms",
+      "/api/fans",
+      "/api/genres",
+      "/api/countries",
+      "/api/discovery",
+      "/api/world-map",
+      "/api/breakouts",
+      "/api/cross-border",
+      "/api/cross-border-momentum",
+      "/api/fan-impact",
+      "/api/fan-power",
+      "/api/trend-starter",
+      "/api/momentum-charts",
+      "/api/surge",
+      "/api/discovery-boost",
+      "/api/rising-now",
+      "/api/country-engine",
+      "/api/map-activity",
+      "/api/breakout",
+      "/api/signal-weight",
+      "/api/explosion",
+      "/api/map-intelligence",
+      "/api/radar",
+      "/api/map-feed",
+      "/api/alerts",
+      "/api/live-heat",
+      "/api/spin",
+      "/api/warp-drive"
+    ]
+  });
+});
 
-app.listen(PORT, () => {
-  console.log(`[boot] iband-backend-first listening on port ${PORT}`)
-})
+/*
+|--------------------------------------------------------------------------
+| Bootstrap route mounting
+|--------------------------------------------------------------------------
+*/
+async function startServer() {
+  await mountRoute("/api/artists", "./artists.js");
+  await mountRoute("/api/votes", "./votes.js");
+  await mountRoute("/api/ranking", "./ranking.js");
+  await mountRoute("/api/medals", "./medals.js");
+  await mountRoute("/api/recs", "./recs.js");
+  await mountRoute("/api/flash-medals", "./flashMedals.js");
+  await mountRoute("/api/achievements", "./achievements.js");
+  await mountRoute("/api/purchases", "./purchases.js");
+  await mountRoute("/api/monetisation", "./monetisationSignals.js");
+  await mountRoute("/api/shares", "./shares.js");
+  await mountRoute("/api/trends", "./trends.js");
+  await mountRoute("/api/ambassadors", "./ambassadors.js");
+  await mountRoute("/api/moderation", "./moderation.js");
+  await mountRoute("/api/rooms", "./rooms.js");
+  await mountRoute("/api/fans", "./fanProfiles.js");
+  await mountRoute("/api/genres", "./genres.js");
+  await mountRoute("/api/countries", "./countries.js");
+  await mountRoute("/api/discovery", "./discovery.js");
+  await mountRoute("/api/world-map", "./world-map.js");
+
+  await mountRoute("/api/breakouts", "./breakouts.js");
+  await mountRoute("/api/cross-border", "./cross-border.js");
+  await mountRoute("/api/cross-border-momentum", "./cross-border-momentum.js");
+
+  await mountRoute("/api/fan-impact", "./fan-impact.js");
+  await mountRoute("/api/fan-power", "./fan-power.js");
+
+  await mountRoute("/api/trend-starter", "./trend-starter.js");
+  await mountRoute("/api/momentum-charts", "./momentum-charts.js");
+  await mountRoute("/api/surge", "./surge-detector.js");
+
+  await mountRoute("/api/discovery-boost", "./discovery-boost.js");
+  await mountRoute("/api/rising-now", "./rising-now.js");
+
+  await mountRoute("/api/country-engine", "./countryEngine.js");
+  await mountRoute("/api/map-activity", "./mapActivity.js");
+  await mountRoute("/api/breakout", "./breakouts.js");
+  await mountRoute("/api/signal-weight", "./signalWeight.js");
+  await mountRoute("/api/explosion", "./explosion.js");
+  await mountRoute("/api/map-intelligence", "./mapIntelligence.js");
+  await mountRoute("/api/radar", "./radar.js");
+  await mountRoute("/api/map-feed", "./mapFeed.js");
+  await mountRoute("/api/alerts", "./alerts.js");
+  await mountRoute("/api/live-heat", "./liveHeat.js");
+  await mountRoute("/api/spin", "./spin.js");
+
+  /*
+  |--------------------------------------------------------------------------
+  | H21 Warp Drive Discovery Engine
+  |--------------------------------------------------------------------------
+  */
+  await mountRoute("/api/warp-drive", "./warpDrive.js");
+
+  /*
+  |--------------------------------------------------------------------------
+  | 404 handler
+  |--------------------------------------------------------------------------
+  */
+  app.use((req, res) => {
+    return res.status(404).json({
+      success: false,
+      message: "Route not found.",
+      method: req.method,
+      path: req.originalUrl
+    });
+  });
+
+  /*
+  |--------------------------------------------------------------------------
+  | Global error handler
+  |--------------------------------------------------------------------------
+  */
+  app.use((error, req, res, next) => {
+    console.error("[server-error]", error);
+
+    return res.status(error.status || 500).json({
+      success: false,
+      message: error.message || "Internal server error."
+    });
+  });
+
+  /*
+  |--------------------------------------------------------------------------
+  | Server start
+  |--------------------------------------------------------------------------
+  */
+  app.listen(PORT, () => {
+    console.log(`[boot] iband-backend-first listening on port ${PORT}`);
+  });
+}
+
+startServer().catch((error) => {
+  console.error("[startup-error]", error);
+  process.exit(1);
+});
