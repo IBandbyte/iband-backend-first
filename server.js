@@ -1,19 +1,24 @@
-// ===============================
+// =====================================================
 // iBand Backend Server
-// Captain's Protocol Version
-// ===============================
+// Captain's Protocol Canonical Server
+// =====================================================
 
 const express = require("express")
 const cors = require("cors")
 
 const app = express()
 
+// =====================================================
+// Middleware
+// =====================================================
+
 app.use(cors())
 app.use(express.json())
 
-// ===============================
-// ROUTE MOUNTS
-// ===============================
+// =====================================================
+// Safe Route Mount Helper
+// Prevents crashes if a module is missing
+// =====================================================
 
 function mount(path, file) {
   try {
@@ -25,21 +30,33 @@ function mount(path, file) {
   }
 }
 
-// Core
+// =====================================================
+// Core Artist System
+// =====================================================
+
 mount("/api/artists", "./artists.js")
 mount("/api/votes", "./votes.js")
 mount("/api/ranking", "./ranking.js")
 
-// Gamification
+// =====================================================
+// Gamification Systems
+// =====================================================
+
 mount("/api/medals", "./medals.js")
 mount("/api/flash-medals", "./flashMedals.js")
 mount("/api/achievements", "./achievements.js")
 
-// Monetisation
+// =====================================================
+// Monetisation Systems
+// =====================================================
+
 mount("/api/purchases", "./purchases.js")
 mount("/api/monetisation", "./monetisationSignals.js")
 
-// Social
+// =====================================================
+// Social Interaction
+// =====================================================
+
 mount("/api/shares", "./shares.js")
 mount("/api/trends", "./trends.js")
 mount("/api/ambassadors", "./ambassadors.js")
@@ -47,73 +64,113 @@ mount("/api/moderation", "./moderation.js")
 mount("/api/rooms", "./rooms.js")
 mount("/api/fans", "./fanProfiles.js")
 
-// Discovery
+// =====================================================
+// Discovery Systems
+// =====================================================
+
 mount("/api/genres", "./genres.js")
 mount("/api/countries", "./countries.js")
 mount("/api/discovery", "./discovery.js")
 
-// Global Map Systems
+// =====================================================
+// Global Music Map
+// =====================================================
+
 mount("/api/world-map", "./world-map.js")
 mount("/api/breakouts", "./breakouts.js")
 mount("/api/cross-border", "./cross-border.js")
 mount("/api/cross-border-momentum", "./cross-border-momentum.js")
 
-// Fan impact
+// =====================================================
+// Fan Impact Systems
+// =====================================================
+
 mount("/api/fan-impact", "./fan-impact.js")
 mount("/api/fan-power", "./fan-power.js")
 mount("/api/trend-starter", "./trend-starter.js")
 
+// =====================================================
 // Charts
+// =====================================================
+
 mount("/api/momentum-charts", "./momentum-charts.js")
 
-// Detection engines
+// =====================================================
+// Detection Engines
+// =====================================================
+
 mount("/api/surge", "./surge-detector.js")
 mount("/api/discovery-boost", "./discovery-boost.js")
 mount("/api/rising-now", "./rising-now.js")
 
-// Country engines
+// =====================================================
+// Country Engines
+// =====================================================
+
 mount("/api/country-engine", "./countryEngine.js")
 
-// Map intelligence
+// =====================================================
+// Map Intelligence Engines
+// =====================================================
+
 mount("/api/map-activity", "./mapActivity.js")
 mount("/api/breakout", "./breakouts.js")
 mount("/api/signal-weight", "./signalWeight.js")
 mount("/api/explosion", "./explosion.js")
 mount("/api/map-intelligence", "./mapIntelligence.js")
 
-// Radar
+// =====================================================
+// Radar System
+// =====================================================
+
 mount("/api/radar", "./radar.js")
 
-// Map Feed
+// =====================================================
+// Global Map Feed
+// =====================================================
+
 mount("/api/map-feed", "./mapFeed.js")
 
-// Alerts
+// =====================================================
+// Breakout Alert System
+// =====================================================
+
 mount("/api/alerts", "./alerts.js")
 
-// Live heat
+// =====================================================
+// Live Event Heat System
+// =====================================================
+
 mount("/api/live-heat", "./liveHeat.js")
 
-// Spin The Globe
+// =====================================================
+// Spin The Globe Discovery
+// =====================================================
+
 mount("/api/spin", "./spin.js")
 
-// 🚀 Warp Drive Discovery
+// =====================================================
+// Warp Drive Discovery Engine 🚀
+// =====================================================
+
 mount("/api/warp-drive", "./warpDrive.js")
 
-// ===============================
-// ROOT
-// ===============================
+// =====================================================
+// Root Health Check
+// =====================================================
 
 app.get("/", (req, res) => {
   res.json({
     success: true,
     service: "iBand Backend",
-    status: "running"
+    status: "running",
+    version: "Captain Protocol Server"
   })
 })
 
-// ===============================
-// SERVER START
-// ===============================
+// =====================================================
+// Server Start
+// =====================================================
 
 const PORT = process.env.PORT || 10000
 
