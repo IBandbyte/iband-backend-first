@@ -69,7 +69,7 @@ app.get("/", (req, res) => {
     platform: "iBandbyte",
     company: "iBandbyte Ltd",
     environment: NODE_ENV,
-    version: "H27-global-discovery-feed",
+    version: "H28-global-momentum-pulse-engine",
     message: "iBand backend is live.",
     now: new Date().toISOString()
   });
@@ -147,7 +147,8 @@ app.get("/api", (req, res) => {
       "xp",
       "rewards",
       "hidden-gems",
-      "global-feed"
+      "global-feed",
+      "momentum-pulse"
     ]
   });
 });
@@ -212,14 +213,15 @@ async function startServer() {
   await mountRoute("/api/xp", "./xp.js");
   await mountRoute("/api/rewards", "./rewards.js");
   await mountRoute("/api/hidden-gems", "./hiddenGems.js");
+  await mountRoute("/api/global-feed", "./globalFeed.js");
 
   /*
   |--------------------------------------------------------------------------
-  | H27 Global Discovery Feed
+  | H28 Global Momentum Pulse Engine
   |--------------------------------------------------------------------------
   */
 
-  await mountRoute("/api/global-feed", "./globalFeed.js");
+  await mountRoute("/api/momentum-pulse", "./momentumPulse.js");
 
   app.use((req, res) => {
     return res.status(404).json({
