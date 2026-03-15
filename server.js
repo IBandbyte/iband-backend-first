@@ -1,238 +1,176 @@
 import express from "express";
-import cors from "cors";
+
+import artists from "./artists.js";
+import votes from "./votes.js";
+import ranking from "./ranking.js";
+import medals from "./medals.js";
+import recs from "./recs.js";
+import flashMedals from "./flashMedals.js";
+import achievements from "./achievements.js";
+import purchases from "./purchases.js";
+import monetisationSignals from "./monetisationSignals.js";
+import shares from "./shares.js";
+import trends from "./trends.js";
+import ambassadors from "./ambassadors.js";
+import moderation from "./moderation.js";
+import rooms from "./rooms.js";
+import fanProfiles from "./fanProfiles.js";
+import genres from "./genres.js";
+import countries from "./countries.js";
+import discovery from "./discovery.js";
+import worldMap from "./world-map.js";
+import breakouts from "./breakouts.js";
+import crossBorder from "./cross-border.js";
+import crossBorderMomentum from "./cross-border-momentum.js";
+import fanImpact from "./fan-impact.js";
+import fanPower from "./fan-power.js";
+import trendStarter from "./trend-starter.js";
+import momentumCharts from "./momentum-charts.js";
+import surgeDetector from "./surge-detector.js";
+import discoveryBoost from "./discovery-boost.js";
+import risingNow from "./rising-now.js";
+import countryEngine from "./countryEngine.js";
+import mapActivity from "./mapActivity.js";
+import signalWeight from "./signalWeight.js";
+import explosion from "./explosion.js";
+import mapIntelligence from "./mapIntelligence.js";
+import radar from "./radar.js";
+import mapFeed from "./mapFeed.js";
+import alerts from "./alerts.js";
+import liveHeat from "./liveHeat.js";
+import spin from "./spin.js";
+import warpDrive from "./warpDrive.js";
 
 const app = express();
 
-const PORT = process.env.PORT || 10000;
-const NODE_ENV = process.env.NODE_ENV || "development";
+app.use(express.json());
 
 /*
 |--------------------------------------------------------------------------
-| Core middleware
+| Core Platform
 |--------------------------------------------------------------------------
 */
-app.use(
-  cors({
-    origin: true,
-    credentials: true,
-  })
-);
 
-app.use(express.json({ limit: "2mb" }));
-app.use(express.urlencoded({ extended: true }));
+app.use("/api/artists", artists);
+app.use("/api/votes", votes);
+app.use("/api/ranking", ranking);
+app.use("/api/medals", medals);
+app.use("/api/recs", recs);
+app.use("/api/flash-medals", flashMedals);
+app.use("/api/achievements", achievements);
+app.use("/api/purchases", purchases);
+app.use("/api/monetisation", monetisationSignals);
+app.use("/api/shares", shares);
+app.use("/api/trends", trends);
 
 /*
 |--------------------------------------------------------------------------
-| Safe route mounting helper
+| Community Layer
 |--------------------------------------------------------------------------
 */
-async function mountRoute(basePath, importPath) {
-  try {
-    const mod = await import(importPath);
-    const router = mod.default || mod;
 
-    if (!router) {
-      console.log(`[mount:skip] ${basePath} -> ${importPath} (no_router_export)`);
-      return;
-    }
-
-    app.use(basePath, router);
-    console.log(`[mount:ok] ${basePath} -> ${importPath}`);
-  } catch (error) {
-    if (
-      error?.code === "ERR_MODULE_NOT_FOUND" ||
-      error?.code === "MODULE_NOT_FOUND"
-    ) {
-      console.log(`[mount:skip] ${basePath} -> ${importPath} (missing_file)`);
-      return;
-    }
-
-    console.log(
-      `[mount:skip] ${basePath} -> ${importPath} (${error?.code || "load_error"})`
-    );
-  }
-}
+app.use("/api/ambassadors", ambassadors);
+app.use("/api/moderation", moderation);
+app.use("/api/rooms", rooms);
+app.use("/api/fans", fanProfiles);
 
 /*
 |--------------------------------------------------------------------------
-| Base routes
+| Discovery Layer
 |--------------------------------------------------------------------------
 */
+
+app.use("/api/genres", genres);
+app.use("/api/countries", countries);
+app.use("/api/discovery", discovery);
+app.use("/api/world-map", worldMap);
+
+/*
+|--------------------------------------------------------------------------
+| Momentum / Viral Systems
+|--------------------------------------------------------------------------
+*/
+
+app.use("/api/breakouts", breakouts);
+app.use("/api/cross-border", crossBorder);
+app.use("/api/cross-border-momentum", crossBorderMomentum);
+app.use("/api/fan-impact", fanImpact);
+app.use("/api/fan-power", fanPower);
+app.use("/api/trend-starter", trendStarter);
+app.use("/api/momentum-charts", momentumCharts);
+app.use("/api/surge", surgeDetector);
+app.use("/api/discovery-boost", discoveryBoost);
+app.use("/api/rising-now", risingNow);
+app.use("/api/country-engine", countryEngine);
+app.use("/api/map-activity", mapActivity);
+app.use("/api/signal-weight", signalWeight);
+app.use("/api/explosion", explosion);
+
+/*
+|--------------------------------------------------------------------------
+| Map Intelligence Systems
+|--------------------------------------------------------------------------
+*/
+
+app.use("/api/map-intelligence", mapIntelligence);
+app.use("/api/radar", radar);
+app.use("/api/map-feed", mapFeed);
+
+/*
+|--------------------------------------------------------------------------
+| Alert & Live Systems
+|--------------------------------------------------------------------------
+*/
+
+app.use("/api/alerts", alerts);
+app.use("/api/live-heat", liveHeat);
+
+/*
+|--------------------------------------------------------------------------
+| Discovery Adventure Systems
+|--------------------------------------------------------------------------
+*/
+
+app.use("/api/spin", spin);
+
+/*
+|--------------------------------------------------------------------------
+| H21 Warp Drive Discovery Engine
+|--------------------------------------------------------------------------
+*/
+
+app.use("/api/warp-drive", warpDrive);
+
+/*
+|--------------------------------------------------------------------------
+| Root Health Check
+|--------------------------------------------------------------------------
+*/
+
 app.get("/", (req, res) => {
-  return res.status(200).json({
-    success: true,
-    service: "iband-backend-first",
-    app: "iBand",
-    platform: "iBandbyte",
-    company: "iBandbyte Ltd",
-    environment: NODE_ENV,
-    version: "H19-spin-the-globe-ready",
-    message: "iBand backend is live.",
-    rankingPhilosophy: {
-      popularityVisible: true,
-      momentumPrimary: true,
-    },
-    now: new Date().toISOString(),
-  });
+
+return res.json({
+
+success: true,
+message: "iBand Backend Online",
+version: "H21 Warp Drive Discovery Engine",
+systems: [
+"world map",
+"radar",
+"live heat",
+"spin globe",
+"warp drive",
+"breakout detection"
+]
+
 });
 
-app.get("/health", (req, res) => {
-  return res.status(200).json({
-    success: true,
-    status: "ok",
-    service: "iband-backend-first",
-    environment: NODE_ENV,
-    uptimeSec: Math.floor(process.uptime()),
-    now: new Date().toISOString(),
-  });
 });
 
-app.get("/api", (req, res) => {
-  return res.status(200).json({
-    success: true,
-    message: "iBand API root",
-    availableGroups: [
-      "/api/artists",
-      "/api/votes",
-      "/api/ranking",
-      "/api/medals",
-      "/api/recs",
-      "/api/flash-medals",
-      "/api/achievements",
-      "/api/purchases",
-      "/api/monetisation",
-      "/api/shares",
-      "/api/trends",
-      "/api/ambassadors",
-      "/api/moderation",
-      "/api/rooms",
-      "/api/fans",
-      "/api/genres",
-      "/api/countries",
-      "/api/discovery",
-      "/api/world-map",
-      "/api/breakouts",
-      "/api/cross-border",
-      "/api/cross-border-momentum",
-      "/api/fan-impact",
-      "/api/fan-power",
-      "/api/trend-starter",
-      "/api/momentum-charts",
-      "/api/surge",
-      "/api/discovery-boost",
-      "/api/rising-now",
-      "/api/country-engine",
-      "/api/map-activity",
-      "/api/breakout",
-      "/api/signal-weight",
-      "/api/explosion",
-      "/api/map-intelligence",
-      "/api/radar",
-      "/api/map-feed",
-      "/api/alerts",
-      "/api/live-heat",
-      "/api/spin"
-    ]
-  });
-});
+const PORT = process.env.PORT || 10000;
 
-/*
-|--------------------------------------------------------------------------
-| Bootstrap route mounting
-|--------------------------------------------------------------------------
-*/
-async function startServer() {
-  await mountRoute("/api/artists", "./artists.js");
-  await mountRoute("/api/votes", "./votes.js");
-  await mountRoute("/api/ranking", "./ranking.js");
-  await mountRoute("/api/medals", "./medals.js");
-  await mountRoute("/api/recs", "./recs.js");
-  await mountRoute("/api/flash-medals", "./flashMedals.js");
-  await mountRoute("/api/achievements", "./achievements.js");
-  await mountRoute("/api/purchases", "./purchases.js");
-  await mountRoute("/api/monetisation", "./monetisationSignals.js");
-  await mountRoute("/api/shares", "./shares.js");
-  await mountRoute("/api/trends", "./trends.js");
-  await mountRoute("/api/ambassadors", "./ambassadors.js");
-  await mountRoute("/api/moderation", "./moderation.js");
-  await mountRoute("/api/rooms", "./rooms.js");
-  await mountRoute("/api/fans", "./fanProfiles.js");
-  await mountRoute("/api/genres", "./genres.js");
-  await mountRoute("/api/countries", "./countries.js");
-  await mountRoute("/api/discovery", "./discovery.js");
-  await mountRoute("/api/world-map", "./world-map.js");
+app.listen(PORT, () => {
 
-  await mountRoute("/api/breakouts", "./breakouts.js");
-  await mountRoute("/api/cross-border", "./cross-border.js");
-  await mountRoute("/api/cross-border-momentum", "./cross-border-momentum.js");
+console.log(`[boot] iband-backend-first listening on port ${PORT}`);
 
-  await mountRoute("/api/fan-impact", "./fan-impact.js");
-  await mountRoute("/api/fan-power", "./fan-power.js");
-
-  await mountRoute("/api/trend-starter", "./trend-starter.js");
-  await mountRoute("/api/momentum-charts", "./momentum-charts.js");
-  await mountRoute("/api/surge", "./surge-detector.js");
-
-  await mountRoute("/api/discovery-boost", "./discovery-boost.js");
-  await mountRoute("/api/rising-now", "./rising-now.js");
-
-  await mountRoute("/api/country-engine", "./countryEngine.js");
-  await mountRoute("/api/map-activity", "./mapActivity.js");
-  await mountRoute("/api/breakout", "./breakouts.js");
-  await mountRoute("/api/signal-weight", "./signalWeight.js");
-  await mountRoute("/api/explosion", "./explosion.js");
-  await mountRoute("/api/map-intelligence", "./mapIntelligence.js");
-  await mountRoute("/api/radar", "./radar.js");
-  await mountRoute("/api/map-feed", "./mapFeed.js");
-  await mountRoute("/api/alerts", "./alerts.js");
-  await mountRoute("/api/live-heat", "./liveHeat.js");
-
-  /*
-  |--------------------------------------------------------------------------
-  | H19 Spin the Globe Discovery Engine
-  |--------------------------------------------------------------------------
-  */
-  await mountRoute("/api/spin", "./spin.js");
-
-  /*
-  |--------------------------------------------------------------------------
-  | 404 handler
-  |--------------------------------------------------------------------------
-  */
-  app.use((req, res) => {
-    return res.status(404).json({
-      success: false,
-      message: "Route not found.",
-      method: req.method,
-      path: req.originalUrl
-    });
-  });
-
-  /*
-  |--------------------------------------------------------------------------
-  | Global error handler
-  |--------------------------------------------------------------------------
-  */
-  app.use((error, req, res, next) => {
-    console.error("[server-error]", error);
-
-    return res.status(error.status || 500).json({
-      success: false,
-      message: error.message || "Internal server error."
-    });
-  });
-
-  /*
-  |--------------------------------------------------------------------------
-  | Server start
-  |--------------------------------------------------------------------------
-  */
-  app.listen(PORT, () => {
-    console.log(`[boot] iband-backend-first listening on port ${PORT}`);
-  });
-}
-
-startServer().catch((error) => {
-  console.error("[startup-error]", error);
-  process.exit(1);
 });
