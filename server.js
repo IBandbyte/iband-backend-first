@@ -66,7 +66,7 @@ app.get("/", (req, res) => {
     platform: "iBandbyte",
     company: "iBandbyte Ltd",
     environment: NODE_ENV,
-    version: "H18-live-event-heat-ready",
+    version: "H19-spin-the-globe-ready",
     message: "iBand backend is live.",
     rankingPhilosophy: {
       popularityVisible: true,
@@ -130,7 +130,8 @@ app.get("/api", (req, res) => {
       "/api/radar",
       "/api/map-feed",
       "/api/alerts",
-      "/api/live-heat"
+      "/api/live-heat",
+      "/api/spin"
     ]
   });
 });
@@ -184,13 +185,14 @@ async function startServer() {
   await mountRoute("/api/radar", "./radar.js");
   await mountRoute("/api/map-feed", "./mapFeed.js");
   await mountRoute("/api/alerts", "./alerts.js");
+  await mountRoute("/api/live-heat", "./liveHeat.js");
 
   /*
   |--------------------------------------------------------------------------
-  | H18 Live Event Heat System
+  | H19 Spin the Globe Discovery Engine
   |--------------------------------------------------------------------------
   */
-  await mountRoute("/api/live-heat", "./liveHeat.js");
+  await mountRoute("/api/spin", "./spin.js");
 
   /*
   |--------------------------------------------------------------------------
