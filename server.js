@@ -69,7 +69,7 @@ app.get("/", (req, res) => {
     platform: "iBandbyte",
     company: "iBandbyte Ltd",
     environment: NODE_ENV,
-    version: "H30-breakout-probability-engine",
+    version: "H31-breakout-alert-engine",
     message: "iBand backend is live.",
     now: new Date().toISOString()
   });
@@ -150,7 +150,8 @@ app.get("/api", (req, res) => {
       "global-feed",
       "momentum-pulse",
       "heat-map",
-      "breakout-probability"
+      "breakout-probability",
+      "breakout-alerts"
     ]
   });
 });
@@ -162,7 +163,6 @@ app.get("/api", (req, res) => {
 */
 
 async function startServer() {
-
   await mountRoute("/api/artists", "./artists.js");
   await mountRoute("/api/votes", "./votes.js");
   await mountRoute("/api/ranking", "./ranking.js");
@@ -219,14 +219,15 @@ async function startServer() {
   await mountRoute("/api/global-feed", "./globalFeed.js");
   await mountRoute("/api/momentum-pulse", "./momentumPulse.js");
   await mountRoute("/api/heat-map", "./heatMap.js");
+  await mountRoute("/api/breakout-probability", "./breakoutProbability.js");
 
   /*
   |--------------------------------------------------------------------------
-  | H30 Breakout Probability Engine
+  | H31 Breakout Alert Engine
   |--------------------------------------------------------------------------
   */
 
-  await mountRoute("/api/breakout-probability", "./breakoutProbability.js");
+  await mountRoute("/api/breakout-alerts", "./breakoutAlerts.js");
 
   app.use((req, res) => {
     return res.status(404).json({
@@ -238,7 +239,6 @@ async function startServer() {
   app.listen(PORT, () => {
     console.log(`[boot] iband-backend-first listening on port ${PORT}`);
   });
-
 }
 
 startServer();
