@@ -69,7 +69,7 @@ app.get("/", (req, res) => {
     platform: "iBandbyte",
     company: "iBandbyte Ltd",
     environment: NODE_ENV,
-    version: "H37-global-activity-feed",
+    version: "H38-fan-energy-engine",
     message: "iBand backend is live.",
     now: new Date().toISOString()
   });
@@ -157,7 +157,8 @@ app.get("/api", (req, res) => {
       "global-radar",
       "live-events",
       "viral-stream",
-      "activity-feed"
+      "activity-feed",
+      "fan-energy"
     ]
   });
 });
@@ -232,14 +233,15 @@ async function startServer() {
   await mountRoute("/api/global-radar", "./globalRadar.js");
   await mountRoute("/api/live-events", "./liveEvents.js");
   await mountRoute("/api/viral-stream", "./viralStream.js");
+  await mountRoute("/api/activity-feed", "./activityFeed.js");
 
   /*
   |--------------------------------------------------------------------------
-  | H37 Global Live Activity Feed
+  | H38 Fan Energy Engine
   |--------------------------------------------------------------------------
   */
 
-  await mountRoute("/api/activity-feed", "./activityFeed.js");
+  await mountRoute("/api/fan-energy", "./fanEnergy.js");
 
   app.use((req, res) => {
     return res.status(404).json({
