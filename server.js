@@ -69,7 +69,7 @@ app.get("/", (req, res) => {
     platform: "iBandbyte",
     company: "iBandbyte Ltd",
     environment: NODE_ENV,
-    version: "H38-fan-energy-engine",
+    version: "H39-global-momentum-brain",
     message: "iBand backend is live.",
     now: new Date().toISOString()
   });
@@ -158,7 +158,8 @@ app.get("/api", (req, res) => {
       "live-events",
       "viral-stream",
       "activity-feed",
-      "fan-energy"
+      "fan-energy",
+      "global-momentum"
     ]
   });
 });
@@ -234,14 +235,15 @@ async function startServer() {
   await mountRoute("/api/live-events", "./liveEvents.js");
   await mountRoute("/api/viral-stream", "./viralStream.js");
   await mountRoute("/api/activity-feed", "./activityFeed.js");
+  await mountRoute("/api/fan-energy", "./fanEnergy.js");
 
   /*
   |--------------------------------------------------------------------------
-  | H38 Fan Energy Engine
+  | H39 Global Momentum Brain
   |--------------------------------------------------------------------------
   */
 
-  await mountRoute("/api/fan-energy", "./fanEnergy.js");
+  await mountRoute("/api/global-momentum", "./globalMomentumBrain.js");
 
   app.use((req, res) => {
     return res.status(404).json({
