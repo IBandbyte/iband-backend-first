@@ -69,7 +69,7 @@ app.get("/", (req, res) => {
     platform: "iBandbyte",
     company: "iBandbyte Ltd",
     environment: NODE_ENV,
-    version: "H33-global-shockwave-engine",
+    version: "H34-global-radar-engine",
     message: "iBand backend is live.",
     now: new Date().toISOString()
   });
@@ -153,7 +153,8 @@ app.get("/api", (req, res) => {
       "breakout-probability",
       "breakout-alerts",
       "breakout-explosions",
-      "shockwaves"
+      "shockwaves",
+      "global-radar"
     ]
   });
 });
@@ -224,14 +225,15 @@ async function startServer() {
   await mountRoute("/api/breakout-probability", "./breakoutProbability.js");
   await mountRoute("/api/breakout-alerts", "./breakoutAlerts.js");
   await mountRoute("/api/breakout-explosions", "./breakoutExplosions.js");
+  await mountRoute("/api/shockwaves", "./shockwaves.js");
 
   /*
   |--------------------------------------------------------------------------
-  | H33 Global Shockwave Engine
+  | H34 Global Radar Engine
   |--------------------------------------------------------------------------
   */
 
-  await mountRoute("/api/shockwaves", "./shockwaves.js");
+  await mountRoute("/api/global-radar", "./globalRadar.js");
 
   app.use((req, res) => {
     return res.status(404).json({
