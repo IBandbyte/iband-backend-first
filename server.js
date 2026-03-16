@@ -69,7 +69,7 @@ app.get("/", (req, res) => {
     platform: "iBandbyte",
     company: "iBandbyte Ltd",
     environment: NODE_ENV,
-    version: "H39-global-momentum-brain",
+    version: "H40-global-discovery-map-engine",
     message: "iBand backend is live.",
     now: new Date().toISOString()
   });
@@ -159,7 +159,8 @@ app.get("/api", (req, res) => {
       "viral-stream",
       "activity-feed",
       "fan-energy",
-      "global-momentum"
+      "global-momentum",
+      "discovery-map"
     ]
   });
 });
@@ -236,14 +237,15 @@ async function startServer() {
   await mountRoute("/api/viral-stream", "./viralStream.js");
   await mountRoute("/api/activity-feed", "./activityFeed.js");
   await mountRoute("/api/fan-energy", "./fanEnergy.js");
+  await mountRoute("/api/global-momentum", "./globalMomentumBrain.js");
 
   /*
   |--------------------------------------------------------------------------
-  | H39 Global Momentum Brain
+  | H40 Global Discovery Map Engine
   |--------------------------------------------------------------------------
   */
 
-  await mountRoute("/api/global-momentum", "./globalMomentumBrain.js");
+  await mountRoute("/api/discovery-map", "./discoveryMap.js");
 
   app.use((req, res) => {
     return res.status(404).json({
