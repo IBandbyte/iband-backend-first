@@ -69,7 +69,7 @@ app.get("/", (req, res) => {
     platform: "iBandbyte",
     company: "iBandbyte Ltd",
     environment: NODE_ENV,
-    version: "H35-live-discovery-engine",
+    version: "H36-viral-stream-engine",
     message: "iBand backend is live.",
     now: new Date().toISOString()
   });
@@ -155,7 +155,8 @@ app.get("/api", (req, res) => {
       "breakout-explosions",
       "shockwaves",
       "global-radar",
-      "live-events"
+      "live-events",
+      "viral-stream"
     ]
   });
 });
@@ -228,14 +229,15 @@ async function startServer() {
   await mountRoute("/api/breakout-explosions", "./breakoutExplosions.js");
   await mountRoute("/api/shockwaves", "./shockwaves.js");
   await mountRoute("/api/global-radar", "./globalRadar.js");
+  await mountRoute("/api/live-events", "./liveEvents.js");
 
   /*
   |--------------------------------------------------------------------------
-  | H35 Live Discovery Event Engine
+  | H36 Viral Stream Engine
   |--------------------------------------------------------------------------
   */
 
-  await mountRoute("/api/live-events", "./liveEvents.js");
+  await mountRoute("/api/viral-stream", "./viralStream.js");
 
   app.use((req, res) => {
     return res.status(404).json({
