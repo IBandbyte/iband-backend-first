@@ -158,7 +158,7 @@ app.get("/api", (req, res) => {
       "live-events"
     ]
   });
-}
+});
 
 /*
 |--------------------------------------------------------------------------
@@ -167,25 +167,23 @@ app.get("/api", (req, res) => {
 */
 
 async function startServer() {
-
   await mountRoute("/api/artists", "./artists.js");
   await mountRoute("/api/votes", "./votes.js");
   await mountRoute("/api/ranking", "./ranking.js");
   await mountRoute("/api/medals", "./medals.js");
   await mountRoute("/api/recs", "./recs.js");
-
+  await mountRoute("/api/flash-medals", "./flashMedals.js");
+  await mountRoute("/api/achievements", "./achievements.js");
+  await mountRoute("/api/purchases", "./purchases.js");
   await mountRoute("/api/monetisation", "./monetisationSignals.js");
   await mountRoute("/api/shares", "./shares.js");
   await mountRoute("/api/trends", "./trends.js");
-
   await mountRoute("/api/ambassadors", "./ambassadors.js");
   await mountRoute("/api/moderation", "./moderation.js");
   await mountRoute("/api/rooms", "./rooms.js");
-
   await mountRoute("/api/fans", "./fanProfiles.js");
   await mountRoute("/api/genres", "./genres.js");
   await mountRoute("/api/countries", "./countries.js");
-
   await mountRoute("/api/discovery", "./discovery.js");
   await mountRoute("/api/world-map", "./world-map.js");
 
@@ -205,39 +203,30 @@ async function startServer() {
 
   await mountRoute("/api/country-engine", "./countryEngine.js");
   await mountRoute("/api/map-activity", "./mapActivity.js");
-
+  await mountRoute("/api/breakout", "./breakouts.js");
   await mountRoute("/api/signal-weight", "./signalWeight.js");
   await mountRoute("/api/explosion", "./explosion.js");
-
   await mountRoute("/api/map-intelligence", "./mapIntelligence.js");
   await mountRoute("/api/radar", "./radar.js");
   await mountRoute("/api/map-feed", "./mapFeed.js");
-
   await mountRoute("/api/alerts", "./alerts.js");
   await mountRoute("/api/live-heat", "./liveHeat.js");
   await mountRoute("/api/spin", "./spin.js");
 
   await mountRoute("/api/adventure", "./discoveryAdventure.js");
   await mountRoute("/api/warp-drive", "./warpDrive.js");
-
   await mountRoute("/api/missions", "./missions.js");
   await mountRoute("/api/explorer-rank", "./explorerRank.js");
   await mountRoute("/api/xp", "./xp.js");
-
   await mountRoute("/api/rewards", "./rewards.js");
   await mountRoute("/api/hidden-gems", "./hiddenGems.js");
-
   await mountRoute("/api/global-feed", "./globalFeed.js");
   await mountRoute("/api/momentum-pulse", "./momentumPulse.js");
-
   await mountRoute("/api/heat-map", "./heatMap.js");
-
   await mountRoute("/api/breakout-probability", "./breakoutProbability.js");
   await mountRoute("/api/breakout-alerts", "./breakoutAlerts.js");
-
   await mountRoute("/api/breakout-explosions", "./breakoutExplosions.js");
   await mountRoute("/api/shockwaves", "./shockwaves.js");
-
   await mountRoute("/api/global-radar", "./globalRadar.js");
 
   /*
@@ -247,6 +236,13 @@ async function startServer() {
   */
 
   await mountRoute("/api/live-events", "./liveEvents.js");
+
+  app.use((req, res) => {
+    return res.status(404).json({
+      success: false,
+      message: "Route not found"
+    });
+  });
 
   app.listen(PORT, () => {
     console.log(`[boot] iband-backend-first listening on port ${PORT}`);
