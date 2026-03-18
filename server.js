@@ -69,7 +69,7 @@ app.get("/", (req, res) => {
     platform: "iBandbyte",
     company: "iBandbyte Ltd",
     environment: NODE_ENV,
-    version: "H42-artist-momentum-profile",
+    version: "H43-artist-ranking-intelligence",
     message: "iBand backend is live.",
     now: new Date().toISOString()
   });
@@ -162,7 +162,8 @@ app.get("/api", (req, res) => {
       "global-momentum",
       "discovery-map",
       "global-heatmap",
-      "artist-momentum"
+      "artist-momentum",
+      "artist-ranking"
     ]
   });
 });
@@ -242,14 +243,15 @@ async function startServer() {
   await mountRoute("/api/global-momentum", "./globalMomentumBrain.js");
   await mountRoute("/api/discovery-map", "./discoveryMap.js");
   await mountRoute("/api/global-heatmap", "./globalHeatmap.js");
+  await mountRoute("/api/artist-momentum", "./artistMomentum.js");
 
   /*
   |--------------------------------------------------------------------------
-  | H42 Artist Momentum Profile Engine
+  | H43 Artist Ranking Intelligence Engine
   |--------------------------------------------------------------------------
   */
 
-  await mountRoute("/api/artist-momentum", "./artistMomentum.js");
+  await mountRoute("/api/artist-ranking", "./artistRanking.js");
 
   app.use((req, res) => {
     return res.status(404).json({
