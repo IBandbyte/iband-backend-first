@@ -69,7 +69,7 @@ app.get("/", (req, res) => {
     platform: "iBandbyte",
     company: "iBandbyte Ltd",
     environment: NODE_ENV,
-    version: "H44-global-discovery-brain",
+    version: "H45-smart-feed-engine",
     message: "iBand backend is live.",
     now: new Date().toISOString()
   });
@@ -164,7 +164,8 @@ app.get("/api", (req, res) => {
       "global-heatmap",
       "artist-momentum",
       "artist-ranking",
-      "discovery-brain"
+      "discovery-brain",
+      "smart-feed"
     ]
   });
 });
@@ -246,14 +247,15 @@ async function startServer() {
   await mountRoute("/api/global-heatmap", "./globalHeatmap.js");
   await mountRoute("/api/artist-momentum", "./artistMomentum.js");
   await mountRoute("/api/artist-ranking", "./artistRanking.js");
+  await mountRoute("/api/discovery-brain", "./discoveryBrain.js");
 
   /*
   |--------------------------------------------------------------------------
-  | H44 Global Discovery Brain
+  | H45 Smart Feed Engine
   |--------------------------------------------------------------------------
   */
 
-  await mountRoute("/api/discovery-brain", "./discoveryBrain.js");
+  await mountRoute("/api/smart-feed", "./smartFeed.js");
 
   app.use((req, res) => {
     return res.status(404).json({
