@@ -69,7 +69,7 @@ app.get("/", (req, res) => {
     platform: "iBandbyte",
     company: "iBandbyte Ltd",
     environment: NODE_ENV,
-    version: "H46-feed-personalisation-engine",
+    version: "H47-feed-diversity-engine",
     message: "iBand backend is live.",
     now: new Date().toISOString()
   });
@@ -166,7 +166,8 @@ app.get("/api", (req, res) => {
       "artist-ranking",
       "discovery-brain",
       "smart-feed",
-      "personalised-feed"
+      "personalised-feed",
+      "feed-diversity"
     ]
   });
 });
@@ -250,14 +251,15 @@ async function startServer() {
   await mountRoute("/api/artist-ranking", "./artistRanking.js");
   await mountRoute("/api/discovery-brain", "./discoveryBrain.js");
   await mountRoute("/api/smart-feed", "./smartFeed.js");
+  await mountRoute("/api/personalised-feed", "./personalisedFeed.js");
 
   /*
   |--------------------------------------------------------------------------
-  | H46 Feed Personalisation Engine
+  | H47 Feed Diversity Engine
   |--------------------------------------------------------------------------
   */
 
-  await mountRoute("/api/personalised-feed", "./personalisedFeed.js");
+  await mountRoute("/api/feed-diversity", "./feedDiversity.js");
 
   app.use((req, res) => {
     return res.status(404).json({
