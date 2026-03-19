@@ -1,127 +1,243 @@
-// sessionLearning.js
-const express = require("express");
+import express from "express";
+
 const router = express.Router();
 
-/**
- * H49 — Session Learning Engine
- * Real-time adaptive behaviour tracking per session
- */
+/*
+|--------------------------------------------------------------------------
+| H49 Session Learning Engine
+|--------------------------------------------------------------------------
+| Tracks in-session behaviour and produces real-time adaptive
+| learning signals such as mood, engagement state, genre drift,
+| and feed adjustment recommendations.
+|--------------------------------------------------------------------------
+*/
 
-// In-memory session store (upgrade later to Redis)
-const sessions = new Map();
+const SESSION_STORE = new Map();
 
-// Utility: create or get session
-function getSession(sessionId) {
-  if (!sessions.has(sessionId)) {
-    sessions.set(sessionId, {
-      id: sessionId,
+/*
+|--------------------------------------------------------------------------
+| Helpers
+|--------------------------------------------------------------------------
+*/
+
+function ensureSession(sessionId) {
+  if (!SESSION_STORE.has(sessionId)) {
+    SESSION_STORE.set(sessionId, {
+      sessionId,
       events: [],
-      preferences: {},
+      counters: {
+        watches: 0,
+        skips: 0,
+        replays: 0,
+        likes: 0,
+        shares: 0,
+        saves: 0
+      },
+      preferredGenres: [],
+      preferredCountries: [],
       mood: "neutral",
-      energy: 0,
-      lastUpdated: new Date()
+      engagementState: "warming_up",
+      adaptationSignal: "observe",
+      lastUpdatedAt: new Date().toISOString()
     });
   }
-  return sessions.get(sessionId);
+
+  return SESSION_STORE.get(sessionId);
 }
 
-// Analyse session behaviour
+function pushUniqueValue(list, value) {
+  if (!value) return;
+  if (!list.includes(value)) {
+    list.push(value);
+  }
+}
+
 function analyseSession(session) {
-  let watchScore = 0;
-  let skipScore = 0;
-  let replayScore = 0;
+  const { watches, skips, replays, likes, shares, saves } = session.counters;
 
-  session.events.forEach(e => {
-    if (e.type === "watch") watchScore += e.value || 1;
-    if (e.type === "skip") skipScore += 1;
-    if (e.type === "replay") replayScore += 2;
-  });
+  const engagementScore =
+    watches * 2 +
+    replays * 3 +
+    likes * 2 +
+    shares * 3 +
+    saves * 3 -
+    skips * 2;
 
-  const engagement = watchScore + replayScore - skipScore;
-
-  // Mood detection
   let mood = "neutral";
-  if (engagement > 10) mood = "engaged";
-  if (skipScore > watchScore) mood = "bored";
+  let engagementState = "warming_up";
+  let adaptationSignal = "observe";
+
+  if (engagementScore >= 18) {
+    mood = "highly_engaged";
+    engagementState = "locked_in";
+    adaptationSignal = "push_more_similar";
+  } else if (engagementScore >= 10) {
+    mood = "engaged";
+    engagementState = "growing";
+    adaptationSignal = "continue_current_path";
+  } else if (skips > watches) {
+    mood = "bored";
+    engagementState = "dropping";
+    adaptationSignal = "inject_novelty";
+  } else if (replays >= 2 || saves >= 1) {
+    mood = "curious";
+    engagementState = "building_interest";
+    adaptationSignal = "deepen_category";
+  }
 
   session.mood = mood;
-  session.energy = engagement;
-  session.lastUpdated = new Date();
+  session.engagementState = engagementState;
+  session.adaptationSignal = adaptationSignal;
+  session.lastUpdatedAt = new Date().toISOString();
 
   return {
-    engagement,
+    engagementScore,
     mood,
-    watchScore,
-    skipScore,
-    replayScore
+    engagementState,
+    adaptationSignal,
+    counters: session.counters,
+    preferredGenres: session.preferredGenres,
+    preferredCountries: session.preferredCountries
   };
 }
 
-// POST — track event
-router.post("/", (req, res) => {
-  const { sessionId, type, value, meta } = req.body;
+function getRandomSession() {
+  const values = Array.from(SESSION_STORE.values());
 
-  if (!sessionId || !type) {
-    return res.status(400).json({
-      success: false,
-      message: "sessionId and type required"
-    });
+  if (values.length === 0) {
+    return null;
   }
 
-  const session = getSession(sessionId);
+  const index = Math.floor(Math.random() * values.length);
+  return values[index];
+}
 
-  session.events.push({
-    type,
-    value: value || 1,
-    meta: meta || {},
-    timestamp: new Date()
-  });
+/*
+|--------------------------------------------------------------------------
+| GET /api/session-learning
+|--------------------------------------------------------------------------
+*/
 
-  const analysis = analyseSession(session);
-
-  res.json({
+router.get("/", (req, res) => {
+  return res.json({
     success: true,
-    message: "Session event recorded",
-    sessionId,
-    analysis
+    message: "H49 Session Learning Engine live.",
+    count: SESSION_STORE.size,
+    routes: [
+      "/api/session-learning",
+      "/api/session-learning/list",
+      "/api/session-learning/random",
+      "/api/session-learning/:sessionId"
+    ]
   });
 });
 
-// GET — full session state
+/*
+|--------------------------------------------------------------------------
+| GET /api/session-learning/list
+|--------------------------------------------------------------------------
+*/
+
+router.get("/list", (req, res) => {
+  return res.json({
+    success: true,
+    count: SESSION_STORE.size,
+    sessions: Array.from(SESSION_STORE.values())
+  });
+});
+
+/*
+|--------------------------------------------------------------------------
+| GET /api/session-learning/random
+|--------------------------------------------------------------------------
+*/
+
+router.get("/random", (req, res) => {
+  return res.json({
+    success: true,
+    session: getRandomSession()
+  });
+});
+
+/*
+|--------------------------------------------------------------------------
+| GET /api/session-learning/:sessionId
+|--------------------------------------------------------------------------
+*/
+
 router.get("/:sessionId", (req, res) => {
-  const session = sessions.get(req.params.sessionId);
+  const session = SESSION_STORE.get(req.params.sessionId);
 
   if (!session) {
     return res.status(404).json({
       success: false,
-      message: "Session not found"
+      message: "Session not found."
     });
   }
 
-  res.json({
+  return res.json({
     success: true,
     session
   });
 });
 
-// GET — list sessions
-router.get("/list/all", (req, res) => {
-  res.json({
+/*
+|--------------------------------------------------------------------------
+| POST /api/session-learning
+|--------------------------------------------------------------------------
+| Records a behavioural event for a session.
+|--------------------------------------------------------------------------
+*/
+
+router.post("/", (req, res) => {
+  const { sessionId, eventType, genre, country, durationSec, meta } = req.body || {};
+
+  if (!sessionId || !eventType) {
+    return res.status(400).json({
+      success: false,
+      message: "sessionId and eventType are required."
+    });
+  }
+
+  const allowedEventTypes = ["watch", "skip", "replay", "like", "share", "save"];
+
+  if (!allowedEventTypes.includes(eventType)) {
+    return res.status(400).json({
+      success: false,
+      message: "Unsupported eventType."
+    });
+  }
+
+  const session = ensureSession(sessionId);
+
+  session.events.push({
+    eventType,
+    genre: genre || null,
+    country: country || null,
+    durationSec: durationSec || 0,
+    meta: meta || {},
+    recordedAt: new Date().toISOString()
+  });
+
+  if (eventType === "watch") session.counters.watches += 1;
+  if (eventType === "skip") session.counters.skips += 1;
+  if (eventType === "replay") session.counters.replays += 1;
+  if (eventType === "like") session.counters.likes += 1;
+  if (eventType === "share") session.counters.shares += 1;
+  if (eventType === "save") session.counters.saves += 1;
+
+  pushUniqueValue(session.preferredGenres, genre);
+  pushUniqueValue(session.preferredCountries, country);
+
+  const analysis = analyseSession(session);
+
+  return res.json({
     success: true,
-    count: sessions.size,
-    sessions: Array.from(sessions.values())
+    message: "Session event recorded.",
+    sessionId,
+    eventType,
+    analysis
   });
 });
 
-// GET — random session
-router.get("/random/one", (req, res) => {
-  const all = Array.from(sessions.values());
-  const random = all[Math.floor(Math.random() * all.length)];
-
-  res.json({
-    success: true,
-    session: random || null
-  });
-});
-
-module.exports = router;
+export default router;
