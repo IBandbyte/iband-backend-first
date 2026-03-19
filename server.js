@@ -69,7 +69,7 @@ app.get("/", (req, res) => {
     platform: "iBandbyte",
     company: "iBandbyte Ltd",
     environment: NODE_ENV,
-    version: "H48-engagement-optimiser-engine",
+    version: "H49-session-learning-engine",
     message: "iBand backend is live.",
     now: new Date().toISOString()
   });
@@ -168,7 +168,8 @@ app.get("/api", (req, res) => {
       "smart-feed",
       "personalised-feed",
       "feed-diversity",
-      "engagement-optimiser"
+      "engagement-optimiser",
+      "session-learning"
     ]
   });
 });
@@ -254,14 +255,15 @@ async function startServer() {
   await mountRoute("/api/smart-feed", "./smartFeed.js");
   await mountRoute("/api/personalised-feed", "./personalisedFeed.js");
   await mountRoute("/api/feed-diversity", "./feedDiversity.js");
+  await mountRoute("/api/engagement-optimiser", "./engagementOptimiser.js");
 
   /*
   |--------------------------------------------------------------------------
-  | H48 Engagement Optimiser Engine
+  | H49 Session Learning Engine
   |--------------------------------------------------------------------------
   */
 
-  await mountRoute("/api/engagement-optimiser", "./engagementOptimiser.js");
+  await mountRoute("/api/session-learning", "./sessionLearning.js");
 
   app.use((req, res) => {
     return res.status(404).json({
