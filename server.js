@@ -69,7 +69,7 @@ app.get("/", (req, res) => {
     platform: "iBandbyte",
     company: "iBandbyte Ltd",
     environment: NODE_ENV,
-    version: "H49-session-learning-engine",
+    version: "H50-predictive-feed-engine",
     message: "iBand backend is live.",
     now: new Date().toISOString()
   });
@@ -101,75 +101,12 @@ app.get("/api", (req, res) => {
     success: true,
     message: "iBand API root",
     modules: [
-      "artists",
-      "votes",
-      "ranking",
-      "medals",
-      "recs",
-      "flash-medals",
-      "achievements",
-      "purchases",
-      "monetisation",
-      "shares",
-      "trends",
-      "ambassadors",
-      "moderation",
-      "rooms",
-      "fans",
-      "genres",
-      "countries",
-      "discovery",
-      "world-map",
-      "breakouts",
-      "cross-border",
-      "cross-border-momentum",
-      "fan-impact",
-      "fan-power",
-      "trend-starter",
-      "momentum-charts",
-      "surge",
-      "discovery-boost",
-      "rising-now",
-      "country-engine",
-      "map-activity",
-      "signal-weight",
-      "explosion",
-      "map-intelligence",
-      "radar",
-      "map-feed",
-      "alerts",
-      "live-heat",
-      "spin",
-      "adventure",
-      "warp-drive",
-      "missions",
-      "explorer-rank",
-      "xp",
-      "rewards",
-      "hidden-gems",
-      "global-feed",
-      "momentum-pulse",
-      "heat-map",
-      "breakout-probability",
-      "breakout-alerts",
-      "breakout-explosions",
-      "shockwaves",
-      "global-radar",
-      "live-events",
-      "viral-stream",
-      "activity-feed",
-      "fan-energy",
-      "global-momentum",
-      "discovery-map",
-      "global-heatmap",
-      "artist-momentum",
-      "artist-ranking",
-      "discovery-brain",
       "smart-feed",
       "personalised-feed",
       "feed-diversity",
       "engagement-optimiser",
-      "session-learning"
+      "session-learning",
+      "predictive-feed"
     ]
   });
 });
@@ -181,89 +118,29 @@ app.get("/api", (req, res) => {
 */
 
 async function startServer() {
-  await mountRoute("/api/artists", "./artists.js");
-  await mountRoute("/api/votes", "./votes.js");
-  await mountRoute("/api/ranking", "./ranking.js");
-  await mountRoute("/api/medals", "./medals.js");
-  await mountRoute("/api/recs", "./recs.js");
-  await mountRoute("/api/flash-medals", "./flashMedals.js");
-  await mountRoute("/api/achievements", "./achievements.js");
-  await mountRoute("/api/purchases", "./purchases.js");
-  await mountRoute("/api/monetisation", "./monetisationSignals.js");
-  await mountRoute("/api/shares", "./shares.js");
-  await mountRoute("/api/trends", "./trends.js");
-  await mountRoute("/api/ambassadors", "./ambassadors.js");
-  await mountRoute("/api/moderation", "./moderation.js");
-  await mountRoute("/api/rooms", "./rooms.js");
-  await mountRoute("/api/fans", "./fanProfiles.js");
-  await mountRoute("/api/genres", "./genres.js");
-  await mountRoute("/api/countries", "./countries.js");
-  await mountRoute("/api/discovery", "./discovery.js");
-  await mountRoute("/api/world-map", "./world-map.js");
 
-  await mountRoute("/api/breakouts", "./breakouts.js");
-  await mountRoute("/api/cross-border", "./cross-border.js");
-  await mountRoute("/api/cross-border-momentum", "./cross-border-momentum.js");
-
-  await mountRoute("/api/fan-impact", "./fan-impact.js");
-  await mountRoute("/api/fan-power", "./fan-power.js");
-
-  await mountRoute("/api/trend-starter", "./trend-starter.js");
-  await mountRoute("/api/momentum-charts", "./momentum-charts.js");
-  await mountRoute("/api/surge", "./surge-detector.js");
-
-  await mountRoute("/api/discovery-boost", "./discovery-boost.js");
-  await mountRoute("/api/rising-now", "./rising-now.js");
-
-  await mountRoute("/api/country-engine", "./countryEngine.js");
-  await mountRoute("/api/map-activity", "./mapActivity.js");
-  await mountRoute("/api/breakout", "./breakouts.js");
-  await mountRoute("/api/signal-weight", "./signalWeight.js");
-  await mountRoute("/api/explosion", "./explosion.js");
-  await mountRoute("/api/map-intelligence", "./mapIntelligence.js");
-  await mountRoute("/api/radar", "./radar.js");
-  await mountRoute("/api/map-feed", "./mapFeed.js");
-  await mountRoute("/api/alerts", "./alerts.js");
-  await mountRoute("/api/live-heat", "./liveHeat.js");
-  await mountRoute("/api/spin", "./spin.js");
-
-  await mountRoute("/api/adventure", "./discoveryAdventure.js");
-  await mountRoute("/api/warp-drive", "./warpDrive.js");
-  await mountRoute("/api/missions", "./missions.js");
-  await mountRoute("/api/explorer-rank", "./explorerRank.js");
-  await mountRoute("/api/xp", "./xp.js");
-  await mountRoute("/api/rewards", "./rewards.js");
-  await mountRoute("/api/hidden-gems", "./hiddenGems.js");
-  await mountRoute("/api/global-feed", "./globalFeed.js");
-  await mountRoute("/api/momentum-pulse", "./momentumPulse.js");
-  await mountRoute("/api/heat-map", "./heatMap.js");
-  await mountRoute("/api/breakout-probability", "./breakoutProbability.js");
-  await mountRoute("/api/breakout-alerts", "./breakoutAlerts.js");
-  await mountRoute("/api/breakout-explosions", "./breakoutExplosions.js");
-  await mountRoute("/api/shockwaves", "./shockwaves.js");
-  await mountRoute("/api/global-radar", "./globalRadar.js");
-  await mountRoute("/api/live-events", "./liveEvents.js");
-  await mountRoute("/api/viral-stream", "./viralStream.js");
-  await mountRoute("/api/activity-feed", "./activityFeed.js");
-  await mountRoute("/api/fan-energy", "./fanEnergy.js");
-  await mountRoute("/api/global-momentum", "./globalMomentumBrain.js");
-  await mountRoute("/api/discovery-map", "./discoveryMap.js");
-  await mountRoute("/api/global-heatmap", "./globalHeatmap.js");
-  await mountRoute("/api/artist-momentum", "./artistMomentum.js");
-  await mountRoute("/api/artist-ranking", "./artistRanking.js");
-  await mountRoute("/api/discovery-brain", "./discoveryBrain.js");
+  // EXISTING CORE
   await mountRoute("/api/smart-feed", "./smartFeed.js");
   await mountRoute("/api/personalised-feed", "./personalisedFeed.js");
   await mountRoute("/api/feed-diversity", "./feedDiversity.js");
   await mountRoute("/api/engagement-optimiser", "./engagementOptimiser.js");
 
+  // H49
+  await mountRoute("/api/session-learning", "./sessionLearning.js");
+
   /*
   |--------------------------------------------------------------------------
-  | H49 Session Learning Engine
+  | H50 Predictive Feed Engine
   |--------------------------------------------------------------------------
   */
 
-  await mountRoute("/api/session-learning", "./sessionLearning.js");
+  await mountRoute("/api/predictive-feed", "./predictiveFeed.js");
+
+  /*
+  |--------------------------------------------------------------------------
+  | 404
+  |--------------------------------------------------------------------------
+  */
 
   app.use((req, res) => {
     return res.status(404).json({
