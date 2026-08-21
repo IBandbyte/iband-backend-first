@@ -1,4 +1,4 @@
-const MOVIE_MENTOR_SEMANTIC_INTERPRETER_VERSION = "1.0.0";
+const MOVIE_MENTOR_SEMANTIC_INTERPRETER_VERSION = "1.0.1";
 const MOVIE_MENTOR_SEMANTIC_CONTRACT_VERSION = "1.1.0";
 
 function cleanString(value) {
@@ -18,13 +18,28 @@ function cloneValue(value) {
   }
 }
 
+const CONTEXT_ITEM_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    key: { type: ["string", "null"] },
+    value: { type: ["string", "null"] },
+    evidence: { type: ["string", "null"] },
+    confidenceSource: {
+      type: "string",
+      enum: ["creator-confirmed", "creator-explicit", "model-provisional"]
+    }
+  },
+  required: ["key", "value", "evidence", "confidenceSource"]
+};
+
 const MOVIE_JOURNEY_INTELLIGENCE_SCHEMA = {
   type: "object",
   additionalProperties: false,
   properties: {
-    understoodContext: { type: "array", items: { type: "object" } },
-    provisionalContext: { type: "array", items: { type: "object" } },
-    unresolvedContext: { type: "array", items: { type: "object" } },
+    understoodContext: { type: "array", items: CONTEXT_ITEM_SCHEMA },
+    provisionalContext: { type: "array", items: CONTEXT_ITEM_SCHEMA },
+    unresolvedContext: { type: "array", items: CONTEXT_ITEM_SCHEMA },
     clarificationNeeded: {
       type: "array",
       items: {
@@ -43,7 +58,21 @@ const MOVIE_JOURNEY_INTELLIGENCE_SCHEMA = {
     readyToAdvance: { type: "boolean" },
     recommendedStageId: { type: ["string", "null"] },
     recommendedTaskId: { type: ["string", "null"] },
-    nextAction: { type: ["object", "null"] },
+    nextAction: {
+      anyOf: [
+        {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            type: { type: ["string", "null"] },
+            label: { type: ["string", "null"] },
+            reason: { type: ["string", "null"] }
+          },
+          required: ["type", "label", "reason"]
+        },
+        { type: "null" }
+      ]
+    },
     resumeNote: { type: ["string", "null"] }
   },
   required: [
@@ -66,13 +95,14 @@ Non-negotiable rules:
 1. The creator's exact wording and creator-confirmed meanings are authoritative.
 2. Never silently replace, reinterpret or "correct" creator terminology.
 3. If a term, phrase, cultural reference, slang expression, invented word, relationship, intention or movie concept is unfamiliar or materially uncertain, do not guess. Put it in clarificationNeeded and ask one precise creator-facing question.
-4. Inference may only appear in provisionalContext. Provisional inference is never creator truth.
+4. Inference may only appear in provisionalContext and must use confidenceSource=model-provisional. Provisional inference is never creator truth.
 5. Creator-confirmed meaning outranks model inference, prior memory, common usage and deterministic planning signals.
 6. Any material unresolved ambiguity forces readyToAdvance=false.
 7. readyToAdvance may be true only when the supplied creator language is semantically understood well enough for the canonical Movie Journey to move forward without inventing a creator decision.
 8. Adaptive Mentor actions, question policies and progression signals are context only. They are not evidence of semantic understanding.
 9. Preserve uncertainty explicitly. Do not manufacture confidence.
-10. Return only the required structured semantic intelligence.`;
+10. understoodContext may contain only creator-confirmed or creator-explicit meaning. Never place model-provisional content there.
+11. Return only the required structured semantic intelligence.`;
 
 function extractCreatorMessage(providerRequest) {
   return cleanString(
@@ -139,9 +169,28 @@ function validateIntelligence(candidate) {
     return { valid: false, intelligence: null, issues: ["missing_structured_intelligence"] };
   }
 
+  if (
+    normalized.understoodContext.some(
+      (item) => item?.confidenceSource === "model-provisional"
+    )
+  ) {
+    issues.push("provisional_inference_cannot_be_understood_context");
+    normalized.readyToAdvance = false;
+  }
+
+  if (
+    normalized.provisionalContext.some(
+      (item) => item?.confidenceSource !== "model-provisional"
+    )
+  ) {
+    issues.push("provisional_context_requires_model_provisional_source");
+    normalized.readyToAdvance = false;
+  }
+
   for (const item of normalized.clarificationNeeded) {
     if (item.material && (!item.question || !item.reason)) {
       issues.push("material_clarification_requires_question_and_reason");
+      normalized.readyToAdvance = false;
     }
   }
 
