@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "verify:movie-mentor-semantic": "node scripts/verify-movie-mentor-semantic.mjs"
+    "verify:movie-mentor-semantic": "node scripts/verify-movie-mentor-semantic.mjs",
+    "verify:movie-mentor-specialists": "node scripts/verify-movie-mentor-specialists.mjs"
   },
   "engines": {
     "node": ">=18 <22"
