@@ -36,5 +36,17 @@ jobs:
       - name: Check Movie Mentor semantic interpreter syntax
         run: node --check ai/MovieMentorSemanticInterpreter.js
 
+      - name: Check shared structured AI provider client syntax
+        run: node --check ai/StructuredAIProviderClient.js
+
+      - name: Check Movie Mentor specialist executor syntax
+        run: node --check ai/MovieMentorSpecialistExecutor.js
+
+      - name: Check Movie Mentor specialist gateway syntax
+        run: node --check movieMentorSpecialists.js
+
       - name: Verify Movie Mentor semantic authority and safety
         run: npm run verify:movie-mentor-semantic
+
+      - name: Verify Movie Mentor specialist authority and safety
+        run: npm run verify:movie-mentor-specialists
