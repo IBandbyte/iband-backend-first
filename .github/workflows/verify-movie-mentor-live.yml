@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/verify-movie-mentor-live.yml"
+      - "scripts/verify-movie-mentor-live.mjs"
 
 permissions:
   contents: write
