@@ -1,15 +1,66 @@
 {
-  "generatedAt": "2026-08-21T19:37:44.326Z",
+  "generatedAt": "2026-08-21T19:42:35.448Z",
   "baseUrl": "https://iband-backend-first-1.onrender.com",
-  "passed": false,
-  "provider": null,
-  "model": null,
-  "cases": [],
-  "error": {
-    "message": "Semantic provider is not configured on live backend\n+ actual - expected\n\n+ undefined\n- true",
-    "status": null,
-    "code": "ERR_ASSERTION",
-    "category": null,
-    "retryable": null
-  }
+  "passed": true,
+  "provider": "openai",
+  "model": "gpt-5.4-mini",
+  "readiness": "ready",
+  "cases": [
+    {
+      "name": "clear-language",
+      "passed": true,
+      "durationMs": 3432,
+      "readyToAdvance": false,
+      "clarificationCount": 0,
+      "materialClarificationCount": 0,
+      "unresolvedCount": 1,
+      "safetyCorrections": [
+        "unresolved_context_forced_ready_to_advance_false"
+      ]
+    },
+    {
+      "name": "uk-slang",
+      "passed": true,
+      "durationMs": 2467,
+      "readyToAdvance": true,
+      "clarificationCount": 0,
+      "materialClarificationCount": 0,
+      "unresolvedCount": 0,
+      "safetyCorrections": []
+    },
+    {
+      "name": "invented-terminology",
+      "passed": true,
+      "durationMs": 2257,
+      "readyToAdvance": false,
+      "clarificationCount": 1,
+      "materialClarificationCount": 1,
+      "unresolvedCount": 1,
+      "safetyCorrections": []
+    },
+    {
+      "name": "material-ambiguity",
+      "passed": true,
+      "durationMs": 2135,
+      "readyToAdvance": false,
+      "clarificationCount": 1,
+      "materialClarificationCount": 1,
+      "unresolvedCount": 1,
+      "safetyCorrections": []
+    },
+    {
+      "name": "creator-correction",
+      "passed": true,
+      "durationMs": 1710,
+      "readyToAdvance": false,
+      "clarificationCount": 0,
+      "materialClarificationCount": 0,
+      "unresolvedCount": 1,
+      "safetyCorrections": [
+        "current_creator_correction_supersedes_prior:movie.character.relationship",
+        "unresolved_context_forced_ready_to_advance_false"
+      ]
+    }
+  ],
+  "error": null
 }
