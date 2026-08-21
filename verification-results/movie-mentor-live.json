@@ -1,48 +1,123 @@
 {
-  "generatedAt": "2026-08-21T19:47:35.076Z",
+  "generatedAt": "2026-08-21T19:54:15.717Z",
   "baseUrl": "https://iband-backend-first-1.onrender.com",
-  "passed": false,
+  "passed": true,
   "provider": "openai",
   "model": "gpt-5.4-mini",
   "readiness": "ready",
+  "interpreterVersion": "1.3.0",
+  "contractVersion": "1.3.0",
   "cases": [
     {
       "name": "clear-language",
       "passed": true,
-      "durationMs": 4684,
+      "durationMs": 2805,
+      "readyToAdvance": true,
+      "recommendedStageId": null,
+      "understoodKeys": [
+        "protagonist",
+        "incitingDiscovery",
+        "setting",
+        "daughterStatus"
+      ],
+      "provisionalKeys": [
+        "entityReference"
+      ],
+      "unresolvedKeys": [],
+      "clarificationExpressions": [],
+      "clarificationCount": 0,
+      "materialClarificationCount": 0,
+      "unresolvedCount": 0,
+      "safetyCorrections": []
+    },
+    {
+      "name": "uk-slang",
+      "passed": true,
+      "durationMs": 4032,
+      "readyToAdvance": true,
+      "recommendedStageId": null,
+      "understoodKeys": [
+        "overallIntent",
+        "bare vexed",
+        "moving booky",
+        "clocks the rival crew"
+      ],
+      "provisionalKeys": [
+        "he",
+        "outside the club"
+      ],
+      "unresolvedKeys": [],
+      "clarificationExpressions": [],
+      "clarificationCount": 0,
+      "materialClarificationCount": 0,
+      "unresolvedCount": 0,
+      "safetyCorrections": []
+    },
+    {
+      "name": "invented-terminology",
+      "passed": true,
+      "durationMs": 4011,
       "readyToAdvance": false,
       "recommendedStageId": null,
       "understoodKeys": [
-        "retired astronaut",
-        "coastal town",
-        "lighthouse",
-        "missing daughter"
+        "sceneConstraint"
       ],
       "provisionalKeys": [
-        "discovers",
-        "sending messages"
+        "beatDrops"
       ],
       "unresolvedKeys": [
-        "message format",
-        "relationship of daughter to lighthouse",
-        "missing status details"
+        "glorp-coded"
       ],
       "clarificationExpressions": [
-        "messages",
-        "the lighthouse is sending messages",
-        "her missing daughter"
+        "glorp-coded"
       ],
-      "clarificationCount": 3,
-      "materialClarificationCount": 3,
-      "unresolvedCount": 3,
+      "clarificationCount": 1,
+      "materialClarificationCount": 1,
+      "unresolvedCount": 1,
       "safetyCorrections": []
+    },
+    {
+      "name": "material-ambiguity",
+      "passed": true,
+      "durationMs": 2382,
+      "readyToAdvance": false,
+      "recommendedStageId": null,
+      "understoodKeys": [
+        "killer_candidates",
+        "decision_status",
+        "reveal_timing"
+      ],
+      "provisionalKeys": [],
+      "unresolvedKeys": [
+        "killer_identity"
+      ],
+      "clarificationExpressions": [
+        "either Mia or Lena; I haven't decided which one"
+      ],
+      "clarificationCount": 1,
+      "materialClarificationCount": 1,
+      "unresolvedCount": 1,
+      "safetyCorrections": []
+    },
+    {
+      "name": "creator-correction",
+      "passed": true,
+      "durationMs": 2113,
+      "readyToAdvance": true,
+      "recommendedStageId": null,
+      "understoodKeys": [
+        "movie.character.relationship"
+      ],
+      "provisionalKeys": [],
+      "unresolvedKeys": [],
+      "clarificationExpressions": [],
+      "clarificationCount": 0,
+      "materialClarificationCount": 0,
+      "unresolvedCount": 0,
+      "safetyCorrections": [
+        "current_creator_correction_supersedes_prior:movie.character.relationship"
+      ]
     }
   ],
-  "error": {
-    "message": "clear-language unexpectedly produced material clarification\n\ntrue !== false\n",
-    "status": null,
-    "code": "ERR_ASSERTION",
-    "category": null,
-    "retryable": null
-  }
+  "error": null
 }
