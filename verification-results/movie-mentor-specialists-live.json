@@ -1,0 +1,16 @@
+{
+  "generatedAt": "2026-08-21T20:23:38.761Z",
+  "baseUrl": "https://iband-backend-first-1.onrender.com",
+  "passed": false,
+  "provider": "openai",
+  "model": "gpt-5.4-mini",
+  "liveAgents": [
+    "story",
+    "character"
+  ],
+  "contributions": [],
+  "error": {
+    "message": "expected Story and Character contributions\n\n1 !== 2\n",
+    "code": "ERR_ASSERTION"
+  }
+}
