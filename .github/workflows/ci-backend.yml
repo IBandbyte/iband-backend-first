@@ -35,3 +35,6 @@ jobs:
 
       - name: Check Movie Mentor semantic interpreter syntax
         run: node --check ai/MovieMentorSemanticInterpreter.js
+
+      - name: Verify Movie Mentor semantic authority and safety
+        run: npm run verify:movie-mentor-semantic
