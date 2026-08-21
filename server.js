@@ -106,7 +106,8 @@ app.get("/api", (req, res) => {
       "feed-diversity",
       "engagement-optimiser",
       "session-learning",
-      "predictive-feed"
+      "predictive-feed",
+      "movie-mentor-semantic"
     ]
   });
 });
@@ -135,6 +136,19 @@ async function startServer() {
   */
 
   await mountRoute("/api/predictive-feed", "./predictiveFeed.js");
+
+  /*
+  |--------------------------------------------------------------------------
+  | Movie Mentor semantic intelligence gateway
+  |--------------------------------------------------------------------------
+  |
+  | The browser never receives semantic-provider credentials.
+  | If no upstream semantic provider is configured, this route returns a
+  | safe unavailable response and Movie Mentor must not claim understanding
+  | or advance the canonical journey from deterministic planning alone.
+  */
+
+  await mountRoute("/api/movie-mentor-semantic", "./movieMentorSemantic.js");
 
   /*
   |--------------------------------------------------------------------------
