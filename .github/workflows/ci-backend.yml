@@ -1,52 +1,32 @@
 name: CI (Backend)
-
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
   verify:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Use Node 20
         uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: npm
-
       - name: Install dependencies
         run: npm ci --no-audit --no-fund || npm i --no-audit --no-fund
-
       - name: Check server syntax
         run: node --check server.js
-
-      - name: Check Movie Mentor semantic gateway syntax
-        run: node --check movieMentorSemantic.js
-
-      - name: Check Movie Mentor semantic interpreter syntax
-        run: node --check ai/MovieMentorSemanticInterpreter.js
-
-      - name: Check shared structured AI provider client syntax
-        run: node --check ai/StructuredAIProviderClient.js
-
-      - name: Check Movie Mentor specialist executor syntax
-        run: node --check ai/MovieMentorSpecialistExecutor.js
-
-      - name: Check Movie Mentor specialist gateway syntax
-        run: node --check movieMentorSpecialists.js
-
+      - name: Check Movie Mentor gateways and engines
+        run: node --check movieMentorSemantic.js && node --check movieMentorSpecialists.js && node --check movieMentorSynthesis.js && node --check ai/MovieMentorSemanticInterpreter.js && node --check ai/StructuredAIProviderClient.js && node --check ai/MovieMentorSpecialistExecutor.js && node --check ai/MovieMentorSynthesisEngine.js
       - name: Verify Movie Mentor semantic authority and safety
         run: npm run verify:movie-mentor-semantic
-
       - name: Verify Movie Mentor specialist authority and safety
         run: npm run verify:movie-mentor-specialists
+      - name: Verify Movie Mentor synthesis authority and safety
+        run: npm run verify:movie-mentor-synthesis
