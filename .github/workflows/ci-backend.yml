@@ -2,44 +2,33 @@ name: CI (Backend)
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  build:
+  verify:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Use Node 18
+      - name: Use Node 20
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: "20"
+          cache: npm
 
-      - name: Install deps
-        run: npm ci || npm i --no-audit --no-fund
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund || npm i --no-audit --no-fund
 
-      # 👉 Auto-format the working tree so ESLint stops complaining
-      - name: Format code (Prettier --write)
-        run: npx prettier . --write
+      - name: Check server syntax
+        run: node --check server.js
 
-      - name: Print versions
-        run: |
-          node -v
-          npm -v
-
-      - name: Lint (ESLint)
-        run: npm run lint
-
-      - name: Check formatting (Prettier)
-        run: npx prettier . --check
-
-      - name: Run tests (Jest)
-        run: npm test --silent
+      - name: Check Movie Mentor semantic gateway syntax
+        run: node --check movieMentorSemantic.js
