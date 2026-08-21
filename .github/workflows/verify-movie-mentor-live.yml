@@ -1,0 +1,33 @@
+name: Verify Movie Mentor Live Semantic Path
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/verify-movie-mentor-live.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  live-semantic-verification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Wait for Render deployment to settle
+        run: sleep 35
+
+      - name: Verify live provider and real semantic model behaviour
+        env:
+          IBAND_LIVE_BACKEND_URL: https://iband-backend-first-1.onrender.com
+        run: node scripts/verify-movie-mentor-live.mjs
