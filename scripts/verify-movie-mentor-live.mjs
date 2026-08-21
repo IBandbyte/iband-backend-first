@@ -1,8 +1,26 @@
 import assert from "node:assert/strict";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 
 const BASE_URL = (process.env.IBAND_LIVE_BACKEND_URL || "https://iband-backend-first-1.onrender.com").replace(/\/$/, "");
 const HEALTH_URL = `${BASE_URL}/api/movie-mentor-semantic/health`;
 const INTERPRET_URL = `${BASE_URL}/api/movie-mentor-semantic/interpret`;
+const REPORT_PATH = process.env.IBAND_LIVE_REPORT_PATH || "verification-results/movie-mentor-live.json";
+
+const report = {
+  generatedAt: new Date().toISOString(),
+  baseUrl: BASE_URL,
+  passed: false,
+  provider: null,
+  model: null,
+  cases: [],
+  error: null,
+};
+
+function writeReport() {
+  mkdirSync(dirname(REPORT_PATH), { recursive: true });
+  writeFileSync(REPORT_PATH, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+}
 
 async function readJson(response) {
   const text = await response.text();
@@ -20,11 +38,14 @@ async function getHealth() {
   assert.equal(body?.semanticProviderConfigured, true, "Semantic provider is not configured on live backend");
   assert.equal(body?.providerName, "openai", `Unexpected provider: ${body?.providerName}`);
   assert.equal(body?.model, "gpt-5.4-mini", `Unexpected model: ${body?.model}`);
+  report.provider = body.providerName;
+  report.model = body.model;
   console.log(`✓ live provider ready: ${body.providerName}/${body.model}`);
   return body;
 }
 
 async function interpret(name, creatorMessage, context = {}) {
+  const startedAt = Date.now();
   const response = await fetch(INTERPRET_URL, {
     method: "POST",
     headers: { Accept: "application/json", "Content-Type": "application/json" },
@@ -48,58 +69,87 @@ async function interpret(name, creatorMessage, context = {}) {
   assert.ok(Array.isArray(intelligence.unresolvedContext), `${name}: unresolvedContext missing`);
   assert.ok(Array.isArray(intelligence.clarificationNeeded), `${name}: clarificationNeeded missing`);
   assert.equal(typeof intelligence.readyToAdvance, "boolean", `${name}: readyToAdvance missing`);
+  report.cases.push({
+    name,
+    passed: true,
+    durationMs: Date.now() - startedAt,
+    readyToAdvance: intelligence.readyToAdvance,
+    clarificationCount: intelligence.clarificationNeeded.length,
+    materialClarificationCount: intelligence.clarificationNeeded.filter((item) => item?.material === true).length,
+    unresolvedCount: intelligence.unresolvedContext.length,
+    safetyCorrections: intelligence?.metadata?.safetyCorrections || [],
+  });
   console.log(`✓ ${name}: structured semantic intelligence validated; advance=${intelligence.readyToAdvance}; clarifications=${intelligence.clarificationNeeded.length}; unresolved=${intelligence.unresolvedContext.length}`);
   return intelligence;
 }
 
-await getHealth();
+async function run() {
+  await getHealth();
 
-const clear = await interpret(
-  "clear-language",
-  "A retired astronaut discovers that the lighthouse in her coastal town is sending messages from her missing daughter."
-);
-assert.equal(clear.clarificationNeeded.some((item) => item?.material), false, "clear-language unexpectedly produced material clarification");
+  const clear = await interpret(
+    "clear-language",
+    "A retired astronaut discovers that the lighthouse in her coastal town is sending messages from her missing daughter."
+  );
+  assert.equal(clear.clarificationNeeded.some((item) => item?.material), false, "clear-language unexpectedly produced material clarification");
 
-await interpret(
-  "uk-slang",
-  "Make him bare vexed but still moving booky when he clocks the rival crew outside the club."
-);
+  await interpret(
+    "uk-slang",
+    "Make him bare vexed but still moving booky when he clocks the rival crew outside the club."
+  );
 
-const invented = await interpret(
-  "invented-terminology",
-  "The final scene must feel glorp-coded when the beat drops."
-);
-assert.equal(invented.readyToAdvance, false, "invented terminology must not advance");
-assert.equal(invented.clarificationNeeded.some((item) => item?.material === true), true, "invented terminology must create material clarification");
+  const invented = await interpret(
+    "invented-terminology",
+    "The final scene must feel glorp-coded when the beat drops."
+  );
+  assert.equal(invented.readyToAdvance, false, "invented terminology must not advance");
+  assert.equal(invented.clarificationNeeded.some((item) => item?.material === true), true, "invented terminology must create material clarification");
 
-const ambiguous = await interpret(
-  "material-ambiguity",
-  "The killer is either Mia or Lena; I haven't decided which one. Reveal her in the final scene."
-);
-assert.equal(ambiguous.readyToAdvance, false, "material ambiguity must not advance");
-assert.equal(
-  ambiguous.unresolvedContext.length > 0 || ambiguous.clarificationNeeded.some((item) => item?.material === true),
-  true,
-  "material ambiguity must remain unresolved or require clarification"
-);
+  const ambiguous = await interpret(
+    "material-ambiguity",
+    "The killer is either Mia or Lena; I haven't decided which one. Reveal her in the final scene."
+  );
+  assert.equal(ambiguous.readyToAdvance, false, "material ambiguity must not advance");
+  assert.equal(
+    ambiguous.unresolvedContext.length > 0 || ambiguous.clarificationNeeded.some((item) => item?.material === true),
+    true,
+    "material ambiguity must remain unresolved or require clarification"
+  );
 
-const correction = await interpret(
-  "creator-correction",
-  "Actually, they're brother and sister, not best friends.",
-  {
-    creatorConfirmedContext: [
-      {
-        key: "movie.character.relationship",
-        value: "best friends",
-        authority: "creator",
-      },
-    ],
-  }
-);
-assert.equal(
-  correction.provisionalContext.some((item) => item?.key === "movie.character.relationship" && /best friends/i.test(String(item?.value || ""))),
-  false,
-  "creator correction must not be overridden by provisional prior meaning"
-);
+  const correction = await interpret(
+    "creator-correction",
+    "Actually, they're brother and sister, not best friends.",
+    {
+      creatorConfirmedContext: [
+        {
+          key: "movie.character.relationship",
+          value: "best friends",
+          authority: "creator",
+        },
+      ],
+    }
+  );
+  assert.equal(
+    correction.provisionalContext.some((item) => item?.key === "movie.character.relationship" && /best friends/i.test(String(item?.value || ""))),
+    false,
+    "creator correction must not be overridden by provisional prior meaning"
+  );
 
-console.log("\nLive Movie Mentor semantic verification passed: provider readiness + 5 real-model cases.");
+  report.passed = true;
+  console.log("\nLive Movie Mentor semantic verification passed: provider readiness + 5 real-model cases.");
+}
+
+try {
+  await run();
+} catch (error) {
+  report.error = {
+    message: error instanceof Error ? error.message : String(error),
+    status: Number(error?.status || 0) || null,
+    code: error?.body?.code || error?.code || null,
+    category: error?.body?.category || null,
+    retryable: error?.body?.retryable ?? null,
+  };
+  console.error(`✗ live verification failed: ${report.error.message}`);
+  process.exitCode = 1;
+} finally {
+  writeReport();
+}
