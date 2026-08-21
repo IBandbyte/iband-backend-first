@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-08-21T19:42:35.448Z",
+  "generatedAt": "2026-08-21T19:47:35.076Z",
   "baseUrl": "https://iband-backend-first-1.onrender.com",
-  "passed": true,
+  "passed": false,
   "provider": "openai",
   "model": "gpt-5.4-mini",
   "readiness": "ready",
@@ -9,58 +9,40 @@
     {
       "name": "clear-language",
       "passed": true,
-      "durationMs": 3432,
+      "durationMs": 4684,
       "readyToAdvance": false,
-      "clarificationCount": 0,
-      "materialClarificationCount": 0,
-      "unresolvedCount": 1,
-      "safetyCorrections": [
-        "unresolved_context_forced_ready_to_advance_false"
-      ]
-    },
-    {
-      "name": "uk-slang",
-      "passed": true,
-      "durationMs": 2467,
-      "readyToAdvance": true,
-      "clarificationCount": 0,
-      "materialClarificationCount": 0,
-      "unresolvedCount": 0,
+      "recommendedStageId": null,
+      "understoodKeys": [
+        "retired astronaut",
+        "coastal town",
+        "lighthouse",
+        "missing daughter"
+      ],
+      "provisionalKeys": [
+        "discovers",
+        "sending messages"
+      ],
+      "unresolvedKeys": [
+        "message format",
+        "relationship of daughter to lighthouse",
+        "missing status details"
+      ],
+      "clarificationExpressions": [
+        "messages",
+        "the lighthouse is sending messages",
+        "her missing daughter"
+      ],
+      "clarificationCount": 3,
+      "materialClarificationCount": 3,
+      "unresolvedCount": 3,
       "safetyCorrections": []
-    },
-    {
-      "name": "invented-terminology",
-      "passed": true,
-      "durationMs": 2257,
-      "readyToAdvance": false,
-      "clarificationCount": 1,
-      "materialClarificationCount": 1,
-      "unresolvedCount": 1,
-      "safetyCorrections": []
-    },
-    {
-      "name": "material-ambiguity",
-      "passed": true,
-      "durationMs": 2135,
-      "readyToAdvance": false,
-      "clarificationCount": 1,
-      "materialClarificationCount": 1,
-      "unresolvedCount": 1,
-      "safetyCorrections": []
-    },
-    {
-      "name": "creator-correction",
-      "passed": true,
-      "durationMs": 1710,
-      "readyToAdvance": false,
-      "clarificationCount": 0,
-      "materialClarificationCount": 0,
-      "unresolvedCount": 1,
-      "safetyCorrections": [
-        "current_creator_correction_supersedes_prior:movie.character.relationship",
-        "unresolved_context_forced_ready_to_advance_false"
-      ]
     }
   ],
-  "error": null
+  "error": {
+    "message": "clear-language unexpectedly produced material clarification\n\ntrue !== false\n",
+    "status": null,
+    "code": "ERR_ASSERTION",
+    "category": null,
+    "retryable": null
+  }
 }
