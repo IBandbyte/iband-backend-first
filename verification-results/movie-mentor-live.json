@@ -1,0 +1,15 @@
+{
+  "generatedAt": "2026-08-21T19:37:44.326Z",
+  "baseUrl": "https://iband-backend-first-1.onrender.com",
+  "passed": false,
+  "provider": null,
+  "model": null,
+  "cases": [],
+  "error": {
+    "message": "Semantic provider is not configured on live backend\n+ actual - expected\n\n+ undefined\n- true",
+    "status": null,
+    "code": "ERR_ASSERTION",
+    "category": null,
+    "retryable": null
+  }
+}
