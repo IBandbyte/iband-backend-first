@@ -32,3 +32,6 @@ jobs:
 
       - name: Check Movie Mentor semantic gateway syntax
         run: node --check movieMentorSemantic.js
+
+      - name: Check Movie Mentor semantic interpreter syntax
+        run: node --check ai/MovieMentorSemanticInterpreter.js
