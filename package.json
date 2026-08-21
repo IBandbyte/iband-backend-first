@@ -1,19 +1,5 @@
 {
-  "name": "iband-backend-first",
-  "version": "1.0.0",
-  "description": "iBand backend",
-  "main": "server.js",
-  "type": "module",
-  "scripts": {
-    "start": "node server.js",
-    "verify:movie-mentor-semantic": "node scripts/verify-movie-mentor-semantic.mjs",
-    "verify:movie-mentor-specialists": "node scripts/verify-movie-mentor-specialists.mjs"
-  },
-  "engines": {
-    "node": ">=18 <22"
-  },
-  "dependencies": {
-    "cors": "^2.8.5",
-    "express": "^4.21.2"
-  }
+  "name":"iband-backend-first","version":"1.0.0","description":"iBand backend","main":"server.js","type":"module",
+  "scripts":{"start":"node server.js","verify:movie-mentor-semantic":"node scripts/verify-movie-mentor-semantic.mjs","verify:movie-mentor-specialists":"node scripts/verify-movie-mentor-specialists.mjs","verify:movie-mentor-synthesis":"node scripts/verify-movie-mentor-synthesis.mjs","verify:movie-mentor-synthesis-live":"node scripts/verify-movie-mentor-synthesis-live.mjs"},
+  "engines":{"node":">=18 <22"},"dependencies":{"cors":"^2.8.5","express":"^4.21.2"}
 }
