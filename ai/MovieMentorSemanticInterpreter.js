@@ -1,5 +1,5 @@
-const MOVIE_MENTOR_SEMANTIC_INTERPRETER_VERSION = "1.3.1";
-const MOVIE_MENTOR_SEMANTIC_CONTRACT_VERSION = "1.3.1";
+const MOVIE_MENTOR_SEMANTIC_INTERPRETER_VERSION = "1.3.2";
+const MOVIE_MENTOR_SEMANTIC_CONTRACT_VERSION = "1.3.2";
 
 function cleanString(value) { return typeof value === "string" ? value.trim() : ""; }
 function asArray(value) { return Array.isArray(value) ? value : []; }
@@ -16,21 +16,23 @@ const SYSTEM_INSTRUCTIONS = `You are iBand Movie Mentor's Semantic Interpreter. 
 4. Distinguish SEMANTIC AMBIGUITY from MISSING CREATIVE DETAIL. A creator does not need to specify every story detail for their sentence to be semantically understood.
 5. Do NOT ask clarifying questions merely because backstory, mechanics, motivations, chronology, message format, worldbuilding, or other creative specifics have not yet been supplied. Those are future creative-development questions, not semantic failures.
 6. clarificationNeeded is only for cases where proceeding would risk misunderstanding what the creator actually meant: unfamiliar/invented terminology, genuinely ambiguous references or relationships, contradictory meaning, unclear intent, or an explicit creator uncertainty that materially changes interpretation.
-7. unresolvedContext may contain only meaning/reference/intent that is explicitly present in the creator's language but genuinely unresolved. Never use unresolvedContext as a list of missing story information.
-8. Inference belongs only in provisionalContext with confidenceSource=model-provisional. Every item in provisionalContext MUST use confidenceSource=model-provisional.
-9. Creator meaning outranks inference, memory and deterministic planning.
-10. Material semantic ambiguity forces readyToAdvance=false.
-11. readyToAdvance answers one question only: is the creator's CURRENT LANGUAGE understood well enough to hand safely back to the journey/planning layer? It does NOT mean the movie idea is complete.
-12. Adaptive Mentor planning is not evidence of semantic understanding.
-13. Preserve uncertainty when uncertainty is genuinely semantic.
-14. understoodContext may contain only creator-confirmed or creator-explicit meaning.
-15. Current explicit creator correction may supersede older confirmed meaning.
-16. Example of semantically clear language: "A retired astronaut discovers that the lighthouse in her coastal town is sending messages from her missing daughter." Do not ask what format the messages use, why the lighthouse can send them, or details of the daughter's disappearance. Those are unspecified creative details, not semantic ambiguity.
-17. Return only the required structured intelligence.`;
+7. Common dialect, regional language and slang should be understood when the meaning is conventional and contextually clear. Do not ask the creator to define familiar UK expressions merely because they are informal. In this contract, examples such as "bare vexed" (very annoyed), "moving booky" / "booky" (suspicious or dodgy in context), and "clocks the rival crew" (notices/spots them) are semantically clear when used naturally.
+8. Invented or genuinely unfamiliar expressions, such as "glorp-coded" with no established meaning, still require clarification rather than guessing.
+9. unresolvedContext may contain only meaning/reference/intent that is explicitly present in the creator's language but genuinely unresolved. Never use unresolvedContext as a list of missing story information.
+10. Inference belongs only in provisionalContext with confidenceSource=model-provisional. Every item in provisionalContext MUST use confidenceSource=model-provisional.
+11. Creator meaning outranks inference, memory and deterministic planning.
+12. Material semantic ambiguity forces readyToAdvance=false.
+13. readyToAdvance answers one question only: is the creator's CURRENT LANGUAGE understood well enough to hand safely back to the journey/planning layer? It does NOT mean the movie idea is complete.
+14. Adaptive Mentor planning is not evidence of semantic understanding.
+15. Preserve uncertainty when uncertainty is genuinely semantic.
+16. understoodContext may contain only creator-confirmed or creator-explicit meaning.
+17. Current explicit creator correction may supersede older confirmed meaning.
+18. Example of semantically clear language: "A retired astronaut discovers that the lighthouse in her coastal town is sending messages from her missing daughter." Do not ask what format the messages use, why the lighthouse can send them, or details of the daughter's disappearance. Those are unspecified creative details, not semantic ambiguity.
+19. Return only the required structured intelligence.`;
 
 function extractCreatorMessage(r){return cleanString(r?.input?.message||r?.message||r?.context?.activeIdea||"");}
 function normalizeCreatorConfirmedContext(r){return asArray(r?.context?.creatorConfirmedContext||r?.context?.confirmedMeaning||r?.context?.confirmedMeanings||[]).filter(i=>i&&typeof i==="object"&&cleanString(i.key)).map(i=>({key:cleanString(i.key),value:cloneValue(i.value),authority:"creator",stageId:cleanString(i.stageId)||null,sceneId:cleanString(i.sceneId)||null,reason:cleanString(i.reason)||null,createdAt:i.createdAt||null}));}
-function buildSemanticInput(r){return {creatorMessage:extractCreatorMessage(r),creatorConfirmedContext:normalizeCreatorConfirmedContext(r),movieJourneyContext:cloneValue(r?.context||{}),requestMetadata:cloneValue(r?.options?.metadata||{}),instruction:"Interpret meaning conservatively but do not confuse unspecified creative detail with semantic ambiguity. Current explicit corrections may supersede prior creator-confirmed context; model inference may never do so. Every provisionalContext item must use confidenceSource=model-provisional."};}
+function buildSemanticInput(r){return {creatorMessage:extractCreatorMessage(r),creatorConfirmedContext:normalizeCreatorConfirmedContext(r),movieJourneyContext:cloneValue(r?.context||{}),requestMetadata:cloneValue(r?.options?.metadata||{}),instruction:"Interpret meaning conservatively but do not confuse unspecified creative detail with semantic ambiguity. Understand conventional UK slang when context makes the meaning clear; unfamiliar or invented terminology still requires clarification. Current explicit corrections may supersede prior creator-confirmed context; model inference may never do so. Every provisionalContext item must use confidenceSource=model-provisional."};}
 function normalizeContextItem(i){if(!i||typeof i!=="object")return null;return {key:cleanString(i.key)||null,value:i.value==null?null:String(i.value),evidence:cleanString(i.evidence)||null,confidenceSource:cleanString(i.confidenceSource)||""};}
 function normalizeIntelligence(c){if(!c||typeof c!=="object")return null;const ni=v=>asArray(v).map(normalizeContextItem).filter(Boolean);const provisionalContext=ni(c.provisionalContext).map(i=>({...i,confidenceSource:"model-provisional"}));return {understoodContext:ni(c.understoodContext),provisionalContext,unresolvedContext:ni(c.unresolvedContext),clarificationNeeded:asArray(c.clarificationNeeded).map(i=>({key:cleanString(i?.key)||null,expression:cleanString(i?.expression)||null,question:cleanString(i?.question)||null,reason:cleanString(i?.reason)||null,material:i?.material!==false})),readyToAdvance:c.readyToAdvance===true,recommendedStageId:cleanString(c.recommendedStageId)||null,recommendedTaskId:cleanString(c.recommendedTaskId)||null,nextAction:c.nextAction&&typeof c.nextAction==="object"?cloneValue(c.nextAction):null,resumeNote:cleanString(c.resumeNote)||null};}
 function applyCreatorAuthority(n,cc=[]){const intelligence=cloneValue(n),safetyCorrections=[],fatalIssues=[],confirmedByKey=new Map(asArray(cc).filter(i=>cleanString(i?.key)).map(i=>[cleanString(i.key),i])),explicitCurrentKeys=new Set(intelligence.understoodContext.filter(i=>i.confidenceSource==="creator-explicit"&&i.key).map(i=>i.key));for(const i of intelligence.understoodContext){if(!i.key)continue;const c=confirmedByKey.get(i.key);if(!c)continue;if(i.confidenceSource==="creator-confirmed"&&stableValue(i.value)!==stableValue(c.value))fatalIssues.push(`creator_confirmed_conflict:${i.key}`);else if(i.confidenceSource==="creator-explicit"&&stableValue(i.value)!==stableValue(c.value))safetyCorrections.push(`current_creator_correction_supersedes_prior:${i.key}`);} intelligence.provisionalContext=intelligence.provisionalContext.filter(i=>{if(!i.key||!confirmedByKey.has(i.key)||explicitCurrentKeys.has(i.key))return true;safetyCorrections.push(`removed_provisional_conflict_with_creator_truth:${i.key}`);return false;});return {intelligence,safetyCorrections,fatalIssues};}
