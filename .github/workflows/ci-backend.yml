@@ -44,6 +44,9 @@ jobs:
           node --check ai/MovieMentorOperationsAtomicGauntletMutationGate.js &&
           node --check ai/MovieMentorOperationsDistributedEffectReconciliation.js &&
           node --check ai/MovieMentorOperationsReconciliationLeaseControl.js &&
+          node --check ai/MovieMentorOperationsLeaseAuthorityQuorumControl.js &&
+          node --check ai/MovieMentorOperationsAuthorityReentryGate.js &&
+          node --check ai/MovieMentorOperationsRecoveryStabilityControl.js &&
           node --check ai/MovieMentorControlledRecoveryExecutor.js &&
           node --check ai/MovieMentorControlledRollbackExecutor.js &&
           node --check ai/MovieMentorRecoveryVerificationAgent.js &&
@@ -64,7 +67,10 @@ jobs:
           node --check scripts/verify-movie-mentor-operations-infinity-gauntlet.mjs &&
           node --check scripts/verify-movie-mentor-operations-atomic-gauntlet.mjs &&
           node --check scripts/verify-movie-mentor-operations-distributed-effects.mjs &&
-          node --check scripts/verify-movie-mentor-operations-reconciliation-lease.mjs
+          node --check scripts/verify-movie-mentor-operations-reconciliation-lease.mjs &&
+          node --check scripts/verify-movie-mentor-operations-lease-authority-quorum.mjs &&
+          node --check scripts/verify-movie-mentor-operations-authority-reentry.mjs &&
+          node --check scripts/verify-movie-mentor-operations-recovery-stability.mjs
       - name: Verify Movie Mentor semantic authority and safety
         run: npm run verify:movie-mentor-semantic
       - name: Verify Movie Mentor specialist authority and safety
@@ -97,3 +103,9 @@ jobs:
         run: npm run verify:movie-mentor-operations-distributed-effects
       - name: Verify Movie Mentor reconciliation lease split-brain fencing
         run: npm run verify:movie-mentor-operations-reconciliation-lease
+      - name: Verify Movie Mentor lease authority quorum
+        run: npm run verify:movie-mentor-operations-lease-authority-quorum
+      - name: Verify Movie Mentor authority re-entry convergence
+        run: npm run verify:movie-mentor-operations-authority-reentry
+      - name: Verify Movie Mentor recovery anti-flapping stability
+        run: npm run verify:movie-mentor-operations-recovery-stability
