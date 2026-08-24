@@ -43,7 +43,7 @@ jobs:
           node --check ai/MovieMentorExternalOperationsWatchdog.js &&
           node --check ai/MovieMentorRecoveryObjectivesPolicy.js &&
           node --check ai/MovieMentorOperationsFailureDrillControl.js &&
-          node --check scripts/verify-movie-mentor-operations.mjs &&
+          node --check scripts/verify-movie-mentor-operations-v2.mjs &&
           node --check scripts/verify-movie-mentor-operations-warp40.mjs
       - name: Verify Movie Mentor semantic authority and safety
         run: npm run verify:movie-mentor-semantic
@@ -51,7 +51,7 @@ jobs:
         run: npm run verify:movie-mentor-specialists
       - name: Verify Movie Mentor synthesis authority and safety
         run: npm run verify:movie-mentor-synthesis
-      - name: Verify Movie Mentor Operations architecture hardening
+      - name: Verify Movie Mentor Operations architecture hardening v2
         run: npm run verify:movie-mentor-operations
       - name: Verify Movie Mentor Operations Warp 40 seams
         run: npm run verify:movie-mentor-operations-warp40
