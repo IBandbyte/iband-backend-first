@@ -1,78 +1,16 @@
-const STRUCTURED_AI_PROVIDER_CLIENT_VERSION = "1.0.0";
-
-function cleanString(value){return typeof value === "string" ? value.trim() : "";}
-function asArray(value){return Array.isArray(value) ? value : [];}
-
-function getStructuredAIProviderConfig(){
-  const provider = cleanString(process.env.IBAND_AI_PROVIDER || "openai").toLowerCase();
-  const model = cleanString(process.env.IBAND_AI_MODEL);
-  const timeoutMs = Math.max(1000, Number(process.env.IBAND_AI_TIMEOUT_MS || 30000) || 30000);
-  if(provider === "openai") return {provider,model,url:cleanString(process.env.IBAND_AI_BASE_URL)||"https://api.openai.com/v1/responses",key:cleanString(process.env.IBAND_AI_API_KEY||process.env.OPENAI_API_KEY),requiresKey:true,requiresModel:true,timeoutMs};
-  if(provider === "generic-http") return {provider,model,url:cleanString(process.env.IBAND_AI_BASE_URL),key:cleanString(process.env.IBAND_AI_API_KEY),requiresKey:false,requiresModel:false,timeoutMs};
-  return {provider,model,url:"",key:"",requiresKey:false,requiresModel:false,timeoutMs};
-}
-
-function getStructuredAIProviderConfigurationIssues(config){
-  const issues=[];
-  if(!["openai","generic-http"].includes(config?.provider)) issues.push("unsupported_provider");
-  if(!config?.url) issues.push("missing_base_url");
-  if(config?.requiresKey && !config?.key) issues.push("missing_api_key");
-  if(config?.requiresModel && !config?.model) issues.push("missing_model");
-  return issues;
-}
-
-function classifyStructuredAIProviderFailure(error){
-  if(error?.name === "AbortError") return {code:"AI_PROVIDER_TIMEOUT",category:"timeout",retryable:true};
-  const status=Number(error?.status||0);
-  const providerCode=cleanString(error?.data?.error?.code||error?.data?.code).toLowerCase();
-  const message=cleanString(error?.message).toLowerCase();
-  const evidence=`${providerCode} ${message}`;
-  if(status===401||status===403||/api.?key|auth|credential|permission/.test(evidence)) return {code:"AI_PROVIDER_AUTHENTICATION_FAILED",category:"authentication",retryable:false};
-  if(status===404||/model.*(not found|does not exist|invalid)|invalid.*model/.test(evidence)) return {code:"AI_PROVIDER_INVALID_MODEL",category:"invalid-model",retryable:false};
-  if(status===429) return {code:"AI_PROVIDER_RATE_LIMITED",category:"rate-limit",retryable:true};
-  if(status>=500) return {code:"AI_PROVIDER_UNAVAILABLE",category:"unavailable",retryable:true};
-  if(status>=400) return {code:"AI_PROVIDER_REQUEST_REJECTED",category:"request",retryable:false};
-  return {code:"AI_PROVIDER_FAILED",category:"unknown",retryable:true};
-}
-
-async function postJson(url, body, {key,timeoutMs,headers={}}={}){
-  const controller=new AbortController();
-  const timer=setTimeout(()=>controller.abort(),timeoutMs||30000);
-  try{
-    const response=await fetch(url,{method:"POST",headers:{Accept:"application/json","Content-Type":"application/json",...(key?{Authorization:`Bearer ${key}`}:{ }),...headers},body:JSON.stringify(body),signal:controller.signal});
-    const text=await response.text();
-    let payload=null;
-    try{payload=text?JSON.parse(text):null;}catch{payload={raw:text};}
-    if(!response.ok){const error=new Error(cleanString(payload?.error?.message)||cleanString(payload?.message)||`AI provider failed (${response.status}).`);error.status=response.status;error.data=payload;throw error;}
-    return payload;
-  } finally { clearTimeout(timer); }
-}
-
-function extractOpenAIOutputText(payload){
-  if(cleanString(payload?.output_text)) return payload.output_text;
-  for(const item of asArray(payload?.output)) for(const content of asArray(item?.content)) if(cleanString(content?.text)) return content.text;
-  return "";
-}
-
-function parseJsonText(value){const text=cleanString(value);if(!text)return null;try{return JSON.parse(text);}catch{return null;}}
-
-async function executeStructuredAI({task,systemInstructions,input,schema,schemaName="iband_structured_output",metadata={}}={}){
-  const config=getStructuredAIProviderConfig();
-  const configurationIssues=getStructuredAIProviderConfigurationIssues(config);
-  if(configurationIssues.length){const error=new Error("iBand AI provider is not configured.");error.code="AI_PROVIDER_NOT_CONFIGURED";error.configurationIssues=configurationIssues;throw error;}
-  try{
-    if(config.provider === "openai"){
-      const payload=await postJson(config.url,{model:config.model,instructions:systemInstructions,input:JSON.stringify(input||{}),text:{format:{type:"json_schema",name:schemaName,strict:true,schema}}},config);
-      return {structured:parseJsonText(extractOpenAIOutputText(payload)),usage:payload?.usage||null,metadata:{provider:"openai",model:payload?.model||config.model,responseId:payload?.id||null,task,clientVersion:STRUCTURED_AI_PROVIDER_CLIENT_VERSION,...metadata}};
-    }
-    const payload=await postJson(config.url,{task,systemInstructions,input,schema,schemaName,metadata},config);
-    return {structured:payload?.structured||payload?.data||parseJsonText(payload?.text),usage:payload?.usage||null,metadata:{provider:"generic-http",model:payload?.model||config.model||null,responseId:payload?.id||null,task,clientVersion:STRUCTURED_AI_PROVIDER_CLIENT_VERSION,...metadata}};
-  } catch(error){
-    if(error?.code) throw error;
-    const classification=classifyStructuredAIProviderFailure(error);
-    error.code=classification.code;error.providerFailureCategory=classification.category;error.retryable=classification.retryable;throw error;
-  }
-}
-
-export {STRUCTURED_AI_PROVIDER_CLIENT_VERSION,getStructuredAIProviderConfig,getStructuredAIProviderConfigurationIssues,classifyStructuredAIProviderFailure,executeStructuredAI};
-export default executeStructuredAI;
+const STRUCTURED_AI_PROVIDER_CLIENT_VERSION="1.1.0";
+const MIN_TIMEOUT_MS=1000,MAX_TIMEOUT_MS=120000;
+function cleanString(v){return typeof v==="string"?v.trim():""}function asArray(v){return Array.isArray(v)?v:[]}
+function getStructuredAIProviderConfig(){const provider=cleanString(process.env.IBAND_AI_PROVIDER||"openai").toLowerCase(),model=cleanString(process.env.IBAND_AI_MODEL),requestedTimeout=Number(process.env.IBAND_AI_TIMEOUT_MS||30000),timeoutMs=Math.min(MAX_TIMEOUT_MS,Math.max(MIN_TIMEOUT_MS,Number.isFinite(requestedTimeout)?requestedTimeout:30000));if(provider==="openai")return{provider,model,url:cleanString(process.env.IBAND_AI_BASE_URL)||"https://api.openai.com/v1/responses",key:cleanString(process.env.IBAND_AI_API_KEY||process.env.OPENAI_API_KEY),requiresKey:true,requiresModel:true,timeoutMs};if(provider==="generic-http")return{provider,model,url:cleanString(process.env.IBAND_AI_BASE_URL),key:cleanString(process.env.IBAND_AI_API_KEY),requiresKey:false,requiresModel:false,timeoutMs};return{provider,model,url:"",key:"",requiresKey:false,requiresModel:false,timeoutMs}}
+function getStructuredAIProviderConfigurationIssues(c){const issues=[];if(!["openai","generic-http"].includes(c?.provider))issues.push("unsupported_provider");if(!c?.url)issues.push("missing_base_url");if(c?.requiresKey&&!c?.key)issues.push("missing_api_key");if(c?.requiresModel&&!c?.model)issues.push("missing_model");return issues}
+function classifyStructuredAIProviderFailure(error){if(error?.name==="AbortError")return{code:"AI_PROVIDER_TIMEOUT",category:"timeout",retryable:true};const status=Number(error?.status||0),providerCode=cleanString(error?.data?.error?.code||error?.data?.code).toLowerCase(),message=cleanString(error?.message).toLowerCase(),evidence=`${providerCode} ${message}`;if(status===401||status===403||/api.?key|auth|credential|permission/.test(evidence))return{code:"AI_PROVIDER_AUTHENTICATION_FAILED",category:"authentication",retryable:false};if(status===404||/model.*(not found|does not exist|invalid)|invalid.*model/.test(evidence))return{code:"AI_PROVIDER_INVALID_MODEL",category:"invalid-model",retryable:false};if(status===429)return{code:"AI_PROVIDER_RATE_LIMITED",category:"rate-limit",retryable:true};if(status>=500)return{code:"AI_PROVIDER_UNAVAILABLE",category:"unavailable",retryable:true};if(status>=400)return{code:"AI_PROVIDER_REQUEST_REJECTED",category:"request",retryable:false};return{code:"AI_PROVIDER_FAILED",category:"unknown",retryable:true}}
+async function postJson(url,body,{key,timeoutMs,headers={}}={}){const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs||30000);try{const response=await fetch(url,{method:"POST",headers:{Accept:"application/json","Content-Type":"application/json",...(key?{Authorization:`Bearer ${key}`}:{ }),...headers},body:JSON.stringify(body),signal:controller.signal}),text=await response.text();let payload=null;try{payload=text?JSON.parse(text):null}catch{payload={raw:text}}if(!response.ok){const e=new Error(cleanString(payload?.error?.message)||cleanString(payload?.message)||`AI provider failed (${response.status}).`);e.status=response.status;e.data=payload;throw e}return payload}finally{clearTimeout(timer)}}
+function extractOpenAIOutputText(payload){if(cleanString(payload?.output_text))return payload.output_text;for(const item of asArray(payload?.output))for(const content of asArray(item?.content))if(cleanString(content?.text))return content.text;return""}
+function parseJsonText(v){const text=cleanString(v);if(!text)return null;try{return JSON.parse(text)}catch{return null}}
+function matchesType(value,type){if(type==="null")return value===null;if(type==="array")return Array.isArray(value);if(type==="object")return value!==null&&typeof value==="object"&&!Array.isArray(value);if(type==="string")return typeof value==="string";if(type==="number")return typeof value==="number"&&Number.isFinite(value);if(type==="integer")return Number.isInteger(value);if(type==="boolean")return typeof value==="boolean";return true}
+function validateStructuredValue(value,schema,path="$",issues=[]){if(!schema||typeof schema!=="object"){issues.push(`${path}:schema_invalid`);return issues}const types=Array.isArray(schema.type)?schema.type:schema.type?[schema.type]:[];if(types.length&&!types.some(t=>matchesType(value,t))){issues.push(`${path}:type_invalid`);return issues}if(Array.isArray(schema.enum)&&!schema.enum.some(v=>Object.is(v,value)))issues.push(`${path}:enum_invalid`);if(typeof value==="number"){if(Number.isFinite(schema.minimum)&&value<schema.minimum)issues.push(`${path}:below_minimum`);if(Number.isFinite(schema.maximum)&&value>schema.maximum)issues.push(`${path}:above_maximum`)}if(Array.isArray(value)&&schema.items){for(let i=0;i<value.length;i++)validateStructuredValue(value[i],schema.items,`${path}[${i}]`,issues)}if(value!==null&&typeof value==="object"&&!Array.isArray(value)){const properties=schema.properties&&typeof schema.properties==="object"?schema.properties:{},required=Array.isArray(schema.required)?schema.required:[];for(const key of required)if(!Object.prototype.hasOwnProperty.call(value,key))issues.push(`${path}.${key}:required`);if(schema.additionalProperties===false)for(const key of Object.keys(value))if(!Object.prototype.hasOwnProperty.call(properties,key))issues.push(`${path}.${key}:additional_property_forbidden`);for(const[key,childSchema]of Object.entries(properties))if(Object.prototype.hasOwnProperty.call(value,key))validateStructuredValue(value[key],childSchema,`${path}.${key}`,issues)}return issues}
+function validateStructuredOutput(value,schema){const issues=[];if(value===null||value===undefined)return{valid:false,issues:["$:structured_output_missing"]};validateStructuredValue(value,schema,"$",issues);return{valid:issues.length===0,issues}}
+function validateExecutionRequest({task,systemInstructions,schema,schemaName}={}){const issues=[];if(!cleanString(task))issues.push("task_required");if(!cleanString(systemInstructions))issues.push("system_instructions_required");if(!schema||typeof schema!=="object"||Array.isArray(schema))issues.push("structured_schema_required");if(!cleanString(schemaName))issues.push("schema_name_required");return{valid:!issues.length,issues}}
+function assertStructuredOutput(value,schema){const validation=validateStructuredOutput(value,schema);if(validation.valid)return value;const e=new Error("AI provider structured output failed local schema validation.");e.code="AI_PROVIDER_STRUCTURED_OUTPUT_SCHEMA_INVALID";e.providerFailureCategory="structured-output";e.retryable=false;e.validationIssues=validation.issues.slice(0,100);throw e}
+async function executeStructuredAI({task,systemInstructions,input,schema,schemaName="iband_structured_output",metadata={}}={}){const requestValidation=validateExecutionRequest({task,systemInstructions,schema,schemaName});if(!requestValidation.valid){const e=new Error("Structured AI execution request is invalid.");e.code="AI_PROVIDER_REQUEST_CONTRACT_INVALID";e.validationIssues=requestValidation.issues;throw e}const config=getStructuredAIProviderConfig(),configurationIssues=getStructuredAIProviderConfigurationIssues(config);if(configurationIssues.length){const e=new Error("iBand AI provider is not configured.");e.code="AI_PROVIDER_NOT_CONFIGURED";e.configurationIssues=configurationIssues;throw e}try{if(config.provider==="openai"){const payload=await postJson(config.url,{model:config.model,instructions:systemInstructions,input:JSON.stringify(input||{}),text:{format:{type:"json_schema",name:schemaName,strict:true,schema}}},config),structured=parseJsonText(extractOpenAIOutputText(payload));assertStructuredOutput(structured,schema);return{structured,usage:payload?.usage||null,metadata:{provider:"openai",model:payload?.model||config.model,responseId:payload?.id||null,task,clientVersion:STRUCTURED_AI_PROVIDER_CLIENT_VERSION,localSchemaValidated:true,...metadata}}}const payload=await postJson(config.url,{task,systemInstructions,input,schema,schemaName,metadata},config),structured=payload?.structured??payload?.data??parseJsonText(payload?.text);assertStructuredOutput(structured,schema);return{structured,usage:payload?.usage||null,metadata:{provider:"generic-http",model:payload?.model||config.model||null,responseId:payload?.id||null,task,clientVersion:STRUCTURED_AI_PROVIDER_CLIENT_VERSION,localSchemaValidated:true,...metadata}}}catch(error){if(error?.code)throw error;const classification=classifyStructuredAIProviderFailure(error);error.code=classification.code;error.providerFailureCategory=classification.category;error.retryable=classification.retryable;throw error}}
+export{STRUCTURED_AI_PROVIDER_CLIENT_VERSION,MIN_TIMEOUT_MS as STRUCTURED_AI_MIN_TIMEOUT_MS,MAX_TIMEOUT_MS as STRUCTURED_AI_MAX_TIMEOUT_MS,getStructuredAIProviderConfig,getStructuredAIProviderConfigurationIssues,classifyStructuredAIProviderFailure,validateStructuredOutput,validateExecutionRequest,executeStructuredAI};export default executeStructuredAI;
