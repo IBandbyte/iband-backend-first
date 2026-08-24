@@ -10,8 +10,8 @@
  * - NO LIVE EXECUTION ADAPTERS.
  */
 
-const VERSION = "1.0.0";
-const CONTRACT_VERSION = "1.0.0";
+const VERSION = "1.1.0";
+const CONTRACT_VERSION = "1.1.0";
 const MACHINE_ID = "operations-state-machine";
 const AUTHORITY = "operations-state-transition-contract-only";
 
@@ -45,6 +45,26 @@ const MUTATING_TRANSITIONS = Object.freeze(new Set([
   "begin-rollback",
   "quarantine-agent",
   "release-quarantine",
+]));
+
+const INCIDENT_REQUIRED_STATES = Object.freeze(new Set([
+  "incident-detected",
+  "diagnosing",
+  "awaiting-recovery-authorisation",
+  "recovery-authorised",
+  "recovering",
+  "verifying-recovery",
+  "recovered",
+  "awaiting-rollback-authorisation",
+  "rollback-authorised",
+  "rolling-back",
+  "verifying-rollback",
+  "quarantine-review",
+  "quarantined",
+  "awaiting-quarantine-release",
+  "service-safe-mode",
+  "external-outage-mode",
+  "human-review-required",
 ]));
 
 const TRANSITIONS = Object.freeze({
@@ -164,8 +184,17 @@ function getTransitionTarget(fromState, event) {
   return TRANSITIONS?.[cleanString(fromState)]?.[cleanString(event)] || null;
 }
 
+function toIsoTime(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  const ms = date.getTime();
+  return Number.isFinite(ms) ? date.toISOString() : null;
+}
+
 function createOperationsState({ state = "healthy", incidentId = null, metadata = {} } = {}) {
   if (!isKnownState(state)) throw new Error(`Unknown Operations state: ${state}`);
+  if (INCIDENT_REQUIRED_STATES.has(cleanString(state)) && !cleanString(incidentId)) {
+    throw new Error(`incidentId is required for Operations state: ${state}`);
+  }
   return {
     machineId: MACHINE_ID,
     state: cleanString(state),
@@ -182,20 +211,37 @@ async function evaluateOperationsTransition(current = {}, event = null, {
   authorisation = null,
   verifyTransitionAuthorisation = null,
   emergencyPolicy = null,
+  transitionContext = {},
   now = Date.now(),
 } = {}) {
   const fromState = cleanString(current?.state);
   const eventId = cleanString(event);
+  const evaluatedAt = toIsoTime(now);
   const auditBase = {
     machineId: MACHINE_ID,
     incidentId: cleanString(current?.incidentId) || null,
     fromState,
     event: eventId,
-    evaluatedAt: new Date(now).toISOString(),
+    evaluatedAt,
   };
 
-  if (current?.machineId !== MACHINE_ID || current?.authority !== AUTHORITY || current?.failClosed !== true || !isKnownState(fromState)) {
+  if (!evaluatedAt) {
+    return { permitted: false, state: fromState || null, reason: "valid_evaluation_time_required", audit: auditBase };
+  }
+
+  if (
+    current?.machineId !== MACHINE_ID ||
+    current?.authority !== AUTHORITY ||
+    current?.failClosed !== true ||
+    !isKnownState(fromState) ||
+    !Number.isInteger(current?.sequence) ||
+    current.sequence < 0
+  ) {
     return { permitted: false, state: fromState || null, reason: "state_machine_contract_invalid", audit: auditBase };
+  }
+
+  if (INCIDENT_REQUIRED_STATES.has(fromState) && !cleanString(current?.incidentId)) {
+    return { permitted: false, state: fromState, reason: "incident_id_required", audit: auditBase };
   }
 
   const target = getTransitionTarget(fromState, eventId);
@@ -203,25 +249,44 @@ async function evaluateOperationsTransition(current = {}, event = null, {
     return { permitted: false, state: fromState, reason: "transition_not_allowed", audit: auditBase };
   }
 
+  if (INCIDENT_REQUIRED_STATES.has(target) && !cleanString(current?.incidentId)) {
+    return { permitted: false, state: fromState, reason: "incident_id_required", audit: auditBase };
+  }
+
   if (!Array.isArray(evidence) || evidence.length === 0) {
     return { permitted: false, state: fromState, reason: "transition_evidence_required", audit: auditBase };
   }
+
+  const context = transitionContext && typeof transitionContext === "object"
+    ? cloneValue(transitionContext)
+    : {};
 
   if (MUTATING_TRANSITIONS.has(eventId)) {
     if (typeof verifyTransitionAuthorisation !== "function") {
       return { permitted: false, state: fromState, reason: "trusted_transition_authorisation_verifier_required", audit: auditBase };
     }
 
-    const trustedDecision = await verifyTransitionAuthorisation({
-      machineId: MACHINE_ID,
-      incidentId: cleanString(current?.incidentId) || null,
-      fromState,
-      event: eventId,
-      toState: target,
-      authorisation: cloneValue(authorisation),
-      evidence: cloneValue(evidence),
-      emergencyPolicy: cloneValue(emergencyPolicy),
-    });
+    let trustedDecision;
+    try {
+      trustedDecision = await verifyTransitionAuthorisation({
+        machineId: MACHINE_ID,
+        incidentId: cleanString(current?.incidentId) || null,
+        fromState,
+        event: eventId,
+        toState: target,
+        transitionContext: cloneValue(context),
+        authorisation: cloneValue(authorisation),
+        evidence: cloneValue(evidence),
+        emergencyPolicy: cloneValue(emergencyPolicy),
+      });
+    } catch {
+      return {
+        permitted: false,
+        state: fromState,
+        reason: "trusted_transition_authorisation_verification_failed",
+        audit: auditBase,
+      };
+    }
 
     if (trustedDecision?.authorised !== true) {
       return {
@@ -231,6 +296,10 @@ async function evaluateOperationsTransition(current = {}, event = null, {
         audit: auditBase,
       };
     }
+
+    if (cleanString(trustedDecision?.reference)) {
+      auditBase.trustedAuthorisationReference = cleanString(trustedDecision.reference);
+    }
   }
 
   return {
@@ -238,11 +307,12 @@ async function evaluateOperationsTransition(current = {}, event = null, {
     state: target,
     previousState: fromState,
     event: eventId,
-    sequence: Number.isInteger(current?.sequence) ? current.sequence + 1 : 1,
+    sequence: current.sequence + 1,
     incidentId: cleanString(current?.incidentId) || null,
     authority: AUTHORITY,
     failClosed: true,
     evidence: cloneValue(evidence),
+    transitionContext: cloneValue(context),
     audit: { ...auditBase, toState: target },
   };
 }
@@ -261,6 +331,13 @@ function getOperationsStateMachineManifest() {
     failClosed: true,
     states: STATES,
     mutatingTransitions: [...MUTATING_TRANSITIONS],
+    requirements: [
+      "monotonic-nonnegative-state-sequence",
+      "incident-id-before-incident-control-flow",
+      "valid-evaluation-time",
+      "mutating-transition-context-bound-to-authorisation",
+      "trusted-authorisation-verifier-fails-closed-on-error",
+    ],
     emergencyPrinciples: [
       "whole-app outage must be detectable from an external failure domain",
       "emergency automation must remain explicitly policy-bound",
@@ -275,6 +352,8 @@ function getOperationsStateMachineManifest() {
       "cannot-self-approve-mutating-transitions",
       "cannot-deploy-or-rewrite-code",
       "cannot-bypass-independent-verification",
+      "cannot-reset-corrupt-state-sequence",
+      "cannot-enter-incident-control-flow-without-incident-id",
     ],
   };
 }
@@ -286,6 +365,7 @@ export {
   AUTHORITY as OPERATIONS_STATE_MACHINE_AUTHORITY,
   STATES as OPERATIONS_STATES,
   MUTATING_TRANSITIONS as OPERATIONS_MUTATING_TRANSITIONS,
+  INCIDENT_REQUIRED_STATES as OPERATIONS_INCIDENT_REQUIRED_STATES,
   TRANSITIONS as OPERATIONS_TRANSITIONS,
   createOperationsState,
   getTransitionTarget as getOperationsTransitionTarget,
