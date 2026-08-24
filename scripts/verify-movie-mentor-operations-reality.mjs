@@ -1,0 +1,11 @@
+import assert from"node:assert/strict";import{createRealityObservation,validateRealityObservation,assessReality}from"../ai/MovieMentorOperationsRealityEvidenceControl.js";
+const base={incidentId:"inc-1",scopeFingerprint:"scope-1",factKey:"provider-health"},mk=(id,value,source,domain,at="2026-08-24T12:00:00.000Z")=>createRealityObservation({...base,observationId:id,value,sourceId:source,failureDomain:domain,observedAt:at,evidenceReference:`ev-${id}`});const verify=async o=>({valid:true,reference:`proof-${o.observationId}`});
+const a=mk("a","healthy","probe-a","domain-a"),b=mk("b","healthy","probe-b","domain-b");assert.equal(validateRealityObservation(a,base).valid,true);assert.equal((await assessReality([a,b],base,{verifyObservationProvenance:verify})).resolved,true);
+const lie=mk("c","down","probe-c","domain-c");const conflict=await assessReality([a,lie],base,{verifyObservationProvenance:verify});assert.equal(conflict.resolved,false);assert.ok(conflict.reasons.includes("contradictory_reality_observations"));
+assert.equal((await assessReality([a,mk("d","healthy","probe-d","domain-a")],base,{verifyObservationProvenance:verify})).resolved,false);
+assert.equal((await assessReality([a,mk("e","healthy","probe-e","domain-e","2026-08-24T12:10:00.000Z")],base,{verifyObservationProvenance:verify})).resolved,false);
+const tampered=structuredClone(a);tampered.value="down";assert.equal(validateRealityObservation(tampered,base).valid,false);
+assert.equal((await assessReality([a,b],{...base,incidentId:"inc-2"},{verifyObservationProvenance:verify})).resolved,false);
+assert.equal((await assessReality([a,b],base,{})).resolved,false);
+assert.equal((await assessReality([a,b],base,{verifyObservationProvenance:async o=>o.observationId==="a"?{valid:true,reference:"ok"}:{valid:false}})).resolved,false);
+console.log("Movie Mentor Operations Reality Stone verification passed.");
