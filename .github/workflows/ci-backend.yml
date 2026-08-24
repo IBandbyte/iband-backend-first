@@ -70,7 +70,8 @@ jobs:
           node --check scripts/verify-movie-mentor-operations-reconciliation-lease.mjs &&
           node --check scripts/verify-movie-mentor-operations-lease-authority-quorum.mjs &&
           node --check scripts/verify-movie-mentor-operations-authority-reentry.mjs &&
-          node --check scripts/verify-movie-mentor-operations-recovery-stability.mjs
+          node --check scripts/verify-movie-mentor-operations-recovery-stability.mjs &&
+          node --check scripts/verify-movie-mentor-operations-catastrophe.mjs
       - name: Verify Movie Mentor semantic authority and safety
         run: npm run verify:movie-mentor-semantic
       - name: Verify Movie Mentor specialist authority and safety
@@ -109,3 +110,5 @@ jobs:
         run: npm run verify:movie-mentor-operations-authority-reentry
       - name: Verify Movie Mentor recovery anti-flapping stability
         run: npm run verify:movie-mentor-operations-recovery-stability
+      - name: Verify Movie Mentor full Operations catastrophe recovery
+        run: npm run verify:movie-mentor-operations-catastrophe
