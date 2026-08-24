@@ -40,6 +40,9 @@ jobs:
           node --check ai/MovieMentorOperationsRealityEvidenceControl.js &&
           node --check ai/MovieMentorOperationsMutationCapabilityControl.js &&
           node --check ai/MovieMentorCreatorWorkCustodyControl.js &&
+          node --check ai/MovieMentorOperationsInfinityGauntlet.js &&
+          node --check ai/MovieMentorOperationsAtomicGauntletMutationGate.js &&
+          node --check ai/MovieMentorOperationsDistributedEffectReconciliation.js &&
           node --check ai/MovieMentorControlledRecoveryExecutor.js &&
           node --check ai/MovieMentorControlledRollbackExecutor.js &&
           node --check ai/MovieMentorRecoveryVerificationAgent.js &&
@@ -56,7 +59,10 @@ jobs:
           node --check scripts/verify-movie-mentor-operations-runtime-origin.mjs &&
           node --check scripts/verify-movie-mentor-operations-reality.mjs &&
           node --check scripts/verify-movie-mentor-operations-power.mjs &&
-          node --check scripts/verify-movie-mentor-operations-soul.mjs
+          node --check scripts/verify-movie-mentor-operations-soul.mjs &&
+          node --check scripts/verify-movie-mentor-operations-infinity-gauntlet.mjs &&
+          node --check scripts/verify-movie-mentor-operations-atomic-gauntlet.mjs &&
+          node --check scripts/verify-movie-mentor-operations-distributed-effects.mjs
       - name: Verify Movie Mentor semantic authority and safety
         run: npm run verify:movie-mentor-semantic
       - name: Verify Movie Mentor specialist authority and safety
@@ -81,3 +87,9 @@ jobs:
         run: npm run verify:movie-mentor-operations-power
       - name: Verify Movie Mentor creator work custody soul boundary
         run: npm run verify:movie-mentor-operations-soul
+      - name: Verify Movie Mentor Infinity Gauntlet integration
+        run: npm run verify:movie-mentor-operations-gauntlet
+      - name: Verify Movie Mentor atomic Gauntlet mutation boundary
+        run: npm run verify:movie-mentor-operations-atomic-gauntlet
+      - name: Verify Movie Mentor distributed effect reconciliation
+        run: npm run verify:movie-mentor-operations-distributed-effects
