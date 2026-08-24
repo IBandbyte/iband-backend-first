@@ -39,6 +39,7 @@ jobs:
           node --check ai/MovieMentorOperationsRuntimeOriginAttestation.js &&
           node --check ai/MovieMentorOperationsRealityEvidenceControl.js &&
           node --check ai/MovieMentorOperationsMutationCapabilityControl.js &&
+          node --check ai/MovieMentorCreatorRevisionBarrierControl.js &&
           node --check ai/MovieMentorCreatorWorkCustodyControl.js &&
           node --check ai/MovieMentorOperationsInfinityGauntlet.js &&
           node --check ai/MovieMentorOperationsAtomicGauntletMutationGate.js &&
@@ -64,6 +65,7 @@ jobs:
           node --check scripts/verify-movie-mentor-operations-reality.mjs &&
           node --check scripts/verify-movie-mentor-operations-power.mjs &&
           node --check scripts/verify-movie-mentor-operations-soul.mjs &&
+          node --check scripts/verify-movie-mentor-creator-revision-barrier.mjs &&
           node --check scripts/verify-movie-mentor-operations-infinity-gauntlet.mjs &&
           node --check scripts/verify-movie-mentor-operations-atomic-gauntlet.mjs &&
           node --check scripts/verify-movie-mentor-operations-distributed-effects.mjs &&
@@ -96,6 +98,8 @@ jobs:
         run: npm run verify:movie-mentor-operations-power
       - name: Verify Movie Mentor creator work custody soul boundary
         run: npm run verify:movie-mentor-operations-soul
+      - name: Verify Movie Mentor concurrent creator revision barrier
+        run: npm run verify:movie-mentor-creator-revision-barrier
       - name: Verify Movie Mentor Infinity Gauntlet integration
         run: npm run verify:movie-mentor-operations-gauntlet
       - name: Verify Movie Mentor atomic Gauntlet mutation boundary
