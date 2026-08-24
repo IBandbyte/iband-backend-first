@@ -1,76 +1,10 @@
-/**
- * Movie Mentor Operations Failure / Chaos Drill Control
- * -----------------------------------------------------
- * Deterministic contract for controlled resilience drills.
- *
- * STATUS:
- * - Standalone architecture only.
- * - STAGING / ISOLATED TEST ENVIRONMENTS ONLY.
- * - Production fault injection is forbidden by this contract.
- * - NOT an AI agent.
- * - NO LIVE FAULT-INJECTION ADAPTERS.
- */
-
-const VERSION="1.0.0";
-const CONTRACT_VERSION="1.0.0";
-const CONTROL_ID="movie-mentor-operations-failure-drill-control";
-const AUTHORITY="operations-failure-drill-contract-only";
+/** Movie Mentor Operations Failure / Chaos Drill Control v1.1.0 — dormant, staging/isolated-test only. */
+const VERSION="1.1.0",CONTRACT_VERSION="1.1.0",CONTROL_ID="movie-mentor-operations-failure-drill-control",AUTHORITY="operations-failure-drill-contract-only";
 const ALLOWED_ENVIRONMENTS=Object.freeze(["staging","isolated-test"]);
-
-const SCENARIOS=Object.freeze({
-  "agent-unavailable":Object.freeze({risk:"low",targetType:"agent",expected:["agent-health-detection","supervisor-degraded-evidence","no-identity-substitution"]}),
-  "agent-identity-corruption":Object.freeze({risk:"medium",targetType:"agent",expected:["admission-denied","quarantine-review","unknown-or-mismatched-identity-fails-closed"]}),
-  "provider-unavailable":Object.freeze({risk:"medium",targetType:"provider",expected:["provider-failure-detected","safe-degradation","no-unbounded-retry-loop"]}),
-  "queue-processing-failure":Object.freeze({risk:"medium",targetType:"queue",expected:["queue-health-detection","backlog-visible","recovery-requires-verification"]}),
-  "latency-saturation":Object.freeze({risk:"medium",targetType:"service",expected:["latency-warning","capacity-signal","safe-degradation"]}),
-  "persistence-unavailable":Object.freeze({risk:"high",targetType:"persistence",expected:["creator-state-protection-signal","destructive-write-prevention","incident-escalation"]}),
-  "stale-creator-checkpoint":Object.freeze({risk:"medium",targetType:"creator-state",expected:["stale-overwrite-blocked","restoration-review","creator-state-verification"]}),
-  "recovery-action-failure":Object.freeze({risk:"high",targetType:"recovery",expected:["structured-execution-failure","mandatory-verification","rollback-or-human-review"]}),
-  "rollback-action-failure":Object.freeze({risk:"high",targetType:"rollback",expected:["structured-rollback-failure","mandatory-verification","human-review"]}),
-  "whole-app-outage":Object.freeze({risk:"high",targetType:"application",expected:["external-watchdog-survives","multi-source-outage-confirmation","public-status-capability-remains-independent","creator-state-protection-signalled"]}),
-});
-
-function cleanString(v){return typeof v==="string"?v.trim():""}
-function cloneValue(v){if(v===undefined)return undefined;try{return JSON.parse(JSON.stringify(v))}catch{return v}}
-function getFailureScenario(id){const key=cleanString(id);return key&&SCENARIOS[key]?cloneValue(SCENARIOS[key]):null}
-function listFailureScenarios(){return Object.entries(SCENARIOS).map(([scenarioId,v])=>({scenarioId,...cloneValue(v)}))}
-
-function createFailureDrillPlan({drillId,scenarioId,environment,targetScope=null,blastRadius=null,rollbackPlan=null,abortConditions=[],evidenceCapture=[],scheduledBy=null}={}){
-  return{controlId:CONTROL_ID,drillId:cleanString(drillId)||null,scenarioId:cleanString(scenarioId)||null,environment:cleanString(environment)||null,targetScope:cloneValue(targetScope),blastRadius:cloneValue(blastRadius),rollbackPlan:cloneValue(rollbackPlan),abortConditions:Array.isArray(abortConditions)?cloneValue(abortConditions):[],evidenceCapture:Array.isArray(evidenceCapture)?cloneValue(evidenceCapture):[],scheduledBy:cleanString(scheduledBy)||null,authority:AUTHORITY,productionForbidden:true};
-}
-
-async function evaluateFailureDrillPreflight(plan={}, {verifyDrillAuthorisation=null,authorisation=null}={}){
-  const reasons=[];
-  if(plan.controlId!==CONTROL_ID||plan.authority!==AUTHORITY||plan.productionForbidden!==true)reasons.push("drill_contract_invalid");
-  if(!cleanString(plan.drillId))reasons.push("drill_id_required");
-  if(!SCENARIOS[cleanString(plan.scenarioId)])reasons.push("unknown_failure_scenario");
-  if(!ALLOWED_ENVIRONMENTS.includes(cleanString(plan.environment)))reasons.push("environment_not_allowed");
-  if(cleanString(plan.environment)==="production")reasons.push("production_fault_injection_forbidden");
-  if(!plan.targetScope||typeof plan.targetScope!=="object")reasons.push("target_scope_required");
-  if(!plan.blastRadius||typeof plan.blastRadius!=="object")reasons.push("explicit_blast_radius_required");
-  if(!plan.rollbackPlan||typeof plan.rollbackPlan!=="object")reasons.push("rollback_plan_required");
-  if(!Array.isArray(plan.abortConditions)||plan.abortConditions.length===0)reasons.push("abort_conditions_required");
-  if(!Array.isArray(plan.evidenceCapture)||plan.evidenceCapture.length===0)reasons.push("evidence_capture_required");
-  if(typeof verifyDrillAuthorisation!=="function")reasons.push("trusted_drill_authorisation_verifier_required");
-  if(reasons.length)return{permitted:false,reasons};
-  const decision=await verifyDrillAuthorisation({drillId:plan.drillId,scenarioId:plan.scenarioId,environment:plan.environment,targetScope:cloneValue(plan.targetScope),blastRadius:cloneValue(plan.blastRadius),authorisation:cloneValue(authorisation)});
-  if(decision?.authorised!==true)return{permitted:false,reasons:[cleanString(decision?.reason)||"drill_not_authorised"]};
-  return{permitted:true,reasons:[],drillId:plan.drillId,scenarioId:plan.scenarioId,environment:plan.environment,authorisationReference:cleanString(decision?.reference)||null,mandatoryAbortConditions:cloneValue(plan.abortConditions),verificationRequired:true};
-}
-
-function evaluateFailureDrillResult({plan=null,observedOutcomes=[],abortTriggered=false,recoveryVerified=false,creatorImpactObserved=false}={}){
-  const scenario=getFailureScenario(plan?.scenarioId);if(!scenario)return{valid:false,passed:false,reasons:["unknown_failure_scenario"]};
-  const observed=new Set((Array.isArray(observedOutcomes)?observedOutcomes:[]).map(cleanString).filter(Boolean));
-  const missing=scenario.expected.filter(x=>!observed.has(x));
-  const reasons=[];
-  if(abortTriggered)reasons.push("drill_abort_triggered");
-  if(creatorImpactObserved)reasons.push("unexpected_creator_impact_observed");
-  if(recoveryVerified!==true)reasons.push("post_drill_recovery_not_verified");
-  for(const x of missing)reasons.push(`expected_outcome_missing:${x}`);
-  return{valid:true,passed:reasons.length===0,reasons,scenarioId:cleanString(plan?.scenarioId),expectedOutcomes:scenario.expected,observedOutcomes:[...observed],recoveryVerified:recoveryVerified===true};
-}
-
-function getFailureDrillControlManifest(){return{id:CONTROL_ID,name:"Movie Mentor Operations Failure / Chaos Drill Control",version:VERSION,contractVersion:CONTRACT_VERSION,status:"standalone-dormant-not-wired",authority:AUTHORITY,deterministicControl:true,aiAgent:false,allowedEnvironments:ALLOWED_ENVIRONMENTS,productionFaultInjectionForbidden:true,scenarioCount:Object.keys(SCENARIOS).length,principles:["prove-failure-behaviour-before-production","small-explicit-blast-radius","abort-before-uncontrolled-impact","creator-impact-is-a-failed-drill-condition","recovery-must-be-independently-verified","external-watchdog-must-survive-primary-app-failure"],restrictions:["no-production-fault-injection","no-live-fault-injection-adapters","cannot-self-authorise-drills","cannot-expand-own-blast-radius","cannot-disable-abort-conditions","cannot-declare-recovery-without-verification"]}}
-
-export{VERSION as FAILURE_DRILL_CONTROL_VERSION,CONTRACT_VERSION as FAILURE_DRILL_CONTROL_CONTRACT_VERSION,CONTROL_ID as FAILURE_DRILL_CONTROL_ID,AUTHORITY as FAILURE_DRILL_CONTROL_AUTHORITY,ALLOWED_ENVIRONMENTS as FAILURE_DRILL_ALLOWED_ENVIRONMENTS,SCENARIOS as FAILURE_DRILL_SCENARIOS,getFailureScenario,listFailureScenarios,createFailureDrillPlan,evaluateFailureDrillPreflight,evaluateFailureDrillResult,getFailureDrillControlManifest};
-export default evaluateFailureDrillPreflight;
+const SCENARIOS=Object.freeze({"agent-unavailable":Object.freeze({risk:"low",targetType:"agent",expected:["agent-health-detection","supervisor-degraded-evidence","no-identity-substitution"]}),"agent-identity-corruption":Object.freeze({risk:"medium",targetType:"agent",expected:["admission-denied","quarantine-review","unknown-or-mismatched-identity-fails-closed"]}),"provider-unavailable":Object.freeze({risk:"medium",targetType:"provider",expected:["provider-failure-detected","safe-degradation","no-unbounded-retry-loop"]}),"queue-processing-failure":Object.freeze({risk:"medium",targetType:"queue",expected:["queue-health-detection","backlog-visible","recovery-requires-verification"]}),"latency-saturation":Object.freeze({risk:"medium",targetType:"service",expected:["latency-warning","capacity-signal","safe-degradation"]}),"persistence-unavailable":Object.freeze({risk:"high",targetType:"persistence",expected:["creator-state-protection-signal","destructive-write-prevention","incident-escalation"]}),"stale-creator-checkpoint":Object.freeze({risk:"medium",targetType:"creator-state",expected:["stale-overwrite-blocked","restoration-review","creator-state-verification"]}),"recovery-action-failure":Object.freeze({risk:"high",targetType:"recovery",expected:["structured-execution-failure","mandatory-verification","rollback-or-human-review"]}),"rollback-action-failure":Object.freeze({risk:"high",targetType:"rollback",expected:["structured-rollback-failure","mandatory-verification","human-review"]}),"whole-app-outage":Object.freeze({risk:"high",targetType:"application",expected:["external-watchdog-survives","multi-source-outage-confirmation","public-status-capability-remains-independent","creator-state-protection-signalled"]})});
+function cleanString(v){return typeof v==="string"?v.trim():""}function cloneValue(v){if(v===undefined)return undefined;try{return JSON.parse(JSON.stringify(v))}catch{return v}}function getFailureScenario(id){const k=cleanString(id);return k&&SCENARIOS[k]?cloneValue(SCENARIOS[k]):null}function listFailureScenarios(){return Object.entries(SCENARIOS).map(([scenarioId,v])=>({scenarioId,...cloneValue(v)}))}
+function createFailureDrillPlan({drillId,scenarioId,environment,targetScope=null,blastRadius=null,rollbackPlan=null,abortConditions=[],evidenceCapture=[],scheduledBy=null}={}){return{controlId:CONTROL_ID,drillId:cleanString(drillId)||null,scenarioId:cleanString(scenarioId)||null,environment:cleanString(environment)||null,targetScope:cloneValue(targetScope),blastRadius:cloneValue(blastRadius),rollbackPlan:cloneValue(rollbackPlan),abortConditions:Array.isArray(abortConditions)?cloneValue(abortConditions):[],evidenceCapture:Array.isArray(evidenceCapture)?cloneValue(evidenceCapture):[],scheduledBy:cleanString(scheduledBy)||null,authority:AUTHORITY,productionForbidden:true}}
+async function evaluateFailureDrillPreflight(plan={}, {verifyDrillEnvironment=null,verifyDrillAuthorisation=null,authorisation=null}={}){const reasons=[];if(plan.controlId!==CONTROL_ID||plan.authority!==AUTHORITY||plan.productionForbidden!==true)reasons.push("drill_contract_invalid");if(!cleanString(plan.drillId))reasons.push("drill_id_required");if(!SCENARIOS[cleanString(plan.scenarioId)])reasons.push("unknown_failure_scenario");if(!ALLOWED_ENVIRONMENTS.includes(cleanString(plan.environment)))reasons.push("environment_not_allowed");if(cleanString(plan.environment)==="production")reasons.push("production_fault_injection_forbidden");if(!plan.targetScope||typeof plan.targetScope!=="object")reasons.push("target_scope_required");if(!plan.blastRadius||typeof plan.blastRadius!=="object")reasons.push("explicit_blast_radius_required");if(!plan.rollbackPlan||typeof plan.rollbackPlan!=="object")reasons.push("rollback_plan_required");if(!Array.isArray(plan.abortConditions)||!plan.abortConditions.length)reasons.push("abort_conditions_required");if(!Array.isArray(plan.evidenceCapture)||!plan.evidenceCapture.length)reasons.push("evidence_capture_required");if(typeof verifyDrillEnvironment!=="function")reasons.push("trusted_environment_isolation_verifier_required");if(typeof verifyDrillAuthorisation!=="function")reasons.push("trusted_drill_authorisation_verifier_required");if(reasons.length)return{permitted:false,reasons};let environment;try{environment=await verifyDrillEnvironment({drillId:plan.drillId,declaredEnvironment:plan.environment,targetScope:cloneValue(plan.targetScope),blastRadius:cloneValue(plan.blastRadius)})}catch{return{permitted:false,reasons:["trusted_environment_verification_failed"]}}if(environment?.verified!==true)return{permitted:false,reasons:[cleanString(environment?.reason)||"environment_isolation_not_verified"]};if(cleanString(environment.actualEnvironment)!==cleanString(plan.environment))return{permitted:false,reasons:["actual_environment_mismatch"]};if(environment.production===true)return{permitted:false,reasons:["production_fault_injection_forbidden"]};if(environment.creatorTrafficIsolated!==true)return{permitted:false,reasons:["creator_traffic_isolation_required"]};if(environment.blastRadiusEnforced!==true)return{permitted:false,reasons:["blast_radius_enforcement_required"]};let decision;try{decision=await verifyDrillAuthorisation({drillId:plan.drillId,scenarioId:plan.scenarioId,environment:plan.environment,environmentVerificationReference:cleanString(environment.reference)||null,targetScope:cloneValue(plan.targetScope),blastRadius:cloneValue(plan.blastRadius),authorisation:cloneValue(authorisation)})}catch{return{permitted:false,reasons:["trusted_drill_authorisation_verification_failed"]}}if(decision?.authorised!==true)return{permitted:false,reasons:[cleanString(decision?.reason)||"drill_not_authorised"]};return{permitted:true,reasons:[],drillId:plan.drillId,scenarioId:plan.scenarioId,environment:plan.environment,environmentVerificationReference:cleanString(environment.reference)||null,authorisationReference:cleanString(decision?.reference)||null,mandatoryAbortConditions:cloneValue(plan.abortConditions),verificationRequired:true}}
+function evaluateFailureDrillResult({plan=null,observedOutcomes=[],abortTriggered=false,recoveryVerified=false,creatorImpactObserved=false}={}){const scenario=getFailureScenario(plan?.scenarioId);if(!scenario)return{valid:false,passed:false,reasons:["unknown_failure_scenario"]};const observed=new Set((Array.isArray(observedOutcomes)?observedOutcomes:[]).map(cleanString).filter(Boolean)),missing=scenario.expected.filter(x=>!observed.has(x)),reasons=[];if(abortTriggered)reasons.push("drill_abort_triggered");if(creatorImpactObserved)reasons.push("unexpected_creator_impact_observed");if(recoveryVerified!==true)reasons.push("post_drill_recovery_not_verified");for(const x of missing)reasons.push(`expected_outcome_missing:${x}`);return{valid:true,passed:!reasons.length,reasons,scenarioId:cleanString(plan?.scenarioId),expectedOutcomes:scenario.expected,observedOutcomes:[...observed],recoveryVerified:recoveryVerified===true}}
+function getFailureDrillControlManifest(){return{id:CONTROL_ID,name:"Movie Mentor Operations Failure / Chaos Drill Control",version:VERSION,contractVersion:CONTRACT_VERSION,status:"standalone-dormant-not-wired",authority:AUTHORITY,deterministicControl:true,aiAgent:false,allowedEnvironments:ALLOWED_ENVIRONMENTS,productionFaultInjectionForbidden:true,scenarioCount:Object.keys(SCENARIOS).length,requirements:["trusted-actual-environment-verification","creator-traffic-isolation","enforced-blast-radius","trusted-separate-drill-authorisation","mandatory-abort-conditions","post-drill-recovery-verification"],restrictions:["no-production-fault-injection","no-live-fault-injection-adapters","cannot-trust-declared-environment-label","cannot-self-authorise-drills","cannot-expand-own-blast-radius","cannot-disable-abort-conditions","cannot-declare-recovery-without-verification"]}}
+export{VERSION as FAILURE_DRILL_CONTROL_VERSION,CONTRACT_VERSION as FAILURE_DRILL_CONTROL_CONTRACT_VERSION,CONTROL_ID as FAILURE_DRILL_CONTROL_ID,AUTHORITY as FAILURE_DRILL_CONTROL_AUTHORITY,ALLOWED_ENVIRONMENTS as FAILURE_DRILL_ALLOWED_ENVIRONMENTS,SCENARIOS as FAILURE_DRILL_SCENARIOS,getFailureScenario,listFailureScenarios,createFailureDrillPlan,evaluateFailureDrillPreflight,evaluateFailureDrillResult,getFailureDrillControlManifest};export default evaluateFailureDrillPreflight;
