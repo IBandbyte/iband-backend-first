@@ -37,6 +37,7 @@ jobs:
           node --check ai/MovieMentorOperationsAuditIncidentLedger.js &&
           node --check ai/MovieMentorOperationsReplayFreshnessControl.js &&
           node --check ai/MovieMentorOperationsAtomicFreshnessGate.js &&
+          node --check ai/MovieMentorOperationsScopeIsolationControl.js &&
           node --check ai/MovieMentorControlledRecoveryExecutor.js &&
           node --check ai/MovieMentorControlledRollbackExecutor.js &&
           node --check ai/MovieMentorRecoveryVerificationAgent.js &&
@@ -48,7 +49,8 @@ jobs:
           node --check scripts/verify-movie-mentor-operations-v2.mjs &&
           node --check scripts/verify-movie-mentor-operations-warp40.mjs &&
           node --check scripts/verify-movie-mentor-operations-replay.mjs &&
-          node --check scripts/verify-movie-mentor-operations-atomic-freshness.mjs
+          node --check scripts/verify-movie-mentor-operations-atomic-freshness.mjs &&
+          node --check scripts/verify-movie-mentor-operations-scope-isolation.mjs
       - name: Verify Movie Mentor semantic authority and safety
         run: npm run verify:movie-mentor-semantic
       - name: Verify Movie Mentor specialist authority and safety
@@ -63,3 +65,5 @@ jobs:
         run: npm run verify:movie-mentor-operations-replay
       - name: Verify Movie Mentor Operations atomic freshness
         run: npm run verify:movie-mentor-operations-atomic-freshness
+      - name: Verify Movie Mentor Operations scope isolation
+        run: npm run verify:movie-mentor-operations-scope
