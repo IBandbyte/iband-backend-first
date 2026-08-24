@@ -1,0 +1,20 @@
+import assert from"node:assert/strict";import{finalizeGlobalRecovery as finalize}from"../ai/MovieMentorRecoveryFinalizationControl.js";
+const authorityDecision={authorized:true,reference:"decision-cat1-e9",authorityReference:"recovery-root-A",bindingFingerprint:"a".repeat(64)},stateTransition={applied:true,from:"distributed_reconciling",to:"globally_recovered",recoveryEpoch:9,transitionReference:"global:decision-cat1-e9",recoveryAuthorityReference:"decision-cat1-e9",recoveryAuthorityBindingFingerprint:"a".repeat(64)},input={incidentId:"cat-1",recoveryEpoch:9,authorityDecision,stateTransition,expectedStateReference:"distributed-state-cat1-e9"},commit={committed:true,indeterminate:false,authorityHighWatermarkWritten:true,globalStateWritten:true,sameAtomicTransaction:true,reference:"final-commit-9002"},durable={durable:true,sameAtomicTransaction:true,commitReference:"final-commit-9002",authorityHighWatermark:{recoveryEpoch:9,decisionReference:"decision-cat1-e9",bindingFingerprint:"a".repeat(64)},globalState:{state:"globally_recovered",recoveryEpoch:9,authorityDecisionReference:"decision-cat1-e9",bindingFingerprint:"a".repeat(64),transitionReference:"global:decision-cat1-e9"},reference:"restart-readback-9002"},deps={commitFinalRecovery:async()=>({...commit}),readFinalRecovery:async()=>structuredClone(durable)};
+let r=await finalize(input,deps);assert.equal(r.finalized,true);assert.equal(r.status,"globally_recovered");
+// Power cut before CAS: no commit, no global recovery.
+r=await finalize(input,{...deps,commitFinalRecovery:async()=>({committed:false,indeterminate:false,reason:"power_cut_before_final_cas"})});assert.equal(r.finalized,false);assert.ok(r.reasons.includes("power_cut_before_final_cas"));
+// Power cut during CAS: outcome indeterminate until durable readback/reconciliation.
+r=await finalize(input,{...deps,commitFinalRecovery:async()=>({committed:false,indeterminate:true,reason:"power_cut_during_final_cas"})});assert.equal(r.finalized,false);assert.equal(r.indeterminate,true);
+// HWM written but global state missing: forbidden partial durable view.
+let torn=structuredClone(durable);delete torn.globalState;r=await finalize(input,{...deps,readFinalRecovery:async()=>torn});assert.equal(r.finalized,false);assert.ok(r.reasons.includes("final_recovery_partial_durable_view_denied"));
+// Global state written but HWM missing: equally forbidden.
+torn=structuredClone(durable);delete torn.authorityHighWatermark;r=await finalize(input,{...deps,readFinalRecovery:async()=>torn});assert.equal(r.finalized,false);assert.ok(r.reasons.includes("final_recovery_partial_durable_view_denied"));
+// Stale HWM resurrection after restart.
+torn=structuredClone(durable);torn.authorityHighWatermark.recoveryEpoch=8;r=await finalize(input,{...deps,readFinalRecovery:async()=>torn});assert.equal(r.finalized,false);assert.ok(r.reasons.includes("final_recovery_durable_triangle_mismatch"));
+// State has correct epoch but a different digest/authority reality.
+torn=structuredClone(durable);torn.globalState.bindingFingerprint="b".repeat(64);r=await finalize(input,{...deps,readFinalRecovery:async()=>torn});assert.equal(r.finalized,false);assert.ok(r.reasons.includes("final_recovery_durable_triangle_mismatch"));
+// Conflicting node/transaction wins CAS first: this attempt cannot finalize.
+r=await finalize(input,{...deps,commitFinalRecovery:async()=>({committed:false,indeterminate:false,reason:"previous_state_reference_compare_failed"})});assert.equal(r.finalized,false);assert.ok(r.reasons.includes("previous_state_reference_compare_failed"));
+// Storage claiming two writes but not one atomic transaction is not proof.
+r=await finalize(input,{...deps,commitFinalRecovery:async()=>({...commit,sameAtomicTransaction:false})});assert.equal(r.finalized,false);assert.ok(r.reasons.includes("final_recovery_atomicity_not_proven"));
+console.log("Recovery Finalization passed: Authority HWM + global State Machine truth become authoritative only as one crash-durable atomic tuple; pre/during-CAS power cuts, torn writes, stale HWM, digest divergence, conflicting CAS and fake atomicity fail closed.");
