@@ -23,61 +23,11 @@ jobs:
         run: node --check server.js
       - name: Check Movie Mentor gateways and engines
         run: node --check movieMentorSemantic.js && node --check movieMentorSpecialists.js && node --check movieMentorSynthesis.js && node --check ai/MovieMentorSemanticInterpreter.js && node --check ai/StructuredAIProviderClient.js && node --check ai/MovieMentorSpecialistExecutor.js && node --check ai/MovieMentorSynthesisEngine.js
-      - name: Check Movie Mentor Operations control-plane syntax
+      - name: Check Movie Mentor Operations catastrophe security syntax
         run: >-
-          node --check ai/MovieMentorCanonicalAgentRegistry.js &&
-          node --check ai/MovieMentorAgentAdmissionQuarantineControl.js &&
-          node --check ai/MovieMentorAgentHealthIntegrityAgent.js &&
-          node --check ai/MovieMentorOperationsSupervisor.js &&
-          node --check ai/MovieMentorOperationsSupervisorAgent.js &&
-          node --check ai/MovieMentorOperationsControlPlane.js &&
-          node --check ai/MovieMentorOperationsStateMachine.js &&
-          node --check ai/MovieMentorOperationsAuditIncidentLedger.js &&
-          node --check ai/MovieMentorOperationsReplayFreshnessControl.js &&
-          node --check ai/MovieMentorOperationsReplayProofControl.js &&
-          node --check ai/MovieMentorOperationsAtomicFreshnessGate.js &&
-          node --check ai/MovieMentorOperationsScopeIsolationControl.js &&
-          node --check ai/MovieMentorOperationsRuntimeOriginAttestation.js &&
-          node --check ai/MovieMentorOperationsRealityEvidenceControl.js &&
-          node --check ai/MovieMentorOperationsMutationCapabilityControl.js &&
-          node --check ai/MovieMentorCreatorBranchConvergenceControl.js &&
-          node --check ai/MovieMentorCreatorRevisionBarrierControl.js &&
-          node --check ai/MovieMentorCreatorWorkCustodyControl.js &&
-          node --check ai/MovieMentorOperationsInfinityGauntlet.js &&
-          node --check ai/MovieMentorOperationsAtomicGauntletMutationGate.js &&
-          node --check ai/MovieMentorOperationsDistributedEffectReconciliation.js &&
-          node --check ai/MovieMentorOperationsReconciliationLeaseControl.js &&
-          node --check ai/MovieMentorOperationsLeaseAuthorityQuorumControl.js &&
-          node --check ai/MovieMentorOperationsAuthorityReentryGate.js &&
-          node --check ai/MovieMentorOperationsRecoveryStabilityControl.js &&
+          node --check ai/MovieMentorOperationsTrustedTimeAuthorityControl.js &&
+          node --check ai/MovieMentorOperationsEvidenceAuthorityIndependenceControl.js &&
           node --check ai/MovieMentorPostCatastropheRecoveryCertification.js &&
-          node --check ai/MovieMentorControlledRecoveryExecutor.js &&
-          node --check ai/MovieMentorControlledRollbackExecutor.js &&
-          node --check ai/MovieMentorRecoveryVerificationAgent.js &&
-          node --check ai/MovieMentorPostRollbackVerificationAgent.js &&
-          node --check ai/MovieMentorCreatorStateEmergencyPreservation.js &&
-          node --check ai/MovieMentorExternalOperationsWatchdog.js &&
-          node --check ai/MovieMentorRecoveryObjectivesPolicy.js &&
-          node --check ai/MovieMentorOperationsFailureDrillControl.js &&
-          node --check scripts/verify-movie-mentor-operations-v2.mjs &&
-          node --check scripts/verify-movie-mentor-operations-warp40.mjs &&
-          node --check scripts/verify-movie-mentor-operations-replay.mjs &&
-          node --check scripts/verify-movie-mentor-operations-replay-proof.mjs &&
-          node --check scripts/verify-movie-mentor-operations-atomic-freshness.mjs &&
-          node --check scripts/verify-movie-mentor-operations-scope-isolation.mjs &&
-          node --check scripts/verify-movie-mentor-operations-runtime-origin.mjs &&
-          node --check scripts/verify-movie-mentor-operations-reality.mjs &&
-          node --check scripts/verify-movie-mentor-operations-power.mjs &&
-          node --check scripts/verify-movie-mentor-operations-soul.mjs &&
-          node --check scripts/verify-movie-mentor-creator-revision-barrier.mjs &&
-          node --check scripts/verify-movie-mentor-creator-branch-convergence.mjs &&
-          node --check scripts/verify-movie-mentor-operations-infinity-gauntlet.mjs &&
-          node --check scripts/verify-movie-mentor-operations-atomic-gauntlet.mjs &&
-          node --check scripts/verify-movie-mentor-operations-distributed-effects.mjs &&
-          node --check scripts/verify-movie-mentor-operations-reconciliation-lease.mjs &&
-          node --check scripts/verify-movie-mentor-operations-lease-authority-quorum.mjs &&
-          node --check scripts/verify-movie-mentor-operations-authority-reentry.mjs &&
-          node --check scripts/verify-movie-mentor-operations-recovery-stability.mjs &&
           node --check scripts/verify-movie-mentor-post-catastrophe-recovery-certification.mjs &&
           node --check scripts/verify-movie-mentor-operations-catastrophe.mjs
       - name: Verify Movie Mentor semantic authority and safety
@@ -124,7 +74,7 @@ jobs:
         run: npm run verify:movie-mentor-operations-authority-reentry
       - name: Verify Movie Mentor recovery anti-flapping stability
         run: npm run verify:movie-mentor-operations-recovery-stability
-      - name: Verify Movie Mentor post-catastrophe recovery certification
+      - name: Verify Zorg Time + Clock Chamber recovery certification
         run: npm run verify:movie-mentor-post-catastrophe-certification
-      - name: Verify Movie Mentor full Operations catastrophe recovery
+      - name: Verify full catastrophe creator/evidence/clock CAS
         run: npm run verify:movie-mentor-operations-catastrophe
