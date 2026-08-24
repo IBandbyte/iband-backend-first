@@ -4,6 +4,7 @@ import {DEFAULT_ALLOWED_ACTION_IDS,createControlledRecoveryRequest,validateContr
 import {CONTROLLED_ROLLBACK_DEFAULT_ALLOWLIST} from "../ai/MovieMentorControlledRollbackExecutor.js";
 import {createAgentHealthIntegrityWorkOrder,validateAgentHealthIntegrityWorkOrder} from "../ai/MovieMentorAgentHealthIntegrityAgent.js";
 import {DEFAULT_AGENT_REGISTRY,createAgentAdmissionRequest,evaluateAgentAdmission,createQuarantineRecord,evaluateQuarantineRelease} from "../ai/MovieMentorAgentAdmissionQuarantineControl.js";
+import {createOperationsState,evaluateOperationsTransition} from "../ai/MovieMentorOperationsStateMachine.js";
 
 const tests=[];
 const test=(name,fn)=>tests.push([name,fn]);
@@ -45,17 +46,8 @@ test("agent admission registry is empty by default",()=>{
   assert.deepEqual(DEFAULT_AGENT_REGISTRY,{});
 });
 
-const registry={
-  "queue-job-health":{enabled:true,contractVersion:"1.0.0",agentVersion:"1.0.0",authority:"operations-analysis-only"}
-};
-
-const admission=(overrides={})=>createAgentAdmissionRequest({
-  trustedRuntimeIdentity:"queue-job-health",
-  claimedAgentIdentity:"queue-job-health",
-  contractVersion:"1.0.0",
-  agentVersion:"1.0.0",
-  ...overrides,
-});
+const registry={"queue-job-health":{enabled:true,contractVersion:"1.0.0",agentVersion:"1.0.0",authority:"operations-analysis-only"}};
+const admission=(overrides={})=>createAgentAdmissionRequest({trustedRuntimeIdentity:"queue-job-health",claimedAgentIdentity:"queue-job-health",contractVersion:"1.0.0",agentVersion:"1.0.0",...overrides});
 
 test("registered trusted runtime identity is admitted when healthy",()=>{
   const r=evaluateAgentAdmission(admission(),{registry,quarantineState:{}});
@@ -100,6 +92,83 @@ test("quarantine release requires trusted external authorisation",async()=>{
   const r=await evaluateQuarantineRelease({trustedRuntimeIdentity:"queue-job-health",quarantineRecord:record,repairEvidence:["patch tested"],verificationEvidence:["independent pass"]});
   assert.equal(r.released,false);
   assert.equal(r.state,"release-denied");
+});
+
+const transitionEvidence=["test evidence"];
+const transitionAuthoriser=async()=>({authorised:true,reference:"auth-test"});
+
+test("state machine blocks healthy to rollback jump",async()=>{
+  const state=createOperationsState({state:"healthy",incidentId:"i1"});
+  const r=await evaluateOperationsTransition(state,"authorise-rollback",{evidence:transitionEvidence,verifyTransitionAuthorisation:transitionAuthoriser});
+  assert.equal(r.permitted,false);
+  assert.equal(r.reason,"transition_not_allowed");
+});
+
+test("state machine requires evidence even for observational transition",async()=>{
+  const state=createOperationsState({state:"healthy",incidentId:"i1"});
+  const r=await evaluateOperationsTransition(state,"detect-incident",{evidence:[]});
+  assert.equal(r.permitted,false);
+  assert.equal(r.reason,"transition_evidence_required");
+});
+
+test("state machine blocks mutating transition without trusted authoriser",async()=>{
+  const state=createOperationsState({state:"awaiting-recovery-authorisation",incidentId:"i1"});
+  const r=await evaluateOperationsTransition(state,"authorise-recovery",{evidence:transitionEvidence});
+  assert.equal(r.permitted,false);
+  assert.equal(r.reason,"trusted_transition_authorisation_verifier_required");
+});
+
+test("state machine cannot skip recovery verification",async()=>{
+  const state=createOperationsState({state:"recovering",incidentId:"i1"});
+  const r=await evaluateOperationsTransition(state,"sustained-health-confirmed",{evidence:transitionEvidence});
+  assert.equal(r.permitted,false);
+  assert.equal(r.reason,"transition_not_allowed");
+});
+
+test("quarantined agent cannot self-release directly to healthy",async()=>{
+  const state=createOperationsState({state:"quarantined",incidentId:"i1"});
+  const r=await evaluateOperationsTransition(state,"sustained-health-confirmed",{evidence:["agent says I am fine"]});
+  assert.equal(r.permitted,false);
+  assert.equal(r.reason,"transition_not_allowed");
+});
+
+test("legal recovery path preserves mandatory verification",async()=>{
+  let state=createOperationsState({state:"incident-detected",incidentId:"i1"});
+  state=await evaluateOperationsTransition(state,"begin-diagnosis",{evidence:transitionEvidence});
+  assert.equal(state.state,"diagnosing");
+  state=await evaluateOperationsTransition(state,"request-recovery-authorisation",{evidence:transitionEvidence});
+  assert.equal(state.state,"awaiting-recovery-authorisation");
+  state=await evaluateOperationsTransition(state,"authorise-recovery",{evidence:transitionEvidence,authorisation:{id:"a1"},verifyTransitionAuthorisation:transitionAuthoriser});
+  assert.equal(state.state,"recovery-authorised");
+  state=await evaluateOperationsTransition(state,"begin-recovery",{evidence:transitionEvidence,authorisation:{id:"a1"},verifyTransitionAuthorisation:transitionAuthoriser});
+  assert.equal(state.state,"recovering");
+  state=await evaluateOperationsTransition(state,"recovery-execution-complete",{evidence:transitionEvidence});
+  assert.equal(state.state,"verifying-recovery");
+  state=await evaluateOperationsTransition(state,"verification-passed",{evidence:transitionEvidence});
+  assert.equal(state.state,"recovered");
+  state=await evaluateOperationsTransition(state,"sustained-health-confirmed",{evidence:transitionEvidence});
+  assert.equal(state.state,"healthy");
+});
+
+test("legal rollback path requires separate authorisation and verification",async()=>{
+  let state=createOperationsState({state:"verifying-recovery",incidentId:"i2"});
+  state=await evaluateOperationsTransition(state,"verification-requires-rollback",{evidence:transitionEvidence});
+  assert.equal(state.state,"awaiting-rollback-authorisation");
+  state=await evaluateOperationsTransition(state,"authorise-rollback",{evidence:transitionEvidence,authorisation:{id:"rb1"},verifyTransitionAuthorisation:transitionAuthoriser});
+  assert.equal(state.state,"rollback-authorised");
+  state=await evaluateOperationsTransition(state,"begin-rollback",{evidence:transitionEvidence,authorisation:{id:"rb1"},verifyTransitionAuthorisation:transitionAuthoriser});
+  assert.equal(state.state,"rolling-back");
+  state=await evaluateOperationsTransition(state,"rollback-execution-complete",{evidence:transitionEvidence});
+  assert.equal(state.state,"verifying-rollback");
+  state=await evaluateOperationsTransition(state,"verification-passed",{evidence:transitionEvidence});
+  assert.equal(state.state,"recovered");
+});
+
+test("unknown state machine event fails closed",async()=>{
+  const state=createOperationsState({state:"healthy",incidentId:"i3"});
+  const r=await evaluateOperationsTransition(state,"captain-hit-it-with-bat",{evidence:transitionEvidence});
+  assert.equal(r.permitted,false);
+  assert.equal(r.reason,"transition_not_allowed");
 });
 
 const future=new Date(Date.now()+60000).toISOString();
