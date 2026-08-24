@@ -1,0 +1,17 @@
+import assert from "node:assert/strict";
+import{createRuntimeOriginChallenge,validateRuntimeOriginChallenge,attestRuntimeOrigin,verifyRuntimeOriginAttestation}from"../ai/MovieMentorOperationsRuntimeOriginAttestation.js";
+const now=Date.parse("2026-08-24T12:00:00.000Z");
+const base={challengeId:"ch-1",agentId:"capacity-demand",invocationId:"inv-1",scopeFingerprint:"scope-1",issuedAt:"2026-08-24T11:59:00.000Z",expiresAt:"2026-08-24T12:01:00.000Z",nonce:"n-1"};
+const challenge=createRuntimeOriginChallenge(base);assert.equal(validateRuntimeOriginChallenge(challenge,{now}).valid,true);
+const descriptor={agentVersion:"1.0.0",contractVersion:"1.0.0",runtimeInstanceId:"runtime-a"};
+const attested=await attestRuntimeOrigin(challenge,descriptor,{now,verifyRuntimeOrigin:async({bindingHash})=>({valid:Boolean(bindingHash),reference:"origin-proof-1",verifiedAt:"2026-08-24T12:00:00.000Z",verifierDomain:"trusted-runtime"})});assert.equal(attested.attested,true);
+const verifier=async()=>({valid:true,reference:"reverified-1"});
+assert.equal((await verifyRuntimeOriginAttestation(attested.attestation,{agentId:"capacity-demand",agentVersion:"1.0.0",contractVersion:"1.0.0",invocationId:"inv-1",scopeFingerprint:"scope-1"},{now,verifyRuntimeOriginAttestation:verifier})).valid,true);
+assert.equal((await verifyRuntimeOriginAttestation(attested.attestation,{agentId:"queue-job-health",invocationId:"inv-1"},{now,verifyRuntimeOriginAttestation:verifier})).valid,false);
+assert.equal((await verifyRuntimeOriginAttestation(attested.attestation,{agentId:"capacity-demand",invocationId:"inv-2"},{now,verifyRuntimeOriginAttestation:verifier})).valid,false);
+assert.equal((await verifyRuntimeOriginAttestation(attested.attestation,{agentId:"capacity-demand",scopeFingerprint:"scope-2"},{now,verifyRuntimeOriginAttestation:verifier})).valid,false);
+const tampered=structuredClone(attested.attestation);tampered.binding.runtimeInstanceId="runtime-evil";assert.equal((await verifyRuntimeOriginAttestation(tampered,{agentId:"capacity-demand"},{now,verifyRuntimeOriginAttestation:verifier})).valid,false);
+assert.equal((await verifyRuntimeOriginAttestation(attested.attestation,{agentId:"capacity-demand"},{now:Date.parse("2026-08-24T12:02:00.000Z"),verifyRuntimeOriginAttestation:verifier})).valid,false);
+const forged=createRuntimeOriginChallenge({...base,agentId:"not-real"});assert.equal(validateRuntimeOriginChallenge(forged,{now}).valid,false);
+assert.equal((await attestRuntimeOrigin(challenge,descriptor,{now})).attested,false);
+console.log("Movie Mentor Operations Mind Stone runtime-origin verification passed.");
