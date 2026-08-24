@@ -24,9 +24,28 @@ jobs:
         run: node --check server.js
       - name: Check Movie Mentor gateways and engines
         run: node --check movieMentorSemantic.js && node --check movieMentorSpecialists.js && node --check movieMentorSynthesis.js && node --check ai/MovieMentorSemanticInterpreter.js && node --check ai/StructuredAIProviderClient.js && node --check ai/MovieMentorSpecialistExecutor.js && node --check ai/MovieMentorSynthesisEngine.js
+      - name: Check Movie Mentor Operations control-plane syntax
+        run: >-
+          node --check ai/MovieMentorCanonicalAgentRegistry.js &&
+          node --check ai/MovieMentorAgentAdmissionQuarantineControl.js &&
+          node --check ai/MovieMentorOperationsSupervisor.js &&
+          node --check ai/MovieMentorOperationsControlPlane.js &&
+          node --check ai/MovieMentorOperationsStateMachine.js &&
+          node --check ai/MovieMentorOperationsAuditIncidentLedger.js &&
+          node --check ai/MovieMentorControlledRecoveryExecutor.js &&
+          node --check ai/MovieMentorControlledRollbackExecutor.js &&
+          node --check ai/MovieMentorRecoveryVerificationAgent.js &&
+          node --check ai/MovieMentorPostRollbackVerificationAgent.js &&
+          node --check ai/MovieMentorCreatorStateEmergencyPreservation.js &&
+          node --check ai/MovieMentorExternalOperationsWatchdog.js &&
+          node --check ai/MovieMentorRecoveryObjectivesPolicy.js &&
+          node --check ai/MovieMentorOperationsFailureDrillControl.js &&
+          node --check scripts/verify-movie-mentor-operations.mjs
       - name: Verify Movie Mentor semantic authority and safety
         run: npm run verify:movie-mentor-semantic
       - name: Verify Movie Mentor specialist authority and safety
         run: npm run verify:movie-mentor-specialists
       - name: Verify Movie Mentor synthesis authority and safety
         run: npm run verify:movie-mentor-synthesis
+      - name: Verify Movie Mentor Operations architecture hardening
+        run: npm run verify:movie-mentor-operations
