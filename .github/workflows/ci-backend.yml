@@ -34,6 +34,7 @@ jobs:
           node --check ai/MovieMentorOperationsStateMachine.js &&
           node --check ai/MovieMentorOperationsAuditIncidentLedger.js &&
           node --check ai/MovieMentorOperationsReplayFreshnessControl.js &&
+          node --check ai/MovieMentorOperationsReplayProofControl.js &&
           node --check ai/MovieMentorOperationsAtomicFreshnessGate.js &&
           node --check ai/MovieMentorOperationsScopeIsolationControl.js &&
           node --check ai/MovieMentorOperationsRuntimeOriginAttestation.js &&
@@ -49,6 +50,7 @@ jobs:
           node --check ai/MovieMentorOperationsLeaseAuthorityQuorumControl.js &&
           node --check ai/MovieMentorOperationsAuthorityReentryGate.js &&
           node --check ai/MovieMentorOperationsRecoveryStabilityControl.js &&
+          node --check ai/MovieMentorPostCatastropheRecoveryCertification.js &&
           node --check ai/MovieMentorControlledRecoveryExecutor.js &&
           node --check ai/MovieMentorControlledRollbackExecutor.js &&
           node --check ai/MovieMentorRecoveryVerificationAgent.js &&
@@ -60,6 +62,7 @@ jobs:
           node --check scripts/verify-movie-mentor-operations-v2.mjs &&
           node --check scripts/verify-movie-mentor-operations-warp40.mjs &&
           node --check scripts/verify-movie-mentor-operations-replay.mjs &&
+          node --check scripts/verify-movie-mentor-operations-replay-proof.mjs &&
           node --check scripts/verify-movie-mentor-operations-atomic-freshness.mjs &&
           node --check scripts/verify-movie-mentor-operations-scope-isolation.mjs &&
           node --check scripts/verify-movie-mentor-operations-runtime-origin.mjs &&
@@ -75,6 +78,7 @@ jobs:
           node --check scripts/verify-movie-mentor-operations-lease-authority-quorum.mjs &&
           node --check scripts/verify-movie-mentor-operations-authority-reentry.mjs &&
           node --check scripts/verify-movie-mentor-operations-recovery-stability.mjs &&
+          node --check scripts/verify-movie-mentor-post-catastrophe-recovery-certification.mjs &&
           node --check scripts/verify-movie-mentor-operations-catastrophe.mjs
       - name: Verify Movie Mentor semantic authority and safety
         run: npm run verify:movie-mentor-semantic
@@ -88,6 +92,8 @@ jobs:
         run: npm run verify:movie-mentor-operations-warp40
       - name: Verify Movie Mentor Operations replay freshness
         run: npm run verify:movie-mentor-operations-replay
+      - name: Verify Movie Mentor Operations authoritative replay proof
+        run: npm run verify:movie-mentor-operations-replay-proof
       - name: Verify Movie Mentor Operations atomic freshness
         run: npm run verify:movie-mentor-operations-atomic-freshness
       - name: Verify Movie Mentor Operations scope isolation
@@ -118,5 +124,7 @@ jobs:
         run: npm run verify:movie-mentor-operations-authority-reentry
       - name: Verify Movie Mentor recovery anti-flapping stability
         run: npm run verify:movie-mentor-operations-recovery-stability
+      - name: Verify Movie Mentor post-catastrophe recovery certification
+        run: npm run verify:movie-mentor-post-catastrophe-certification
       - name: Verify Movie Mentor full Operations catastrophe recovery
         run: npm run verify:movie-mentor-operations-catastrophe
