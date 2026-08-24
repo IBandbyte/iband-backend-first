@@ -17,9 +17,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: npm
       - name: Install dependencies
-        run: npm ci --no-audit --no-fund || npm i --no-audit --no-fund
+        # No package-lock.json is committed yet, so npm ci/cache would be false assurance.
+        # Ignore dependency lifecycle scripts in CI until a reviewed lockfile is introduced.
+        run: npm install --no-audit --no-fund --ignore-scripts
       - name: Check server syntax
         run: node --check server.js
       - name: Check Movie Mentor gateways and engines
@@ -28,7 +29,9 @@ jobs:
         run: >-
           node --check ai/MovieMentorCanonicalAgentRegistry.js &&
           node --check ai/MovieMentorAgentAdmissionQuarantineControl.js &&
+          node --check ai/MovieMentorAgentHealthIntegrityAgent.js &&
           node --check ai/MovieMentorOperationsSupervisor.js &&
+          node --check ai/MovieMentorOperationsSupervisorAgent.js &&
           node --check ai/MovieMentorOperationsControlPlane.js &&
           node --check ai/MovieMentorOperationsStateMachine.js &&
           node --check ai/MovieMentorOperationsAuditIncidentLedger.js &&
