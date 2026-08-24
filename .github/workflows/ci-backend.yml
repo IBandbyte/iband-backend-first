@@ -43,6 +43,7 @@ jobs:
           node --check ai/MovieMentorOperationsInfinityGauntlet.js &&
           node --check ai/MovieMentorOperationsAtomicGauntletMutationGate.js &&
           node --check ai/MovieMentorOperationsDistributedEffectReconciliation.js &&
+          node --check ai/MovieMentorOperationsReconciliationLeaseControl.js &&
           node --check ai/MovieMentorControlledRecoveryExecutor.js &&
           node --check ai/MovieMentorControlledRollbackExecutor.js &&
           node --check ai/MovieMentorRecoveryVerificationAgent.js &&
@@ -62,7 +63,8 @@ jobs:
           node --check scripts/verify-movie-mentor-operations-soul.mjs &&
           node --check scripts/verify-movie-mentor-operations-infinity-gauntlet.mjs &&
           node --check scripts/verify-movie-mentor-operations-atomic-gauntlet.mjs &&
-          node --check scripts/verify-movie-mentor-operations-distributed-effects.mjs
+          node --check scripts/verify-movie-mentor-operations-distributed-effects.mjs &&
+          node --check scripts/verify-movie-mentor-operations-reconciliation-lease.mjs
       - name: Verify Movie Mentor semantic authority and safety
         run: npm run verify:movie-mentor-semantic
       - name: Verify Movie Mentor specialist authority and safety
@@ -93,3 +95,5 @@ jobs:
         run: npm run verify:movie-mentor-operations-atomic-gauntlet
       - name: Verify Movie Mentor distributed effect reconciliation
         run: npm run verify:movie-mentor-operations-distributed-effects
+      - name: Verify Movie Mentor reconciliation lease split-brain fencing
+        run: npm run verify:movie-mentor-operations-reconciliation-lease
