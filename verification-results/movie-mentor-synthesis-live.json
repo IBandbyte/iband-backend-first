@@ -1,8 +1,8 @@
 {
-  "generatedAt": "2026-08-21T21:06:13.376Z",
+  "generatedAt": "2026-08-24T17:51:34.286Z",
   "baseUrl": "https://iband-backend-first-1.onrender.com",
   "passed": true,
-  "text": "Yes — keep the radio mystery central, and use the sisters’ bond as the emotional lens, not the main engine. The clearest path is to let the radio’s tomorrow-messages drive the external plot, while the sisters’ love and unresolved grief shape how each of them responds to it. That way, the mystery stays front and center, and the relationship deepens the stakes instead of competing with them.",
+  "text": "Yes — keep the radio mystery central, and let the sisters’ bond deepen it rather than compete with it. A strong path is to make the radio’s tomorrow-messages the main external engine of the story, while the sisters’ love and unresolved grief shape how each of them responds to it. That way, the mystery stays in front, but their relationship gives it emotional stakes and distinct choices. If you want, I can help you sharpen the balance so the mystery drives the plot and the sisters drive the feeling.",
   "decision": {
     "usedContributionAgentIds": [
       "story",
@@ -10,10 +10,10 @@
     ],
     "deferredContributionAgentIds": [],
     "conflictsHandled": [
-      "Kept the radio mystery as the primary dramatic focus while limiting family material to emotional support.",
-      "Balanced the push for stronger external tension with the need to preserve the sisters’ emotional dimension."
+      "Kept the radio mystery as the primary dramatic focus while treating the sisters’ relationship as emotional support rather than a competing plotline.",
+      "Balanced the tension between external puzzle emphasis and family emotion by framing the sisters’ grief as motivation inside the mystery, not a replacement for it."
     ],
-    "confidence": 0.95,
+    "confidence": 0.92,
     "provenance": {
       "source": "movie-mentor-synthesis",
       "model": "gpt-5.4-mini-2026-03-17",
