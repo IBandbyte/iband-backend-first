@@ -40,6 +40,7 @@ jobs:
           node --check ai/MovieMentorOperationsScopeIsolationControl.js &&
           node --check ai/MovieMentorOperationsRuntimeOriginAttestation.js &&
           node --check ai/MovieMentorOperationsRealityEvidenceControl.js &&
+          node --check ai/MovieMentorOperationsMutationCapabilityControl.js &&
           node --check ai/MovieMentorControlledRecoveryExecutor.js &&
           node --check ai/MovieMentorControlledRollbackExecutor.js &&
           node --check ai/MovieMentorRecoveryVerificationAgent.js &&
@@ -54,7 +55,8 @@ jobs:
           node --check scripts/verify-movie-mentor-operations-atomic-freshness.mjs &&
           node --check scripts/verify-movie-mentor-operations-scope-isolation.mjs &&
           node --check scripts/verify-movie-mentor-operations-runtime-origin.mjs &&
-          node --check scripts/verify-movie-mentor-operations-reality.mjs
+          node --check scripts/verify-movie-mentor-operations-reality.mjs &&
+          node --check scripts/verify-movie-mentor-operations-power.mjs
       - name: Verify Movie Mentor semantic authority and safety
         run: npm run verify:movie-mentor-semantic
       - name: Verify Movie Mentor specialist authority and safety
@@ -75,3 +77,5 @@ jobs:
         run: npm run verify:movie-mentor-operations-runtime-origin
       - name: Verify Movie Mentor Operations reality evidence
         run: npm run verify:movie-mentor-operations-reality
+      - name: Verify Movie Mentor Operations mutation capability power boundary
+        run: npm run verify:movie-mentor-operations-power
