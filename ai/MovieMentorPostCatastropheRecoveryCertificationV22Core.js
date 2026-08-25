@@ -1,10 +1,11 @@
-/** Movie Mentor Post-Catastrophe Recovery Certification v2.3 core — certify the complete Recovery Authority Digest v2 envelope at the final certificate boundary. */
+/** Movie Mentor Post-Catastrophe Recovery Certification v2.4 core — certify the complete Recovery Authority Digest v2 envelope and exact recovery-reality universe at the final certificate boundary. */
 import certifyLegacy from"./MovieMentorPostCatastropheRecoveryCertificationV22Legacy.js";
 import{RECOVERY_AUTHORITY_BINDING_HASH_DOMAIN as DOMAIN,RECOVERY_AUTHORITY_BINDING_HASH_SCHEMA as SCHEMA}from"./MovieMentorRecoveryAuthority.js";
 const s=v=>typeof v==="string"?v.trim():"";
 const validEnvelope=v=>v?.bindingFingerprintDomain===DOMAIN&&v?.bindingFingerprintSchema===SCHEMA&&/^[a-f0-9]{64}$/i.test(s(v?.bindingFingerprint));
 const validDurableEnvelope=v=>v?.bindingFingerprintDomain===DOMAIN&&v?.bindingFingerprintSchema===SCHEMA&&/^[a-f0-9]{64}$/i.test(s(v?.bindingFingerprint));
-async function certifyV23(args={},deps={}){
+const validRealityHash=v=>/^[a-f0-9]{64}$/i.test(s(v));
+async function certifyV24(args={},deps={}){
  let authorityDecision=null,finalTuple=null,finalDurable=null,reconciledDurable=null;
  const wrapped={...deps};
  if(typeof deps.verifyRecoveryAuthorityDecision==="function")wrapped.verifyRecoveryAuthorityDecision=async payload=>{const r=await deps.verifyRecoveryAuthorityDecision(payload);authorityDecision=r&&typeof r==="object"?structuredClone(r):r;return r};
@@ -21,7 +22,11 @@ async function certifyV23(args={},deps={}){
  }else if(reconciledDurable?.found===true){
   const h=reconciledDurable.authorityHighWatermark,g=reconciledDurable.globalState;
   if(!validDurableEnvelope(h)||!validDurableEnvelope(g)||s(h?.bindingFingerprint)!==s(authorityDecision.bindingFingerprint)||s(g?.bindingFingerprint)!==s(authorityDecision.bindingFingerprint))return{certified:false,status:"certificate_reconciled_authority_envelope_denied",indeterminate:true,reasons:["post_catastrophe_certificate_durable_authority_digest_protocol_mismatch"]};
+  const expectedReality=s(args.reconciliationRealityHash);
+  if(expectedReality){
+   if(!validRealityHash(expectedReality)||!validRealityHash(reconciledDurable.reconciliationRealityHash)||s(reconciledDurable.reconciliationRealityHash)!==expectedReality)return{certified:false,status:"certificate_reconciled_recovery_reality_denied",indeterminate:true,reasons:["post_catastrophe_certificate_reconciled_recovery_reality_mismatch"]};
+  }
  }
  return{...result,recoveryAuthorityBindingFingerprintDomain:DOMAIN,recoveryAuthorityBindingFingerprintSchema:SCHEMA};
 }
-export default certifyV23;
+export default certifyV24;
