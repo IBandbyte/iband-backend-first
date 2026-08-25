@@ -1,0 +1,26 @@
+import assert from "node:assert/strict";
+import { buildSpecialistPlan, orchestrateMovieMentorTurn } from "../ai/MovieMentorTurnOrchestrator.js";
+
+const semanticReady={structured:{movieJourneyIntelligence:{understoodContext:[{key:"premise",value:"A lighthouse sends messages from a missing daughter",evidence:"creator",confidenceSource:"creator-explicit"}],provisionalContext:[],unresolvedContext:[],clarificationNeeded:[],readyToAdvance:true,recommendedStageId:"premise",recommendedTaskId:"develop-premise",nextAction:null,resumeNote:null}},metadata:{semantic:true}};
+const contribution=agentId=>({agentId,observations:[],provisionalSuggestions:[],risksAndConflicts:[],creatorConfirmedDependencies:[],confidence:.8,provenance:{source:"movie-mentor-specialist-agent",model:"test",contractVersion:"1.0.0"},authority:"mentor-provisional",creatorFacing:false,mayAdvanceJourney:false,mayOverwriteCreatorTruth:false,requiresMentorSynthesis:true});
+const input={message:"A lighthouse sends messages from her missing daughter.",context:{creatorConfirmedContext:[{key:"genre",value:"mystery"}],projectJourney:{projectId:"p1"}}};
+
+const plan=buildSpecialistPlan({creatorMessage:input.message,semanticIntelligence:semanticReady.structured.movieJourneyIntelligence,creatorConfirmedContext:input.context.creatorConfirmedContext,context:input.context});
+assert.deepEqual(plan.workOrders.map(w=>w.agentId),["story","character"]);for(const w of plan.workOrders){assert.equal(w.creatorFacing,false);assert.equal(w.mayAdvanceJourney,false);assert.equal(w.mayOverwriteCreatorTruth,false);assert.equal(w.authority,"mentor-provisional");assert.equal(w.input.semanticIntelligence.readyToAdvance,true);assert.deepEqual(w.input.creatorConfirmedContext,input.context.creatorConfirmedContext);}
+
+let order=[];let seenPlan=null;let seenSynthesis=null;
+let r=await orchestrateMovieMentorTurn(input,{interpretSemantics:async payload=>{order.push("semantic");assert.equal(payload.message,input.message);return structuredClone(semanticReady);},executeSpecialistPlan:async p=>{order.push("specialists");seenPlan=structuredClone(p);return{status:"completed",contributions:[contribution("story"),contribution("character")],failures:[],skipped:[]};},synthesizeResponse:async s=>{order.push("synthesis");seenSynthesis=structuredClone(s);return{success:true,text:"Mentor response",authority:{singleCreatorFacingMentor:true}};}});
+assert.deepEqual(order,["semantic","specialists","synthesis"]);assert.equal(r.success,true);assert.equal(r.status,"mentor-response-ready");assert.equal(r.text,"Mentor response");assert.equal(r.mayAdvanceJourney,false);assert.equal(r.authority.specialistsMaySpeakDirectlyToCreator,false);assert.deepEqual(seenPlan.workOrders.map(w=>w.agentId),["story","character"]);assert.deepEqual(seenSynthesis.contributions.map(c=>c.agentId),["story","character"]);assert.deepEqual(seenSynthesis.creatorConfirmedContext,input.context.creatorConfirmedContext);
+
+let specialistCalled=false,synthesisCalled=false;
+const ambiguous={structured:{movieJourneyIntelligence:{understoodContext:[],provisionalContext:[],unresolvedContext:[{key:"term",value:"glorp-coded",evidence:"glorp-coded",confidenceSource:"model-provisional"}],clarificationNeeded:[{key:"term",expression:"glorp-coded",question:"What do you mean by glorp-coded?",reason:"Invented term",material:true}],readyToAdvance:false,recommendedStageId:null,recommendedTaskId:null,nextAction:null,resumeNote:null}}};
+r=await orchestrateMovieMentorTurn({message:"Make it glorp-coded"},{interpretSemantics:async()=>structuredClone(ambiguous),executeSpecialistPlan:async()=>{specialistCalled=true;throw new Error("must not run")},synthesizeResponse:async()=>{synthesisCalled=true;throw new Error("must not run")}});
+assert.equal(r.status,"clarification-required");assert.equal(r.text,"What do you mean by glorp-coded?");assert.equal(specialistCalled,false);assert.equal(synthesisCalled,false);
+
+r=await orchestrateMovieMentorTurn(input,{interpretSemantics:async()=>structuredClone(semanticReady),executeSpecialistPlan:async()=>({status:"partial",contributions:[contribution("story")],failures:[{agentId:"character",code:"AI_PROVIDER_TIMEOUT"}],skipped:[]}),synthesizeResponse:async s=>{assert.deepEqual(s.contributions.map(c=>c.agentId),["story"]);return{success:true,text:"Useful partial synthesis"};}});assert.equal(r.text,"Useful partial synthesis");assert.equal(r.specialistResult.status,"partial");
+
+await assert.rejects(()=>orchestrateMovieMentorTurn({},{}),e=>e.code==="MOVIE_MENTOR_TURN_MESSAGE_REQUIRED");
+await assert.rejects(()=>orchestrateMovieMentorTurn(input,{interpretSemantics:async()=>({structured:{}})}),e=>e.code==="MOVIE_MENTOR_TURN_SEMANTIC_CONTRACT_MISSING");
+await assert.rejects(()=>orchestrateMovieMentorTurn(input,{interpretSemantics:async()=>structuredClone(semanticReady),executeSpecialistPlan:async()=>({contributions:[]}),synthesizeResponse:async()=>({success:true,text:""})}),e=>e.code==="MOVIE_MENTOR_TURN_SYNTHESIS_CONTRACT_MISSING");
+
+console.log("Movie Mentor Turn Orchestrator v1.0 passed: one creator turn flows Semantic -> Story/Character specialists -> single Mentor synthesis; ambiguity blocks specialists, creator truth survives wiring, partial specialist failure remains synthesizable, and missing contracts fail closed.");
