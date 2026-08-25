@@ -1,10 +1,6 @@
-import{spawnSync}from"node:child_process";
-const cases=[
-["post-catastrophe-certification","scripts/verify-movie-mentor-post-catastrophe-recovery-certification.mjs"],
-["retry-snapshot-lineage","scripts/verify-movie-mentor-recovery-retry-snapshot-lineage-race.mjs"],
-["full-catastrophe","scripts/verify-movie-mentor-operations-catastrophe.mjs"]
-];
-const results=[];
+import{spawnSync}from"node:child_process";import{readdirSync}from"node:fs";import{basename,join}from"node:path";
+const scriptsDir="scripts",self=basename(import.meta.filename||new URL(import.meta.url).pathname),discovered=readdirSync(scriptsDir).filter(f=>f.startsWith("verify-movie-mentor-recovery-")&&f.endsWith(".mjs")&&f!==self).sort(),explicit=["verify-movie-mentor-post-catastrophe-recovery-certification.mjs","verify-movie-mentor-operations-catastrophe.mjs"],files=[...new Set([...discovered,...explicit])],cases=files.map(file=>[file.replace(/^verify-movie-mentor-|\.mjs$/g,""),join(scriptsDir,file)]);
+if(!discovered.length)throw new Error("recovery regression discovery found no torture suites");if(!files.includes("verify-movie-mentor-recovery-retry-snapshot-lineage-race.mjs"))throw new Error("snapshot lineage regression suite missing from matrix discovery");
+const results=[];console.log(`RECOVERY MATRIX DISCOVERY: ${cases.length} suites (${discovered.length} auto-enrolled + ${explicit.length} catastrophe anchors).`);
 for(const[name,file]of cases){const r=spawnSync(process.execPath,[file],{encoding:"utf8"});results.push({name,file,status:r.status,signal:r.signal,stdout:r.stdout?.trim()||"",stderr:r.stderr?.trim()||""});if(r.status!==0){console.error(`RECOVERY MATRIX FAILED: ${name}`);if(r.stdout)console.error(r.stdout);if(r.stderr)console.error(r.stderr);process.exit(r.status??1)}console.log(`RECOVERY MATRIX PASS: ${name}`)}
-if(results.length!==cases.length||results.some(r=>r.status!==0))throw new Error("recovery regression matrix incomplete");
-console.log(`RECOVERY CATASTROPHE REGRESSION MATRIX PASSED: ${results.length}/${cases.length} permanent suites green.`);
+if(results.length!==cases.length||results.some(r=>r.status!==0))throw new Error("recovery regression matrix incomplete");console.log(`RECOVERY CATASTROPHE REGRESSION MATRIX PASSED: ${results.length}/${cases.length} permanent suites green; orphan recovery torture suites cannot hide outside the matrix.`);
