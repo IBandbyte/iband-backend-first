@@ -1,0 +1,35 @@
+name: Recovery Catastrophe Verification
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ai/MovieMentorPostCatastropheRecoveryCertification.js'
+      - 'ai/MovieMentorRecovery*.js'
+      - 'scripts/verify-movie-mentor-recovery-*.mjs'
+      - 'scripts/verify-movie-mentor-post-catastrophe-recovery-certification.mjs'
+      - 'scripts/verify-movie-mentor-operations-catastrophe.mjs'
+      - 'package.json'
+      - '.github/workflows/verify-recovery-catastrophe.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  recovery-matrix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Recovery syntax
+        run: >-
+          node --check ai/MovieMentorPostCatastropheRecoveryCertification.js &&
+          node --check ai/MovieMentorRecoveryFinalizationRetryControl.js &&
+          node --check ai/MovieMentorRecoveryRetryProofFreshnessControl.js &&
+          node --check scripts/verify-movie-mentor-post-catastrophe-recovery-certification.mjs &&
+          node --check scripts/verify-movie-mentor-recovery-retry-snapshot-lineage-race.mjs &&
+          node --check scripts/verify-movie-mentor-recovery-catastrophe-regression-matrix.mjs &&
+          node --check scripts/verify-movie-mentor-operations-catastrophe.mjs
+      - name: Recovery Catastrophe Regression Matrix
+        run: npm run verify:movie-mentor-recovery-matrix
