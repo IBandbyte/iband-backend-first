@@ -1,0 +1,15 @@
+import assert from "node:assert/strict";
+import { applyMovieMentorCreatorStateTransition } from "../ai/MovieMentorCreatorStateTransition.js";
+import { runMovieMentorTurn } from "../ai/MovieMentorTurnRuntime.js";
+import { verifyAuthoritativeTurnContext } from "../ai/MovieMentorTurnContextControl.js";
+
+let durable=null;
+async function read(identity){if(!durable){const e=new Error("missing");e.code="MOVIE_MENTOR_CREATOR_STATE_NOT_FOUND";throw e;}if(identity.projectId!==durable.projectId)throw new Error("wrong project");return structuredClone(durable);}
+async function write(next,{expectedRevision}){assert.equal(durable?.revision||0,expectedRevision);durable=structuredClone(next);return structuredClone(durable);}
+const deps={readAuthoritativeTurnSource:read,writeAuthoritativeCreatorState:write};
+const written=await applyMovieMentorCreatorStateTransition({projectId:"movie-42",creatorSessionId:"creator-7",source:"creator-memory",expectedRevision:0,state:{creatorConfirmedContext:[{key:"genre",value:"mystery",source:"creator-memory",certainty:"confirmed"}],projectJourney:{activeProjectId:"movie-42",recentStage:"premise"},memoryContext:{projectMemories:[{id:"m1",projectId:"movie-42",content:"The red door matters."}]}}},deps);
+assert.equal(written.revision,1);assert.equal(written.creatorStateGeneration,1);
+let observedEnvelope=null;
+const result=await runMovieMentorTurn({projectId:"movie-42",creatorSessionId:"creator-7",message:"What should happen next?"},{readAuthoritativeTurnSource:read,readAuthoritativeRevision:async i=>{const s=await read(i);return{revision:s.revision,reference:s.revisionAuthorityReference,snapshotReference:s.snapshotReference};},readAuthoritativeCreatorState:async i=>{const s=await read(i);return{generation:s.creatorStateGeneration,fingerprint:s.creatorStateFingerprint,authorityReference:s.creatorAuthorityReference,snapshotReference:s.snapshotReference};},orchestrateTurn:async(input,authorityDeps)=>{observedEnvelope=input.authoritativeTurnContext;const proof=await verifyAuthoritativeTurnContext(observedEnvelope,authorityDeps);assert.equal(proof.verified,true);return{success:true,status:"mentor-response-ready",text:"continue",turnContextProof:proof};}});
+assert.equal(result.success,true);assert.equal(observedEnvelope.projectId,"movie-42");assert.equal(observedEnvelope.revision.authoritativeRevision,1);assert.equal(observedEnvelope.creatorState.generation,1);assert.equal(observedEnvelope.creatorConfirmedContext[0].value,"mystery");assert.equal(observedEnvelope.memoryContext.projectMemories[0].content,"The red door matters.");assert.equal(observedEnvelope.projectJourney.recentStage,"premise");
+console.log("Movie Mentor durable creator state -> next turn round trip verification: PASS");
