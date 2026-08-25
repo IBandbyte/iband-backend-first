@@ -32,6 +32,7 @@ jobs:
           node --check ai/MovieMentorRecoveryFinalizationRetryControl.js &&
           node --check scripts/verify-movie-mentor-post-catastrophe-recovery-certification.mjs &&
           node --check scripts/verify-movie-mentor-recovery-retry-snapshot-lineage-race.mjs &&
+          node --check scripts/verify-movie-mentor-recovery-catastrophe-regression-matrix.mjs &&
           node --check scripts/verify-movie-mentor-operations-catastrophe.mjs
       - name: Verify Movie Mentor semantic authority and safety
         run: npm run verify:movie-mentor-semantic
@@ -77,9 +78,5 @@ jobs:
         run: npm run verify:movie-mentor-operations-authority-reentry
       - name: Verify Movie Mentor recovery anti-flapping stability
         run: npm run verify:movie-mentor-operations-recovery-stability
-      - name: Verify Zorg Time + Clock Chamber recovery certification
-        run: npm run verify:movie-mentor-post-catastrophe-certification
-      - name: Verify retry freshness snapshot lineage races
-        run: npm run verify:movie-mentor-retry-snapshot-lineage
-      - name: Verify full catastrophe creator/evidence/clock CAS
-        run: npm run verify:movie-mentor-operations-catastrophe
+      - name: Verify permanent Recovery Catastrophe Regression Matrix
+        run: npm run verify:movie-mentor-recovery-matrix
