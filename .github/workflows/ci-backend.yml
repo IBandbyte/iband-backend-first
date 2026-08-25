@@ -33,6 +33,7 @@ jobs:
           node --check scripts/verify-movie-mentor-post-catastrophe-recovery-certification.mjs &&
           node --check scripts/verify-movie-mentor-recovery-retry-snapshot-lineage-race.mjs &&
           node --check scripts/verify-movie-mentor-recovery-catastrophe-regression-matrix.mjs &&
+          node --check scripts/verify-movie-mentor-adversarial-cross-layer-catastrophe-v2.mjs &&
           node --check scripts/verify-movie-mentor-operations-catastrophe.mjs
       - name: Verify Movie Mentor semantic authority and safety
         run: npm run verify:movie-mentor-semantic
@@ -80,3 +81,5 @@ jobs:
         run: npm run verify:movie-mentor-operations-recovery-stability
       - name: Verify permanent Recovery Catastrophe Regression Matrix
         run: npm run verify:movie-mentor-recovery-matrix
+      - name: Verify adversarial cross-layer catastrophe v2
+        run: npm run verify:movie-mentor-cross-layer-catastrophe
