@@ -22,7 +22,7 @@ jobs:
       - name: Check server syntax
         run: node --check server.js
       - name: Check Movie Mentor gateways and engines
-        run: node --check movieMentorTurn.js && node --check movieMentorSemantic.js && node --check movieMentorSpecialists.js && node --check movieMentorSynthesis.js && node --check ai/MovieMentorTurnOrchestrator.js && node --check ai/MovieMentorSemanticInterpreter.js && node --check ai/StructuredAIProviderClient.js && node --check ai/MovieMentorSpecialistExecutor.js && node --check ai/MovieMentorSynthesisEngine.js && node --check scripts/verify-movie-mentor-turn-orchestrator.mjs
+        run: node --check movieMentorTurn.js && node --check movieMentorSemantic.js && node --check movieMentorSpecialists.js && node --check movieMentorSynthesis.js && node --check ai/MovieMentorTurnContextControl.js && node --check ai/MovieMentorTurnOrchestrator.js && node --check ai/MovieMentorSemanticInterpreter.js && node --check ai/StructuredAIProviderClient.js && node --check ai/MovieMentorSpecialistExecutor.js && node --check ai/MovieMentorSynthesisEngine.js && node --check scripts/verify-movie-mentor-turn-orchestrator.mjs
       - name: Check Movie Mentor Operations catastrophe security syntax
         run: >-
           node --check ai/MovieMentorOperationsTrustedTimeAuthorityControl.js &&
