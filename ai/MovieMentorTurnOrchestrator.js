@@ -2,9 +2,10 @@ import { interpretMovieMentorSemantics } from "./MovieMentorSemanticInterpreter.
 import { executeMovieMentorSpecialistPlan } from "./MovieMentorSpecialistExecutor.js";
 import { synthesizeMovieMentorResponse } from "./MovieMentorSynthesisEngine.js";
 import { verifyAuthoritativeTurnContext } from "./MovieMentorTurnContextControl.js";
+import { resolveContinuationReferences, mergeContinuationIntoSemanticIntelligence } from "./MovieMentorContinuationReferenceControl.js";
 
-const MOVIE_MENTOR_TURN_ORCHESTRATOR_VERSION = "1.1.0";
-const MOVIE_MENTOR_TURN_CONTRACT_VERSION = "1.1.0";
+const MOVIE_MENTOR_TURN_ORCHESTRATOR_VERSION = "1.2.0";
+const MOVIE_MENTOR_TURN_CONTRACT_VERSION = "1.2.0";
 const LIVE_SPECIALIST_ORDER = Object.freeze(["story", "character"]);
 
 function cleanString(value){return typeof value === "string" ? value.trim() : "";}
@@ -35,13 +36,13 @@ function buildSpecialistPlan({creatorMessage,semanticIntelligence,creatorConfirm
   };
 }
 
-function clarificationResponse({creatorMessage,semanticIntelligence,semanticResult,turnContextProof}={}){
+function clarificationResponse({creatorMessage,semanticIntelligence,semanticResult,turnContextProof,continuationResolution=null}={}){
   const first=materialClarifications(semanticIntelligence)[0];
   const question=cleanString(first?.question) || "Could you clarify what you mean before we continue?";
   return {
     success:true,status:"clarification-required",text:question,creatorMessage,semanticIntelligence:clone(semanticIntelligence),specialistPlan:null,specialistResult:null,synthesisResult:null,turnContextProof:clone(turnContextProof),mayAdvanceJourney:false,
-    authority:{creatorTruthDominates:true,authoritativeTurnContextRequired:true,validatedSemanticsRequired:true,specialistsRemainProvisional:true,specialistsMaySpeakDirectlyToCreator:false,singleCreatorFacingMentor:true},
-    metadata:{orchestratorVersion:MOVIE_MENTOR_TURN_ORCHESTRATOR_VERSION,turnContractVersion:MOVIE_MENTOR_TURN_CONTRACT_VERSION,semanticMetadata:clone(semanticResult?.metadata||null)}
+    authority:{creatorTruthDominates:true,authoritativeTurnContextRequired:true,validatedSemanticsRequired:true,continuationReferencesRequireProjectEvidence:true,specialistsRemainProvisional:true,specialistsMaySpeakDirectlyToCreator:false,singleCreatorFacingMentor:true},
+    metadata:{orchestratorVersion:MOVIE_MENTOR_TURN_ORCHESTRATOR_VERSION,turnContractVersion:MOVIE_MENTOR_TURN_CONTRACT_VERSION,continuationResolution:clone(continuationResolution),semanticMetadata:clone(semanticResult?.metadata||null)}
   };
 }
 
@@ -56,15 +57,18 @@ async function orchestrateMovieMentorTurn(input={},deps={}){
   if(turnContextProof?.verified!==true){const error=new Error("Authoritative Movie Mentor turn context could not be verified.");error.code="MOVIE_MENTOR_TURN_CONTEXT_NOT_AUTHORITATIVE";error.validationIssues=asArray(turnContextProof?.reasons);throw error;}
   const frozenContext=contextForEngines(envelope,turnContextProof);
   const interpret=deps.interpretSemantics || interpretMovieMentorSemantics;
+  const resolveContinuation=deps.resolveContinuationReferences || resolveContinuationReferences;
   const executeSpecialists=deps.executeSpecialistPlan || executeMovieMentorSpecialistPlan;
   const synthesize=deps.synthesizeResponse || synthesizeMovieMentorResponse;
 
-  const semanticInput={message:creatorMessage,context:clone(frozenContext),options:clone(input?.options||{})};
+  const continuationResolution=resolveContinuation({creatorMessage,projectId:frozenContext.projectId,memoryContext:clone(frozenContext.memoryContext||{}),creatorConfirmedContext:clone(frozenContext.creatorConfirmedContext||[])});
+  const semanticInput={message:creatorMessage,context:{...clone(frozenContext),continuationReferenceEvidence:clone(continuationResolution)},options:clone(input?.options||{})};
   const semanticResult=await interpret(semanticInput);
-  const semanticIntelligence=semanticResult?.structured?.movieJourneyIntelligence;
-  if(!semanticIntelligence || typeof semanticIntelligence!=="object"){const error=new Error("Semantic Interpreter did not return the canonical Movie Journey intelligence contract.");error.code="MOVIE_MENTOR_TURN_SEMANTIC_CONTRACT_MISSING";throw error;}
+  const rawSemanticIntelligence=semanticResult?.structured?.movieJourneyIntelligence;
+  if(!rawSemanticIntelligence || typeof rawSemanticIntelligence!=="object"){const error=new Error("Semantic Interpreter did not return the canonical Movie Journey intelligence contract.");error.code="MOVIE_MENTOR_TURN_SEMANTIC_CONTRACT_MISSING";throw error;}
+  const semanticIntelligence=mergeContinuationIntoSemanticIntelligence(rawSemanticIntelligence,continuationResolution);
 
-  if(materialClarifications(semanticIntelligence).length || semanticIntelligence.readyToAdvance!==true)return clarificationResponse({creatorMessage,semanticIntelligence,semanticResult,turnContextProof});
+  if(materialClarifications(semanticIntelligence).length || semanticIntelligence.readyToAdvance!==true)return clarificationResponse({creatorMessage,semanticIntelligence,semanticResult,turnContextProof,continuationResolution});
 
   const creatorConfirmedContext=asArray(frozenContext.creatorConfirmedContext).map(clone);
   const specialistPlan=buildSpecialistPlan({creatorMessage,semanticIntelligence,creatorConfirmedContext,context:frozenContext});
@@ -78,8 +82,8 @@ async function orchestrateMovieMentorTurn(input={},deps={}){
 
   return {
     success:true,status:"mentor-response-ready",text:cleanString(synthesisResult.text),creatorMessage,semanticIntelligence:clone(semanticIntelligence),specialistPlan:clone(specialistPlan),specialistResult:clone(specialistResult),synthesisResult:clone(synthesisResult),turnContextProof:clone(turnContextProof),mayAdvanceJourney:false,
-    authority:{creatorTruthDominates:true,authoritativeTurnContextRequired:true,validatedSemanticsOutrankSpecialists:true,specialistsRemainProvisional:true,specialistsMaySpeakDirectlyToCreator:false,specialistContentBecomesCanonicalTruth:false,singleCreatorFacingMentor:true},
-    metadata:{orchestratorVersion:MOVIE_MENTOR_TURN_ORCHESTRATOR_VERSION,turnContractVersion:MOVIE_MENTOR_TURN_CONTRACT_VERSION,semanticMetadata:clone(semanticResult?.metadata||null),specialistMetadata:clone(specialistResult?.metadata||null),synthesisMetadata:clone(synthesisResult?.metadata||null)}
+    authority:{creatorTruthDominates:true,authoritativeTurnContextRequired:true,validatedSemanticsOutrankSpecialists:true,continuationReferencesRequireProjectEvidence:true,specialistsRemainProvisional:true,specialistsMaySpeakDirectlyToCreator:false,specialistContentBecomesCanonicalTruth:false,singleCreatorFacingMentor:true},
+    metadata:{orchestratorVersion:MOVIE_MENTOR_TURN_ORCHESTRATOR_VERSION,turnContractVersion:MOVIE_MENTOR_TURN_CONTRACT_VERSION,continuationResolution:clone(continuationResolution),semanticMetadata:clone(semanticResult?.metadata||null),specialistMetadata:clone(specialistResult?.metadata||null),synthesisMetadata:clone(synthesisResult?.metadata||null)}
   };
 }
 
