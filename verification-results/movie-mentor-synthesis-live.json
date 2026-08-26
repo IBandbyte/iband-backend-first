@@ -1,24 +1,11 @@
 {
-  "generatedAt": "2026-08-26T00:25:11.837Z",
+  "generatedAt": "2026-08-26T00:48:26.643Z",
   "baseUrl": "https://iband-backend-first-1.onrender.com",
-  "passed": true,
-  "text": "Yes — keep the radio mystery central, and use the sisters’ love as the emotional engine beneath it. The strongest path is to make the radio’s “tomorrow” messages the main external question the audience follows, while the sisters respond to it in different ways because of their shared grief. That lets the mystery stay in front, but gives it a human cost and urgency. In practice: the puzzle should drive the plot, and the sisters’ bond should shape how each one chooses to trust, fear, or use the radio. That balance protects the suspense without letting the family material take over.",
-  "decision": {
-    "usedContributionAgentIds": [
-      "story",
-      "character"
-    ],
-    "deferredContributionAgentIds": [],
-    "conflictsHandled": [
-      "Kept the radio mystery as the primary dramatic focus while using the sisters’ relationship as supporting emotional depth rather than the center of the plot.",
-      "Resolved the tension between a strong external puzzle and family drama by framing the sisters’ grief as the reason they handle the radio differently, not as a competing storyline."
-    ],
-    "confidence": 0.94,
-    "provenance": {
-      "source": "movie-mentor-synthesis",
-      "model": "gpt-5.4-mini-2026-03-17",
-      "contractVersion": "1.1.0"
-    }
-  },
-  "error": null
+  "passed": false,
+  "text": null,
+  "decision": null,
+  "error": {
+    "message": "live synthesis failed 503: {\"success\":false,\"code\":\"AI_PROVIDER_RATE_LIMITED\",\"message\":\"Rate limit reached for gpt-5.4-mini in organization org-TtiL9b6UJMFInGdN6YSdwUEv on tokens per min (TPM): Limit 100000, Used 98962, Requested 1061. Please try again in 9m56.16s. Visit https://platform.openai.com/account/rate-limits to learn more. You can increase your rate limit by adding a payment method to your account at https://platform.openai.com/account/billing.\",\"validationIssues\":[],\"retryable\":true,\"authority\":{\"creatorTruthDominates\":true,\"validatedSemanticsOutrankSpecialists\":true,\"specialistsRemainProvisional\":true,\"specialistContentBecomesCanonicalTruth\":false,\"mayAdvanceJourney\":false,\"singleCreatorFacingMentor\":true}}\n\nfalse !== true\n",
+    "code": "ERR_ASSERTION"
+  }
 }
