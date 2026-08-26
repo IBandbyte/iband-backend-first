@@ -1,0 +1,36 @@
+name: Verify Movie Mentor Live Acceptance Loop
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ai/MovieMentorTurnOrchestrator.js"
+      - "ai/MovieMentorContinuationReferenceControl.js"
+      - "ai/MovieMentorContinuationObedienceControl.js"
+      - "ai/MovieMentorRecommendationReferenceControl.js"
+      - "ai/MovieMentorCreatorDecisionAuthority.js"
+      - "ai/MovieMentorCreatorStateTransition.js"
+      - "ai/MovieMentorCreatorStateStore.js"
+      - "scripts/verify-movie-mentor-live-acceptance-loop.mjs"
+      - ".github/workflows/verify-movie-mentor-live-acceptance-loop.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Check Door 11D4 acceptance-loop syntax
+        run: node --check scripts/verify-movie-mentor-live-acceptance-loop.mjs
+      - name: Torture uninterrupted recommendation acceptance loop
+        run: node scripts/verify-movie-mentor-live-acceptance-loop.mjs
