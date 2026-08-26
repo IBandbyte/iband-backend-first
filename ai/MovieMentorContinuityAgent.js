@@ -7,8 +7,8 @@ import {
   buildContinuityConsequenceEnvelope,
 } from "./MovieMentorContinuityConsequenceAuthority.js";
 
-const MOVIE_MENTOR_CONTINUITY_AGENT_VERSION="2.1.0";
-const CONTINUITY_CONTRACT_VERSION="2.1.0";
+const MOVIE_MENTOR_CONTINUITY_AGENT_VERSION="2.1.1";
+const CONTINUITY_CONTRACT_VERSION="2.1.1";
 const CONTINUITY_AGENT_ID="continuity";
 const CONTINUITY_AUTHORITY="mentor-provisional";
 const CONTINUITY_CATEGORIES=["character","relationship","knowledge","location","timeline","event","injury","appearance","costume","prop","object-state","environment","story-thread","cause-effect","other"];
@@ -29,6 +29,11 @@ function validateReusableDerivedContinuity(constraints=[],truth=[]){
   if(!result.valid)issues.push(...result.issues.map(issue=>`reusable_${issue}`));
  }
  return{valid:issues.length===0,issues};
+}
+function mergeValidatedConstraints(reusable=[],fresh=[]){
+ const byId=new Map();
+ for(const constraint of [...a(reusable),...a(fresh)]){const id=s(constraint?.constraintId);if(id)byId.set(id,clone(constraint));}
+ return[...byId.values()];
 }
 function validateContinuityWorkOrder(w={}){
  const issues=[];
@@ -53,12 +58,12 @@ function validateAndBuildContribution(c={},w={}){
  const issues=[];
  if(!c||typeof c!=="object")return{valid:false,issues:["missing_continuity_contribution"],contribution:null};
  if(s(c.agentId)!==CONTINUITY_AGENT_ID)issues.push("continuity_agent_identity_mismatch");
- const truth=a(w?.input?.currentCreatorTruth);
- const constraints=[];
- for(const raw of a(c.derivedConstraints)){try{constraints.push(createDerivedContinuityConstraint(raw,truth));}catch(e){issues.push(...(a(e?.validationIssues).length?a(e.validationIssues):[e?.code||"continuity_derivation_invalid"]));}}
+ const truth=a(w?.input?.currentCreatorTruth),fresh=[];
+ for(const raw of a(c.derivedConstraints)){try{fresh.push(createDerivedContinuityConstraint(raw,truth));}catch(e){issues.push(...(a(e?.validationIssues).length?a(e.validationIssues):[e?.code||"continuity_derivation_invalid"]));}}
+ const constraints=mergeValidatedConstraints(w?.input?.reusableDerivedContinuity||[],fresh);
  let envelope=null;
  if(!issues.length){try{envelope=buildContinuityConsequenceEnvelope({creatorConfirmedContext:truth,constraints,conflicts:a(c.continuityConflicts),unresolvedQuestions:a(c.unresolvedContinuityQuestions)});}catch(e){issues.push(...(a(e?.validationIssues).length?a(e.validationIssues):[e?.code||"continuity_envelope_invalid"]));}}
- return{valid:!issues.length,issues,contribution:{agentId:CONTINUITY_AGENT_ID,derivedConstraints:constraints,continuityConflicts:a(c.continuityConflicts),unresolvedContinuityQuestions:a(c.unresolvedContinuityQuestions),provisionalSuggestions:a(c.provisionalSuggestions),continuityConsequenceEnvelope:envelope,reusableDerivedContinuityConsumed:clone(a(w?.input?.reusableDerivedContinuity)),confidence:Number(c.confidence||0),provenance:{...(c.provenance||{}),source:"movie-mentor-continuity-agent",contractVersion:CONTINUITY_CONTRACT_VERSION},authority:CONTINUITY_AUTHORITY,derivedAuthority:DERIVED_CONTINUITY_AUTHORITY,creatorFacing:false,mayAdvanceJourney:false,mayOverwriteCreatorTruth:false,mayCreateCanon:false,mayPromoteInferenceToCanon:false,requiresMentorSynthesis:true}};
+ return{valid:!issues.length,issues,contribution:{agentId:CONTINUITY_AGENT_ID,derivedConstraints:constraints,newlyDerivedConstraints:fresh,continuityConflicts:a(c.continuityConflicts),unresolvedContinuityQuestions:a(c.unresolvedContinuityQuestions),provisionalSuggestions:a(c.provisionalSuggestions),continuityConsequenceEnvelope:envelope,reusableDerivedContinuityConsumed:clone(a(w?.input?.reusableDerivedContinuity)),confidence:Number(c.confidence||0),provenance:{...(c.provenance||{}),source:"movie-mentor-continuity-agent",contractVersion:CONTINUITY_CONTRACT_VERSION},authority:CONTINUITY_AUTHORITY,derivedAuthority:DERIVED_CONTINUITY_AUTHORITY,creatorFacing:false,mayAdvanceJourney:false,mayOverwriteCreatorTruth:false,mayCreateCanon:false,mayPromoteInferenceToCanon:false,requiresMentorSynthesis:true}};
 }
 async function executeMovieMentorContinuityAgent(w={}){
  const pre=validateContinuityWorkOrder(w);
@@ -71,5 +76,5 @@ async function executeMovieMentorContinuityAgent(w={}){
  return{success:true,contribution:v.contribution,usage:raw.usage||null,metadata:{...(raw.metadata||{}),continuityAgentVersion:MOVIE_MENTOR_CONTINUITY_AGENT_VERSION,continuityContractVersion:CONTINUITY_CONTRACT_VERSION,reusableDerivedContinuityCount:a(w?.input?.reusableDerivedContinuity).length}};
 }
 function getContinuityAgentManifest(){return{id:CONTINUITY_AGENT_ID,name:"Movie Mentor Continuity Agent",version:MOVIE_MENTOR_CONTINUITY_AGENT_VERSION,contractVersion:CONTINUITY_CONTRACT_VERSION,status:"live-cache-aware",authority:CONTINUITY_AUTHORITY,derivedAuthority:DERIVED_CONTINUITY_AUTHORITY,creatorFacing:false,restrictions:["current-creator-truth-only","cannot-create-canon","derived-continuity-is-not-creator-confirmed","cached-derived-continuity-is-not-canon","cannot-overwrite-creator-truth","cannot-advance-journey","cannot-speak-directly-to-creator","cannot-resolve-ambiguity-by-invention"]};}
-export{MOVIE_MENTOR_CONTINUITY_AGENT_VERSION,CONTINUITY_CONTRACT_VERSION,CONTINUITY_AGENT_ID,CONTINUITY_AUTHORITY,CONTINUITY_CATEGORIES,CONTINUITY_OUTPUT_SCHEMA,validateReusableDerivedContinuity,validateContinuityWorkOrder,createContinuityWorkOrder,validateAndBuildContribution,executeMovieMentorContinuityAgent,getContinuityAgentManifest};
+export{MOVIE_MENTOR_CONTINUITY_AGENT_VERSION,CONTINUITY_CONTRACT_VERSION,CONTINUITY_AGENT_ID,CONTINUITY_AUTHORITY,CONTINUITY_CATEGORIES,CONTINUITY_OUTPUT_SCHEMA,validateReusableDerivedContinuity,mergeValidatedConstraints,validateContinuityWorkOrder,createContinuityWorkOrder,validateAndBuildContribution,executeMovieMentorContinuityAgent,getContinuityAgentManifest};
 export default executeMovieMentorContinuityAgent;
