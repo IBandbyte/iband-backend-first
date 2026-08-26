@@ -23,7 +23,8 @@ const workOrder={agentId:"story",authority:"mentor-provisional",creatorFacing:fa
 assert.equal(validateWorkOrder(workOrder).valid,false,"Story boundary must reject a resurrected superseded decision");
 assert.equal(validateWorkOrder({...workOrder,input:{creatorConfirmedContext:[currentDecision]}}).valid,true,"Story boundary must accept current decision");
 
-const synthesisBase={creatorMessage:"Continue",semanticIntelligence:{clarificationNeeded:[]},contributions:[]};
+const continuityConsequenceEnvelope={status:"consistent",requiresClarification:false,authority:"derived-continuity",constraints:[]};
+const synthesisBase={creatorMessage:"Continue",semanticIntelligence:{clarificationNeeded:[]},continuityConsequenceEnvelope,contributions:[]};
 assert.equal(validateSynthesisRequest({...synthesisBase,creatorConfirmedContext:[oldDecision]}).valid,false,"Synthesis must reject superseded creator truth");
 assert.equal(validateSynthesisRequest({...synthesisBase,creatorConfirmedContext:[currentDecision]}).valid,true,"Synthesis must accept current creator truth");
 
