@@ -3,9 +3,10 @@ import { executeMovieMentorSpecialistPlan } from "./MovieMentorSpecialistExecuto
 import { synthesizeMovieMentorResponse } from "./MovieMentorSynthesisEngine.js";
 import { verifyAuthoritativeTurnContext } from "./MovieMentorTurnContextControl.js";
 import { resolveContinuationReferences, mergeContinuationIntoSemanticIntelligence } from "./MovieMentorContinuationReferenceControl.js";
+import { buildContinuationObedienceEnvelope, assertObedienceClaims } from "./MovieMentorContinuationObedienceControl.js";
 
-const MOVIE_MENTOR_TURN_ORCHESTRATOR_VERSION = "1.2.0";
-const MOVIE_MENTOR_TURN_CONTRACT_VERSION = "1.2.0";
+const MOVIE_MENTOR_TURN_ORCHESTRATOR_VERSION = "1.3.0";
+const MOVIE_MENTOR_TURN_CONTRACT_VERSION = "1.3.0";
 const LIVE_SPECIALIST_ORDER = Object.freeze(["story", "character"]);
 
 function cleanString(value){return typeof value === "string" ? value.trim() : "";}
@@ -16,7 +17,7 @@ function materialClarifications(semantic){return asArray(semantic?.clarification
 function contextEnvelopeFrom(input){return input?.authoritativeTurnContext || input?.context?.authoritativeTurnContext || null;}
 function contextForEngines(envelope,proof){return{projectId:envelope.projectId||null,creatorSessionId:envelope.creatorSessionId||null,creatorConfirmedContext:clone(envelope.creatorConfirmedContext||[]),projectJourney:clone(envelope.projectJourney||null),memoryContext:clone(envelope.memoryContext||null),responseBlueprint:clone(envelope.responseBlueprint||null),communicationPlan:clone(envelope.communicationPlan||null),turnContextAuthority:{snapshotFingerprint:proof.snapshotFingerprint,snapshotReference:proof.snapshotReference,revision:proof.revision,revisionAuthorityReference:proof.revisionAuthorityReference,creatorState:clone(proof.creatorState)}};}
 
-function buildSpecialistPlan({creatorMessage,semanticIntelligence,creatorConfirmedContext,context={}}={}){
+function buildSpecialistPlan({creatorMessage,semanticIntelligence,creatorConfirmedContext,context={},continuationObedienceEnvelope=null}={}){
   const stageId=cleanString(semanticIntelligence?.recommendedStageId)||null;
   const taskId=cleanString(semanticIntelligence?.recommendedTaskId)||null;
   const projectJourney=clone(context?.projectJourney || null);
@@ -24,6 +25,7 @@ function buildSpecialistPlan({creatorMessage,semanticIntelligence,creatorConfirm
     version:MOVIE_MENTOR_TURN_CONTRACT_VERSION,
     authority:"mentor-orchestrated",
     turnContextAuthority:clone(context?.turnContextAuthority||null),
+    continuationObedienceEnvelope:clone(continuationObedienceEnvelope),
     workOrders:LIVE_SPECIALIST_ORDER.map(agentId=>({
       agentId,
       purpose:agentId==="story"?"Advise Mentor on story structure, dramatic direction and narrative possibilities grounded in the creator's current meaning.":"Advise Mentor on character goals, relationships, motivation and character-driven conflict grounded in the creator's current meaning.",
@@ -31,7 +33,7 @@ function buildSpecialistPlan({creatorMessage,semanticIntelligence,creatorConfirm
       mayAdvanceJourney:false,
       mayOverwriteCreatorTruth:false,
       authority:"mentor-provisional",
-      input:{creatorMessage,stageId,taskId,semanticIntelligence:clone(semanticIntelligence),creatorConfirmedContext:clone(creatorConfirmedContext),projectJourney,memoryContext:clone(context?.memoryContext||null),turnContextAuthority:clone(context?.turnContextAuthority||null)}
+      input:{creatorMessage,stageId,taskId,semanticIntelligence:clone(semanticIntelligence),creatorConfirmedContext:clone(creatorConfirmedContext),projectJourney,memoryContext:clone(context?.memoryContext||null),continuationObedienceEnvelope:clone(continuationObedienceEnvelope),turnContextAuthority:clone(context?.turnContextAuthority||null)}
     }))
   };
 }
@@ -45,6 +47,8 @@ function clarificationResponse({creatorMessage,semanticIntelligence,semanticResu
     metadata:{orchestratorVersion:MOVIE_MENTOR_TURN_ORCHESTRATOR_VERSION,turnContractVersion:MOVIE_MENTOR_TURN_CONTRACT_VERSION,continuationResolution:clone(continuationResolution),semanticMetadata:clone(semanticResult?.metadata||null)}
   };
 }
+function verifySpecialistObedience(contributions,envelope){for(const contribution of asArray(contributions)){try{assertObedienceClaims(contribution?.continuationObedienceClaims,envelope,{allowNotApplicable:true,requireAll:true});}catch(error){const e=new Error(`Specialist ${cleanString(contribution?.agentId)||"unknown"} violated validated continuation meaning.`);e.code="MOVIE_MENTOR_SPECIALIST_CONTINUATION_OBEDIENCE_FAILED";e.validationIssues=asArray(error?.validationIssues);throw e;}}}
+function verifySynthesisObedience(synthesisResult,envelope){try{assertObedienceClaims(synthesisResult?.continuationObedienceClaims,envelope,{allowNotApplicable:false,requireAll:true});}catch(error){const e=new Error("Creator-facing synthesis violated validated continuation meaning.");e.code="MOVIE_MENTOR_SYNTHESIS_CONTINUATION_OBEDIENCE_FAILED";e.validationIssues=asArray(error?.validationIssues);throw e;}}
 
 async function orchestrateMovieMentorTurn(input={},deps={}){
   const creatorMessage=creatorMessageFrom(input);
@@ -70,22 +74,25 @@ async function orchestrateMovieMentorTurn(input={},deps={}){
 
   if(materialClarifications(semanticIntelligence).length || semanticIntelligence.readyToAdvance!==true)return clarificationResponse({creatorMessage,semanticIntelligence,semanticResult,turnContextProof,continuationResolution});
 
+  const continuationObedienceEnvelope=buildContinuationObedienceEnvelope(semanticIntelligence);
   const creatorConfirmedContext=asArray(frozenContext.creatorConfirmedContext).map(clone);
-  const specialistPlan=buildSpecialistPlan({creatorMessage,semanticIntelligence,creatorConfirmedContext,context:frozenContext});
+  const specialistPlan=buildSpecialistPlan({creatorMessage,semanticIntelligence,creatorConfirmedContext,context:frozenContext,continuationObedienceEnvelope});
   const specialistResult=await executeSpecialists(clone(specialistPlan));
   const contributions=asArray(specialistResult?.contributions).filter(item=>item&&typeof item==="object");
+  verifySpecialistObedience(contributions,continuationObedienceEnvelope);
 
   const synthesisResult=await synthesize({
-    creatorMessage,creatorConfirmedContext:clone(creatorConfirmedContext),semanticIntelligence:clone(semanticIntelligence),semanticMentorDraft:cleanString(semanticResult?.mentorDraft || semanticResult?.structured?.mentorDraft)||null,contributions:clone(contributions),responseBlueprint:clone(frozenContext.responseBlueprint),communicationPlan:clone(frozenContext.communicationPlan),memoryContext:clone(frozenContext.memoryContext),turnContextAuthority:clone(frozenContext.turnContextAuthority)
+    creatorMessage,creatorConfirmedContext:clone(creatorConfirmedContext),semanticIntelligence:clone(semanticIntelligence),semanticMentorDraft:cleanString(semanticResult?.mentorDraft || semanticResult?.structured?.mentorDraft)||null,contributions:clone(contributions),continuationObedienceEnvelope:clone(continuationObedienceEnvelope),responseBlueprint:clone(frozenContext.responseBlueprint),communicationPlan:clone(frozenContext.communicationPlan),memoryContext:clone(frozenContext.memoryContext),turnContextAuthority:clone(frozenContext.turnContextAuthority)
   });
   if(synthesisResult?.success!==true || !cleanString(synthesisResult?.text)){const error=new Error("Mentor Synthesis did not return a creator-facing response.");error.code="MOVIE_MENTOR_TURN_SYNTHESIS_CONTRACT_MISSING";throw error;}
+  verifySynthesisObedience(synthesisResult,continuationObedienceEnvelope);
 
   return {
-    success:true,status:"mentor-response-ready",text:cleanString(synthesisResult.text),creatorMessage,semanticIntelligence:clone(semanticIntelligence),specialistPlan:clone(specialistPlan),specialistResult:clone(specialistResult),synthesisResult:clone(synthesisResult),turnContextProof:clone(turnContextProof),mayAdvanceJourney:false,
-    authority:{creatorTruthDominates:true,authoritativeTurnContextRequired:true,validatedSemanticsOutrankSpecialists:true,continuationReferencesRequireProjectEvidence:true,specialistsRemainProvisional:true,specialistsMaySpeakDirectlyToCreator:false,specialistContentBecomesCanonicalTruth:false,singleCreatorFacingMentor:true},
+    success:true,status:"mentor-response-ready",text:cleanString(synthesisResult.text),creatorMessage,semanticIntelligence:clone(semanticIntelligence),specialistPlan:clone(specialistPlan),specialistResult:clone(specialistResult),synthesisResult:clone(synthesisResult),turnContextProof:clone(turnContextProof),continuationObedienceEnvelope:clone(continuationObedienceEnvelope),mayAdvanceJourney:false,
+    authority:{creatorTruthDominates:true,authoritativeTurnContextRequired:true,validatedSemanticsOutrankSpecialists:true,continuationReferencesRequireProjectEvidence:true,continuationReferencesImmutableDownstream:true,specialistsRemainProvisional:true,specialistsMaySpeakDirectlyToCreator:false,specialistContentBecomesCanonicalTruth:false,singleCreatorFacingMentor:true},
     metadata:{orchestratorVersion:MOVIE_MENTOR_TURN_ORCHESTRATOR_VERSION,turnContractVersion:MOVIE_MENTOR_TURN_CONTRACT_VERSION,continuationResolution:clone(continuationResolution),semanticMetadata:clone(semanticResult?.metadata||null),specialistMetadata:clone(specialistResult?.metadata||null),synthesisMetadata:clone(synthesisResult?.metadata||null)}
   };
 }
 
-export {MOVIE_MENTOR_TURN_ORCHESTRATOR_VERSION,MOVIE_MENTOR_TURN_CONTRACT_VERSION,LIVE_SPECIALIST_ORDER,buildSpecialistPlan,orchestrateMovieMentorTurn};
+export {MOVIE_MENTOR_TURN_ORCHESTRATOR_VERSION,MOVIE_MENTOR_TURN_CONTRACT_VERSION,LIVE_SPECIALIST_ORDER,buildSpecialistPlan,verifySpecialistObedience,verifySynthesisObedience,orchestrateMovieMentorTurn};
 export default orchestrateMovieMentorTurn;
