@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { applyMovieMentorCreatorStateTransition } from "./MovieMentorCreatorStateTransition.js";
 import { readAuthoritativeTurnSource } from "./MovieMentorCreatorStateStore.js";
 
-const MOVIE_MENTOR_CREATOR_DECISION_AUTHORITY_VERSION="1.0.0";
+const MOVIE_MENTOR_CREATOR_DECISION_AUTHORITY_VERSION="1.0.1";
 const CREATOR_DECISION_DOMAIN="iband.movie-mentor.creator-decision";
 const CREATOR_DECISION_SCHEMA=1;
 function s(v){return typeof v==="string"?v.trim():"";}
@@ -11,7 +11,14 @@ function clone(v){if(v===undefined)return undefined;try{return JSON.parse(JSON.s
 function stable(v){if(v===null||typeof v!=="object")return JSON.stringify(v);if(Array.isArray(v))return `[${v.map(stable).join(",")}]`;return `{${Object.keys(v).sort().map(k=>`${JSON.stringify(k)}:${stable(v[k])}`).join(",")}}`;}
 function digest(v){return createHash("sha256").update(stable(v)).digest("hex");}
 function error(code,message,issues=[]){const e=new Error(message);e.code=code;e.validationIssues=issues;return e;}
-function commitmentIntent(message){const m=s(message);if(!m)return null;if(/\b(?:maybe|perhaps|might|could|thinking about|let me think|not sure)\b/i.test(m))return null;if(/\b(?:actually\s+)?(?:scrap|drop|remove|replace|change)\b/i.test(m))return "correction";if(/\b(?:yes[,. ]*)?(?:let['’]?s|we(?:'ll| will)|i(?:'ll| will)|definitely)\s+(?:use|go with|choose|keep|make|set|adopt)\b/i.test(m))return "adoption";if(/^\s*(?:yes|yeah|yep)[.!]?\s*(?:do|use|go with)\s+that\b/i.test(m))return "adoption";return null;}
+function commitmentIntent(message){
+ const m=s(message);if(!m)return null;
+ if(/\b(?:maybe|perhaps|might|could|thinking about|let me think|not sure)\b/i.test(m))return null;
+ if(/\b(?:actually\s+)?(?:scrap|drop|remove|replace|change)\b/i.test(m))return "correction";
+ if(/\b(?:yes[,.! ]*)?(?:(?:let['’]?s|we(?:'ll| will)|i(?:'ll| will)|definitely)\s+)?(?:use|go with|choose|keep|make|set|adopt)\b/i.test(m))return "adoption";
+ if(/^\s*(?:yes|yeah|yep)[,.!]?\s*(?:do|use|go with)\s+that\b/i.test(m))return "adoption";
+ return null;
+}
 function resolvedReferences(semantic={}){return a(semantic?.continuationReferences).filter(r=>r?.status==="resolved"&&s(r?.expression));}
 function explicitCreatorItems(semantic={}){return a(semantic?.understoodContext).filter(i=>i?.confidenceSource==="creator-explicit"&&s(i?.key));}
 function decisionKeyFor({reference,item,intent}){if(reference)return `continuation.${s(reference.type)||"reference"}`;if(item)return `semantic.${s(item.key)}`;return `creator.${intent||"decision"}`;}
