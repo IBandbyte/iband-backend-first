@@ -27,8 +27,7 @@ function createAtomicProjectHeadModel(){
  let head=null;
  const clone=v=>v==null?v:structuredClone(v);
  function matches(filter,current){
-  if(!current)return false;
-  if(current.projectHeadKey!==filter.projectHeadKey)return false;
+  if(!current||current.projectHeadKey!==filter.projectHeadKey)return false;
   return filter.$or.some(branch=>{
    if(branch.sourceRevision?.$lt!==undefined)return current.sourceRevision<branch.sourceRevision.$lt;
    if(branch.sourceCreatorStateGeneration?.$lt!==undefined)return current.sourceRevision===branch.sourceRevision&&current.sourceCreatorStateGeneration<branch.sourceCreatorStateGeneration.$lt;
@@ -36,13 +35,21 @@ function createAtomicProjectHeadModel(){
   });
  }
  return{
-  snapshot:()=>clone(head),
-  findOneAndUpdate(filter,update,options){return{lean(){return{async exec(){
-   if(!head){head=clone(update.$set);return clone(head);}
-   if(matches(filter,head)){head=clone(update.$set);return clone(head);}
-   if(options?.upsert){const error=new Error("duplicate project head");error.code=11000;throw error;}
-   return null;
-  }}}}};
+  snapshot(){return clone(head);},
+  findOneAndUpdate(filter,update,options){
+   return{
+    lean(){
+     return{
+      async exec(){
+       if(!head){head=clone(update.$set);return clone(head);}
+       if(matches(filter,head)){head=clone(update.$set);return clone(head);}
+       if(options?.upsert){const error=new Error("duplicate project head");error.code=11000;throw error;}
+       return null;
+      },
+     };
+    },
+   };
+  },
  };
 }
 
@@ -53,7 +60,6 @@ assert.deepEqual(stateB,creatorAuthorityBeforeB,"cache persistence must not muta
 assert.equal(model.snapshot().sourceRevision,10);
 assert.equal(model.snapshot().constraints[0].value,29);
 
-// Delayed process A arrives after B has already committed. It validated under A long ago, but durable order now belongs to B.
 await assert.rejects(
  ()=>writeContinuityDerivedCache(recordA,stateA,truthA,{model}),
  error=>error?.code==="MOVIE_MENTOR_CONTINUITY_CACHE_STALE_RESURRECTION_DENIED",
@@ -62,7 +68,6 @@ await assert.rejects(
 assert.equal(model.snapshot().sourceRevision,10,"rejected A must not displace B");
 assert.equal(model.snapshot().constraints[0].value,29);
 
-// Two obsolete workers carrying the same old universe both lose independently.
 for(const worker of ["A1","A2"]){
  await assert.rejects(
   ()=>writeContinuityDerivedCache(structuredClone(recordA),structuredClone(stateA),structuredClone(truthA),{model}),
@@ -72,7 +77,6 @@ for(const worker of ["A1","A2"]){
 }
 assert.equal(model.snapshot().sourceCreatorStateFingerprint,stateB.creatorStateFingerprint);
 
-// Exact same-authority retry is safe and idempotent; it does not open the door to a different fingerprint at the same ordinal.
 await writeContinuityDerivedCache(structuredClone(recordB),structuredClone(stateB),structuredClone(truthB),{model});
 const forgedSameOrdinal={...structuredClone(recordB),sourceCreatorStateFingerprint:"9".repeat(64),sourceSnapshotReference:"forged-snap"};
 await assert.rejects(
@@ -81,14 +85,12 @@ await assert.rejects(
  "same revision/generation with a different authority fingerprint must not replace the project head",
 );
 
-// A genuinely newer creator universe may supersede B atomically.
 await writeContinuityDerivedCache(recordC,stateC,truthC,{model});
 assert.equal(model.snapshot().sourceRevision,11);
 assert.equal(model.snapshot().sourceCreatorStateGeneration,7);
 assert.equal(model.snapshot().sourceCreatorStateFingerprint,stateC.creatorStateFingerprint);
 assert.equal(model.snapshot().constraints[0].value,31);
 
-// Once C wins, even the formerly-current B becomes stale and cannot return late.
 await assert.rejects(
  ()=>writeContinuityDerivedCache(recordB,stateB,truthB,{model}),
  error=>error?.code==="MOVIE_MENTOR_CONTINUITY_CACHE_STALE_RESURRECTION_DENIED",
