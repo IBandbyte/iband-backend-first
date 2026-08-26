@@ -12,36 +12,42 @@ const cachedAge=createDerivedContinuityConstraint({category:"timeline",key:"char
 const freshTunnel=createDerivedContinuityConstraint({category:"location",key:"story.route.current",value:"hidden tunnel",reason:"The creator confirmed the hidden tunnel route.",confidence:1,dependencies:[{key:truth[2].key,value:"hidden tunnel"}]},truth);
 const authority={snapshotFingerprint:"d".repeat(64),snapshotReference:"snap-9",revision:9,revisionAuthorityReference:"rev-9",creatorState:{generation:5,fingerprint:"e".repeat(64),authorityReference:"creator-5"}};
 const workOrder={agentId:"continuity",purpose:"continuity",creatorFacing:false,mayAdvanceJourney:false,mayOverwriteCreatorTruth:false,mayCreateCanon:false,authority:"mentor-provisional",input:{projectId:"movie-1",creatorMessage:"Carry on.",semanticIntelligence:{readyToAdvance:true},currentCreatorTruth:truth,projectJourney:{stageId:"story"},memoryContext:{},turnContextAuthority:authority}};
+const durableState={projectId:"movie-1",revision:9,creatorStateGeneration:5,creatorStateFingerprint:"e".repeat(64),snapshotReference:"snap-9",creatorConfirmedContext:truth};
+const stableAuthorityRead=async()=>structuredClone(durableState);
 
 assert.deepEqual(continuityAuthorityState(workOrder.input),{projectId:"movie-1",revision:9,creatorStateGeneration:5,creatorStateFingerprint:"e".repeat(64),snapshotReference:"snap-9"},"bridge must reconstruct cache authority only from frozen turn authority plus canonical project id");
 
 let agentSawReusable=null,writtenRecord=null,readCount=0,writeCount=0;
 const result=await executeContinuityWorkOrder(workOrder,{
  readReusableContinuityDerivedCache:async()=>{readCount+=1;return{hit:true,stale:false,constraints:[cachedAge],record:{cacheKey:"movie-1:"+"e".repeat(64)}};},
+ readAuthoritativeTurnSource:stableAuthorityRead,
  executeContinuityAgent:async w=>{agentSawReusable=structuredClone(w.input.reusableDerivedContinuity);return{success:true,contribution:{agentId:"continuity",derivedConstraints:[freshTunnel]},metadata:{fake:true}};},
  writeContinuityDerivedCache:async record=>{writeCount+=1;writtenRecord=structuredClone(record);return record;},
 });
 assert.equal(readCount,1,"live Continuity execution must perform one authority-bound cache read");
-assert.equal(writeCount,1,"validated derived constraints must be persisted after Continuity execution");
+assert.equal(writeCount,1,"validated derived constraints must be persisted only after fresh creator authority re-read");
 assert.equal(agentSawReusable.length,1,"cache HIT must enter Continuity before provider inference");
 assert.equal(agentSawReusable[0].constraintId,cachedAge.constraintId);
 assert.equal(writtenRecord.constraints.length,2,"cache write must retain reusable constraints and add newly derived constraints");
 assert.equal(writtenRecord.creatorConfirmed,false);assert.equal(writtenRecord.mayCreateCanon,false);
 assert.equal(result.metadata.continuityCache.creatorStateMutation,false,"cache bridge must never claim creator-state mutation");
 assert.equal(result.metadata.continuityCache.canonical,false,"cache bridge must remain non-canonical");
+assert.equal(result.metadata.continuityCache.writeRequiresFreshCreatorAuthority,true);
 
 agentSawReusable=null;writeCount=0;
 await executeContinuityWorkOrder(workOrder,{
  readReusableContinuityDerivedCache:async()=>({hit:false,stale:true,constraints:[],record:null,reasons:["continuity_cache_source_fingerprint_stale"]}),
+ readAuthoritativeTurnSource:stableAuthorityRead,
  executeContinuityAgent:async w=>{agentSawReusable=structuredClone(w.input.reusableDerivedContinuity);return{success:true,contribution:{agentId:"continuity",derivedConstraints:[freshTunnel]},metadata:{}};},
  writeContinuityDerivedCache:async()=>{writeCount+=1;},
 });
 assert.deepEqual(agentSawReusable,[],"stale cache must become invisible to Continuity");
-assert.equal(writeCount,1,"stale cache may be replaced only by freshly validated derived output");
+assert.equal(writeCount,1,"stale cache may be replaced only by freshly validated derived output under unchanged creator authority");
 
 agentSawReusable=null;
 const degraded=await executeContinuityWorkOrder(workOrder,{
  readReusableContinuityDerivedCache:async()=>{const e=new Error("Mongo unavailable");e.code="CACHE_DOWN";throw e;},
+ readAuthoritativeTurnSource:stableAuthorityRead,
  executeContinuityAgent:async w=>{agentSawReusable=structuredClone(w.input.reusableDerivedContinuity);return{success:true,contribution:{agentId:"continuity",derivedConstraints:[freshTunnel]},metadata:{}};},
  writeContinuityDerivedCache:async()=>{const e=new Error("write unavailable");e.code="CACHE_WRITE_DOWN";throw e;},
 });
@@ -56,6 +62,7 @@ let bypassRead=0,bypassWrite=0;
 const noProject={...structuredClone(workOrder),input:{...structuredClone(workOrder.input),projectId:null}};
 const bypass=await executeContinuityWorkOrder(noProject,{
  readReusableContinuityDerivedCache:async()=>{bypassRead+=1;return{hit:true,constraints:[cachedAge]};},
+ readAuthoritativeTurnSource:stableAuthorityRead,
  executeContinuityAgent:async w=>({success:true,contribution:{agentId:"continuity",derivedConstraints:[]},metadata:{reusableCount:w.input.reusableDerivedContinuity.length}}),
  writeContinuityDerivedCache:async()=>{bypassWrite+=1;},
 });
@@ -63,4 +70,4 @@ assert.equal(bypassRead,0,"missing canonical project identity must bypass cache 
 assert.equal(bypassWrite,0,"missing canonical project identity must bypass cache write");
 assert.equal(bypass.metadata.continuityCache.read.constraintCount,0);
 
-console.log("Movie Mentor cache-aware Continuity execution bridge torture: GREEN — cache is snapshot-bound derived context, stale/tampered data stays invisible, and creator authority is never mutated.");
+console.log("Movie Mentor cache-aware Continuity execution bridge torture: GREEN — cache is snapshot-bound derived context, stale/tampered data stays invisible, writes require fresh creator authority, and creator authority is never mutated.");
