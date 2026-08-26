@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import {validateSynthesisRequest,materialClarificationRequired,SYNTHESIS_SCHEMA} from "../ai/MovieMentorSynthesisEngine.js";
-const safe={creatorMessage:"Two sisters find a radio that hears tomorrow.",semanticIntelligence:{clarificationNeeded:[]},contributions:[{agentId:"story",authority:"mentor-provisional",creatorFacing:false,mayAdvanceJourney:false,mayOverwriteCreatorTruth:false}]};
+const continuityConsequenceEnvelope={status:"consistent",requiresClarification:false,authority:"derived-continuity",constraints:[]};
+const safe={creatorMessage:"Two sisters find a radio that hears tomorrow.",creatorConfirmedContext:[],semanticIntelligence:{clarificationNeeded:[]},continuityConsequenceEnvelope,contributions:[{agentId:"story",authority:"mentor-provisional",creatorFacing:false,mayAdvanceJourney:false,mayOverwriteCreatorTruth:false},{agentId:"continuity",authority:"mentor-provisional",creatorFacing:false,mayAdvanceJourney:false,mayOverwriteCreatorTruth:false}]};
 assert.equal(validateSynthesisRequest(safe).valid,true);
 assert.equal(materialClarificationRequired({clarificationNeeded:[{material:true}]}),true);
 const blocked=validateSynthesisRequest({...safe,semanticIntelligence:{clarificationNeeded:[{material:true}]}});assert.equal(blocked.valid,false);assert.equal(blocked.issues.includes("material_semantic_clarification_blocks_synthesis"),true);
+const continuityBlocked=validateSynthesisRequest({...safe,continuityConsequenceEnvelope:{...continuityConsequenceEnvelope,status:"contradiction",requiresClarification:true}});assert.equal(continuityBlocked.valid,false);assert.equal(continuityBlocked.issues.includes("continuity_must_be_consistent_before_synthesis"),true);
+const forgedDerived=validateSynthesisRequest({...safe,continuityConsequenceEnvelope:{...continuityConsequenceEnvelope,constraints:[{authority:"derived-continuity",creatorConfirmed:true,mayCreateCanon:false}]}});assert.equal(forgedDerived.valid,false);assert.equal(forgedDerived.issues.includes("derived_continuity_cannot_be_creator_confirmed"),true);
 const unsafe=validateSynthesisRequest({...safe,contributions:[{agentId:"story",authority:"canonical",creatorFacing:true,mayAdvanceJourney:true,mayOverwriteCreatorTruth:true}]});assert.equal(unsafe.valid,false);assert.equal(unsafe.issues.length>=4,true);
 assert.equal(SYNTHESIS_SCHEMA.additionalProperties,false);assert.equal(Object.hasOwn(SYNTHESIS_SCHEMA.properties,"journeyState"),false);assert.equal(Object.hasOwn(SYNTHESIS_SCHEMA.properties,"creatorTruth"),false);
 console.log("Movie Mentor synthesis authority regression passed.");
