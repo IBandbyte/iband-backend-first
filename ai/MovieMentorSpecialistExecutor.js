@@ -1,12 +1,13 @@
 import { executeStructuredAI } from "./StructuredAIProviderClient.js";
 import { assertObedienceClaims } from "./MovieMentorContinuationObedienceControl.js";
-import { assertCurrentCreatorTruthOnly } from "./MovieMentorCreatorTruthViewControl.js";
+import { assertCurrentCreatorTruthOnly, buildCurrentCreatorTruthView } from "./MovieMentorCreatorTruthViewControl.js";
 import { createContinuityWorkOrder, executeMovieMentorContinuityAgent } from "./MovieMentorContinuityAgent.js";
 import { createContinuityDerivedCacheRecord } from "./MovieMentorContinuityDerivedCacheControl.js";
 import { readReusableContinuityDerivedCache, writeContinuityDerivedCache } from "./MovieMentorContinuityDerivedCacheStore.js";
+import { readAuthoritativeTurnSource } from "./MovieMentorCreatorStateStore.js";
 
-const MOVIE_MENTOR_SPECIALIST_EXECUTOR_VERSION = "1.4.0";
-const SPECIALIST_CONTRACT_VERSION = "1.4.0";
+const MOVIE_MENTOR_SPECIALIST_EXECUTOR_VERSION = "1.5.0";
+const SPECIALIST_CONTRACT_VERSION = "1.5.0";
 const LIVE_AGENT_IDS = new Set(["story","character","continuity"]);
 function cleanString(value){return typeof value === "string" ? value.trim():"";}
 function asArray(value){return Array.isArray(value)?value:[];}
@@ -31,6 +32,12 @@ function continuityAuthorityState(input={}){
  if(!projectId||revision===null||generation===null||!fingerprint||!snapshotReference)return null;
  return{projectId,revision,creatorStateGeneration:generation,creatorStateFingerprint:fingerprint,snapshotReference};
 }
+function durableAuthorityState(state={}){
+ const projectId=cleanString(state?.projectId),revision=Number.isSafeInteger(state?.revision)&&state.revision>=0?state.revision:null,generation=Number.isSafeInteger(state?.creatorStateGeneration)&&state.creatorStateGeneration>=0?state.creatorStateGeneration:null,fingerprint=cleanString(state?.creatorStateFingerprint),snapshotReference=cleanString(state?.snapshotReference);
+ if(!projectId||revision===null||generation===null||!fingerprint||!snapshotReference)return null;
+ return{projectId,revision,creatorStateGeneration:generation,creatorStateFingerprint:fingerprint,snapshotReference};
+}
+function sameContinuityAuthority(left,right){return !!left&&!!right&&left.projectId===right.projectId&&left.revision===right.revision&&left.creatorStateGeneration===right.creatorStateGeneration&&left.creatorStateFingerprint===right.creatorStateFingerprint&&left.snapshotReference===right.snapshotReference;}
 function mergeDerivedConstraints(...groups){
  const byId=new Map();
  for(const constraint of groups.flatMap(group=>asArray(group))){const id=cleanString(constraint?.constraintId);if(id)byId.set(id,cloneValue(constraint));}
@@ -42,6 +49,7 @@ async function executeContinuityWorkOrder(workOrder,deps={}){
  const writeCache=deps.writeContinuityDerivedCache||writeContinuityDerivedCache;
  const createCache=deps.createContinuityDerivedCacheRecord||createContinuityDerivedCacheRecord;
  const executeContinuity=deps.executeContinuityAgent||executeMovieMentorContinuityAgent;
+ const readLatestCreatorState=deps.readAuthoritativeTurnSource||readAuthoritativeTurnSource;
  let cacheRead={hit:false,stale:false,constraints:[],record:null,reasons:["continuity_cache_authority_unavailable"]};
  if(currentState){try{cacheRead=await readCache(cloneValue(currentState),cloneValue(truth));}catch(error){cacheRead={hit:false,stale:false,constraints:[],record:null,reasons:[error?.code||"continuity_cache_read_unavailable"]};}}
  const reusable=cacheRead?.hit===true?asArray(cacheRead.constraints):[];
@@ -52,15 +60,22 @@ async function executeContinuityWorkOrder(workOrder,deps={}){
   const combined=mergeDerivedConstraints(reusable,result?.contribution?.derivedConstraints||[]);
   if(combined.length){
    try{
-    const record=createCache({sourceState:cloneValue(currentState),creatorConfirmedContext:cloneValue(truth),constraints:combined});
-    await writeCache(record,cloneValue(currentState),cloneValue(truth));
-    cacheWrite={status:"written",cacheKey:record.cacheKey,constraintCount:combined.length};
-   }catch(error){cacheWrite={status:"not-written",reason:error?.code||"continuity_cache_write_unavailable",validationIssues:cloneValue(error?.validationIssues||error?.reasons||[])};}
+    const latest=await readLatestCreatorState({projectId:currentState.projectId});
+    const latestState=durableAuthorityState(latest);
+    if(!sameContinuityAuthority(currentState,latestState)){
+     cacheWrite={status:"not-written",reason:"continuity_cache_creator_authority_changed_during_inference"};
+    }else{
+     const latestTruth=buildCurrentCreatorTruthView(latest?.creatorConfirmedContext||[]);
+     const record=createCache({sourceState:cloneValue(latestState),creatorConfirmedContext:cloneValue(latestTruth),constraints:combined});
+     await writeCache(record,cloneValue(latestState),cloneValue(latestTruth));
+     cacheWrite={status:"written",cacheKey:record.cacheKey,constraintCount:combined.length};
+    }
+   }catch(error){cacheWrite={status:"not-written",reason:error?.code||"continuity_cache_write_authority_unavailable",validationIssues:cloneValue(error?.validationIssues||error?.reasons||[])};}
   }else cacheWrite={status:"bypassed",reason:"no-derived-constraints"};
  }
- return{...result,metadata:{...(result?.metadata||{}),continuityCache:{read:{hit:cacheRead?.hit===true,stale:cacheRead?.stale===true,reasons:cloneValue(cacheRead?.reasons||[]),constraintCount:reusable.length},write:cacheWrite,creatorStateMutation:false,canonical:false}}};
+ return{...result,metadata:{...(result?.metadata||{}),continuityCache:{read:{hit:cacheRead?.hit===true,stale:cacheRead?.stale===true,reasons:cloneValue(cacheRead?.reasons||[]),constraintCount:reusable.length},write:cacheWrite,creatorStateMutation:false,canonical:false,writeRequiresFreshCreatorAuthority:true}}};
 }
 async function executeMovieMentorSpecialistWorkOrder(workOrder={},deps={}){const preflight=validateWorkOrder(workOrder);if(!preflight.valid){const error=new Error("Specialist work order failed iBand authority preflight.");error.code="SPECIALIST_WORK_ORDER_INVALID";error.validationIssues=preflight.issues;throw error;}if(preflight.agentId==="continuity")return executeContinuityWorkOrder(workOrder,deps);const raw=await executeStructuredAI({task:`movie-mentor-specialist:${preflight.agentId}`,systemInstructions:AGENT_INSTRUCTIONS[preflight.agentId],input:{agentId:preflight.agentId,purpose:workOrder?.purpose||null,stageId:workOrder?.input?.stageId||null,taskId:workOrder?.input?.taskId||null,creatorMessage:workOrder?.input?.creatorMessage||null,semanticIntelligence:cloneValue(workOrder?.input?.semanticIntelligence||{}),creatorConfirmedContext:cloneValue(workOrder?.input?.creatorConfirmedContext||[]),projectJourney:cloneValue(workOrder?.input?.projectJourney||null),continuationObedienceEnvelope:cloneValue(workOrder?.input?.continuationObedienceEnvelope||null)},schema:createSpecialistContributionSchema(preflight.agentId),schemaName:`movie_mentor_${preflight.agentId}_contribution`,metadata:{specialistExecutorVersion:MOVIE_MENTOR_SPECIALIST_EXECUTOR_VERSION,contractVersion:SPECIALIST_CONTRACT_VERSION}});if(!raw?.structured){const error=new Error("Specialist provider did not return structured contribution.");error.code="SPECIALIST_STRUCTURED_OUTPUT_INVALID";throw error;}raw.structured.provenance={source:"movie-mentor-specialist-agent",model:raw?.metadata?.model||null,contractVersion:SPECIALIST_CONTRACT_VERSION};const validation=validateContribution(raw.structured,workOrder);if(!validation.valid){const error=new Error("Specialist contribution failed iBand authority validation.");error.code="SPECIALIST_CONTRIBUTION_INVALID";error.validationIssues=validation.issues;throw error;}return {success:true,contribution:validation.contribution,usage:raw.usage||null,metadata:{...(raw.metadata||{}),specialistExecutorVersion:MOVIE_MENTOR_SPECIALIST_EXECUTOR_VERSION,specialistContractVersion:SPECIALIST_CONTRACT_VERSION}};}
-async function executeMovieMentorSpecialistPlan(plan={},deps={}){const contributions=[],skipped=[],failures=[],metadata=[];for(const workOrder of asArray(plan?.workOrders)){if(!LIVE_AGENT_IDS.has(cleanString(workOrder?.agentId))){skipped.push({agentId:workOrder?.agentId||null,reason:"agent-not-live-yet"});continue;}try{const result=await executeMovieMentorSpecialistWorkOrder(workOrder,deps);contributions.push(result.contribution);metadata.push({agentId:workOrder.agentId,metadata:cloneValue(result.metadata||null)});}catch(error){failures.push({agentId:workOrder?.agentId||null,code:error?.code||"SPECIALIST_EXECUTION_FAILED",message:error instanceof Error?error.message:"Specialist execution failed.",validationIssues:asArray(error?.validationIssues)});}}return {version:MOVIE_MENTOR_SPECIALIST_EXECUTOR_VERSION,contractVersion:SPECIALIST_CONTRACT_VERSION,status:failures.length?"partial":"completed",contributions,skipped,failures,metadata,authority:{creatorTruthDominates:true,currentCreatorDecisionsOnly:true,validatedSemanticsImmutable:true,continuityDerivedTruthIsNotCanon:true,continuityCacheIsNonCanonical:true,continuityCacheNeverMutatesCreatorState:true,contributionsAreMentorProvisional:true,specialistsMayAdvanceJourney:false,specialistsMaySpeakDirectlyToCreator:false,mentorMustSynthesize:true},liveAgents:[...LIVE_AGENT_IDS],extensionAgents:["scene","cinematography","sound-music","production"]};}
-export {MOVIE_MENTOR_SPECIALIST_EXECUTOR_VERSION,SPECIALIST_CONTRACT_VERSION,SPECIALIST_CONTRIBUTION_SCHEMA,OBEDIENCE_CLAIM_SCHEMA,createSpecialistContributionSchema,LIVE_AGENT_IDS,validateWorkOrder,validateContribution,continuityAuthorityState,mergeDerivedConstraints,executeContinuityWorkOrder,executeMovieMentorSpecialistWorkOrder,executeMovieMentorSpecialistPlan};
+async function executeMovieMentorSpecialistPlan(plan={},deps={}){const contributions=[],skipped=[],failures=[],metadata=[];for(const workOrder of asArray(plan?.workOrders)){if(!LIVE_AGENT_IDS.has(cleanString(workOrder?.agentId))){skipped.push({agentId:workOrder?.agentId||null,reason:"agent-not-live-yet"});continue;}try{const result=await executeMovieMentorSpecialistWorkOrder(workOrder,deps);contributions.push(result.contribution);metadata.push({agentId:workOrder.agentId,metadata:cloneValue(result.metadata||null)});}catch(error){failures.push({agentId:workOrder?.agentId||null,code:error?.code||"SPECIALIST_EXECUTION_FAILED",message:error instanceof Error?error.message:"Specialist execution failed.",validationIssues:asArray(error?.validationIssues)});}}return {version:MOVIE_MENTOR_SPECIALIST_EXECUTOR_VERSION,contractVersion:SPECIALIST_CONTRACT_VERSION,status:failures.length?"partial":"completed",contributions,skipped,failures,metadata,authority:{creatorTruthDominates:true,currentCreatorDecisionsOnly:true,validatedSemanticsImmutable:true,continuityDerivedTruthIsNotCanon:true,continuityCacheIsNonCanonical:true,continuityCacheNeverMutatesCreatorState:true,continuityCacheWritesRequireFreshCreatorAuthority:true,contributionsAreMentorProvisional:true,specialistsMayAdvanceJourney:false,specialistsMaySpeakDirectlyToCreator:false,mentorMustSynthesize:true},liveAgents:[...LIVE_AGENT_IDS],extensionAgents:["scene","cinematography","sound-music","production"]};}
+export {MOVIE_MENTOR_SPECIALIST_EXECUTOR_VERSION,SPECIALIST_CONTRACT_VERSION,SPECIALIST_CONTRIBUTION_SCHEMA,OBEDIENCE_CLAIM_SCHEMA,createSpecialistContributionSchema,LIVE_AGENT_IDS,validateWorkOrder,validateContribution,continuityAuthorityState,durableAuthorityState,sameContinuityAuthority,mergeDerivedConstraints,executeContinuityWorkOrder,executeMovieMentorSpecialistWorkOrder,executeMovieMentorSpecialistPlan};
 export default executeMovieMentorSpecialistPlan;
