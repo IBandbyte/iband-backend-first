@@ -98,9 +98,28 @@ selected = selectCurrentRecommendationReference({ memoryContext: restarted, proj
 assert.equal(selected.status, "resolved");
 assert.equal(selected.recommendationId, "B");
 
-const staleOnly = { projectMemories: [A, { ...B, metadata: { ...B.metadata, recommendationReference: { ...B.metadata.recommendationReference, lifecycle: { current: false, supersededByRecommendationId: "C" } } } }], conversations: [], sessionHandoffs: [] };
-selected = selectCurrentRecommendationReference({ memoryContext: staleOnly, projectId: "p1" });
-assert.equal(selected.status, "resolved");
-assert.equal(selected.recommendationId, "A");
+const staleLatest = {
+  projectMemories: [
+    A,
+    {
+      ...B,
+      metadata: {
+        ...B.metadata,
+        recommendationReference: {
+          ...B.metadata.recommendationReference,
+          lifecycle: { current: false, supersededByRecommendationId: "C" },
+        },
+      },
+    },
+  ],
+  conversations: [],
+  sessionHandoffs: [],
+};
+selected = selectCurrentRecommendationReference({ memoryContext: staleLatest, projectId: "p1" });
+assert.equal(selected.status, "none");
+assert.equal(selected.reason, "latest-journey-recommendation-is-not-current");
+resolution = resolveContinuationReferences({ creatorMessage: "No, not that.", projectId: "p1", memoryContext: staleLatest, creatorConfirmedContext: [] });
+assert.equal(resolution.hasMaterialAmbiguity, true);
+assert.equal(resolution.references[0].status, "ambiguous");
 
 console.log("Movie Mentor Journey recommendation reference verification: PASS");
