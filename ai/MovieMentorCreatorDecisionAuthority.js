@@ -1,9 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import { applyMovieMentorCreatorStateTransition } from "./MovieMentorCreatorStateTransition.js";
 import { readAuthoritativeTurnSource } from "./MovieMentorCreatorStateStore.js";
-import { buildCurrentCreatorTruthView, assertCurrentCreatorTruthOnly } from "./MovieMentorCreatorTruthViewControl.js";
+import { classifyCreatorTruth, assertCurrentCreatorTruthOnly } from "./MovieMentorCreatorTruthViewControl.js";
 
-const MOVIE_MENTOR_CREATOR_DECISION_AUTHORITY_VERSION="1.1.0";
+const MOVIE_MENTOR_CREATOR_DECISION_AUTHORITY_VERSION="1.1.1";
 const CREATOR_DECISION_DOMAIN="iband.movie-mentor.creator-decision";
 const CREATOR_DECISION_SCHEMA=1;
 const POST_COMMIT_CREATOR_AUTHORITY_DOMAIN="iband.movie-mentor.post-commit-creator-authority";
@@ -37,7 +37,9 @@ function buildCreatorDecisionCandidate({creatorMessage,semanticIntelligence={},p
 }
 function mergeDecisionIntoCreatorContext(current=[],candidate){const retained=[];for(const item of a(current)){if(s(item?.decisionKey)===candidate.decisionKey)retained.push({...clone(item),current:false,supersededByDecisionId:candidate.decisionId});else retained.push(clone(item));}retained.push({key:`creatorDecision.${candidate.decisionKey}`,value:clone(candidate.value),authority:"creator",confidenceSource:"creator-confirmed",decisionKey:candidate.decisionKey,decisionId:candidate.decisionId,decisionFingerprint:candidate.fingerprint,decisionIntent:candidate.intent,evidence:candidate.creatorMessage,evidenceSource:candidate.evidenceSource,current:true,createdAt:candidate.createdAt});return retained;}
 function buildPostCommitCreatorAuthority(after={}){
- const currentCreatorTruth=buildCurrentCreatorTruthView(a(after.creatorConfirmedContext));
+ const classified=classifyCreatorTruth(a(after.creatorConfirmedContext));
+ if(classified.rejected.length){throw error("MOVIE_MENTOR_POST_COMMIT_AUTHORITY_INVALID","Post-commit creator authority readback contains malformed live creator truth.",classified.rejected.map(item=>item.reason||"invalid_creator_truth_item"));}
+ const currentCreatorTruth=classified.active;
  assertCurrentCreatorTruthOnly(currentCreatorTruth);
  const revision=Number(after.revision),generation=Number(after.creatorStateGeneration);
  if(!Number.isSafeInteger(revision)||revision<0||!Number.isSafeInteger(generation)||generation<0||!s(after.revisionAuthorityReference)||!s(after.creatorStateFingerprint)||!s(after.creatorAuthorityReference)||!s(after.snapshotReference))throw error("MOVIE_MENTOR_POST_COMMIT_AUTHORITY_INVALID","Post-commit creator authority readback is missing required durable authority fields.");
