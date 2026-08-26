@@ -1,4 +1,9 @@
-const MOVIE_MENTOR_CONTINUATION_REFERENCE_CONTROL_VERSION = "1.0.0";
+import {
+  selectCurrentRecommendationReference,
+  recommendationResolvedValue,
+} from "./MovieMentorRecommendationReferenceControl.js";
+
+const MOVIE_MENTOR_CONTINUATION_REFERENCE_CONTROL_VERSION = "1.1.0";
 const MOVIE_MENTOR_CONTINUATION_REFERENCE_SCHEMA = 1;
 const CONTINUATION_REFERENCE_DOMAIN = "iband.movie-mentor.continuation-reference";
 
@@ -19,15 +24,27 @@ function explicitEntityCandidates(memoryContext={},projectId=null){const names=[
  for(const item of array(memoryContext?.conversations).filter(x=>projectMatch(x,projectId))){for(const ref of array(item?.metadata?.entityReferences))add(ref?.name||ref?.label,item?.mentorResponse||item?.creatorMessage);}
  return names;
 }
-function ref({expression,type,status,resolvedValue=null,evidence=null,source=null,confidenceSource="model-provisional",reason=null}={}){return{domain:CONTINUATION_REFERENCE_DOMAIN,schema:MOVIE_MENTOR_CONTINUATION_REFERENCE_SCHEMA,expression:clean(expression)||null,type:clean(type)||null,status, resolvedValue:resolvedValue==null?null:clone(resolvedValue),evidence:clean(evidence)||null,source:clean(source)||null,confidenceSource,reason:clean(reason)||null};}
+function ref({expression,type,status,resolvedValue=null,evidence=null,source=null,confidenceSource="model-provisional",reason=null}={}){return{domain:CONTINUATION_REFERENCE_DOMAIN,schema:MOVIE_MENTOR_CONTINUATION_REFERENCE_SCHEMA,expression:clean(expression)||null,type:clean(type)||null,status,resolvedValue:resolvedValue==null?null:clone(resolvedValue),evidence:clean(evidence)||null,source:clean(source)||null,confidenceSource,reason:clean(reason)||null};}
 function ambiguity(expression,type,reason){return ref({expression,type,status:"ambiguous",reason,confidenceSource:"model-provisional"});}
+function recommendationDemonstrative(message){const value=clean(message);if(!value)return false;return /\b(?:yes[,.! ]*)?(?:do|use|go with)\s+that\b/i.test(value)||/\b(?:no[,.! ]*)?(?:not|don['’]?t|do not|skip)\s+that\b/i.test(value);}
+function positiveRecommendationAdoption(message){return /\b(?:yes[,.! ]*)?(?:do|use|go with)\s+that\b/i.test(clean(message));}
 function resolveContinuationReferences({creatorMessage,projectId=null,memoryContext={},creatorConfirmedContext=[]}={}){
  const message=clean(creatorMessage);const history=projectHistory(memoryContext,projectId);const evidence=latestEvidence(history);const references=[];const clarifications=[];
  if(!message)return{version:MOVIE_MENTOR_CONTINUATION_REFERENCE_CONTROL_VERSION,domain:CONTINUATION_REFERENCE_DOMAIN,schema:MOVIE_MENTOR_CONTINUATION_REFERENCE_SCHEMA,references,clarifications,hasMaterialAmbiguity:false};
  const addAmbiguous=(expression,type,reason,question)=>{references.push(ambiguity(expression,type,reason));clarifications.push({key:`continuation.${type}`,expression,question,reason,material:true});};
- if(/\b(?:yes[, ]+)?(?:do|use|go with)\s+that\b/i.test(message)){
-   if(evidence.lastMentorResponse)references.push(ref({expression:"that",type:"prior-mentor-proposal",status:"resolved",resolvedValue:evidence.lastMentorResponse,evidence:evidence.lastMentorResponse,source:"project-conversation",confidenceSource:"creator-confirmed"}));
-   else addAmbiguous("that","prior-mentor-proposal","No project-scoped Mentor proposal is available to identify what ‘that’ refers to.","What would you like me to do from the previous idea?");
+ if(recommendationDemonstrative(message)){
+   const recommendationReference=selectCurrentRecommendationReference({memoryContext,projectId});
+   if(recommendationReference.status==="resolved"){
+     const recommendation=recommendationResolvedValue(recommendationReference.evidence);
+     references.push(ref({expression:"that",type:"journey-recommendation",status:"resolved",resolvedValue:recommendation,evidence:clean(recommendation.recommendedNextStep)||clean(recommendation.explanation)||recommendationReference.recommendationId,source:"project-memory:journey-recommendation",confidenceSource:"creator-confirmed"}));
+   }else if(recommendationReference.status==="ambiguous"){
+     addAmbiguous("that","journey-recommendation","More than one current project-scoped Journey recommendation could match ‘that’.","Which recommendation do you mean?");
+   }else if(positiveRecommendationAdoption(message)){
+     if(evidence.lastMentorResponse)references.push(ref({expression:"that",type:"prior-mentor-proposal",status:"resolved",resolvedValue:evidence.lastMentorResponse,evidence:evidence.lastMentorResponse,source:"project-conversation",confidenceSource:"creator-confirmed"}));
+     else addAmbiguous("that","prior-mentor-proposal","No project-scoped Mentor proposal is available to identify what ‘that’ refers to.","What would you like me to do from the previous idea?");
+   }else{
+     addAmbiguous("that","journey-recommendation","No current project-scoped Journey recommendation is available to identify what ‘that’ refers to.","Which suggestion are you rejecting?");
+   }
  }
  if(/\b(?:carry on|continue|pick up)(?:\s+from)?\s+there\b/i.test(message)){
    const point=clean(evidence.handoff?.content)||evidence.lastMentorResponse||evidence.lastCreatorMessage;
@@ -38,11 +55,10 @@ function resolveContinuationReferences({creatorMessage,projectId=null,memoryCont
  const pronounMatch=message.match(/\b(her|she|him|he|them|they)\b/i);if(pronounMatch&&/\b(?:actually|make|change|give|have|let)\b/i.test(message)){
    const expression=pronounMatch[1];const entities=explicitEntityCandidates(memoryContext,projectId);if(entities.length===1)references.push(ref({expression,type:"entity-pronoun",status:"resolved",resolvedValue:{name:entities[0].name},evidence:entities[0].evidence,source:"project-memory",confidenceSource:"creator-confirmed"}));else if(entities.length>1)addAmbiguous(expression,"entity-pronoun",`More than one project-scoped entity could match “${expression}”.`,`Who do you mean by “${expression}”?`);else addAmbiguous(expression,"entity-pronoun",`No explicit project-scoped entity evidence identifies who “${expression}” refers to.`,`Who do you mean by “${expression}”?`);
  }
- // Current explicit creator statements remain authoritative and are forwarded unchanged; reference evidence cannot overwrite them.
  const currentCreatorKeys=new Set(array(creatorConfirmedContext).filter(x=>clean(x?.key)).map(x=>clean(x.key)));
  return{version:MOVIE_MENTOR_CONTINUATION_REFERENCE_CONTROL_VERSION,domain:CONTINUATION_REFERENCE_DOMAIN,schema:MOVIE_MENTOR_CONTINUATION_REFERENCE_SCHEMA,references,clarifications,hasMaterialAmbiguity:clarifications.some(x=>x.material!==false),currentCreatorAuthorityKeys:[...currentCreatorKeys]};
 }
 function mergeContinuationIntoSemanticIntelligence(semanticIntelligence={},resolution={}){const next=clone(semanticIntelligence)||{};next.continuationReferences=clone(array(resolution?.references));if(resolution?.hasMaterialAmbiguity){next.clarificationNeeded=[...array(next.clarificationNeeded),...array(resolution.clarifications)];next.readyToAdvance=false;}return next;}
 
-export{MOVIE_MENTOR_CONTINUATION_REFERENCE_CONTROL_VERSION,MOVIE_MENTOR_CONTINUATION_REFERENCE_SCHEMA,CONTINUATION_REFERENCE_DOMAIN,projectHistory,extractNumberedOptions,resolveContinuationReferences,mergeContinuationIntoSemanticIntelligence};
+export{MOVIE_MENTOR_CONTINUATION_REFERENCE_CONTROL_VERSION,MOVIE_MENTOR_CONTINUATION_REFERENCE_SCHEMA,CONTINUATION_REFERENCE_DOMAIN,projectHistory,extractNumberedOptions,recommendationDemonstrative,positiveRecommendationAdoption,resolveContinuationReferences,mergeContinuationIntoSemanticIntelligence};
 export default resolveContinuationReferences;
