@@ -1,4 +1,4 @@
-const MOVIE_MENTOR_RECOMMENDATION_REFERENCE_CONTROL_VERSION = "1.0.0";
+const MOVIE_MENTOR_RECOMMENDATION_REFERENCE_CONTROL_VERSION = "1.0.1";
 const RECOMMENDATION_REFERENCE_DOMAIN = "iband.movie-mentor.journey-recommendation-reference";
 const RECOMMENDATION_REFERENCE_SCHEMA = 1;
 
@@ -41,7 +41,6 @@ function extractRecommendationEvidence(item) {
   if (evidence.mayCreateCanon !== false) return null;
   if (evidence.mayAdvanceJourney !== false) return null;
   if (!clean(evidence.recommendationId)) return null;
-  if (evidence?.lifecycle?.current === false) return null;
   return clone(evidence);
 }
 
@@ -59,6 +58,7 @@ function recommendationCandidates(memoryContext = {}, projectId = null) {
         item: clone(item),
         evidence,
         recommendationId: clean(evidence.recommendationId),
+        current: evidence?.lifecycle?.current !== false,
         turnRevision: Number.isSafeInteger(turnRevision) && turnRevision >= 0 ? turnRevision : null,
         timestamp: timestamp(item?.updatedAt || item?.createdAt || evidence?.createdAt),
       };
@@ -69,20 +69,29 @@ function recommendationCandidates(memoryContext = {}, projectId = null) {
 function selectCurrentRecommendationReference({ memoryContext = {}, projectId = null } = {}) {
   const candidates = recommendationCandidates(memoryContext, projectId);
   if (!candidates.length) {
-    return { status: "none", reason: "no-current-journey-recommendation", candidates: [] };
+    return { status: "none", reason: "no-journey-recommendation-evidence", candidates: [] };
   }
 
   const revisions = candidates
     .map((candidate) => candidate.turnRevision)
     .filter((value) => Number.isSafeInteger(value));
 
-  let finalists = candidates;
+  let latest = candidates;
   if (revisions.length) {
     const highestRevision = Math.max(...revisions);
-    finalists = candidates.filter((candidate) => candidate.turnRevision === highestRevision);
+    latest = candidates.filter((candidate) => candidate.turnRevision === highestRevision);
   } else {
     const newestTimestamp = Math.max(...candidates.map((candidate) => candidate.timestamp));
-    finalists = candidates.filter((candidate) => candidate.timestamp === newestTimestamp);
+    latest = candidates.filter((candidate) => candidate.timestamp === newestTimestamp);
+  }
+
+  const finalists = latest.filter((candidate) => candidate.current === true);
+  if (!finalists.length) {
+    return {
+      status: "none",
+      reason: "latest-journey-recommendation-is-not-current",
+      candidates: clone(latest.map((candidate) => candidate.evidence)),
+    };
   }
 
   const distinctIds = [...new Set(finalists.map((candidate) => candidate.recommendationId))];
