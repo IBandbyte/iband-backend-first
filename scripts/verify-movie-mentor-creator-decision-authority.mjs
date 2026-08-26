@@ -1,30 +1,34 @@
 import assert from "node:assert/strict";
-import { buildCreatorDecisionCandidate, mergeDecisionIntoCreatorContext, commitCreatorDecision } from "../ai/MovieMentorCreatorDecisionAuthority.js";
+import { buildCreatorDecisionCandidate, mergeDecisionIntoCreatorContext, buildPostCommitCreatorAuthority, commitCreatorDecision } from "../ai/MovieMentorCreatorDecisionAuthority.js";
 import { applyMovieMentorCreatorStateTransition } from "../ai/MovieMentorCreatorStateTransition.js";
 
 const directSemantic={understoodContext:[{key:"story.route",value:"hidden tunnel",evidence:"Let's use the hidden tunnel",confidenceSource:"creator-explicit"}],continuationReferences:[]};
 let result=buildCreatorDecisionCandidate({creatorMessage:"Yes. Let's use the hidden tunnel.",semanticIntelligence:directSemantic,projectId:"p1"});
 assert.equal(result.status,"candidate");assert.equal(result.candidate.authority,"creator-explicit");assert.equal(result.candidate.value,"hidden tunnel");assert.match(result.candidate.fingerprint,/^[a-f0-9]{64}$/);
-
 assert.equal(buildCreatorDecisionCandidate({creatorMessage:"Maybe we could use the hidden tunnel.",semanticIntelligence:directSemantic,projectId:"p1"}).status,"none");
 assert.equal(buildCreatorDecisionCandidate({creatorMessage:"Yes. Let's use the hidden tunnel.",semanticIntelligence:directSemantic,projectId:"p1",actorRole:"mentor"}).status,"rejected");
 
 const contextualSemantic={understoodContext:[],continuationReferences:[{expression:"that",type:"prior-mentor-proposal",status:"resolved",resolvedValue:"hidden tunnel",source:"project-conversation"}]};
 result=buildCreatorDecisionCandidate({creatorMessage:"Yes, do that.",semanticIntelligence:contextualSemantic,projectId:"p1"});assert.equal(result.status,"candidate");assert.equal(result.candidate.value,"hidden tunnel");assert.equal(result.candidate.decisionKey,"continuation.prior-mentor-proposal");
-
 const foreign={...result.candidate,projectId:"p2"};await assert.rejects(()=>commitCreatorDecision({candidate:foreign,expectedRevision:7,projectId:"p1"}),e=>e.code==="MOVIE_MENTOR_CREATOR_DECISION_PROJECT_MISMATCH");
 
-let state={projectId:"p1",creatorSessionId:"s1",revision:7,revisionAuthorityReference:"rev-7",creatorStateGeneration:3,creatorStateFingerprint:"state-3",creatorAuthorityReference:"auth-3",snapshotReference:"snap-7",creatorConfirmedContext:[],projectJourney:null,memoryContext:null,responseBlueprint:null,communicationPlan:null,capturedAt:new Date().toISOString()};
+let state={projectId:"p1",creatorSessionId:"s1",revision:7,revisionAuthorityReference:"rev-7",creatorStateGeneration:3,creatorStateFingerprint:"state-3",creatorAuthorityReference:"auth-3",snapshotReference:"snap-7",creatorConfirmedContext:[{key:"creatorDecision.continuation.prior-mentor-proposal",value:"old bridge",authority:"creator",confidenceSource:"creator-confirmed",decisionKey:"continuation.prior-mentor-proposal",decisionId:"old",decisionFingerprint:"old-fingerprint",current:true}],projectJourney:null,memoryContext:null,responseBlueprint:null,communicationPlan:null,capturedAt:"2026-08-26T20:00:00.000Z"};
 const read=async()=>structuredClone(state);
 const write=async(next,{expectedRevision})=>{if(state.revision!==expectedRevision){const e=new Error("conflict");e.code="MOVIE_MENTOR_CREATOR_STATE_REVISION_CONFLICT";throw e;}state=structuredClone(next);return structuredClone(state);};
 const candidate=result.candidate;
 const committed=await commitCreatorDecision({candidate,expectedRevision:7,projectId:"p1",creatorSessionId:"s1"},{readAuthoritativeTurnSource:read,applyMovieMentorCreatorStateTransition,writeAuthoritativeCreatorState:write});
 assert.equal(committed.status,"committed");assert.equal(state.revision,8);assert.equal(state.creatorConfirmedContext.at(-1).value,"hidden tunnel");assert.equal(state.creatorConfirmedContext.at(-1).current,true);
+assert.equal(committed.postCommitCreatorAuthority.revision,8);assert.equal(committed.postCommitCreatorAuthority.creatorState.generation,state.creatorStateGeneration);assert.equal(committed.postCommitCreatorAuthority.creatorState.fingerprint,state.creatorStateFingerprint);assert.equal(committed.postCommitCreatorAuthority.snapshotReference,state.snapshotReference);assert.equal(committed.postCommitCreatorAuthority.currentCreatorTruth.length,1);assert.equal(committed.postCommitCreatorAuthority.currentCreatorTruth[0].value,"hidden tunnel");assert.equal(committed.postCommitCreatorAuthority.currentCreatorTruth[0].current,true);assert.equal(committed.postCommitCreatorAuthority.currentCreatorTruth.some(item=>item.decisionId==="old"),false);assert.equal(Object.isFrozen(committed.postCommitCreatorAuthority),true);assert.equal(Object.isFrozen(committed.postCommitCreatorAuthority.currentCreatorTruth),true);
+
+const noCommit=buildCreatorDecisionCandidate({creatorMessage:"Maybe do that.",semanticIntelligence:contextualSemantic,projectId:"p1"});assert.equal(noCommit.status,"none");assert.equal("postCommitCreatorAuthority" in noCommit,false);
 
 const correctionSemantic={understoodContext:[{key:"story.route",value:"lighthouse",evidence:"Actually scrap the tunnel. Use the lighthouse.",confidenceSource:"creator-explicit"}],continuationReferences:[]};
 const correction=buildCreatorDecisionCandidate({creatorMessage:"Actually scrap the tunnel. Use the lighthouse.",semanticIntelligence:correctionSemantic,projectId:"p1"});assert.equal(correction.status,"candidate");assert.equal(correction.candidate.intent,"correction");
-const beforeCorrection=[{key:"creatorDecision.semantic.story.route",value:"hidden tunnel",decisionKey:"semantic.story.route",decisionId:"old",current:true}];const merged=mergeDecisionIntoCreatorContext(beforeCorrection,correction.candidate);assert.equal(merged[0].current,false);assert.equal(merged[0].supersededByDecisionId,correction.candidate.decisionId);assert.equal(merged[1].value,"lighthouse");assert.equal(merged[1].current,true);
-
+const beforeCorrection=[{key:"creatorDecision.semantic.story.route",value:"hidden tunnel",decisionKey:"semantic.story.route",decisionId:"old-route",current:true}];const merged=mergeDecisionIntoCreatorContext(beforeCorrection,correction.candidate);assert.equal(merged[0].current,false);assert.equal(merged[0].supersededByDecisionId,correction.candidate.decisionId);assert.equal(merged[1].value,"lighthouse");assert.equal(merged[1].current,true);
 await assert.rejects(()=>commitCreatorDecision({candidate:correction.candidate,expectedRevision:7,projectId:"p1",creatorSessionId:"s1"},{readAuthoritativeTurnSource:read,applyMovieMentorCreatorStateTransition,writeAuthoritativeCreatorState:write}),e=>e.code==="MOVIE_MENTOR_CREATOR_DECISION_REVISION_CONFLICT");
 
-console.log("Movie Mentor creator decision authority verification: PASS");
+await assert.rejects(()=>Promise.resolve(buildPostCommitCreatorAuthority({...state,creatorStateFingerprint:""})),e=>e.code==="MOVIE_MENTOR_POST_COMMIT_AUTHORITY_INVALID");
+const malformedRead=async()=>({...structuredClone(state),creatorConfirmedContext:[...state.creatorConfirmedContext,{key:"bad",value:"ghost",authority:"mentor",confidenceSource:"creator-confirmed",decisionKey:"bad",decisionId:"ghost",current:true}]});
+await assert.rejects(()=>commitCreatorDecision({candidate:correction.candidate,expectedRevision:state.revision,projectId:"p1",creatorSessionId:"s1"},{readAuthoritativeTurnSource:malformedRead,applyMovieMentorCreatorStateTransition,writeAuthoritativeCreatorState:write}),e=>["MOVIE_MENTOR_CURRENT_CREATOR_TRUTH_INVALID","MOVIE_MENTOR_CREATOR_DECISION_READBACK_FAILED","MOVIE_MENTOR_CREATOR_STATE_REVISION_CONFLICT"].includes(e.code));
+
+console.log("Movie Mentor creator decision authority verification: PASS — durable N+1 readback produces an immutable post-commit authority envelope; superseded truth is filtered; no-commit, stale-CAS and malformed authority fail closed.");
