@@ -36,20 +36,12 @@ function createAtomicProjectHeadModel(){
  }
  return{
   snapshot(){return clone(head);},
-  findOneAndUpdate(filter,update,options){
-   return{
-    lean(){
-     return{
-      async exec(){
-       if(!head){head=clone(update.$set);return clone(head);}
-       if(matches(filter,head)){head=clone(update.$set);return clone(head);}
-       if(options?.upsert){const error=new Error("duplicate project head");error.code=11000;throw error;}
-       return null;
-      },
-     };
-    },
-   };
-  },
+  findOneAndUpdate(filter,update,options){return{lean(){return{async exec(){
+   if(!head){head=clone(update.$set);return clone(head);}
+   if(matches(filter,head)){head=clone(update.$set);return clone(head);}
+   if(options?.upsert){const error=new Error("duplicate project head");error.code=11000;throw error;}
+   return null;
+  }}}};},
  };
 }
 
@@ -60,30 +52,18 @@ assert.deepEqual(stateB,creatorAuthorityBeforeB,"cache persistence must not muta
 assert.equal(model.snapshot().sourceRevision,10);
 assert.equal(model.snapshot().constraints[0].value,29);
 
-await assert.rejects(
- ()=>writeContinuityDerivedCache(recordA,stateA,truthA,{model}),
- error=>error?.code==="MOVIE_MENTOR_CONTINUITY_CACHE_STALE_RESURRECTION_DENIED",
- "late old-authority process must not resurrect A after B has become the durable project cache head",
-);
+await assert.rejects(()=>writeContinuityDerivedCache(recordA,stateA,truthA,{model}),error=>error?.code==="MOVIE_MENTOR_CONTINUITY_CACHE_STALE_RESURRECTION_DENIED","late old-authority process must not resurrect A after B has become the durable project cache head");
 assert.equal(model.snapshot().sourceRevision,10,"rejected A must not displace B");
 assert.equal(model.snapshot().constraints[0].value,29);
 
-for(const worker of ["A1","A2"]){
- await assert.rejects(
-  ()=>writeContinuityDerivedCache(structuredClone(recordA),structuredClone(stateA),structuredClone(truthA),{model}),
-  error=>error?.code==="MOVIE_MENTOR_CONTINUITY_CACHE_STALE_RESURRECTION_DENIED",
-  `${worker} must lose the distributed stale-resurrection fence`,
- );
-}
+for(const worker of ["A1","A2"]){await assert.rejects(()=>writeContinuityDerivedCache(structuredClone(recordA),structuredClone(stateA),structuredClone(truthA),{model}),error=>error?.code==="MOVIE_MENTOR_CONTINUITY_CACHE_STALE_RESURRECTION_DENIED",`${worker} must lose the distributed stale-resurrection fence`);}
 assert.equal(model.snapshot().sourceCreatorStateFingerprint,stateB.creatorStateFingerprint);
 
 await writeContinuityDerivedCache(structuredClone(recordB),structuredClone(stateB),structuredClone(truthB),{model});
-const forgedSameOrdinal={...structuredClone(recordB),sourceCreatorStateFingerprint:"9".repeat(64),sourceSnapshotReference:"forged-snap"};
-await assert.rejects(
- ()=>writeContinuityDerivedCache(forgedSameOrdinal,{...stateB,creatorStateFingerprint:"9".repeat(64),snapshotReference:"forged-snap"},truthB,{model}),
- error=>error?.code==="MOVIE_MENTOR_CONTINUITY_CACHE_STALE_RESURRECTION_DENIED",
- "same revision/generation with a different authority fingerprint must not replace the project head",
-);
+const forgedState={...stateB,creatorStateFingerprint:"9".repeat(64),snapshotReference:"forged-snap"};
+const forgedSameOrdinal=recordFor(forgedState,truthB,29);
+await assert.rejects(()=>writeContinuityDerivedCache(forgedSameOrdinal,forgedState,truthB,{model}),error=>error?.code==="MOVIE_MENTOR_CONTINUITY_CACHE_STALE_RESURRECTION_DENIED","same revision/generation with a different but internally valid authority identity must not replace the project head");
+assert.equal(model.snapshot().sourceCreatorStateFingerprint,stateB.creatorStateFingerprint,"authority-collision attack must leave B intact");
 
 await writeContinuityDerivedCache(recordC,stateC,truthC,{model});
 assert.equal(model.snapshot().sourceRevision,11);
@@ -91,12 +71,8 @@ assert.equal(model.snapshot().sourceCreatorStateGeneration,7);
 assert.equal(model.snapshot().sourceCreatorStateFingerprint,stateC.creatorStateFingerprint);
 assert.equal(model.snapshot().constraints[0].value,31);
 
-await assert.rejects(
- ()=>writeContinuityDerivedCache(recordB,stateB,truthB,{model}),
- error=>error?.code==="MOVIE_MENTOR_CONTINUITY_CACHE_STALE_RESURRECTION_DENIED",
- "former authority B must become non-resurrectable after C advances the project head",
-);
+await assert.rejects(()=>writeContinuityDerivedCache(recordB,stateB,truthB,{model}),error=>error?.code==="MOVIE_MENTOR_CONTINUITY_CACHE_STALE_RESURRECTION_DENIED","former authority B must become non-resurrectable after C advances the project head");
 assert.equal(model.snapshot().sourceRevision,11);
 assert.equal(model.snapshot().constraints[0].value,31);
 
-console.log("Movie Mentor distributed continuity cache resurrection torture: GREEN — one monotonic project cache head fences delayed old-authority writers, exact retries remain idempotent, and only newer creator authority can advance durable derived reality.");
+console.log("Movie Mentor distributed continuity cache resurrection torture: GREEN — one monotonic project cache head fences delayed old-authority writers, exact retries remain idempotent, same-ordinal authority collisions are denied, and only newer creator authority can advance durable derived reality.");
