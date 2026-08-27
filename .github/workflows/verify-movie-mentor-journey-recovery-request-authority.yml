@@ -28,7 +28,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Install dependencies
-        run: npm ci
+      - name: Check recovery request authority syntax
+        run: node --check ai/MovieMentorJourneyRecoveryRequestAuthority.js
       - name: Torture deterministic recovery request authority
         run: node scripts/verify-movie-mentor-journey-recovery-request-authority.mjs
