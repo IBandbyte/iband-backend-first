@@ -1,0 +1,65 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import { fingerprint } from "../ai/MovieMentorJourneyRecoveryEnvelope.js";
+import { applyMovieMentorJourneyRecoveryTransition } from "../ai/MovieMentorJourneyRecoveryTransition.js";
+
+function clone(v){return v==null?v:JSON.parse(JSON.stringify(v));}
+function project(projectId="recovery-project"){return{projectId,identityDomain:"iband.movie-mentor.project",identitySchema:1,identityIssuance:"secure-web-crypto",legacy:false};}
+function authority({projectId="recovery-project",generation,revision,label="truth",projectionRevision=revision}={}){
+  const journey={projectId,currentStageId:"story",currentTaskId:label,progression:{schemaVersion:1,revision,lastCommittedOperation:null,committedOperations:[]},decisions:[]};
+  return{domain:"iband.movie-mentor.journey-authority",schema:1,project:project(projectId),authority:{generation,createdAt:"2026-08-27T20:00:00.000Z",updatedAt:"2026-08-27T20:00:00.000Z"},bootstrap:{status:"created-native",source:"native",sourceJourneyRevision:0,bootstrappedAt:"2026-08-27T20:00:00.000Z"},journey,journeyFingerprint:fingerprint(journey),recommendations:[],projection:{lastProjectedAuthorityGeneration:generation,authoritativeCreatorProjectionRevision:projectionRevision,projectedAt:"2026-08-27T20:00:00.000Z"}};
+}
+function envelope({projectId="recovery-project",lineageId="lineage-1",generation,revision,label="truth",projectionRevision=revision}={}){
+  const authorityRecord=authority({projectId,generation,revision,label,projectionRevision});
+  const e={domain:"iband.movie-mentor.journey-authority-recovery-envelope",schema:1,lineageId,project:project(projectId),authorityGeneration:generation,progressionRevision:revision,journeyFingerprint:authorityRecord.journeyFingerprint,authoritySnapshotFingerprint:fingerprint(authorityRecord),authorityRecord};
+  e.envelopeFingerprint=fingerprint({domain:e.domain,schema:e.schema,lineageId:e.lineageId,project:e.project,authorityGeneration:e.authorityGeneration,progressionRevision:e.progressionRevision,journeyFingerprint:e.journeyFingerprint,authoritySnapshotFingerprint:e.authoritySnapshotFingerprint,authorityRecord:e.authorityRecord});
+  return e;
+}
+
+function memoryDeps({ackLossOnWrite=false}={}){
+  let record=null;
+  return{
+    readRecovery:async({projectId})=>{if(!record||record.projectId!==projectId){const e=new Error("missing");e.code="MOVIE_MENTOR_JOURNEY_RECOVERY_NOT_FOUND";throw e;}return clone(record);},
+    writeRecovery:async(next,{expectedRecoveryRevision})=>{const current=record?.recoveryRevision||0;if(current!==expectedRecoveryRevision){const e=new Error("conflict");e.code="MOVIE_MENTOR_JOURNEY_RECOVERY_REVISION_CONFLICT";throw e;}record=clone(next);if(ackLossOnWrite){ackLossOnWrite=false;throw new Error("simulated recovery ACK loss");}return clone(record);},
+    get:()=>clone(record),
+  };
+}
+
+const deps=memoryDeps();
+const e1=envelope({generation:4,revision:2,label:"n2"});
+const first=await applyMovieMentorJourneyRecoveryTransition({projectId:"recovery-project",expectedRecoveryRevision:0,envelope:e1},deps);
+assert.equal(first.status,"created");assert.equal(first.recoveryRevision,1);assert.equal(first.recoveryGeneration,1);assert.equal(first.authorityGeneration,4);assert.equal(first.progressionRevision,2);
+const idem=await applyMovieMentorJourneyRecoveryTransition({projectId:"recovery-project",expectedRecoveryRevision:1,envelope:e1},deps);
+assert.equal(idem.status,"idempotent");assert.equal(idem.recoveryRevision,1);assert.equal(deps.get().recoveryGeneration,1);
+const e2=envelope({generation:5,revision:3,label:"n3"});
+const advanced=await applyMovieMentorJourneyRecoveryTransition({projectId:"recovery-project",expectedRecoveryRevision:1,envelope:e2},deps);
+assert.equal(advanced.status,"advanced");assert.equal(advanced.recoveryRevision,2);assert.equal(advanced.recoveryGeneration,2);
+await assert.rejects(()=>applyMovieMentorJourneyRecoveryTransition({projectId:"recovery-project",expectedRecoveryRevision:1,envelope:envelope({generation:6,revision:4,label:"stale-cas"})},deps),e=>e.code==="MOVIE_MENTOR_JOURNEY_RECOVERY_REVISION_CONFLICT");
+await assert.rejects(()=>applyMovieMentorJourneyRecoveryTransition({projectId:"recovery-project",expectedRecoveryRevision:2,envelope:e1},deps),e=>e.code==="MOVIE_MENTOR_JOURNEY_RECOVERY_ROLLBACK_REJECTED");
+const sameCoordinateConflict=envelope({generation:5,revision:3,label:"different-n3",projectionRevision:99});
+await assert.rejects(()=>applyMovieMentorJourneyRecoveryTransition({projectId:"recovery-project",expectedRecoveryRevision:2,envelope:sameCoordinateConflict},deps),e=>e.code==="MOVIE_MENTOR_JOURNEY_RECOVERY_SPLIT_BRAIN");
+const foreign=envelope({lineageId:"zorg-foreign-lineage",generation:999,revision:999,label:"bigger-is-not-truer"});
+await assert.rejects(()=>applyMovieMentorJourneyRecoveryTransition({projectId:"recovery-project",expectedRecoveryRevision:2,envelope:foreign},deps),e=>e.code==="MOVIE_MENTOR_JOURNEY_RECOVERY_LINEAGE_CONFLICT");
+await assert.rejects(()=>applyMovieMentorJourneyRecoveryTransition({projectId:"recovery-project",expectedRecoveryRevision:2,envelope:e2,recoveryRevision:999},deps),e=>e.code==="MOVIE_MENTOR_JOURNEY_RECOVERY_AUTHORITY_INJECTION");
+const wrongProject=envelope({projectId:"other-project",generation:6,revision:4});
+await assert.rejects(()=>applyMovieMentorJourneyRecoveryTransition({projectId:"recovery-project",expectedRecoveryRevision:2,envelope:wrongProject},deps),e=>e.code==="MOVIE_MENTOR_JOURNEY_RECOVERY_ENVELOPE_INVALID"&&e.reason==="project-id-conflict");
+
+const ackDeps=memoryDeps({ackLossOnWrite:true});
+const ack=await applyMovieMentorJourneyRecoveryTransition({projectId:"recovery-project",expectedRecoveryRevision:0,envelope:e1},ackDeps);
+assert.equal(ack.status,"committed-after-ack-loss");assert.equal(ack.recoveryRevision,1);assert.equal(ackDeps.get().envelopeFingerprint,e1.envelopeFingerprint);
+
+const storeSource=fs.readFileSync(new URL("../ai/MovieMentorJourneyRecoveryStore.js",import.meta.url),"utf8");
+assert.ok(storeSource.includes('COLLECTION_NAME="movie_mentor_journey_recovery"'));
+assert.ok(storeSource.includes("schema.index({projectId:1},{unique:true})"));
+assert.ok(storeSource.includes("findOneAndUpdate({projectId:pid,recoveryRevision:expected}"));
+assert.ok(storeSource.includes('authority:"recovery-evidence-only"'));
+assert.ok(!storeSource.includes("movie_mentor_creator_state"));
+
+console.log("Movie Mentor Journey recovery backend store torture passed.");
+console.log("- first checkpoint establishes independent backend recovery revision");
+console.log("- exact retry is idempotent without recovery-generation advance");
+console.log("- newer same-lineage authority evidence advances under recoveryRevision CAS");
+console.log("- rollback, split-brain, foreign lineage and stale CAS are rejected");
+console.log("- client cannot inject backend recovery authority fields");
+console.log("- committed write with lost acknowledgement reconciles by rereading recovery reality");
+console.log("- Mongo persistence is isolated in movie_mentor_journey_recovery, not creator-state storage");
