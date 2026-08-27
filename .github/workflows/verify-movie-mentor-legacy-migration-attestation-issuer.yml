@@ -1,0 +1,15 @@
+name: Verify Movie Mentor Legacy Migration Attestation Issuer
+on:
+  push:
+    paths: ["ai/MovieMentorLegacyMigrationAttestationIssuer.js","scripts/verify-movie-mentor-legacy-migration-attestation-issuer.mjs",".github/workflows/verify-movie-mentor-legacy-migration-attestation-issuer.yml"]
+  pull_request:
+    paths: ["ai/MovieMentorLegacyMigrationAttestationIssuer.js","scripts/verify-movie-mentor-legacy-migration-attestation-issuer.mjs",".github/workflows/verify-movie-mentor-legacy-migration-attestation-issuer.yml"]
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 20}
+      - run: node --check ai/MovieMentorLegacyMigrationAttestationIssuer.js
+      - run: node scripts/verify-movie-mentor-legacy-migration-attestation-issuer.mjs
