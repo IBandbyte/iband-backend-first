@@ -1,0 +1,28 @@
+name: Verify Movie Mentor Project Ownership Registry
+
+on:
+  push:
+    paths:
+      - "ai/MovieMentorProjectOwnershipRegistry.js"
+      - "scripts/verify-movie-mentor-project-ownership-registry.mjs"
+      - ".github/workflows/verify-movie-mentor-project-ownership-registry.yml"
+  pull_request:
+    paths:
+      - "ai/MovieMentorProjectOwnershipRegistry.js"
+      - "scripts/verify-movie-mentor-project-ownership-registry.mjs"
+      - ".github/workflows/verify-movie-mentor-project-ownership-registry.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm ci
+      - name: Verify Movie Mentor project ownership registry
+        run: node scripts/verify-movie-mentor-project-ownership-registry.mjs
