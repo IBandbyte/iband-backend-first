@@ -20,6 +20,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund --ignore-scripts
       - name: Check ownership registry syntax
         run: node --check ai/MovieMentorProjectOwnershipRegistry.js
       - name: Torture Movie Mentor project ownership registry
