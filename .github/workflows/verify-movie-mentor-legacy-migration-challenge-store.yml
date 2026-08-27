@@ -1,0 +1,28 @@
+name: Verify Movie Mentor Legacy Migration Challenge Store
+
+on:
+  push:
+    paths:
+      - "ai/MovieMentorLegacyMigrationChallengeStore.js"
+      - "scripts/verify-movie-mentor-legacy-migration-challenge-store.mjs"
+      - ".github/workflows/verify-movie-mentor-legacy-migration-challenge-store.yml"
+  pull_request:
+    paths:
+      - "ai/MovieMentorLegacyMigrationChallengeStore.js"
+      - "scripts/verify-movie-mentor-legacy-migration-challenge-store.mjs"
+      - ".github/workflows/verify-movie-mentor-legacy-migration-challenge-store.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install backend dependencies
+        run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Check durable challenge store syntax
+        run: node --check ai/MovieMentorLegacyMigrationChallengeStore.js
+      - name: Torture challenge store terminal CAS and replay fences
+        run: node scripts/verify-movie-mentor-legacy-migration-challenge-store.mjs
