@@ -8,6 +8,7 @@ on:
       - "ai/MovieMentorLegacyMigrationChallengeStore.js"
       - "ai/MovieMentorLegacyMigrationAttestationIssuer.js"
       - "ai/MovieMentorLegacyMigrationAttestationIssuanceStore.js"
+      - "ai/MovieMentorLegacyMigrationAdoptionCredentialVerifier.js"
       - "ai/MovieMentorLegacyProjectOwnershipAdoptionBoundary.js"
       - "ai/MovieMentorProjectOwnershipRegistry.js"
       - "scripts/verify-movie-mentor-legacy-migration-ceremony.mjs"
@@ -19,6 +20,7 @@ on:
       - "ai/MovieMentorLegacyMigrationChallengeStore.js"
       - "ai/MovieMentorLegacyMigrationAttestationIssuer.js"
       - "ai/MovieMentorLegacyMigrationAttestationIssuanceStore.js"
+      - "ai/MovieMentorLegacyMigrationAdoptionCredentialVerifier.js"
       - "ai/MovieMentorLegacyProjectOwnershipAdoptionBoundary.js"
       - "ai/MovieMentorProjectOwnershipRegistry.js"
       - "scripts/verify-movie-mentor-legacy-migration-ceremony.mjs"
@@ -34,4 +36,5 @@ jobs:
           node-version: 20
       - run: npm install --no-audit --no-fund --ignore-scripts
       - run: node --check ai/MovieMentorLegacyMigrationCeremony.js
+      - run: node --check ai/MovieMentorLegacyMigrationAdoptionCredentialVerifier.js
       - run: node scripts/verify-movie-mentor-legacy-migration-ceremony.mjs
