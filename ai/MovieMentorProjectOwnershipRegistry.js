@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 
-const MOVIE_MENTOR_PROJECT_OWNERSHIP_REGISTRY_VERSION = "1.1.0";
+const MOVIE_MENTOR_PROJECT_OWNERSHIP_REGISTRY_VERSION = "1.2.0";
 const MOVIE_MENTOR_PROJECT_OWNERSHIP_COLLECTION = "movie_mentor_project_ownership";
 const MOVIE_MENTOR_PROJECT_OWNERSHIP_DOMAIN = "iband.movie-mentor.project-ownership";
 const MOVIE_MENTOR_PROJECT_OWNERSHIP_SCHEMA = 1;
@@ -142,14 +142,32 @@ function createMovieMentorProjectOwnershipAuthority({
       });
       return Object.freeze({ status: "established", ownership: clone(created) });
     } catch (error) {
-      if (error?.code !== "MOVIE_MENTOR_PROJECT_OWNERSHIP_ALREADY_EXISTS") throw error;
-      const raced = await readOwnership({ projectId });
-      if (!raced) fail("MOVIE_MENTOR_PROJECT_OWNERSHIP_AUTHORITY_REPLAY_REJECTED", "One-time ownership establishment authority was consumed by another project or unresolved concurrent establishment.", { projectId, authorityId });
-      const inspection = inspectMovieMentorProjectOwnership(raced);
-      if (inspection.valid && inspection.ownerPrincipalId === principalId && inspection.establishmentAuthorityId === authorityId) {
-        return Object.freeze({ status: "established-after-race", ownership: clone(raced) });
+      let durable = null;
+      try {
+        durable = await readOwnership({ projectId });
+      } catch {
+        durable = null;
       }
-      fail("MOVIE_MENTOR_PROJECT_OWNERSHIP_HIJACK_REJECTED", "Concurrent ownership establishment resolved to a different principal or authority.", { projectId });
+
+      if (durable) {
+        const inspection = inspectMovieMentorProjectOwnership(durable);
+        if (!inspection.valid) fail("MOVIE_MENTOR_PROJECT_OWNERSHIP_RECORD_INVALID", "Durable ownership reality is malformed after an ambiguous establishment result.");
+        if (inspection.ownerPrincipalId === principalId && inspection.establishmentAuthorityId === authorityId) {
+          return Object.freeze({
+            status: error?.code === "MOVIE_MENTOR_PROJECT_OWNERSHIP_ALREADY_EXISTS" ? "established-after-race" : "established-after-ack-loss",
+            ownership: clone(durable),
+          });
+        }
+        if (inspection.ownerPrincipalId !== principalId) {
+          fail("MOVIE_MENTOR_PROJECT_OWNERSHIP_HIJACK_REJECTED", "Concurrent ownership establishment resolved to a different principal.", { projectId });
+        }
+        fail("MOVIE_MENTOR_PROJECT_OWNERSHIP_ESTABLISHMENT_REPLAY_CONFLICT", "Concurrent ownership establishment resolved to a different one-time authority.", { projectId, authorityId });
+      }
+
+      if (error?.code === "MOVIE_MENTOR_PROJECT_OWNERSHIP_ALREADY_EXISTS") {
+        fail("MOVIE_MENTOR_PROJECT_OWNERSHIP_AUTHORITY_REPLAY_REJECTED", "One-time ownership establishment authority was consumed by another project or unresolved concurrent establishment.", { projectId, authorityId });
+      }
+      throw error;
     }
   }
 
