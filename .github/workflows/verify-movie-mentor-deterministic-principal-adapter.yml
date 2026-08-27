@@ -1,0 +1,26 @@
+name: Verify Movie Mentor Deterministic Principal Adapter
+
+on:
+  push:
+    paths:
+      - "ai/MovieMentorDeterministicPrincipalAdapter.js"
+      - "scripts/verify-movie-mentor-deterministic-principal-adapter.mjs"
+      - ".github/workflows/verify-movie-mentor-deterministic-principal-adapter.yml"
+  pull_request:
+    paths:
+      - "ai/MovieMentorDeterministicPrincipalAdapter.js"
+      - "scripts/verify-movie-mentor-deterministic-principal-adapter.mjs"
+      - ".github/workflows/verify-movie-mentor-deterministic-principal-adapter.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check deterministic principal adapter syntax
+        run: node --check ai/MovieMentorDeterministicPrincipalAdapter.js
+      - name: Torture deterministic principal adapter
+        run: node scripts/verify-movie-mentor-deterministic-principal-adapter.mjs
