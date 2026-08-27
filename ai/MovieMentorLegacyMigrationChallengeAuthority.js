@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 
-const MOVIE_MENTOR_LEGACY_MIGRATION_CHALLENGE_VERSION = "1.2.0";
+const MOVIE_MENTOR_LEGACY_MIGRATION_CHALLENGE_VERSION = "1.3.0";
 const CHALLENGE_DOMAIN = "iband.movie-mentor.legacy-ownership-migration-challenge";
 const CHALLENGE_SCHEMA = 1;
 const DEFAULT_TTL_MS = 10 * 60 * 1000;
@@ -28,9 +28,9 @@ function inspectChallenge(challenge, { now = Date.now() } = {}) {
   return Object.freeze({valid:true,challengeId,principalId,projectId,nonce,issuedAtMs,expiresAtMs,expired:expiresAtMs<=now,projectIdentity:Object.freeze({domain:s(identity.domain),schema:identity.schema,issuance:s(identity.issuance)})});
 }
 
-function assertBinding(candidate,principal,project,{allowConsumed=false,consumptionId=null}={}){
+function assertBinding(candidate,principal,project,{allowConsumed=false,consumptionId=null,now=Date.now()}={}){
   const principalId=s(principal?.principalId); if(!principalId||principal?.authenticated!==true)fail("MOVIE_MENTOR_LEGACY_MIGRATION_AUTHENTICATION_REQUIRED","Migration challenge verification requires a deterministically authenticated principal.");
-  const {projectId,identity}=normalizeIdentity(project),inspection=inspectChallenge(candidate,{now:Date.now()});
+  const {projectId,identity}=normalizeIdentity(project),inspection=inspectChallenge(candidate,{now});
   if(!inspection.valid)fail("MOVIE_MENTOR_LEGACY_MIGRATION_CHALLENGE_INVALID","Migration challenge is malformed or not trustworthy.",{reason:inspection.reason});
   if(inspection.principalId!==principalId)fail("MOVIE_MENTOR_LEGACY_MIGRATION_CHALLENGE_PRINCIPAL_CONFLICT","Migration challenge belongs to another authenticated principal.");
   if(inspection.projectId!==projectId)fail("MOVIE_MENTOR_LEGACY_MIGRATION_CHALLENGE_PROJECT_CONFLICT","Migration challenge belongs to another project.");
@@ -43,16 +43,16 @@ function createMovieMentorLegacyMigrationChallengeAuthority({now=()=>Date.now(),
   if(!Number.isSafeInteger(ttlMs)||ttlMs<60_000)fail("MOVIE_MENTOR_LEGACY_MIGRATION_CHALLENGE_TTL_INVALID","Migration challenge TTL must be at least one minute.");
   async function mintChallenge({principal=null,project=null}={}){const principalId=s(principal?.principalId);if(!principalId||principal?.authenticated!==true)fail("MOVIE_MENTOR_LEGACY_MIGRATION_AUTHENTICATION_REQUIRED","Migration challenge requires a deterministically authenticated principal.");const {projectId,identity}=normalizeIdentity(project),issuedAtMs=now();const challenge=Object.freeze({domain:CHALLENGE_DOMAIN,schema:CHALLENGE_SCHEMA,challengeId:`movie-mentor-legacy-migration:${randomId()}`,principalId,projectId,projectIdentity:identity,nonce:randomNonce(),issuedAt:new Date(issuedAtMs).toISOString(),expiresAt:new Date(issuedAtMs+ttlMs).toISOString(),status:"issued"});if(typeof persistChallenge==="function")await persistChallenge(clone(challenge));return challenge;}
   async function load(challenge){let candidate=challenge;const suppliedId=s(challenge?.challengeId);if(typeof readChallenge==="function"&&suppliedId)candidate=await readChallenge({challengeId:suppliedId});return candidate;}
-  async function verifyChallengeBinding({challenge=null,principal=null,project=null}={}){const candidate=await load(challenge),inspection=assertBinding(candidate,principal,project);if(inspection.expiresAtMs<=now())fail("MOVIE_MENTOR_LEGACY_MIGRATION_CHALLENGE_EXPIRED","Migration challenge has expired.");if(s(candidate.status)!=="issued")fail("MOVIE_MENTOR_LEGACY_MIGRATION_CHALLENGE_NOT_ACTIVE","Migration challenge is no longer active.");return Object.freeze({verified:true,challenge:Object.freeze(clone(candidate))});}
+  async function verifyChallengeBinding({challenge=null,principal=null,project=null}={}){const candidate=await load(challenge),clock=now(),inspection=assertBinding(candidate,principal,project,{now:clock});if(inspection.expiresAtMs<=clock)fail("MOVIE_MENTOR_LEGACY_MIGRATION_CHALLENGE_EXPIRED","Migration challenge has expired.");if(s(candidate.status)!=="issued")fail("MOVIE_MENTOR_LEGACY_MIGRATION_CHALLENGE_NOT_ACTIVE","Migration challenge is no longer active.");return Object.freeze({verified:true,challenge:Object.freeze(clone(candidate))});}
   async function consumeForAttestationEligibility({challenge=null,principal=null,project=null,consumptionId=null}={}){
     const id=s(consumptionId);if(!id)fail("MOVIE_MENTOR_LEGACY_MIGRATION_CONSUMPTION_ID_REQUIRED","Challenge consumption requires a one-time consumption identity.");if(typeof consumeChallenge!=="function")fail("MOVIE_MENTOR_LEGACY_MIGRATION_CONSUMER_REQUIRED","Atomic durable challenge consumption is required before attestation eligibility can be granted.");
-    const durable=await load(challenge);const inspection=assertBinding(durable,principal,project,{allowConsumed:true,consumptionId:id});
+    const durable=await load(challenge),clock=now(),inspection=assertBinding(durable,principal,project,{allowConsumed:true,consumptionId:id,now:clock});
     if(s(durable?.status)==="consumed"){
       if(s(durable.consumptionId)!==id)fail("MOVIE_MENTOR_LEGACY_MIGRATION_CHALLENGE_CONSUMPTION_CONFLICT","Migration challenge was already consumed by a different operation.");
       return Object.freeze({eligible:true,status:"already-consumed-by-this-operation",challengeId:inspection.challengeId,consumptionId:id,principalId:inspection.principalId,projectId:inspection.projectId,projectIdentity:inspection.projectIdentity,consumedAt:durable.consumedAt||null});
     }
-    if(inspection.expiresAtMs<=now())fail("MOVIE_MENTOR_LEGACY_MIGRATION_CHALLENGE_EXPIRED","Migration challenge has expired.");if(s(durable?.status)!=="issued")fail("MOVIE_MENTOR_LEGACY_MIGRATION_CHALLENGE_NOT_ACTIVE","Migration challenge is no longer active.");
-    const consumedAt=new Date(now()).toISOString(),result=await consumeChallenge({challengeId:inspection.challengeId,expectedStatus:"issued",principalId:inspection.principalId,projectId:inspection.projectId,consumptionId:id,consumedAt});
+    if(inspection.expiresAtMs<=clock)fail("MOVIE_MENTOR_LEGACY_MIGRATION_CHALLENGE_EXPIRED","Migration challenge has expired.");if(s(durable?.status)!=="issued")fail("MOVIE_MENTOR_LEGACY_MIGRATION_CHALLENGE_NOT_ACTIVE","Migration challenge is no longer active.");
+    const consumedAt=new Date(clock).toISOString(),result=await consumeChallenge({challengeId:inspection.challengeId,expectedStatus:"issued",principalId:inspection.principalId,projectId:inspection.projectId,consumptionId:id,consumedAt});
     if(!result||result.consumed!==true){const reality=typeof readChallenge==="function"?await readChallenge({challengeId:inspection.challengeId}):null;if(reality&&s(reality.status)==="consumed"&&s(reality.consumptionId)===id&&s(reality.principalId)===inspection.principalId&&s(reality.projectId)===inspection.projectId)return Object.freeze({eligible:true,status:"already-consumed-by-this-operation",challengeId:inspection.challengeId,consumptionId:id,principalId:inspection.principalId,projectId:inspection.projectId,projectIdentity:inspection.projectIdentity,consumedAt:reality.consumedAt||consumedAt});fail("MOVIE_MENTOR_LEGACY_MIGRATION_CHALLENGE_CONSUMPTION_CONFLICT","Migration challenge was not atomically consumed by this operation.");}
     return Object.freeze({eligible:true,status:"consumed",challengeId:inspection.challengeId,consumptionId:id,principalId:inspection.principalId,projectId:inspection.projectId,projectIdentity:inspection.projectIdentity,consumedAt});
   }
