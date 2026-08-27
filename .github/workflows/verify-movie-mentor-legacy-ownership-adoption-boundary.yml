@@ -1,0 +1,26 @@
+name: Verify Movie Mentor Legacy Ownership Adoption Boundary
+
+on:
+  push:
+    paths:
+      - "ai/MovieMentorLegacyProjectOwnershipAdoptionBoundary.js"
+      - "scripts/verify-movie-mentor-legacy-ownership-adoption-boundary.mjs"
+      - ".github/workflows/verify-movie-mentor-legacy-ownership-adoption-boundary.yml"
+  pull_request:
+    paths:
+      - "ai/MovieMentorLegacyProjectOwnershipAdoptionBoundary.js"
+      - "scripts/verify-movie-mentor-legacy-ownership-adoption-boundary.mjs"
+      - ".github/workflows/verify-movie-mentor-legacy-ownership-adoption-boundary.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check legacy adoption boundary syntax
+        run: node --check ai/MovieMentorLegacyProjectOwnershipAdoptionBoundary.js
+      - name: Torture legacy ownership adoption quarantine
+        run: node scripts/verify-movie-mentor-legacy-ownership-adoption-boundary.mjs
