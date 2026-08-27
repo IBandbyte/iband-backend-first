@@ -9,6 +9,7 @@ function createMemoryStore() {
   const records = new Map();
   const authorityIds = new Set();
   let createBarrier = null;
+  let throwAfterCommit = false;
   return {
     async readOwnership({ projectId } = {}) { return records.has(projectId) ? clone(records.get(projectId)) : null; },
     async createOwnership(record = {}) {
@@ -33,9 +34,16 @@ function createMemoryStore() {
       };
       records.set(record.projectId, durable);
       authorityIds.add(record.establishmentAuthorityId);
+      if (throwAfterCommit) {
+        throwAfterCommit = false;
+        const error = new Error("simulated acknowledgement loss after durable ownership commit");
+        error.code = "SIMULATED_OWNERSHIP_ACK_LOSS";
+        throw error;
+      }
       return clone(durable);
     },
     setCreateBarrier(fn) { createBarrier = fn; },
+    loseNextAck() { throwAfterCommit = true; },
     records,
   };
 }
@@ -124,7 +132,6 @@ const missingAuth = await authority.authorizeProject({ principal: principal("pri
 assert.equal(missingAuth.authorized, false);
 assert.equal(missingAuth.reason, "ownership-not-established");
 
-// Certified legacy adoption: only a previously certified migration attestation may establish ownership.
 await assert.rejects(
   authority.adoptLegacyOwnership({ principal: principal("principal-L"), projectId: "project-legacy-L" }),
   (error) => error?.code === "MOVIE_MENTOR_PROJECT_OWNERSHIP_LEGACY_ATTESTATION_REQUIRED"
@@ -174,6 +181,32 @@ await assert.rejects(
   "one-time adoption identity must not establish a second project"
 );
 
+// Lost ACK after durable legacy adoption: reread reality, never create again.
+const ackStore = createMemoryStore();
+const ackAuthority = createMovieMentorProjectOwnershipAuthority({
+  readOwnership: ackStore.readOwnership,
+  createOwnership: ackStore.createOwnership,
+  now: () => "2026-08-27T21:10:30.000Z",
+});
+ackStore.loseNextAck();
+const ackAdoption = await ackAuthority.adoptLegacyOwnership({
+  principal: principal("principal-ack"),
+  projectId: "project-legacy-ack",
+  adoptionAttestation: legacyAttestation("project-legacy-ack", "principal-ack", "adoption-ack"),
+});
+assert.equal(ackAdoption.status, "established-after-ack-loss");
+assert.equal(ackAdoption.ownership.ownerPrincipalId, "principal-ack");
+assert.equal(ackAdoption.ownership.establishmentAuthorityId, "adoption-ack");
+assert.equal(ackAdoption.ownership.ownershipRevision, 1);
+assert.equal(ackStore.records.size, 1, "lost ACK must not cause a second ownership creation");
+const ackRetry = await ackAuthority.adoptLegacyOwnership({
+  principal: principal("principal-ack"),
+  projectId: "project-legacy-ack",
+  adoptionAttestation: legacyAttestation("project-legacy-ack", "principal-ack", "adoption-ack"),
+});
+assert.equal(ackRetry.status, "already-established");
+assert.equal(ackRetry.ownership.ownershipRevision, 1);
+
 // Concurrent native first-establishment race: one durable winner only.
 const raceStore = createMemoryStore();
 let arrivals = 0;
@@ -199,6 +232,35 @@ const settled = await Promise.allSettled([raceA, raceB]);
 assert.equal(settled.filter((entry) => entry.status === "fulfilled").length, 1);
 assert.equal(settled.filter((entry) => entry.status === "rejected" && entry.reason?.code === "MOVIE_MENTOR_PROJECT_OWNERSHIP_HIJACK_REJECTED").length, 1);
 
+// Two independently certified legacy attestations racing for one project: one owner only.
+const legacyRaceStore = createMemoryStore();
+let legacyArrivals = 0;
+let legacyRelease;
+const legacyGate = new Promise((resolve) => { legacyRelease = resolve; });
+legacyRaceStore.setCreateBarrier(async () => { legacyArrivals += 1; if (legacyArrivals === 2) legacyRelease(); await legacyGate; });
+const legacyRaceAuthority = createMovieMentorProjectOwnershipAuthority({
+  readOwnership: legacyRaceStore.readOwnership,
+  createOwnership: legacyRaceStore.createOwnership,
+  now: () => "2026-08-27T21:11:30.000Z",
+});
+const legacyRaceA = legacyRaceAuthority.adoptLegacyOwnership({
+  principal: principal("principal-legacy-race-A"),
+  projectId: "project-legacy-race",
+  adoptionAttestation: legacyAttestation("project-legacy-race", "principal-legacy-race-A", "adoption-race-A"),
+});
+const legacyRaceB = legacyRaceAuthority.adoptLegacyOwnership({
+  principal: principal("principal-legacy-race-B"),
+  projectId: "project-legacy-race",
+  adoptionAttestation: legacyAttestation("project-legacy-race", "principal-legacy-race-B", "adoption-race-B"),
+});
+const legacySettled = await Promise.allSettled([legacyRaceA, legacyRaceB]);
+assert.equal(legacySettled.filter((entry) => entry.status === "fulfilled").length, 1);
+assert.equal(legacySettled.filter((entry) => entry.status === "rejected" && entry.reason?.code === "MOVIE_MENTOR_PROJECT_OWNERSHIP_HIJACK_REJECTED").length, 1);
+assert.equal(legacyRaceStore.records.size, 1);
+const durableLegacyRace = legacyRaceStore.records.get("project-legacy-race");
+assert.equal(durableLegacyRace.ownershipRevision, 1);
+assert.ok(["principal-legacy-race-A", "principal-legacy-race-B"].includes(durableLegacyRace.ownerPrincipalId));
+
 assert.equal(typeof authority.transferOwnership, "undefined", "ownership transfer must remain unavailable");
 assert.equal(typeof authority.claimLegacyOwnership, "undefined", "generic first-claimer legacy ownership must never exist");
 assert.equal(typeof authority.adoptLegacyOwnership, "function", "certified legacy adoption must be explicit and quarantined");
@@ -207,5 +269,7 @@ console.log("Movie Mentor project ownership registry verification passed.");
 console.log("- native ownership remains create-once and server-revisioned");
 console.log("- certified legacy adoption establishes exactly one immutable owner");
 console.log("- exact adoption retry is idempotent and one-time adoption authority cannot cross projects");
+console.log("- lost ACK reconciles from durable ownership reality without a second create");
+console.log("- concurrent certified legacy attestations produce exactly one durable owner");
 console.log("- different-principal and different-attestation replays cannot hijack ownership");
 console.log("- generic claim and ownership transfer remain unavailable");
