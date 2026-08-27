@@ -1,0 +1,26 @@
+name: Verify Movie Mentor Legacy Migration Challenge Authority
+
+on:
+  push:
+    paths:
+      - "ai/MovieMentorLegacyMigrationChallengeAuthority.js"
+      - "scripts/verify-movie-mentor-legacy-migration-challenge-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-legacy-migration-challenge-authority.yml"
+  pull_request:
+    paths:
+      - "ai/MovieMentorLegacyMigrationChallengeAuthority.js"
+      - "scripts/verify-movie-mentor-legacy-migration-challenge-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-legacy-migration-challenge-authority.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check migration challenge authority syntax
+        run: node --check ai/MovieMentorLegacyMigrationChallengeAuthority.js
+      - name: Torture migration challenge principal/project/expiry binding
+        run: node scripts/verify-movie-mentor-legacy-migration-challenge-authority.mjs
