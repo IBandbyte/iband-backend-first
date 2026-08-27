@@ -1,9 +1,11 @@
 import mongoose from "mongoose";
 
-const MOVIE_MENTOR_PROJECT_OWNERSHIP_REGISTRY_VERSION = "1.0.0";
+const MOVIE_MENTOR_PROJECT_OWNERSHIP_REGISTRY_VERSION = "1.1.0";
 const MOVIE_MENTOR_PROJECT_OWNERSHIP_COLLECTION = "movie_mentor_project_ownership";
 const MOVIE_MENTOR_PROJECT_OWNERSHIP_DOMAIN = "iband.movie-mentor.project-ownership";
 const MOVIE_MENTOR_PROJECT_OWNERSHIP_SCHEMA = 1;
+const LEGACY_ADOPTION_ATTESTATION_DOMAIN = "iband.movie-mentor.legacy-ownership-adoption-attestation";
+const LEGACY_ADOPTION_ATTESTATION_SCHEMA = 1;
 
 let connectionPromise = null;
 let model = null;
@@ -29,6 +31,7 @@ function getModel() {
     establishedAt: { type: Date, required: true, immutable: true },
   }, { collection: MOVIE_MENTOR_PROJECT_OWNERSHIP_COLLECTION, timestamps: true, minimize: false, strict: true });
   schema.index({ projectId: 1 }, { unique: true });
+  schema.index({ establishmentAuthorityId: 1 }, { unique: true });
   model = mongoose.models.MovieMentorProjectOwnership || mongoose.model("MovieMentorProjectOwnership", schema);
   return model;
 }
@@ -107,7 +110,7 @@ async function createMovieMentorProjectOwnership(record = {}) {
   try {
     return normalize(await getModel().create(candidate));
   } catch (error) {
-    if (error?.code === 11000) fail("MOVIE_MENTOR_PROJECT_OWNERSHIP_ALREADY_EXISTS", "Project ownership already exists and cannot be replaced by establishment replay.");
+    if (error?.code === 11000) fail("MOVIE_MENTOR_PROJECT_OWNERSHIP_ALREADY_EXISTS", "Project ownership or its one-time establishment authority already exists and cannot be replayed.");
     throw error;
   }
 }
@@ -117,6 +120,39 @@ function createMovieMentorProjectOwnershipAuthority({
   createOwnership = createMovieMentorProjectOwnership,
   now = () => new Date().toISOString(),
 } = {}) {
+  async function establishFromTrustedAuthority({ principalId, projectId, authorityId, establishmentSource }) {
+    const existing = await readOwnership({ projectId });
+    if (existing) {
+      const inspection = inspectMovieMentorProjectOwnership(existing);
+      if (!inspection.valid) fail("MOVIE_MENTOR_PROJECT_OWNERSHIP_RECORD_INVALID", "Existing project ownership record is malformed.");
+      if (inspection.ownerPrincipalId !== principalId) fail("MOVIE_MENTOR_PROJECT_OWNERSHIP_HIJACK_REJECTED", "Project is already owned by another principal; establishment cannot transfer ownership.", { projectId });
+      if (inspection.establishmentAuthorityId !== authorityId) fail("MOVIE_MENTOR_PROJECT_OWNERSHIP_ESTABLISHMENT_REPLAY_CONFLICT", "Existing ownership was established by different trusted authority.");
+      return Object.freeze({ status: "already-established", ownership: clone(existing) });
+    }
+
+    const ownershipReference = `movie-mentor-project-ownership:${projectId}:${authorityId}`;
+    try {
+      const created = await createOwnership({
+        projectId,
+        ownerPrincipalId: principalId,
+        ownershipReference,
+        establishmentAuthorityId: authorityId,
+        establishmentSource,
+        establishedAt: now(),
+      });
+      return Object.freeze({ status: "established", ownership: clone(created) });
+    } catch (error) {
+      if (error?.code !== "MOVIE_MENTOR_PROJECT_OWNERSHIP_ALREADY_EXISTS") throw error;
+      const raced = await readOwnership({ projectId });
+      if (!raced) fail("MOVIE_MENTOR_PROJECT_OWNERSHIP_AUTHORITY_REPLAY_REJECTED", "One-time ownership establishment authority was consumed by another project or unresolved concurrent establishment.", { projectId, authorityId });
+      const inspection = inspectMovieMentorProjectOwnership(raced);
+      if (inspection.valid && inspection.ownerPrincipalId === principalId && inspection.establishmentAuthorityId === authorityId) {
+        return Object.freeze({ status: "established-after-race", ownership: clone(raced) });
+      }
+      fail("MOVIE_MENTOR_PROJECT_OWNERSHIP_HIJACK_REJECTED", "Concurrent ownership establishment resolved to a different principal or authority.", { projectId });
+    }
+  }
+
   async function establishNativeOwnership({ principal = null, projectId = null, establishmentAuthority = null } = {}) {
     const pid = s(projectId);
     const principalId = s(principal?.principalId || principal?.userId || principal?.id);
@@ -131,36 +167,44 @@ function createMovieMentorProjectOwnershipAuthority({
       fail("MOVIE_MENTOR_PROJECT_OWNERSHIP_ESTABLISHMENT_CONFLICT", "Native project creation authority does not bind the same principal and project.");
     }
 
-    const existing = await readOwnership({ projectId: pid });
-    if (existing) {
-      const inspection = inspectMovieMentorProjectOwnership(existing);
-      if (!inspection.valid) fail("MOVIE_MENTOR_PROJECT_OWNERSHIP_RECORD_INVALID", "Existing project ownership record is malformed.");
-      if (inspection.ownerPrincipalId !== principalId) fail("MOVIE_MENTOR_PROJECT_OWNERSHIP_HIJACK_REJECTED", "Project is already owned by another principal; native establishment cannot transfer ownership.", { projectId: pid });
-      if (inspection.establishmentAuthorityId !== authorityId) fail("MOVIE_MENTOR_PROJECT_OWNERSHIP_ESTABLISHMENT_REPLAY_CONFLICT", "Existing ownership was established by different trusted creation authority.");
-      return Object.freeze({ status: "already-established", ownership: clone(existing) });
+    return establishFromTrustedAuthority({
+      principalId,
+      projectId: pid,
+      authorityId,
+      establishmentSource: "native-project-creation",
+    });
+  }
+
+  async function adoptLegacyOwnership({ principal = null, projectId = null, adoptionAttestation = null } = {}) {
+    const pid = s(projectId);
+    const principalId = s(principal?.principalId || principal?.userId || principal?.id);
+    if (!pid) fail("MOVIE_MENTOR_PROJECT_OWNERSHIP_PROJECT_REQUIRED", "Legacy project ownership adoption requires projectId.");
+    if (!principalId || principal?.authenticated !== true) fail("MOVIE_MENTOR_PROJECT_OWNERSHIP_AUTHENTICATION_REQUIRED", "Legacy project ownership adoption requires a deterministically authenticated principal.");
+
+    if (
+      adoptionAttestation?.certified !== true ||
+      s(adoptionAttestation?.domain) !== LEGACY_ADOPTION_ATTESTATION_DOMAIN ||
+      adoptionAttestation?.schema !== LEGACY_ADOPTION_ATTESTATION_SCHEMA
+    ) {
+      fail("MOVIE_MENTOR_PROJECT_OWNERSHIP_LEGACY_ATTESTATION_REQUIRED", "Legacy ownership adoption requires a certified migration attestation.");
     }
 
-    const ownershipReference = `movie-mentor-project-ownership:${pid}:${authorityId}`;
-    try {
-      const created = await createOwnership({
-        projectId: pid,
-        ownerPrincipalId: principalId,
-        ownershipReference,
-        establishmentAuthorityId: authorityId,
-        establishmentSource: "native-project-creation",
-        establishedAt: now(),
-      });
-      return Object.freeze({ status: "established", ownership: clone(created) });
-    } catch (error) {
-      if (error?.code !== "MOVIE_MENTOR_PROJECT_OWNERSHIP_ALREADY_EXISTS") throw error;
-      const raced = await readOwnership({ projectId: pid });
-      if (!raced) throw error;
-      const inspection = inspectMovieMentorProjectOwnership(raced);
-      if (inspection.valid && inspection.ownerPrincipalId === principalId && inspection.establishmentAuthorityId === authorityId) {
-        return Object.freeze({ status: "established-after-race", ownership: clone(raced) });
-      }
-      fail("MOVIE_MENTOR_PROJECT_OWNERSHIP_HIJACK_REJECTED", "Concurrent ownership establishment resolved to a different principal or authority.", { projectId: pid });
+    const adoptionId = s(adoptionAttestation.adoptionId);
+    if (!adoptionId || s(adoptionAttestation.projectId) !== pid || s(adoptionAttestation.principalId) !== principalId) {
+      fail("MOVIE_MENTOR_PROJECT_OWNERSHIP_LEGACY_ATTESTATION_CONFLICT", "Legacy migration attestation does not bind the same authenticated principal and project.");
     }
+
+    const identity = adoptionAttestation.projectIdentity;
+    if (!identity || s(identity.domain) !== "iband.movie-mentor.project" || !Number.isSafeInteger(identity.schema) || !s(identity.issuance)) {
+      fail("MOVIE_MENTOR_PROJECT_OWNERSHIP_LEGACY_IDENTITY_REQUIRED", "Legacy migration attestation must bind immutable project identity evidence.");
+    }
+
+    return establishFromTrustedAuthority({
+      principalId,
+      projectId: pid,
+      authorityId: adoptionId,
+      establishmentSource: "legacy-project-adoption",
+    });
   }
 
   async function authorizeProject({ principal = null, projectId = null } = {}) {
@@ -181,7 +225,7 @@ function createMovieMentorProjectOwnershipAuthority({
     });
   }
 
-  return Object.freeze({ establishNativeOwnership, authorizeProject });
+  return Object.freeze({ establishNativeOwnership, adoptLegacyOwnership, authorizeProject });
 }
 
 function getMovieMentorProjectOwnershipRegistryStatus() {
@@ -193,6 +237,7 @@ function getMovieMentorProjectOwnershipRegistryStatus() {
     collection: MOVIE_MENTOR_PROJECT_OWNERSHIP_COLLECTION,
     authority: "deterministic-project-ownership",
     createOnce: true,
+    legacyAdoption: "certified-attestation-only",
     ownershipTransfer: false,
   });
 }
