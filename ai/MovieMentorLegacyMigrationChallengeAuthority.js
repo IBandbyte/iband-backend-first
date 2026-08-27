@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 
-const MOVIE_MENTOR_LEGACY_MIGRATION_CHALLENGE_VERSION = "1.0.0";
+const MOVIE_MENTOR_LEGACY_MIGRATION_CHALLENGE_VERSION = "1.1.0";
 const CHALLENGE_DOMAIN = "iband.movie-mentor.legacy-ownership-migration-challenge";
 const CHALLENGE_SCHEMA = 1;
 const DEFAULT_TTL_MS = 10 * 60 * 1000;
@@ -16,55 +16,29 @@ function normalizeIdentity(project) {
   const domain = s(identity?.domain);
   const schema = Number.isSafeInteger(identity?.schema) ? identity.schema : null;
   const issuance = s(identity?.issuance);
-  if (!projectId || !domain || schema === null || !issuance) {
-    fail("MOVIE_MENTOR_LEGACY_MIGRATION_PROJECT_IDENTITY_REQUIRED", "Migration challenge requires immutable Movie Mentor project identity.");
-  }
+  if (!projectId || !domain || schema === null || !issuance) fail("MOVIE_MENTOR_LEGACY_MIGRATION_PROJECT_IDENTITY_REQUIRED", "Migration challenge requires immutable Movie Mentor project identity.");
   return Object.freeze({ projectId, identity: Object.freeze({ domain, schema, issuance }) });
 }
 
 function inspectChallenge(challenge, { now = Date.now() } = {}) {
   if (!challenge || typeof challenge !== "object" || Array.isArray(challenge)) return Object.freeze({ valid: false, reason: "challenge-not-object" });
   if (challenge.domain !== CHALLENGE_DOMAIN || challenge.schema !== CHALLENGE_SCHEMA) return Object.freeze({ valid: false, reason: "domain-or-schema-invalid" });
-  const challengeId = s(challenge.challengeId);
-  const principalId = s(challenge.principalId);
-  const projectId = s(challenge.projectId);
-  const nonce = s(challenge.nonce);
-  const issuedAtMs = parseTime(challenge.issuedAt);
-  const expiresAtMs = parseTime(challenge.expiresAt);
-  const identity = challenge.projectIdentity;
+  const challengeId = s(challenge.challengeId), principalId = s(challenge.principalId), projectId = s(challenge.projectId), nonce = s(challenge.nonce);
+  const issuedAtMs = parseTime(challenge.issuedAt), expiresAtMs = parseTime(challenge.expiresAt), identity = challenge.projectIdentity;
   if (!challengeId || !principalId || !projectId || !nonce || issuedAtMs === null || expiresAtMs === null || expiresAtMs <= issuedAtMs) return Object.freeze({ valid: false, reason: "required-field-invalid" });
   if (!identity || !s(identity.domain) || !Number.isSafeInteger(identity.schema) || !s(identity.issuance)) return Object.freeze({ valid: false, reason: "identity-invalid" });
   if (issuedAtMs > now + 30_000) return Object.freeze({ valid: false, reason: "issued-in-future" });
   return Object.freeze({ valid: true, challengeId, principalId, projectId, nonce, issuedAtMs, expiresAtMs, expired: expiresAtMs <= now, projectIdentity: Object.freeze({ domain: s(identity.domain), schema: identity.schema, issuance: s(identity.issuance) }) });
 }
 
-function createMovieMentorLegacyMigrationChallengeAuthority({
-  now = () => Date.now(),
-  randomId = () => crypto.randomUUID(),
-  randomNonce = () => crypto.randomBytes(32).toString("base64url"),
-  ttlMs = DEFAULT_TTL_MS,
-  persistChallenge = null,
-  readChallenge = null,
-} = {}) {
+function createMovieMentorLegacyMigrationChallengeAuthority({ now = () => Date.now(), randomId = () => crypto.randomUUID(), randomNonce = () => crypto.randomBytes(32).toString("base64url"), ttlMs = DEFAULT_TTL_MS, persistChallenge = null, readChallenge = null, consumeChallenge = null } = {}) {
   if (!Number.isSafeInteger(ttlMs) || ttlMs < 60_000) fail("MOVIE_MENTOR_LEGACY_MIGRATION_CHALLENGE_TTL_INVALID", "Migration challenge TTL must be at least one minute.");
 
   async function mintChallenge({ principal = null, project = null } = {}) {
     const principalId = s(principal?.principalId);
     if (!principalId || principal?.authenticated !== true) fail("MOVIE_MENTOR_LEGACY_MIGRATION_AUTHENTICATION_REQUIRED", "Migration challenge requires a deterministically authenticated principal.");
-    const { projectId, identity } = normalizeIdentity(project);
-    const issuedAtMs = now();
-    const challenge = Object.freeze({
-      domain: CHALLENGE_DOMAIN,
-      schema: CHALLENGE_SCHEMA,
-      challengeId: `movie-mentor-legacy-migration:${randomId()}`,
-      principalId,
-      projectId,
-      projectIdentity: identity,
-      nonce: randomNonce(),
-      issuedAt: new Date(issuedAtMs).toISOString(),
-      expiresAt: new Date(issuedAtMs + ttlMs).toISOString(),
-      status: "issued",
-    });
+    const { projectId, identity } = normalizeIdentity(project), issuedAtMs = now();
+    const challenge = Object.freeze({ domain: CHALLENGE_DOMAIN, schema: CHALLENGE_SCHEMA, challengeId: `movie-mentor-legacy-migration:${randomId()}`, principalId, projectId, projectIdentity: identity, nonce: randomNonce(), issuedAt: new Date(issuedAtMs).toISOString(), expiresAt: new Date(issuedAtMs + ttlMs).toISOString(), status: "issued" });
     if (typeof persistChallenge === "function") await persistChallenge(clone(challenge));
     return challenge;
   }
@@ -82,21 +56,30 @@ function createMovieMentorLegacyMigrationChallengeAuthority({
     if (s(candidate.status) !== "issued") fail("MOVIE_MENTOR_LEGACY_MIGRATION_CHALLENGE_NOT_ACTIVE", "Migration challenge is no longer active.");
     if (inspection.principalId !== principalId) fail("MOVIE_MENTOR_LEGACY_MIGRATION_CHALLENGE_PRINCIPAL_CONFLICT", "Migration challenge belongs to another authenticated principal.");
     if (inspection.projectId !== projectId) fail("MOVIE_MENTOR_LEGACY_MIGRATION_CHALLENGE_PROJECT_CONFLICT", "Migration challenge belongs to another project.");
-    if (inspection.projectIdentity.domain !== identity.domain || inspection.projectIdentity.schema !== identity.schema || inspection.projectIdentity.issuance !== identity.issuance) {
-      fail("MOVIE_MENTOR_LEGACY_MIGRATION_CHALLENGE_IDENTITY_CONFLICT", "Migration challenge does not bind the same immutable project identity.");
-    }
+    if (inspection.projectIdentity.domain !== identity.domain || inspection.projectIdentity.schema !== identity.schema || inspection.projectIdentity.issuance !== identity.issuance) fail("MOVIE_MENTOR_LEGACY_MIGRATION_CHALLENGE_IDENTITY_CONFLICT", "Migration challenge does not bind the same immutable project identity.");
     return Object.freeze({ verified: true, challenge: Object.freeze(clone(candidate)) });
   }
 
-  return Object.freeze({ mintChallenge, verifyChallengeBinding });
+  async function consumeForAttestationEligibility({ challenge = null, principal = null, project = null, consumptionId = null } = {}) {
+    const verified = await verifyChallengeBinding({ challenge, principal, project });
+    const id = s(consumptionId);
+    if (!id) fail("MOVIE_MENTOR_LEGACY_MIGRATION_CONSUMPTION_ID_REQUIRED", "Challenge consumption requires a one-time consumption identity.");
+    if (typeof consumeChallenge !== "function") fail("MOVIE_MENTOR_LEGACY_MIGRATION_CONSUMER_REQUIRED", "Atomic durable challenge consumption is required before attestation eligibility can be granted.");
+    const candidate = verified.challenge;
+    const consumedAt = new Date(now()).toISOString();
+    const result = await consumeChallenge({ challengeId: candidate.challengeId, expectedStatus: "issued", principalId: candidate.principalId, projectId: candidate.projectId, consumptionId: id, consumedAt });
+    if (!result || result.consumed !== true) {
+      const durable = typeof readChallenge === "function" ? await readChallenge({ challengeId: candidate.challengeId }) : null;
+      if (durable && s(durable.status) === "consumed" && s(durable.consumptionId) === id && s(durable.principalId) === candidate.principalId && s(durable.projectId) === candidate.projectId) {
+        return Object.freeze({ eligible: true, status: "already-consumed-by-this-operation", challengeId: candidate.challengeId, consumptionId: id, principalId: candidate.principalId, projectId: candidate.projectId, projectIdentity: candidate.projectIdentity, consumedAt: durable.consumedAt || consumedAt });
+      }
+      fail("MOVIE_MENTOR_LEGACY_MIGRATION_CHALLENGE_CONSUMPTION_CONFLICT", "Migration challenge was not atomically consumed by this operation.");
+    }
+    return Object.freeze({ eligible: true, status: "consumed", challengeId: candidate.challengeId, consumptionId: id, principalId: candidate.principalId, projectId: candidate.projectId, projectIdentity: candidate.projectIdentity, consumedAt });
+  }
+
+  return Object.freeze({ mintChallenge, verifyChallengeBinding, consumeForAttestationEligibility });
 }
 
-export {
-  MOVIE_MENTOR_LEGACY_MIGRATION_CHALLENGE_VERSION,
-  CHALLENGE_DOMAIN as MOVIE_MENTOR_LEGACY_MIGRATION_CHALLENGE_DOMAIN,
-  CHALLENGE_SCHEMA as MOVIE_MENTOR_LEGACY_MIGRATION_CHALLENGE_SCHEMA,
-  inspectChallenge as inspectMovieMentorLegacyMigrationChallenge,
-  createMovieMentorLegacyMigrationChallengeAuthority,
-};
-
+export { MOVIE_MENTOR_LEGACY_MIGRATION_CHALLENGE_VERSION, CHALLENGE_DOMAIN as MOVIE_MENTOR_LEGACY_MIGRATION_CHALLENGE_DOMAIN, CHALLENGE_SCHEMA as MOVIE_MENTOR_LEGACY_MIGRATION_CHALLENGE_SCHEMA, inspectChallenge as inspectMovieMentorLegacyMigrationChallenge, createMovieMentorLegacyMigrationChallengeAuthority };
 export default createMovieMentorLegacyMigrationChallengeAuthority;
