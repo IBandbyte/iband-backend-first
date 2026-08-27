@@ -1,53 +1,16 @@
 {
-  "generatedAt": "2026-08-26T17:24:53.979Z",
+  "generatedAt": "2026-08-27T23:53:14.490Z",
   "baseUrl": "https://iband-backend-first-1.onrender.com",
-  "passed": true,
-  "provider": "openai",
-  "model": "gpt-5.4-mini",
-  "liveAgents": [
-    "story",
-    "character"
-  ],
-  "executionStatus": "completed",
-  "contributions": [
-    {
-      "agentId": "story",
-      "observationCount": 5,
-      "suggestionCount": 4,
-      "riskCount": 4,
-      "confidence": 0.95,
-      "authority": "mentor-provisional",
-      "mayAdvanceJourney": false,
-      "creatorFacing": false,
-      "mayOverwriteCreatorTruth": false,
-      "requiresMentorSynthesis": true,
-      "creatorConfirmedDependencies": [
-        {
-          "key": "movie.character.relationship",
-          "value": "sisters"
-        }
-      ]
-    },
-    {
-      "agentId": "character",
-      "observationCount": 3,
-      "suggestionCount": 4,
-      "riskCount": 3,
-      "confidence": 0.93,
-      "authority": "mentor-provisional",
-      "mayAdvanceJourney": false,
-      "creatorFacing": false,
-      "mayOverwriteCreatorTruth": false,
-      "requiresMentorSynthesis": true,
-      "creatorConfirmedDependencies": [
-        {
-          "key": "movie.character.relationship",
-          "value": "sisters"
-        }
-      ]
-    }
-  ],
+  "passed": false,
+  "provider": null,
+  "model": null,
+  "liveAgents": [],
+  "executionStatus": null,
+  "contributions": [],
   "skipped": [],
   "failures": [],
-  "error": null
+  "error": {
+    "message": "specialist health failed 502\n\nfalse !== true\n",
+    "code": "ERR_ASSERTION"
+  }
 }
