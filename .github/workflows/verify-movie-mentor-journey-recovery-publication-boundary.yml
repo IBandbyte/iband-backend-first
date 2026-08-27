@@ -1,0 +1,44 @@
+name: Verify Movie Mentor Journey Recovery Publication Boundary
+
+on:
+  push:
+    paths:
+      - 'ai/MovieMentorJourneyRecoveryPublicationBoundary.js'
+      - 'ai/MovieMentorJourneyRecoveryRequestAuthority.js'
+      - 'ai/MovieMentorDeterministicPrincipalAdapter.js'
+      - 'ai/MovieMentorJourneyRecoveryAuthorizationBoundary.js'
+      - 'ai/MovieMentorProjectOwnershipRegistry.js'
+      - 'ai/MovieMentorJourneyRecoveryEnvelope.js'
+      - 'ai/MovieMentorJourneyRecoveryTransition.js'
+      - 'ai/MovieMentorJourneyRecoveryStore.js'
+      - 'scripts/verify-movie-mentor-journey-recovery-publication-boundary.mjs'
+      - '.github/workflows/verify-movie-mentor-journey-recovery-publication-boundary.yml'
+  pull_request:
+    paths:
+      - 'ai/MovieMentorJourneyRecoveryPublicationBoundary.js'
+      - 'ai/MovieMentorJourneyRecoveryRequestAuthority.js'
+      - 'ai/MovieMentorDeterministicPrincipalAdapter.js'
+      - 'ai/MovieMentorJourneyRecoveryAuthorizationBoundary.js'
+      - 'ai/MovieMentorProjectOwnershipRegistry.js'
+      - 'ai/MovieMentorJourneyRecoveryEnvelope.js'
+      - 'ai/MovieMentorJourneyRecoveryTransition.js'
+      - 'ai/MovieMentorJourneyRecoveryStore.js'
+      - 'scripts/verify-movie-mentor-journey-recovery-publication-boundary.mjs'
+      - '.github/workflows/verify-movie-mentor-journey-recovery-publication-boundary.yml'
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install runtime dependencies
+        run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Check publication boundary syntax
+        run: node --check ai/MovieMentorJourneyRecoveryPublicationBoundary.js
+      - name: Torture authorized recovery publication boundary
+        run: node scripts/verify-movie-mentor-journey-recovery-publication-boundary.mjs
