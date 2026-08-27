@@ -1,0 +1,26 @@
+name: Verify Movie Mentor Journey Recovery Authorization
+
+on:
+  push:
+    paths:
+      - "ai/MovieMentorJourneyRecoveryAuthorizationBoundary.js"
+      - "scripts/verify-movie-mentor-journey-recovery-authorization.mjs"
+      - ".github/workflows/verify-movie-mentor-journey-recovery-authorization.yml"
+  pull_request:
+    paths:
+      - "ai/MovieMentorJourneyRecoveryAuthorizationBoundary.js"
+      - "scripts/verify-movie-mentor-journey-recovery-authorization.mjs"
+      - ".github/workflows/verify-movie-mentor-journey-recovery-authorization.yml"
+
+jobs:
+  recovery-authorization:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check authorization boundary syntax
+        run: node --check ai/MovieMentorJourneyRecoveryAuthorizationBoundary.js
+      - name: Torture deterministic recovery authorization
+        run: node scripts/verify-movie-mentor-journey-recovery-authorization.mjs
