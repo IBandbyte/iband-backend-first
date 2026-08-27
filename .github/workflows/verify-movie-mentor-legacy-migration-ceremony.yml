@@ -1,0 +1,16 @@
+name: Verify Movie Mentor Legacy Migration Ceremony
+on:
+  push:
+    paths: ["ai/MovieMentorLegacyMigrationCeremony.js","scripts/verify-movie-mentor-legacy-migration-ceremony.mjs",".github/workflows/verify-movie-mentor-legacy-migration-ceremony.yml"]
+  pull_request:
+    paths: ["ai/MovieMentorLegacyMigrationCeremony.js","scripts/verify-movie-mentor-legacy-migration-ceremony.mjs",".github/workflows/verify-movie-mentor-legacy-migration-ceremony.yml"]
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 20}
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - run: node --check ai/MovieMentorLegacyMigrationCeremony.js
+      - run: node scripts/verify-movie-mentor-legacy-migration-ceremony.mjs
