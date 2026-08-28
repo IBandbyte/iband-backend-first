@@ -1,16 +1,45 @@
 {
-  "generatedAt": "2026-08-28T17:12:52.559Z",
+  "generatedAt": "2026-08-28T17:35:58.392Z",
   "baseUrl": "https://iband-backend-first-1.onrender.com",
   "passed": false,
-  "provider": null,
-  "model": null,
-  "liveAgents": [],
-  "executionStatus": null,
-  "contributions": [],
+  "provider": "openai",
+  "model": "gpt-5.4-mini",
+  "liveAgents": [
+    "story",
+    "character"
+  ],
+  "executionStatus": "partial",
+  "contributions": [
+    {
+      "agentId": "story",
+      "observationCount": 4,
+      "suggestionCount": 4,
+      "riskCount": 3,
+      "confidence": 0.95,
+      "authority": "mentor-provisional",
+      "mayAdvanceJourney": false,
+      "creatorFacing": false,
+      "mayOverwriteCreatorTruth": false,
+      "requiresMentorSynthesis": true,
+      "creatorConfirmedDependencies": [
+        {
+          "key": "movie.character.relationship",
+          "value": "sisters"
+        }
+      ]
+    }
+  ],
   "skipped": [],
-  "failures": [],
+  "failures": [
+    {
+      "agentId": "character",
+      "code": "AI_PROVIDER_RATE_LIMITED",
+      "message": "Rate limit reached for gpt-5.4-mini in organization org-TtiL9b6UJMFInGdN6YSdwUEv on tokens per min (TPM): Limit 100000, Used 100000, Requested 796. Please try again in 5h43m52.32s. Visit https://platform.openai.com/account/rate-limits to learn more. You can increase your rate limit by adding a payment method to your account at https://platform.openai.com/account/billing.",
+      "validationIssues": []
+    }
+  ],
   "error": {
-    "message": "specialist health failed 502\n\nfalse !== true\n",
+    "message": "expected Story and Character contributions\n\n1 !== 2\n",
     "code": "ERR_ASSERTION"
   }
 }
