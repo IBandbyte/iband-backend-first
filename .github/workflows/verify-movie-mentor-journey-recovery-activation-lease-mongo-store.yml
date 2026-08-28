@@ -1,0 +1,26 @@
+name: Verify Movie Mentor Journey Recovery Activation Lease Mongo Store
+
+on:
+  push:
+    paths:
+      - "ai/MovieMentorJourneyRecoveryActivationLeaseMongoStore.js"
+      - "scripts/verify-movie-mentor-journey-recovery-activation-lease-mongo-store.mjs"
+      - ".github/workflows/verify-movie-mentor-journey-recovery-activation-lease-mongo-store.yml"
+  pull_request:
+    paths:
+      - "ai/MovieMentorJourneyRecoveryActivationLeaseMongoStore.js"
+      - "scripts/verify-movie-mentor-journey-recovery-activation-lease-mongo-store.mjs"
+      - ".github/workflows/verify-movie-mentor-journey-recovery-activation-lease-mongo-store.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - run: node --check ai/MovieMentorJourneyRecoveryActivationLeaseMongoStore.js
+      - run: node --check scripts/verify-movie-mentor-journey-recovery-activation-lease-mongo-store.mjs
+      - run: node scripts/verify-movie-mentor-journey-recovery-activation-lease-mongo-store.mjs
