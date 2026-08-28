@@ -1,0 +1,2 @@
+Door 5A.2 implementation boundary marker.
+Internal Semantic, Specialist and Synthesis intelligence remains available to the canonical authenticated turn orchestrator while standalone production HTTP exposure is forbidden.
