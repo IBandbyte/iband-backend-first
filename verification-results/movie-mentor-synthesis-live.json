@@ -1,11 +1,11 @@
 {
-  "generatedAt": "2026-08-28T23:26:45.678Z",
+  "generatedAt": "2026-08-28T23:43:17.922Z",
   "baseUrl": "https://iband-backend-first-1.onrender.com",
   "passed": false,
-  "text": null,
-  "decision": null,
+  "status": 502,
+  "publiclyIsolated": false,
   "error": {
-    "message": "live synthesis failed 400: {\"success\":false,\"code\":\"MENTOR_SYNTHESIS_REQUEST_INVALID\",\"message\":\"Movie Mentor synthesis request failed authority validation.\",\"validationIssues\":[\"continuity_consequence_envelope_required\"],\"retryable\":false,\"authority\":{\"creatorTruthDominates\":true,\"validatedSemanticsOutrankSpecialists\":true,\"specialistsRemainProvisional\":true,\"specialistContentBecomesCanonicalTruth\":false,\"mayAdvanceJourney\":false,\"singleCreatorFacingMentor\":true}}\n\nfalse !== true\n",
+    "message": "standalone synthesis execution must not be publicly mounted\n\n502 !== 404\n",
     "code": "ERR_ASSERTION"
   }
 }
