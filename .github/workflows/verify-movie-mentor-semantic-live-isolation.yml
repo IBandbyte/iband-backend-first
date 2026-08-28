@@ -1,0 +1,27 @@
+name: Verify Movie Mentor Live Semantic Isolation
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/verify-movie-mentor-semantic-live-isolation.yml"
+      - "scripts/verify-movie-mentor-semantic-live-isolation.mjs"
+      - "movieMentorSemantic.js"
+      - "server.js"
+jobs:
+  live-semantic-isolation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Wait for Render deployment to settle
+        run: sleep 75
+      - name: Verify standalone semantic route is not public
+        env:
+          IBAND_LIVE_BACKEND_URL: https://iband-backend-first-1.onrender.com
+        run: node scripts/verify-movie-mentor-semantic-live-isolation.mjs
