@@ -1,0 +1,39 @@
+name: Verify Movie Mentor Journey Recovery Live Fence Enforcement
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Syntax check live fence enforcement
+        run: node --check ai/MovieMentorJourneyRecoveryLiveFenceEnforcement.js
+
+      - name: Syntax check cross-process activation boundary
+        run: node --check ai/MovieMentorJourneyRecoveryCrossProcessActivationBoundary.js
+
+      - name: Syntax check production boot activation
+        run: node --check ai/MovieMentorJourneyRecoveryProductionBootActivation.js
+
+      - name: Syntax check boot mount integration
+        run: node --check ai/MovieMentorJourneyRecoveryBootMountIntegration.js
+
+      - name: Syntax check live fence torture
+        run: node --check scripts/verify-movie-mentor-journey-recovery-live-fence-enforcement.mjs
+
+      - name: Verify production activation lease renewal and live fence enforcement
+        run: node scripts/verify-movie-mentor-journey-recovery-live-fence-enforcement.mjs
