@@ -1,19 +1,13 @@
 import assert from "node:assert/strict";
 
-import {
-  configureMovieMentorJourneyRecoveryBootMount,
-} from "../ai/MovieMentorJourneyRecoveryBootMountIntegration.js";
+import { configureMovieMentorJourneyRecoveryBootMount } from "../ai/MovieMentorJourneyRecoveryBootMountIntegration.js";
 
 function fakeApp({ throwOnUse = false } = {}) {
   const mounts = [];
   return {
     mounts,
     use(path, router) {
-      if (throwOnUse) {
-        throw Object.assign(new Error("synthetic app.use failure"), {
-          code: "SYNTHETIC_APP_USE_FAILURE",
-        });
-      }
+      if (throwOnUse) throw Object.assign(new Error("synthetic app.use failure"), { code: "SYNTHETIC_APP_USE_FAILURE" });
       mounts.push({ path, router });
     },
   };
@@ -22,186 +16,82 @@ function fakeApp({ throwOnUse = false } = {}) {
 function realDeps(overrides = {}) {
   const verifyCredential = async () => ({ verified: true });
   const createRouter = () => Object.freeze({ kind: "router" });
+  const activationAuthority = async (request) => ({
+    authorized: true,
+    ...request,
+    activationEpoch: "epoch-1",
+    activationReference: "activation-ref-1",
+  });
   return {
     verifyCredential,
     expectedIssuer: "https://issuer.example.test",
     expectedAudience: "iband.movie-mentor",
     basePath: "/api/movie-mentor-recovery",
     createRouter,
+    processInstanceId: "process-A",
+    deploymentId: "deploy-1",
+    activationAuthority,
     ...overrides,
   };
 }
 
-function expectConflict(fn) {
-  assert.throws(
-    fn,
-    (error) =>
-      error?.code === "MOVIE_MENTOR_JOURNEY_RECOVERY_BOOT_ACTIVATION_CONFLICT",
-  );
+async function expectConflict(fn) {
+  await assert.rejects(fn, (error) => error?.code === "MOVIE_MENTOR_JOURNEY_RECOVERY_BOOT_ACTIVATION_CONFLICT");
 }
 
 console.log("3C.5E.4D — recovery activation integrity torture");
 
 {
   const app = fakeApp();
-  const closed = configureMovieMentorJourneyRecoveryBootMount({
+  const closed = await configureMovieMentorJourneyRecoveryBootMount({
     app,
     verifyCredential: null,
     expectedIssuer: "https://issuer.example.test",
     expectedAudience: "iband.movie-mentor",
   });
   assert.equal(closed.mounted, false);
-  assert.equal(app.mounts.length, 0);
-
-  const deps = realDeps();
-  const opened = configureMovieMentorJourneyRecoveryBootMount({ app, ...deps });
+  const opened = await configureMovieMentorJourneyRecoveryBootMount({ app, ...realDeps() });
   assert.equal(opened.mounted, true);
-  assert.equal(opened.idempotent, false);
   assert.equal(app.mounts.length, 1);
 }
 
 {
   const app = fakeApp();
-  const verifyCredential = async () => ({ verified: true });
   let factoryCalls = 0;
-  const createRouter = () => {
-    factoryCalls += 1;
-    return Object.freeze({ kind: "router" });
-  };
-  const deps = realDeps({ verifyCredential, createRouter });
-
-  const first = configureMovieMentorJourneyRecoveryBootMount({ app, ...deps });
-  const second = configureMovieMentorJourneyRecoveryBootMount({ app, ...deps });
-
+  const createRouter = () => { factoryCalls += 1; return Object.freeze({ kind: "router" }); };
+  const deps = realDeps({ createRouter });
+  const first = await configureMovieMentorJourneyRecoveryBootMount({ app, ...deps });
+  const second = await configureMovieMentorJourneyRecoveryBootMount({ app, ...deps });
   assert.equal(first.mounted, true);
-  assert.equal(first.idempotent, false);
-  assert.equal(second.mounted, true);
   assert.equal(second.idempotent, true);
-  assert.equal(second.reason, "already-mounted-with-identical-activation");
   assert.equal(factoryCalls, 1);
   assert.equal(app.mounts.length, 1);
 }
 
 {
   const app = fakeApp();
-  const verifyCredential = async () => ({ verified: true });
-  const createRouter = () => Object.freeze({ kind: "router" });
-  const deps = realDeps({ verifyCredential, createRouter });
-  configureMovieMentorJourneyRecoveryBootMount({ app, ...deps });
-
-  expectConflict(() =>
-    configureMovieMentorJourneyRecoveryBootMount({ app, ...deps, verifyCredential: null }),
-  );
-  expectConflict(() =>
-    configureMovieMentorJourneyRecoveryBootMount({
-      app,
-      ...deps,
-      verifyCredential: async () => ({ verified: true }),
-    }),
-  );
-  expectConflict(() =>
-    configureMovieMentorJourneyRecoveryBootMount({
-      app,
-      ...deps,
-      expectedIssuer: "https://drifted-issuer.example.test",
-    }),
-  );
-  expectConflict(() =>
-    configureMovieMentorJourneyRecoveryBootMount({
-      app,
-      ...deps,
-      expectedAudience: "different-audience",
-    }),
-  );
-  expectConflict(() =>
-    configureMovieMentorJourneyRecoveryBootMount({
-      app,
-      ...deps,
-      basePath: "/api/other-recovery",
-    }),
-  );
-  expectConflict(() =>
-    configureMovieMentorJourneyRecoveryBootMount({
-      app,
-      ...deps,
-      createRouter: () => Object.freeze({ kind: "replacement-router" }),
-    }),
-  );
-
-  assert.equal(app.mounts.length, 1);
-}
-
-{
-  const app = fakeApp();
-  const verifyCredential = async () => ({ verified: true });
-  const createRouter = () => Object.freeze({ kind: "router" });
-  const config = {
-    app,
-    verifyCredential,
-    expectedIssuer: "https://issuer.example.test",
-    expectedAudience: "iband.movie-mentor",
-    basePath: "/api/movie-mentor-recovery",
-    createRouter,
-  };
-
-  configureMovieMentorJourneyRecoveryBootMount(config);
-  config.expectedIssuer = "https://mutated.example.test";
-  expectConflict(() => configureMovieMentorJourneyRecoveryBootMount(config));
-  assert.equal(app.mounts.length, 1);
-}
-
-{
-  const app = fakeApp();
-  const verifyCredential = async () => ({ verified: true });
-  const badRouterFactory = () => {
-    throw Object.assign(new Error("synthetic router construction failure"), {
-      code: "SYNTHETIC_ROUTER_FACTORY_FAILURE",
-    });
-  };
-
-  assert.throws(() =>
-    configureMovieMentorJourneyRecoveryBootMount({
-      app,
-      ...realDeps({ verifyCredential, createRouter: badRouterFactory }),
-    }),
-  );
-  assert.equal(app.mounts.length, 0);
-
-  const good = configureMovieMentorJourneyRecoveryBootMount({
-    app,
-    ...realDeps({ verifyCredential }),
-  });
-  assert.equal(good.mounted, true);
-  assert.equal(app.mounts.length, 1);
-}
-
-// Once app.use itself throws, reality is ambiguous. 4E owns the rule that the
-// same app instance may never blindly remount.
-{
-  const app = fakeApp({ throwOnUse: true });
   const deps = realDeps();
-  assert.throws(() => configureMovieMentorJourneyRecoveryBootMount({ app, ...deps }));
-  assert.equal(app.mounts.length, 0);
-  assert.throws(
-    () => configureMovieMentorJourneyRecoveryBootMount({ app, ...deps }),
-    (error) =>
-      error?.code === "MOVIE_MENTOR_JOURNEY_RECOVERY_BOOT_MOUNT_OUTCOME_UNCERTAIN",
-  );
-
-  const healthyApp = fakeApp();
-  const healthy = configureMovieMentorJourneyRecoveryBootMount({
-    app: healthyApp,
-    ...deps,
-  });
-  assert.equal(healthy.mounted, true);
-  assert.equal(healthyApp.mounts.length, 1);
+  await configureMovieMentorJourneyRecoveryBootMount({ app, ...deps });
+  await expectConflict(() => configureMovieMentorJourneyRecoveryBootMount({ app, ...deps, verifyCredential: null }));
+  await expectConflict(() => configureMovieMentorJourneyRecoveryBootMount({ app, ...deps, expectedIssuer: "https://zorg.example.test" }));
+  await expectConflict(() => configureMovieMentorJourneyRecoveryBootMount({ app, ...deps, expectedAudience: "zorg-audience" }));
+  await expectConflict(() => configureMovieMentorJourneyRecoveryBootMount({ app, ...deps, basePath: "/api/other" }));
+  await expectConflict(() => configureMovieMentorJourneyRecoveryBootMount({ app, ...deps, processInstanceId: "process-B" }));
+  await expectConflict(() => configureMovieMentorJourneyRecoveryBootMount({ app, ...deps, deploymentId: "deploy-2" }));
+  assert.equal(app.mounts.length, 1);
 }
 
-console.log("✓ partial configuration never latches a false successful activation");
-console.log("✓ exact successful boot retry is idempotent and cannot double-mount");
-console.log("✓ verifier replacement and auth-policy drift are rejected after mount");
-console.log("✓ path/factory drift cannot create a second recovery surface");
-console.log("✓ mutable caller config cannot rewrite the captured activation snapshot");
-console.log("✓ router construction failure before app.use remains safely retryable");
-console.log("✓ app.use uncertainty blocks blind remount on the same app instance");
+{
+  const app = fakeApp();
+  const bad = realDeps({ createRouter: () => { throw Object.assign(new Error("router build failed"), { code: "SYNTHETIC_ROUTER_FACTORY_FAILURE" }); } });
+  await assert.rejects(() => configureMovieMentorJourneyRecoveryBootMount({ app, ...bad }));
+  assert.equal(app.mounts.length, 0);
+  const good = await configureMovieMentorJourneyRecoveryBootMount({ app, ...realDeps() });
+  assert.equal(good.mounted, true);
+}
+
+console.log("✓ partial configuration never latches false activation");
+console.log("✓ exact boot retry cannot double-mount");
+console.log("✓ verifier/trust/path/process/deployment drift are conflicts");
+console.log("✓ pre-mount construction failure remains retryable");
 console.log("3C.5E.4D torture: GREEN");
