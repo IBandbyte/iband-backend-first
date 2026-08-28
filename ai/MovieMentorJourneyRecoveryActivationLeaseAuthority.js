@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 
-const VERSION = "1.0.0";
+const VERSION = "1.0.1";
 const DOMAIN = "iband.movie-mentor.journey-recovery-activation-lease";
 
 function text(value) { return typeof value === "string" ? value.trim() : ""; }
@@ -53,9 +53,27 @@ export function createMovieMentorJourneyRecoveryActivationLeaseAuthority({ readL
       const at = instant(now());
       if (!current || !sameBinding(current, request) || current.leaseGeneration !== generation || text(current.leaseReference) !== text(activationReference) || text(current.fencingToken) !== text(fencingToken)) return freeze({ authorized: false, reason: "activation-lease-fenced" });
       if (!active(current, at)) return freeze({ authorized: false, reason: "activation-lease-expired" });
-      const next = freeze({ ...current, expiresAt: new Date(at.getTime() + leaseMs).toISOString() });
-      try { const written = await replaceLease(next, { expectedLeaseGeneration: generation, expectedLeaseReference: text(current.leaseReference), expectedExpiresAt: instant(current.expiresAt).toISOString() }); if (!written) return freeze({ authorized: false, reason: "activation-lease-renewal-race-lost" }); return evidence(written); }
-      catch (error) { const durable = await readLease(); if (durable && sameBinding(durable, request) && durable.leaseGeneration === generation && text(durable.leaseReference) === text(current.leaseReference) && instant(durable.expiresAt).getTime() > instant(current.expiresAt).getTime()) return evidence(durable); throw error; }
+
+      const currentExpiresAt = instant(current.expiresAt);
+      const renewedExpiresAt = new Date(Math.max(at.getTime(), currentExpiresAt.getTime()) + leaseMs).toISOString();
+      const next = freeze({ ...current, expiresAt: renewedExpiresAt });
+
+      try {
+        const written = await replaceLease(next, { expectedLeaseGeneration: generation, expectedLeaseReference: text(current.leaseReference), expectedExpiresAt: currentExpiresAt.toISOString() });
+        if (!written) return freeze({ authorized: false, reason: "activation-lease-renewal-race-lost" });
+        return evidence(written);
+      } catch (error) {
+        const durable = await readLease();
+        if (
+          durable &&
+          sameBinding(durable, request) &&
+          durable.leaseGeneration === generation &&
+          text(durable.leaseReference) === text(current.leaseReference) &&
+          text(durable.fencingToken) === text(current.fencingToken) &&
+          instant(durable.expiresAt).toISOString() === renewedExpiresAt
+        ) return evidence(durable);
+        throw error;
+      }
     },
 
     async assertFence({ processInstanceId, activationEpoch, activationReference, fencingToken } = {}) {
