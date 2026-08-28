@@ -1,4 +1,4 @@
-name: Verify Movie Mentor Live Specialist Agents
+name: Verify Movie Mentor Live Specialist Isolation
 
 on:
   workflow_dispatch:
@@ -7,8 +7,6 @@ on:
     paths:
       - ".github/workflows/verify-movie-mentor-specialists-live.yml"
       - "scripts/verify-movie-mentor-specialists-live.mjs"
-      - "ai/MovieMentorSpecialistExecutor.js"
-      - "ai/StructuredAIProviderClient.js"
       - "movieMentorSpecialists.js"
       - "server.js"
 
@@ -16,29 +14,25 @@ permissions:
   contents: write
 
 jobs:
-  live-specialist-verification:
+  live-specialist-isolation:
     runs-on: ubuntu-latest
     timeout-minutes: 12
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Use Node 20
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-
       - name: Wait for Render deployment to settle
         run: sleep 75
-
-      - name: Verify live Story and Character agents
+      - name: Verify standalone specialist routes are not public
         continue-on-error: true
         env:
           IBAND_LIVE_BACKEND_URL: https://iband-backend-first-1.onrender.com
           IBAND_LIVE_REPORT_PATH: verification-results/movie-mentor-specialists-live.json
         run: node scripts/verify-movie-mentor-specialists-live.mjs
-
       - name: Commit verification report
         run: |
           git config user.name "github-actions[bot]"
@@ -47,11 +41,10 @@ jobs:
           if git diff --cached --quiet; then
             echo "No verification report change to commit."
           else
-            git commit -m "test: record live Movie Mentor specialist verification"
+            git commit -m "test: record live Movie Mentor specialist isolation"
             git pull --rebase origin main
             git push origin HEAD:main
           fi
-
-      - name: Enforce live verification result
+      - name: Enforce live isolation result
         run: |
-          node -e 'const fs=require("fs"); const r=JSON.parse(fs.readFileSync("verification-results/movie-mentor-specialists-live.json","utf8")); console.log(JSON.stringify(r,null,2)); if(!r.passed) process.exit(1);'
+          node -e 'const fs=require("fs"); const r=JSON.parse(fs.readFileSync("verification-results/movie-mentor-specialists-live.json","utf8")); console.log(JSON.stringify(r,null,2)); if(!r.passed || !r.publiclyIsolated) process.exit(1);'
