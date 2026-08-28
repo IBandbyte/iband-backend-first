@@ -23,6 +23,8 @@ async function startServer(){
    expectedIssuer: null,
    expectedAudience: null,
    activationAuthority: recoveryActivation.activationAuthority,
+   renewActivation: recoveryActivation.renewActivation,
+   assertFence: recoveryActivation.assertFence,
    processInstanceId: recoveryActivation.processInstanceId,
    deploymentId: recoveryActivation.deploymentId,
  });
