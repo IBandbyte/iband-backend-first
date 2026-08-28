@@ -1,10 +1,12 @@
 import express from "express";
 import cors from "cors";
 import { configureMovieMentorJourneyRecoveryBootMount } from "./ai/MovieMentorJourneyRecoveryBootMountIntegration.js";
+import { createMovieMentorJourneyRecoveryProductionBootActivation } from "./ai/MovieMentorJourneyRecoveryProductionBootActivation.js";
 
 const app = express();
 const PORT = process.env.PORT || 10000;
 const NODE_ENV = process.env.NODE_ENV || "development";
+const recoveryActivation = createMovieMentorJourneyRecoveryProductionBootActivation();
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
@@ -20,6 +22,9 @@ async function startServer(){
    verifyCredential: null,
    expectedIssuer: null,
    expectedAudience: null,
+   activationAuthority: recoveryActivation.activationAuthority,
+   processInstanceId: recoveryActivation.processInstanceId,
+   deploymentId: recoveryActivation.deploymentId,
  });
  console.log(`[mount:${recoveryMount.mounted ? "ok" : "closed"}] ${recoveryMount.basePath} (${recoveryMount.reason})`);
  app.use((req,res)=>res.status(404).json({success:false,message:"Route not found"})); app.listen(PORT,()=>console.log(`[boot] iband-backend-first listening on port ${PORT}`));
