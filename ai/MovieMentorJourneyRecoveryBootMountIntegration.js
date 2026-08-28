@@ -1,7 +1,11 @@
-import { mountMovieMentorJourneyRecoveryRouteIfReady } from "./MovieMentorJourneyRecoveryRouteMountDependencyGate.js";
+import {
+  inspectMovieMentorJourneyRecoveryRouteMountDependencies,
+  mountMovieMentorJourneyRecoveryRouteIfReady,
+} from "./MovieMentorJourneyRecoveryRouteMountDependencyGate.js";
 import { createMovieMentorJourneyRecoveryExpressRouter } from "./MovieMentorJourneyRecoveryExpressRouterFactory.js";
+import { authorizeMovieMentorJourneyRecoveryProcessActivation } from "./MovieMentorJourneyRecoveryCrossProcessActivationBoundary.js";
 
-const MOVIE_MENTOR_JOURNEY_RECOVERY_BOOT_MOUNT_INTEGRATION_VERSION = "1.2.0";
+const MOVIE_MENTOR_JOURNEY_RECOVERY_BOOT_MOUNT_INTEGRATION_VERSION = "1.3.0";
 const DEFAULT_BASE_PATH = "/api/movie-mentor-recovery";
 const ACTIVATIONS = new WeakMap();
 
@@ -22,7 +26,11 @@ function sameActivation(existing, requested) {
     existing.expectedAudience === requested.expectedAudience &&
     existing.basePath === requested.basePath &&
     existing.createRouter === requested.createRouter &&
-    existing.mountGate === requested.mountGate
+    existing.mountGate === requested.mountGate &&
+    existing.activationBoundary === requested.activationBoundary &&
+    existing.activationAuthority === requested.activationAuthority &&
+    existing.processInstanceId === requested.processInstanceId &&
+    existing.deploymentId === requested.deploymentId
   );
 }
 
@@ -33,13 +41,17 @@ function alreadyMounted(existing) {
     idempotent: true,
     reason: "already-mounted-with-identical-activation",
     basePath: existing.basePath,
+    processInstanceId: existing.processInstanceId,
+    deploymentId: existing.deploymentId,
+    activationEpoch: existing.activationEpoch,
+    activationReference: existing.activationReference,
     version: MOVIE_MENTOR_JOURNEY_RECOVERY_BOOT_MOUNT_INTEGRATION_VERSION,
   });
 }
 
 function uncertainMount(existing) {
   const error = new Error(
-    "Recovery route mount outcome is uncertain; refusing to remount without process restart or external reality proof."
+    "Recovery route mount outcome is uncertain; refusing to remount without external service-level reality proof."
   );
   error.code = "MOVIE_MENTOR_JOURNEY_RECOVERY_BOOT_MOUNT_OUTCOME_UNCERTAIN";
   error.basePath = existing.basePath;
@@ -47,26 +59,21 @@ function uncertainMount(existing) {
 }
 
 /**
- * 3C.5E.4C/4D/4E — Production Mount Wiring + Activation Integrity +
- * Ambiguous Mount Outcome Containment
+ * 3C.5E.4C/4D/4E/4F — Production Recovery Route Activation
  *
- * 4C binds the certified 4A dependency gate to the certified 4B Express router
- * factory and the application-owned mount point.
- *
- * 4D makes successful activation monotonic within one application process.
- *
- * 4E closes the app.use lost-ack / partial-mount abyss. Once app.use has been
- * invoked, a thrown error cannot prove that Express routing reality remained
- * unchanged. The integration therefore records an UNCERTAIN activation before
- * rethrowing. No retry on that same app instance may call app.use again.
+ * 4C: fail-closed production boot wiring.
+ * 4D: monotonic in-process activation configuration.
+ * 4E: ambiguous app.use outcomes cannot authorize blind remount.
+ * 4F: a fresh process cannot infer service-level exposure reality from empty
+ *     process-local memory. A mountable process must obtain externally supplied,
+ *     process-bound activation authority before app.use is allowed.
  *
  * Constitutional law:
- *   An uncertain mount outcome is not permission to remount.
- *
- * The module still does not invent authentication. With no real verifier,
- * boot remains successful and recovery remains unmounted.
+ *   Process-local absence is not proof of service-level absence.
+ *   Restart is not authority to remount.
+ *   Cross-process activation requires external reality evidence.
  */
-function configureMovieMentorJourneyRecoveryBootMount({
+async function configureMovieMentorJourneyRecoveryBootMount({
   app = null,
   verifyCredential = null,
   expectedIssuer = null,
@@ -74,6 +81,11 @@ function configureMovieMentorJourneyRecoveryBootMount({
   basePath = DEFAULT_BASE_PATH,
   createRouter = createMovieMentorJourneyRecoveryExpressRouter,
   mountGate = mountMovieMentorJourneyRecoveryRouteIfReady,
+  inspectMountDependencies = inspectMovieMentorJourneyRecoveryRouteMountDependencies,
+  activationBoundary = authorizeMovieMentorJourneyRecoveryProcessActivation,
+  activationAuthority = null,
+  processInstanceId = null,
+  deploymentId = null,
 } = {}) {
   if (!app || typeof app.use !== "function") {
     fail(
@@ -88,6 +100,18 @@ function configureMovieMentorJourneyRecoveryBootMount({
       "Recovery boot integration requires the certified mount dependency gate."
     );
   }
+  if (typeof inspectMountDependencies !== "function") {
+    fail(
+      "MOVIE_MENTOR_JOURNEY_RECOVERY_BOOT_DEPENDENCY_INSPECTOR_REQUIRED",
+      "Recovery boot integration requires the certified mount dependency inspector."
+    );
+  }
+  if (typeof activationBoundary !== "function") {
+    fail(
+      "MOVIE_MENTOR_JOURNEY_RECOVERY_BOOT_ACTIVATION_BOUNDARY_REQUIRED",
+      "Recovery boot integration requires the cross-process activation boundary."
+    );
+  }
 
   const requested = Object.freeze({
     verifyCredential,
@@ -96,6 +120,10 @@ function configureMovieMentorJourneyRecoveryBootMount({
     basePath: cleanString(basePath) || DEFAULT_BASE_PATH,
     createRouter,
     mountGate,
+    activationBoundary,
+    activationAuthority,
+    processInstanceId: cleanString(processInstanceId),
+    deploymentId: cleanString(deploymentId),
   });
 
   const existing = ACTIVATIONS.get(app);
@@ -110,20 +138,61 @@ function configureMovieMentorJourneyRecoveryBootMount({
     if (existing.state === "mounted") {
       return alreadyMounted(existing);
     }
-
     if (existing.state === "uncertain") {
       uncertainMount(existing);
     }
   }
 
-  let mountAttempted = false;
+  const dependencyInspection = inspectMountDependencies({
+    verifyCredential: requested.verifyCredential,
+    expectedIssuer: requested.expectedIssuer || null,
+    expectedAudience: requested.expectedAudience || null,
+    createRouter: requested.createRouter,
+    mountRouter: () => {},
+  });
 
+  if (!dependencyInspection?.mountable) {
+    return Object.freeze({
+      ...dependencyInspection,
+      idempotent: false,
+      basePath: requested.basePath,
+      version: MOVIE_MENTOR_JOURNEY_RECOVERY_BOOT_MOUNT_INTEGRATION_VERSION,
+    });
+  }
+
+  const activation = await requested.activationBoundary({
+    processInstanceId: requested.processInstanceId || null,
+    deploymentId: requested.deploymentId || null,
+    basePath: requested.basePath,
+    expectedIssuer: requested.expectedIssuer,
+    expectedAudience: requested.expectedAudience,
+    authorizeActivation: requested.activationAuthority,
+  });
+
+  if (!activation?.authorized) {
+    return Object.freeze({
+      mountable: false,
+      mounted: false,
+      idempotent: false,
+      reason: activation?.reason || "cross-process-activation-not-authorized",
+      basePath: requested.basePath,
+      version: MOVIE_MENTOR_JOURNEY_RECOVERY_BOOT_MOUNT_INTEGRATION_VERSION,
+    });
+  }
+
+  const authorizedRequest = Object.freeze({
+    ...requested,
+    activationEpoch: activation.activationEpoch,
+    activationReference: activation.activationReference,
+  });
+
+  let mountAttempted = false;
   let result;
   try {
     result = mountGate({
       verifyCredential: requested.verifyCredential,
-      expectedIssuer: requested.expectedIssuer || null,
-      expectedAudience: requested.expectedAudience || null,
+      expectedIssuer: requested.expectedIssuer,
+      expectedAudience: requested.expectedAudience,
       createRouter: requested.createRouter,
       mountRouter: (router) => {
         mountAttempted = true;
@@ -135,7 +204,7 @@ function configureMovieMentorJourneyRecoveryBootMount({
       ACTIVATIONS.set(
         app,
         Object.freeze({
-          ...requested,
+          ...authorizedRequest,
           state: "uncertain",
         })
       );
@@ -147,7 +216,7 @@ function configureMovieMentorJourneyRecoveryBootMount({
     ACTIVATIONS.set(
       app,
       Object.freeze({
-        ...requested,
+        ...authorizedRequest,
         state: "mounted",
       })
     );
@@ -157,6 +226,10 @@ function configureMovieMentorJourneyRecoveryBootMount({
     ...result,
     idempotent: false,
     basePath: requested.basePath,
+    processInstanceId: requested.processInstanceId,
+    deploymentId: requested.deploymentId,
+    activationEpoch: activation.activationEpoch,
+    activationReference: activation.activationReference,
     version: MOVIE_MENTOR_JOURNEY_RECOVERY_BOOT_MOUNT_INTEGRATION_VERSION,
   });
 }
