@@ -1,0 +1,31 @@
+name: Verify Movie Mentor Journey Recovery Route Mount Dependency Gate
+
+on:
+  push:
+    paths:
+      - "ai/MovieMentorJourneyRecoveryRouteMountDependencyGate.js"
+      - "scripts/verify-movie-mentor-journey-recovery-route-mount-dependency-gate.mjs"
+      - ".github/workflows/verify-movie-mentor-journey-recovery-route-mount-dependency-gate.yml"
+  pull_request:
+    paths:
+      - "ai/MovieMentorJourneyRecoveryRouteMountDependencyGate.js"
+      - "scripts/verify-movie-mentor-journey-recovery-route-mount-dependency-gate.mjs"
+      - ".github/workflows/verify-movie-mentor-journey-recovery-route-mount-dependency-gate.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Syntax check dependency gate
+        run: node --check ai/MovieMentorJourneyRecoveryRouteMountDependencyGate.js
+
+      - name: Run dependency gate torture
+        run: node scripts/verify-movie-mentor-journey-recovery-route-mount-dependency-gate.mjs
