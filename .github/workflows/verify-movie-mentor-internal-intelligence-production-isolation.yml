@@ -1,0 +1,34 @@
+name: Verify Movie Mentor Internal Intelligence Production Isolation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/verify-movie-mentor-internal-intelligence-production-isolation.yml"
+      - "scripts/verify-movie-mentor-internal-intelligence-production-isolation.mjs"
+      - "server.js"
+      - "ai/MovieMentorTurnOrchestrator.js"
+      - "movieMentorSemantic.js"
+      - "movieMentorSpecialists.js"
+      - "movieMentorSynthesis.js"
+
+jobs:
+  verify-production-isolation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install dependencies
+        run: npm install
+      - name: Syntax check 5A.2 boundary
+        run: |
+          node --check server.js
+          node --check scripts/verify-movie-mentor-internal-intelligence-production-isolation.mjs
+      - name: Run 5A.2 production isolation torture
+        run: node scripts/verify-movie-mentor-internal-intelligence-production-isolation.mjs
