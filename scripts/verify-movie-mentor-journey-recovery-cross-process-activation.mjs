@@ -8,6 +8,15 @@ function app() {
   return { mounts, use(path, router) { mounts.push({ path, router }); } };
 }
 
+function fakeLiveFence() {
+  return {
+    guardRouter: (router) => router,
+    start() {},
+    stop() {},
+    async assertCurrentAuthority() { return { authorized: true }; },
+  };
+}
+
 function base(processInstanceId, activationAuthority) {
   return {
     verifyCredential: async () => ({ verified: true }),
@@ -18,12 +27,14 @@ function base(processInstanceId, activationAuthority) {
     processInstanceId,
     deploymentId: "deploy-42",
     activationAuthority,
+    renewActivation: async () => ({ authorized: true }),
+    assertFence: async () => ({ authorized: true }),
+    createLiveFence: fakeLiveFence,
   };
 }
 
 console.log("3C.5E.4F — cross-process / restart activation reality torture");
 
-// Boundary itself is fail closed without an external authority.
 {
   const denied = await authorizeMovieMentorJourneyRecoveryProcessActivation({
     processInstanceId: "process-A",
@@ -36,7 +47,6 @@ console.log("3C.5E.4F — cross-process / restart activation reality torture");
   assert.equal(denied.reason, "cross-process-activation-authority-unavailable");
 }
 
-// Current production reality remains closed before any cross-process ceremony.
 {
   let authorityCalls = 0;
   const currentApp = app();
@@ -50,7 +60,6 @@ console.log("3C.5E.4F — cross-process / restart activation reality torture");
   assert.equal(currentApp.mounts.length, 0);
 }
 
-// Simulated external coordinator: exactly one live holder for this deployment.
 let holder = null;
 let epoch = 0;
 const coordinator = async (request) => {
@@ -64,11 +73,12 @@ const coordinator = async (request) => {
     ...request,
     activationEpoch: `epoch-${epoch}`,
     activationReference: `lease-${request.processInstanceId}-${epoch}`,
+    fencingToken: `fence-${request.processInstanceId}-${epoch}`,
+    expiresAt: "2099-01-01T00:00:00.000Z",
     authorizationSource: "synthetic-exclusive-coordinator",
   };
 };
 
-// Process A receives external authority and mounts.
 const processAApp = app();
 const processA = await configureMovieMentorJourneyRecoveryBootMount({
   app: processAApp,
@@ -77,8 +87,6 @@ const processA = await configureMovieMentorJourneyRecoveryBootMount({
 assert.equal(processA.mounted, true);
 assert.equal(processAApp.mounts.length, 1);
 
-// Fresh Process B has empty local memory, but that proves nothing. While the
-// external coordinator still says A owns activation, B must remain closed.
 const processBApp = app();
 const processBDenied = await configureMovieMentorJourneyRecoveryBootMount({
   app: processBApp,
@@ -88,7 +96,6 @@ assert.equal(processBDenied.mounted, false);
 assert.equal(processBDenied.reason, "cross-process-activation-not-authorized");
 assert.equal(processBApp.mounts.length, 0);
 
-// Only an explicit service-level handoff can make B mountable after restart.
 holder = null;
 const processBAllowed = await configureMovieMentorJourneyRecoveryBootMount({
   app: processBApp,
@@ -97,7 +104,6 @@ const processBAllowed = await configureMovieMentorJourneyRecoveryBootMount({
 assert.equal(processBAllowed.mounted, true);
 assert.equal(processBApp.mounts.length, 1);
 
-// Forged/misbound evidence cannot authorize another process.
 {
   const evilApp = app();
   const forgedAuthority = async (request) => ({
@@ -106,6 +112,9 @@ assert.equal(processBApp.mounts.length, 1);
     processInstanceId: "different-process",
     activationEpoch: "epoch-zorg",
     activationReference: "lease-zorg",
+    fencingToken: "fence-zorg",
+    expiresAt: "2099-01-01T00:00:00.000Z",
+    authorizationSource: "synthetic-forged-authority",
   });
   const denied = await configureMovieMentorJourneyRecoveryBootMount({
     app: evilApp,
@@ -115,7 +124,6 @@ assert.equal(processBApp.mounts.length, 1);
   assert.equal(evilApp.mounts.length, 0);
 }
 
-// A verifier alone is no longer enough for a fresh process to expose recovery.
 {
   const orphanApp = app();
   const result = await configureMovieMentorJourneyRecoveryBootMount({
@@ -132,5 +140,6 @@ console.log("✓ overlapping process is denied while predecessor remains holder"
 console.log("✓ explicit handoff permits restart activation");
 console.log("✓ forged process/deployment binding is rejected");
 console.log("✓ verifier alone cannot authorize cross-process remount");
+console.log("✓ fixture carries the current fenced activation evidence and live-fence contract");
 console.log("LAW: restart is not authority to remount");
 console.log("3C.5E.4F torture: GREEN");

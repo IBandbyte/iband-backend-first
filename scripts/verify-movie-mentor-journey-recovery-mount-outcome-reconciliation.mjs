@@ -2,6 +2,15 @@ import assert from "node:assert/strict";
 
 import { configureMovieMentorJourneyRecoveryBootMount } from "../ai/MovieMentorJourneyRecoveryBootMountIntegration.js";
 
+function fakeLiveFence() {
+  return {
+    guardRouter: (router) => router,
+    start() {},
+    stop() {},
+    async assertCurrentAuthority() { return { authorized: true }; },
+  };
+}
+
 function deps(overrides = {}) {
   const verifyCredential = async () => ({ verified: true });
   const createRouter = () => Object.freeze({ kind: "router" });
@@ -10,6 +19,9 @@ function deps(overrides = {}) {
     ...request,
     activationEpoch: "epoch-1",
     activationReference: "activation-ref-1",
+    fencingToken: "fence-1",
+    expiresAt: "2099-01-01T00:00:00.000Z",
+    authorizationSource: "synthetic-mount-reconciliation-authority",
   });
   return {
     verifyCredential,
@@ -20,6 +32,9 @@ function deps(overrides = {}) {
     processInstanceId: "process-A",
     deploymentId: "deploy-1",
     activationAuthority,
+    renewActivation: async () => ({ authorized: true }),
+    assertFence: async () => ({ authorized: true }),
+    createLiveFence: fakeLiveFence,
     ...overrides,
   };
 }
@@ -80,5 +95,6 @@ console.log("✓ app.use ACK loss cannot trigger blind remount");
 console.log("✓ exact uncertain retry is terminal for current app instance");
 console.log("✓ dependency/process drift during uncertainty is a conflict");
 console.log("✓ pre-app.use failure remains safely retryable");
+console.log("✓ fixture supplies the current fenced activation evidence and live-fence contract");
 console.log("LAW: uncertainty is not authorization to remount");
 console.log("3C.5E.4E torture: GREEN");

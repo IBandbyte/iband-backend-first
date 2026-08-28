@@ -13,6 +13,15 @@ function fakeApp({ throwOnUse = false } = {}) {
   };
 }
 
+function fakeLiveFence() {
+  return {
+    guardRouter: (router) => router,
+    start() {},
+    stop() {},
+    async assertCurrentAuthority() { return { authorized: true }; },
+  };
+}
+
 function realDeps(overrides = {}) {
   const verifyCredential = async () => ({ verified: true });
   const createRouter = () => Object.freeze({ kind: "router" });
@@ -21,6 +30,9 @@ function realDeps(overrides = {}) {
     ...request,
     activationEpoch: "epoch-1",
     activationReference: "activation-ref-1",
+    fencingToken: "fence-1",
+    expiresAt: "2099-01-01T00:00:00.000Z",
+    authorizationSource: "synthetic-activation-integrity-authority",
   });
   return {
     verifyCredential,
@@ -31,6 +43,9 @@ function realDeps(overrides = {}) {
     processInstanceId: "process-A",
     deploymentId: "deploy-1",
     activationAuthority,
+    renewActivation: async () => ({ authorized: true }),
+    assertFence: async () => ({ authorized: true }),
+    createLiveFence: fakeLiveFence,
     ...overrides,
   };
 }
@@ -94,4 +109,5 @@ console.log("✓ partial configuration never latches false activation");
 console.log("✓ exact boot retry cannot double-mount");
 console.log("✓ verifier/trust/path/process/deployment drift are conflicts");
 console.log("✓ pre-mount construction failure remains retryable");
+console.log("✓ fixture supplies the current certified live-fence contract without weakening 4D semantics");
 console.log("3C.5E.4D torture: GREEN");
