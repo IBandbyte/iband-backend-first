@@ -6,12 +6,15 @@ console.log("5A.2 — internal intelligence surface production isolation torture
 const server = fs.readFileSync(new URL("../server.js", import.meta.url), "utf8");
 const orchestrator = fs.readFileSync(new URL("../ai/MovieMentorTurnOrchestrator.js", import.meta.url), "utf8");
 
-for (const basePath of [
-  "/api/movie-mentor-semantic",
-  "/api/movie-mentor-specialists",
-  "/api/movie-mentor-synthesis",
+for (const forbidden of [
+  'mountRoute("/api/movie-mentor-semantic"',
+  'mountRoute("/api/movie-mentor-specialists"',
+  'mountRoute("/api/movie-mentor-synthesis"',
+  'app.use("/api/movie-mentor-semantic"',
+  'app.use("/api/movie-mentor-specialists"',
+  'app.use("/api/movie-mentor-synthesis"',
 ]) {
-  assert.equal(server.includes(basePath), false, `${basePath} must have zero production mount references`);
+  assert.equal(server.includes(forbidden), false, `${forbidden} must not exist in production boot`);
 }
 
 assert.match(server, /app\.use\("\/api\/movie-mentor", router\)/, "canonical creator gateway must remain mounted through explicit authority composition");
@@ -30,9 +33,9 @@ for (const adapter of ["movieMentorSemantic.js", "movieMentorSpecialists.js", "m
   assert.equal(fs.existsSync(new URL(`../${adapter}`, import.meta.url)), true, `${adapter} may remain as an unmounted adapter/test fixture`);
 }
 
-console.log("✓ semantic standalone HTTP adapter has zero production exposure");
-console.log("✓ specialist standalone HTTP adapter has zero production exposure");
-console.log("✓ synthesis standalone HTTP adapter has zero production exposure");
+console.log("✓ semantic standalone HTTP adapter has zero production mount");
+console.log("✓ specialist standalone HTTP adapter has zero production mount");
+console.log("✓ synthesis standalone HTTP adapter has zero production mount");
 console.log("✓ canonical authenticated creator gateway remains production-mounted");
 console.log("✓ certified recovery assembly remains untouched");
 console.log("✓ semantic, specialist and synthesis capabilities remain internal to canonical turn orchestration");
