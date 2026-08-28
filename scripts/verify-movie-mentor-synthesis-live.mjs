@@ -1,5 +1,20 @@
-import assert from "node:assert/strict"; import {mkdirSync,writeFileSync} from "node:fs"; import {dirname} from "node:path";
-const BASE=(process.env.IBAND_LIVE_BACKEND_URL||"https://iband-backend-first-1.onrender.com").replace(/\/$/,""); const URL=`${BASE}/api/movie-mentor-synthesis/synthesize`; const REPORT="verification-results/movie-mentor-synthesis-live.json";
-const report={generatedAt:new Date().toISOString(),baseUrl:BASE,passed:false,text:null,decision:null,error:null}; function save(){mkdirSync(dirname(REPORT),{recursive:true});writeFileSync(REPORT,JSON.stringify(report,null,2)+"\n");}
-const contribution=(agentId,suggestion,risk)=>({agentId,observations:[{key:"dramatic-focus",value:suggestion,reason:"test tension",confidence:.9}],provisionalSuggestions:[{key:"direction",value:suggestion,reason:"provisional option",confidence:.88}],risksAndConflicts:[{key:"tension",value:risk,reason:"competing emphasis",confidence:.85}],creatorConfirmedDependencies:[{key:"movie.relationship",value:"sisters"}],confidence:.9,provenance:{source:"movie-mentor-specialist-agent",model:"live",contractVersion:"1.0.0"},authority:"mentor-provisional",creatorFacing:false,mayAdvanceJourney:false,mayOverwriteCreatorTruth:false,requiresMentorSynthesis:true});
-try{const body={creatorMessage:"The sisters love each other, but I want the radio mystery to stay central.",creatorConfirmedContext:[{key:"movie.relationship",value:"sisters",authority:"creator"}],semanticIntelligence:{understoodContext:[{key:"movie.relationship",value:"sisters"}],provisionalContext:[],unresolvedContext:[],clarificationNeeded:[],readyToAdvance:true},semanticMentorDraft:"The radio mystery can stay central while the sisters' relationship gives it emotional weight.",contributions:[contribution("story","Escalate the radio's tomorrow-messages into the main external mystery.","Too much family material could dilute the mystery."),contribution("character","Let the sisters' unresolved grief drive how differently they use the radio.","Too much puzzle emphasis could flatten their emotional choices.")]};const r=await fetch(URL,{method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},body:JSON.stringify(body)});const text=await r.text();let json;try{json=JSON.parse(text);}catch{json={raw:text};}assert.equal(r.ok,true,`live synthesis failed ${r.status}: ${text}`);assert.equal(typeof json?.text,"string");assert.equal(json.text.length>20,true);assert.equal(/story agent|character agent|specialist agent/i.test(json.text),false,"internal agent voice leaked");assert.equal(json?.authority?.mayAdvanceJourney,false);assert.equal(json?.authority?.specialistContentBecomesCanonicalTruth,false);assert.equal(Array.isArray(json?.synthesisDecision?.conflictsHandled),true);report.passed=true;report.text=json.text;report.decision=json.synthesisDecision;}catch(e){report.error={message:e instanceof Error?e.message:String(e),code:e?.code||null};process.exitCode=1;}finally{save();}
+import assert from "node:assert/strict";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
+
+const BASE=(process.env.IBAND_LIVE_BACKEND_URL||"https://iband-backend-first-1.onrender.com").replace(/\/$/,"");
+const URL=`${BASE}/api/movie-mentor-synthesis/synthesize`;
+const REPORT=process.env.IBAND_LIVE_REPORT_PATH||"verification-results/movie-mentor-synthesis-live.json";
+const report={generatedAt:new Date().toISOString(),baseUrl:BASE,passed:false,status:null,publiclyIsolated:false,error:null};
+function save(){mkdirSync(dirname(REPORT),{recursive:true});writeFileSync(REPORT,JSON.stringify(report,null,2)+"\n");}
+
+try{
+  const response=await fetch(URL,{method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},body:JSON.stringify({creatorMessage:"Public synthesis bypass probe"})});
+  report.status=response.status;
+  assert.equal(response.status,404,"standalone synthesis execution must not be publicly mounted");
+  report.publiclyIsolated=true;
+  report.passed=true;
+}catch(error){
+  report.error={message:error instanceof Error?error.message:String(error),code:error?.code||null};
+  process.exitCode=1;
+}finally{save();}
