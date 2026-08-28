@@ -1,0 +1,25 @@
+name: Verify Movie Mentor Creator Production Authorization
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  verify-movie-mentor-creator-production-authorization:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - name: Syntax check 5A.1 production authorization
+        run: |
+          node --check ai/MovieMentorCreatorRequestAuthority.js
+          node --check ai/MovieMentorProductionAuthenticationComposition.js
+          node --check movieMentorTurn.js
+          node --check server.js
+          node --check scripts/verify-movie-mentor-creator-production-authorization.mjs
+      - name: Run 5A.1 creator production authorization torture
+        run: node scripts/verify-movie-mentor-creator-production-authorization.mjs
