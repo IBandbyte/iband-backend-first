@@ -90,8 +90,11 @@ function readyStatus() {
 
 {
   const composition = fs.readFileSync(new URL("../ai/MovieMentorJourneyRecoveryActivationLeaseComposition.js", import.meta.url), "utf8");
-  assert.doesNotMatch(composition, /server\.js/);
-  assert.doesNotMatch(composition, /express/i);
+  // Check executable import statements, not explanatory comments documenting the
+  // constitutional rule that this layer must not import the production entrypoint.
+  assert.doesNotMatch(composition, /^\s*import\s+.*(?:from\s+)?["'][^"']*server\.js["']/m);
+  assert.doesNotMatch(composition, /\bexpress\s*\(/i);
+  assert.doesNotMatch(composition, /from\s+["']express["']/i);
 }
 
 console.log("✅ 3C.5E.4G.3 production boot activation wiring torture passed");
