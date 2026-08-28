@@ -1,0 +1,66 @@
+name: Verify Movie Mentor Journey Recovery Cross Process Activation
+
+on:
+  push:
+    paths:
+      - "server.js"
+      - "ai/MovieMentorJourneyRecoveryCrossProcessActivationBoundary.js"
+      - "ai/MovieMentorJourneyRecoveryBootMountIntegration.js"
+      - "ai/MovieMentorJourneyRecoveryRouteMountDependencyGate.js"
+      - "ai/MovieMentorJourneyRecoveryExpressRouterFactory.js"
+      - "ai/MovieMentorJourneyRecoveryHttpTransportAdapter.js"
+      - "ai/MovieMentorJourneyRecoveryPublicationBoundary.js"
+      - "ai/MovieMentorJourneyRecoveryRequestAuthority.js"
+      - "ai/MovieMentorDeterministicPrincipalAdapter.js"
+      - "ai/MovieMentorJourneyRecoveryAuthorizationBoundary.js"
+      - "ai/MovieMentorProjectOwnershipRegistry.js"
+      - "ai/MovieMentorJourneyRecoveryEnvelope.js"
+      - "ai/MovieMentorJourneyRecoveryTransition.js"
+      - "ai/MovieMentorJourneyRecoveryStore.js"
+      - "scripts/verify-movie-mentor-journey-recovery-cross-process-activation.mjs"
+      - ".github/workflows/verify-movie-mentor-journey-recovery-cross-process-activation.yml"
+  pull_request:
+    paths:
+      - "server.js"
+      - "ai/MovieMentorJourneyRecoveryCrossProcessActivationBoundary.js"
+      - "ai/MovieMentorJourneyRecoveryBootMountIntegration.js"
+      - "ai/MovieMentorJourneyRecoveryRouteMountDependencyGate.js"
+      - "ai/MovieMentorJourneyRecoveryExpressRouterFactory.js"
+      - "ai/MovieMentorJourneyRecoveryHttpTransportAdapter.js"
+      - "ai/MovieMentorJourneyRecoveryPublicationBoundary.js"
+      - "ai/MovieMentorJourneyRecoveryRequestAuthority.js"
+      - "ai/MovieMentorDeterministicPrincipalAdapter.js"
+      - "ai/MovieMentorJourneyRecoveryAuthorizationBoundary.js"
+      - "ai/MovieMentorProjectOwnershipRegistry.js"
+      - "ai/MovieMentorJourneyRecoveryEnvelope.js"
+      - "ai/MovieMentorJourneyRecoveryTransition.js"
+      - "ai/MovieMentorJourneyRecoveryStore.js"
+      - "scripts/verify-movie-mentor-journey-recovery-cross-process-activation.mjs"
+      - ".github/workflows/verify-movie-mentor-journey-recovery-cross-process-activation.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install backend dependencies
+        run: npm install --no-audit --no-fund --ignore-scripts
+
+      - name: Syntax check cross-process boundary
+        run: node --check ai/MovieMentorJourneyRecoveryCrossProcessActivationBoundary.js
+
+      - name: Syntax check boot integration
+        run: node --check ai/MovieMentorJourneyRecoveryBootMountIntegration.js
+
+      - name: Syntax check server
+        run: node --check server.js
+
+      - name: Run cross-process activation torture
+        run: node scripts/verify-movie-mentor-journey-recovery-cross-process-activation.mjs
