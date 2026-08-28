@@ -1,4 +1,4 @@
-name: Verify Movie Mentor Live Synthesis
+name: Verify Movie Mentor Live Synthesis Isolation
 on:
   workflow_dispatch:
   push:
@@ -6,14 +6,12 @@ on:
     paths:
       - ".github/workflows/verify-movie-mentor-synthesis-live.yml"
       - "scripts/verify-movie-mentor-synthesis-live.mjs"
-      - "ai/MovieMentorSynthesisEngine.js"
-      - "ai/StructuredAIProviderClient.js"
       - "movieMentorSynthesis.js"
       - "server.js"
 permissions:
   contents: write
 jobs:
-  live-synthesis-verification:
+  live-synthesis-isolation:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
@@ -25,16 +23,17 @@ jobs:
           node-version: "20"
       - name: Wait for Render deployment to settle
         run: sleep 75
-      - name: Verify live Story plus Character Mentor synthesis tension case
+      - name: Verify standalone synthesis route is not public
         continue-on-error: true
         env:
           IBAND_LIVE_BACKEND_URL: https://iband-backend-first-1.onrender.com
+          IBAND_LIVE_REPORT_PATH: verification-results/movie-mentor-synthesis-live.json
         run: node scripts/verify-movie-mentor-synthesis-live.mjs
       - name: Commit verification report
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add verification-results/movie-mentor-synthesis-live.json
-          if git diff --cached --quiet; then echo "No verification report change to commit."; else git commit -m "test: record live Movie Mentor synthesis verification"; git pull --rebase origin main; git push origin HEAD:main; fi
-      - name: Enforce live verification result
-        run: node -e 'const fs=require("fs");const r=JSON.parse(fs.readFileSync("verification-results/movie-mentor-synthesis-live.json","utf8"));console.log(JSON.stringify(r,null,2));if(!r.passed)process.exit(1);'
+          if git diff --cached --quiet; then echo "No verification report change to commit."; else git commit -m "test: record live Movie Mentor synthesis isolation"; git pull --rebase origin main; git push origin HEAD:main; fi
+      - name: Enforce live isolation result
+        run: node -e 'const fs=require("fs");const r=JSON.parse(fs.readFileSync("verification-results/movie-mentor-synthesis-live.json","utf8"));console.log(JSON.stringify(r,null,2));if(!r.passed || !r.publiclyIsolated)process.exit(1);'
