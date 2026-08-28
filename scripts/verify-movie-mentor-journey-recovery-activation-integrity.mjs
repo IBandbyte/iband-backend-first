@@ -42,7 +42,6 @@ function expectConflict(fn) {
 
 console.log("3C.5E.4D — recovery activation integrity torture");
 
-// Partial configuration stays closed and does not poison future valid activation.
 {
   const app = fakeApp();
   const closed = configureMovieMentorJourneyRecoveryBootMount({
@@ -61,7 +60,6 @@ console.log("3C.5E.4D — recovery activation integrity torture");
   assert.equal(app.mounts.length, 1);
 }
 
-// Exact repeated boot is idempotent: no second router construction and no app.use.
 {
   const app = fakeApp();
   const verifyCredential = async () => ({ verified: true });
@@ -84,7 +82,6 @@ console.log("3C.5E.4D — recovery activation integrity torture");
   assert.equal(app.mounts.length, 1);
 }
 
-// Once mounted, every authority/configuration downgrade or drift is rejected.
 {
   const app = fakeApp();
   const verifyCredential = async () => ({ verified: true });
@@ -93,11 +90,7 @@ console.log("3C.5E.4D — recovery activation integrity torture");
   configureMovieMentorJourneyRecoveryBootMount({ app, ...deps });
 
   expectConflict(() =>
-    configureMovieMentorJourneyRecoveryBootMount({
-      app,
-      ...deps,
-      verifyCredential: null,
-    }),
+    configureMovieMentorJourneyRecoveryBootMount({ app, ...deps, verifyCredential: null }),
   );
   expectConflict(() =>
     configureMovieMentorJourneyRecoveryBootMount({
@@ -135,10 +128,9 @@ console.log("3C.5E.4D — recovery activation integrity torture");
     }),
   );
 
-  assert.equal(app.mounts.length, 1, "drift must never create a second mount");
+  assert.equal(app.mounts.length, 1);
 }
 
-// Mutable caller configuration cannot rewrite the snapshot after activation.
 {
   const app = fakeApp();
   const verifyCredential = async () => ({ verified: true });
@@ -158,7 +150,6 @@ console.log("3C.5E.4D — recovery activation integrity torture");
   assert.equal(app.mounts.length, 1);
 }
 
-// Router construction failure does not leave a false activation latch.
 {
   const app = fakeApp();
   const verifyCredential = async () => ({ verified: true });
@@ -184,14 +175,19 @@ console.log("3C.5E.4D — recovery activation integrity torture");
   assert.equal(app.mounts.length, 1);
 }
 
-// app.use failure also cannot record a mount that never completed.
+// Once app.use itself throws, reality is ambiguous. 4E owns the rule that the
+// same app instance may never blindly remount.
 {
   const app = fakeApp({ throwOnUse: true });
   const deps = realDeps();
   assert.throws(() => configureMovieMentorJourneyRecoveryBootMount({ app, ...deps }));
   assert.equal(app.mounts.length, 0);
+  assert.throws(
+    () => configureMovieMentorJourneyRecoveryBootMount({ app, ...deps }),
+    (error) =>
+      error?.code === "MOVIE_MENTOR_JOURNEY_RECOVERY_BOOT_MOUNT_OUTCOME_UNCERTAIN",
+  );
 
-  // A different healthy app remains independently activatable.
   const healthyApp = fakeApp();
   const healthy = configureMovieMentorJourneyRecoveryBootMount({
     app: healthyApp,
@@ -201,10 +197,11 @@ console.log("3C.5E.4D — recovery activation integrity torture");
   assert.equal(healthyApp.mounts.length, 1);
 }
 
-console.log("✓ partial configuration never latches a false activation");
-console.log("✓ exact boot retry is idempotent and cannot double-mount");
+console.log("✓ partial configuration never latches a false successful activation");
+console.log("✓ exact successful boot retry is idempotent and cannot double-mount");
 console.log("✓ verifier replacement and auth-policy drift are rejected after mount");
 console.log("✓ path/factory drift cannot create a second recovery surface");
 console.log("✓ mutable caller config cannot rewrite the captured activation snapshot");
-console.log("✓ router/app.use failure cannot create phantom mounted state");
+console.log("✓ router construction failure before app.use remains safely retryable");
+console.log("✓ app.use uncertainty blocks blind remount on the same app instance");
 console.log("3C.5E.4D torture: GREEN");
