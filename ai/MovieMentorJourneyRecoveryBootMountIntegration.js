@@ -4,8 +4,9 @@ import {
 } from "./MovieMentorJourneyRecoveryRouteMountDependencyGate.js";
 import { createMovieMentorJourneyRecoveryExpressRouter } from "./MovieMentorJourneyRecoveryExpressRouterFactory.js";
 import { authorizeMovieMentorJourneyRecoveryProcessActivation } from "./MovieMentorJourneyRecoveryCrossProcessActivationBoundary.js";
+import { createMovieMentorJourneyRecoveryLiveFenceEnforcement } from "./MovieMentorJourneyRecoveryLiveFenceEnforcement.js";
 
-const MOVIE_MENTOR_JOURNEY_RECOVERY_BOOT_MOUNT_INTEGRATION_VERSION = "1.3.0";
+const MOVIE_MENTOR_JOURNEY_RECOVERY_BOOT_MOUNT_INTEGRATION_VERSION = "1.4.0";
 const DEFAULT_BASE_PATH = "/api/movie-mentor-recovery";
 const ACTIVATIONS = new WeakMap();
 
@@ -29,17 +30,36 @@ function sameActivation(existing, requested) {
     existing.mountGate === requested.mountGate &&
     existing.activationBoundary === requested.activationBoundary &&
     existing.activationAuthority === requested.activationAuthority &&
+    existing.renewActivation === requested.renewActivation &&
+    existing.assertFence === requested.assertFence &&
     existing.processInstanceId === requested.processInstanceId &&
     existing.deploymentId === requested.deploymentId
   );
 }
 
-function alreadyMounted(existing) {
+function mountedResult(existing, reason = "already-mounted-with-identical-activation") {
   return Object.freeze({
     mountable: true,
     mounted: true,
     idempotent: true,
-    reason: "already-mounted-with-identical-activation",
+    reason,
+    basePath: existing.basePath,
+    processInstanceId: existing.processInstanceId,
+    deploymentId: existing.deploymentId,
+    activationEpoch: existing.activationEpoch,
+    activationReference: existing.activationReference,
+    fencingToken: existing.fencingToken,
+    expiresAt: existing.expiresAt,
+    version: MOVIE_MENTOR_JOURNEY_RECOVERY_BOOT_MOUNT_INTEGRATION_VERSION,
+  });
+}
+
+function closedMountedResult(existing, reason) {
+  return Object.freeze({
+    mountable: false,
+    mounted: false,
+    idempotent: true,
+    reason: reason || "activation-lease-authority-lost",
     basePath: existing.basePath,
     processInstanceId: existing.processInstanceId,
     deploymentId: existing.deploymentId,
@@ -59,7 +79,7 @@ function uncertainMount(existing) {
 }
 
 /**
- * 3C.5E.4C/4D/4E/4F — Production Recovery Route Activation
+ * 3C.5E.4C/4D/4E/4F/4G.4 — Production Recovery Route Activation
  *
  * 4C: fail-closed production boot wiring.
  * 4D: monotonic in-process activation configuration.
@@ -67,11 +87,13 @@ function uncertainMount(existing) {
  * 4F: a fresh process cannot infer service-level exposure reality from empty
  *     process-local memory. A mountable process must obtain externally supplied,
  *     process-bound activation authority before app.use is allowed.
+ * 4G.4: successful mount is not perpetual authority. The mounted router is
+ *       wrapped by live fence enforcement; renewal and request-time assertions
+ *       must continue proving durable authority.
  *
  * Constitutional law:
- *   Process-local absence is not proof of service-level absence.
- *   Restart is not authority to remount.
- *   Cross-process activation requires external reality evidence.
+ *   Physical mount is not continuing authority.
+ *   Lost or uncertain lease authority closes the live route immediately.
  */
 async function configureMovieMentorJourneyRecoveryBootMount({
   app = null,
@@ -84,6 +106,10 @@ async function configureMovieMentorJourneyRecoveryBootMount({
   inspectMountDependencies = inspectMovieMentorJourneyRecoveryRouteMountDependencies,
   activationBoundary = authorizeMovieMentorJourneyRecoveryProcessActivation,
   activationAuthority = null,
+  renewActivation = null,
+  assertFence = null,
+  createLiveFence = createMovieMentorJourneyRecoveryLiveFenceEnforcement,
+  liveFenceOptions = undefined,
   processInstanceId = null,
   deploymentId = null,
 } = {}) {
@@ -112,6 +138,12 @@ async function configureMovieMentorJourneyRecoveryBootMount({
       "Recovery boot integration requires the cross-process activation boundary."
     );
   }
+  if (typeof createLiveFence !== "function") {
+    fail(
+      "MOVIE_MENTOR_JOURNEY_RECOVERY_BOOT_LIVE_FENCE_FACTORY_REQUIRED",
+      "Recovery boot integration requires the certified live fence enforcement factory."
+    );
+  }
 
   const requested = Object.freeze({
     verifyCredential,
@@ -122,6 +154,8 @@ async function configureMovieMentorJourneyRecoveryBootMount({
     mountGate,
     activationBoundary,
     activationAuthority,
+    renewActivation,
+    assertFence,
     processInstanceId: cleanString(processInstanceId),
     deploymentId: cleanString(deploymentId),
   });
@@ -136,7 +170,11 @@ async function configureMovieMentorJourneyRecoveryBootMount({
     }
 
     if (existing.state === "mounted") {
-      return alreadyMounted(existing);
+      const live = await existing.liveFence.assertCurrentAuthority();
+      if (!live?.authorized) {
+        return closedMountedResult(existing, live?.reason);
+      }
+      return mountedResult(existing);
     }
     if (existing.state === "uncertain") {
       uncertainMount(existing);
@@ -155,6 +193,17 @@ async function configureMovieMentorJourneyRecoveryBootMount({
     return Object.freeze({
       ...dependencyInspection,
       idempotent: false,
+      basePath: requested.basePath,
+      version: MOVIE_MENTOR_JOURNEY_RECOVERY_BOOT_MOUNT_INTEGRATION_VERSION,
+    });
+  }
+
+  if (typeof requested.renewActivation !== "function" || typeof requested.assertFence !== "function") {
+    return Object.freeze({
+      mountable: false,
+      mounted: false,
+      idempotent: false,
+      reason: "live-fence-authority-unavailable",
       basePath: requested.basePath,
       version: MOVIE_MENTOR_JOURNEY_RECOVERY_BOOT_MOUNT_INTEGRATION_VERSION,
     });
@@ -180,10 +229,33 @@ async function configureMovieMentorJourneyRecoveryBootMount({
     });
   }
 
+  const liveFence = createLiveFence({
+    activationEvidence: activation,
+    renewActivation: requested.renewActivation,
+    assertFence: requested.assertFence,
+    ...(liveFenceOptions || {}),
+  });
+
+  if (
+    !liveFence ||
+    typeof liveFence.guardRouter !== "function" ||
+    typeof liveFence.start !== "function" ||
+    typeof liveFence.stop !== "function" ||
+    typeof liveFence.assertCurrentAuthority !== "function"
+  ) {
+    fail(
+      "MOVIE_MENTOR_JOURNEY_RECOVERY_BOOT_LIVE_FENCE_INVALID",
+      "Recovery boot integration received an invalid live fence enforcement contract."
+    );
+  }
+
   const authorizedRequest = Object.freeze({
     ...requested,
     activationEpoch: activation.activationEpoch,
     activationReference: activation.activationReference,
+    fencingToken: activation.fencingToken,
+    expiresAt: activation.expiresAt,
+    liveFence,
   });
 
   let mountAttempted = false;
@@ -196,10 +268,12 @@ async function configureMovieMentorJourneyRecoveryBootMount({
       createRouter: requested.createRouter,
       mountRouter: (router) => {
         mountAttempted = true;
-        return app.use(requested.basePath, router);
+        const guardedRouter = liveFence.guardRouter(router);
+        return app.use(requested.basePath, guardedRouter);
       },
     });
   } catch (error) {
+    liveFence.stop();
     if (mountAttempted) {
       ACTIVATIONS.set(
         app,
@@ -213,6 +287,7 @@ async function configureMovieMentorJourneyRecoveryBootMount({
   }
 
   if (result?.mounted === true) {
+    liveFence.start();
     ACTIVATIONS.set(
       app,
       Object.freeze({
@@ -220,6 +295,8 @@ async function configureMovieMentorJourneyRecoveryBootMount({
         state: "mounted",
       })
     );
+  } else {
+    liveFence.stop();
   }
 
   return Object.freeze({
@@ -230,6 +307,8 @@ async function configureMovieMentorJourneyRecoveryBootMount({
     deploymentId: requested.deploymentId,
     activationEpoch: activation.activationEpoch,
     activationReference: activation.activationReference,
+    fencingToken: activation.fencingToken,
+    expiresAt: activation.expiresAt,
     version: MOVIE_MENTOR_JOURNEY_RECOVERY_BOOT_MOUNT_INTEGRATION_VERSION,
   });
 }
