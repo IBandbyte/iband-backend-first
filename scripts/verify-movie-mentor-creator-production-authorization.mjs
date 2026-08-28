@@ -48,7 +48,7 @@ function ownershipAuthority(owner="creator-1") { return { async authorizeProject
 }
 
 const server=fs.readFileSync(new URL("../server.js",import.meta.url),"utf8");
-assert.match(server,/createMovieMentorProductionAuthenticationComposition/);assert.match(server,/createMovieMentorCreatorRequestAuthority/);assert.match(server,/createMovieMentorTurnRouter/);assert.match(server,/app\.use\("\/api\/movie-mentor",router\)/);assert.doesNotMatch(server,/mountRoute\("\/api\/movie-mentor","\.\/movieMentorTurn\.js"\)/);
+assert.match(server,/createMovieMentorProductionAuthenticationComposition/);assert.match(server,/createMovieMentorCreatorRequestAuthority/);assert.match(server,/createMovieMentorTurnRouter/);assert.match(server,/app\.use\("\/api\/movie-mentor",\s*router\)/);assert.doesNotMatch(server,/mountRoute\("\/api\/movie-mentor","\.\/movieMentorTurn\.js"\)/);
 const gateway=fs.readFileSync(new URL("../movieMentorTurn.js",import.meta.url),"utf8");assert.match(gateway,/requestAuthority\.authorize/);assert.match(gateway,/projectId/);assert.doesNotMatch(gateway,/creatorSessionId.*authorize/);
 
 console.log("✓ projectId is mandatory before ownership evaluation");
