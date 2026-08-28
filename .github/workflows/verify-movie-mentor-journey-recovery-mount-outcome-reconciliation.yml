@@ -1,0 +1,61 @@
+name: Verify Movie Mentor Journey Recovery Mount Outcome Reconciliation
+
+on:
+  push:
+    paths:
+      - "server.js"
+      - "ai/MovieMentorJourneyRecoveryBootMountIntegration.js"
+      - "ai/MovieMentorJourneyRecoveryRouteMountDependencyGate.js"
+      - "ai/MovieMentorJourneyRecoveryExpressRouterFactory.js"
+      - "ai/MovieMentorJourneyRecoveryHttpTransportAdapter.js"
+      - "ai/MovieMentorJourneyRecoveryPublicationBoundary.js"
+      - "ai/MovieMentorJourneyRecoveryRequestAuthority.js"
+      - "ai/MovieMentorDeterministicPrincipalAdapter.js"
+      - "ai/MovieMentorJourneyRecoveryAuthorizationBoundary.js"
+      - "ai/MovieMentorProjectOwnershipRegistry.js"
+      - "ai/MovieMentorJourneyRecoveryEnvelope.js"
+      - "ai/MovieMentorJourneyRecoveryTransition.js"
+      - "ai/MovieMentorJourneyRecoveryStore.js"
+      - "scripts/verify-movie-mentor-journey-recovery-mount-outcome-reconciliation.mjs"
+      - ".github/workflows/verify-movie-mentor-journey-recovery-mount-outcome-reconciliation.yml"
+  pull_request:
+    paths:
+      - "server.js"
+      - "ai/MovieMentorJourneyRecoveryBootMountIntegration.js"
+      - "ai/MovieMentorJourneyRecoveryRouteMountDependencyGate.js"
+      - "ai/MovieMentorJourneyRecoveryExpressRouterFactory.js"
+      - "ai/MovieMentorJourneyRecoveryHttpTransportAdapter.js"
+      - "ai/MovieMentorJourneyRecoveryPublicationBoundary.js"
+      - "ai/MovieMentorJourneyRecoveryRequestAuthority.js"
+      - "ai/MovieMentorDeterministicPrincipalAdapter.js"
+      - "ai/MovieMentorJourneyRecoveryAuthorizationBoundary.js"
+      - "ai/MovieMentorProjectOwnershipRegistry.js"
+      - "ai/MovieMentorJourneyRecoveryEnvelope.js"
+      - "ai/MovieMentorJourneyRecoveryTransition.js"
+      - "ai/MovieMentorJourneyRecoveryStore.js"
+      - "scripts/verify-movie-mentor-journey-recovery-mount-outcome-reconciliation.mjs"
+      - ".github/workflows/verify-movie-mentor-journey-recovery-mount-outcome-reconciliation.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install backend dependencies
+        run: npm install --no-audit --no-fund --ignore-scripts
+
+      - name: Syntax check boot integration
+        run: node --check ai/MovieMentorJourneyRecoveryBootMountIntegration.js
+
+      - name: Syntax check reconciliation torture
+        run: node --check scripts/verify-movie-mentor-journey-recovery-mount-outcome-reconciliation.mjs
+
+      - name: Run mount outcome reconciliation torture
+        run: node scripts/verify-movie-mentor-journey-recovery-mount-outcome-reconciliation.mjs
