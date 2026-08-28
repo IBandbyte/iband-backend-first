@@ -1,20 +1,24 @@
 // MovieMentorJourneyRecoveryCrossProcessActivationBoundary.js
-// Version: 1.0.0
+// Version: 1.1.0
 //
-// 3C.5E.4F — Cross-Process / Restart Activation Reality
+// 3C.5E.4F / 4G.4 — Cross-Process Activation Reality + Live Fence Evidence
 //
 // A process-local WeakMap cannot prove service-level exposure reality across
 // crashes, rolling deploys or overlapping instances. This boundary therefore
 // requires an externally supplied activation authority before a process may
 // conclude that it is allowed to expose the recovery route.
 //
+// 4G.4 additionally preserves the durable fencing token and lease expiry so a
+// successful mount can never be mistaken for perpetual authority to remain live.
+//
 // Constitutional law:
 //   Process-local absence is not proof of service-level absence.
 //   Restart is not authority to remount.
 //   Cross-process activation requires external reality evidence.
+//   Mount authority must preserve the fence needed to prove continuing authority.
 
 const DOMAIN = "iband.movie-mentor.journey-recovery-cross-process-activation";
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 function text(value) {
   return typeof value === "string" ? value.trim() : "";
@@ -31,6 +35,11 @@ function closed(reason) {
     domain: DOMAIN,
     schemaVersion: SCHEMA_VERSION,
   });
+}
+
+function validExpiry(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString();
 }
 
 export async function authorizeMovieMentorJourneyRecoveryProcessActivation({
@@ -86,7 +95,9 @@ export async function authorizeMovieMentorJourneyRecoveryProcessActivation({
 
   const activationEpoch = text(evidence.activationEpoch);
   const activationReference = text(evidence.activationReference);
-  if (!activationEpoch || !activationReference) {
+  const fencingToken = text(evidence.fencingToken);
+  const expiresAt = validExpiry(evidence.expiresAt);
+  if (!activationEpoch || !activationReference || !fencingToken || !expiresAt) {
     return closed("cross-process-activation-evidence-incomplete");
   }
 
@@ -100,6 +111,8 @@ export async function authorizeMovieMentorJourneyRecoveryProcessActivation({
     expectedAudience: audience,
     activationEpoch,
     activationReference,
+    fencingToken,
+    expiresAt,
     authorizationSource:
       text(evidence.authorizationSource) || "external-cross-process-activation-authority",
     domain: DOMAIN,
@@ -112,5 +125,5 @@ export const MOVIE_MENTOR_JOURNEY_RECOVERY_CROSS_PROCESS_ACTIVATION_BOUNDARY =
     domain: DOMAIN,
     schemaVersion: SCHEMA_VERSION,
     law:
-      "Process-local absence cannot authorize service-level remount; external process-bound activation evidence is required.",
+      "Process-local absence cannot authorize service-level remount; external process-bound activation evidence and its live fencing proof are required.",
   });
