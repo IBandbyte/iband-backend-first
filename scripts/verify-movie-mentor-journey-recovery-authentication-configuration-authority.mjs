@@ -77,16 +77,17 @@ assert.equal(status.bootWired, false);
 assert.equal(Object.isFrozen(status), true);
 
 const server = fs.readFileSync(new URL("../server.js", import.meta.url), "utf8");
-assert.match(server, /verifyCredential:\s*null/);
-assert.match(server, /expectedIssuer:\s*null/);
-assert.match(server, /expectedAudience:\s*null/);
+assert.match(server, /MovieMentorJourneyRecoveryProductionBootAssembly\.js/);
 assert.doesNotMatch(server, /MovieMentorJourneyRecoveryAuthenticationConfigurationAuthority/);
+assert.doesNotMatch(server, /verifyCredential:\s*null/);
+assert.doesNotMatch(server, /expectedIssuer:\s*null/);
+assert.doesNotMatch(server, /expectedAudience:\s*null/);
 
 console.log("[4H.1] missing authentication configuration stays closed");
 console.log("[4H.1] partial authentication configuration leaks zero authority");
 console.log("[4H.1] wildcard issuer/audience trust is forbidden");
 console.log("[4H.1] complete explicit configuration preserves exact verifier dependency");
-console.log("[4H.1] server.js remains deliberately unwired and recovery exposure remains closed");
+console.log("[4H.1] final server exposure may reach authentication only through the certified production boot assembly");
 console.log("🐔 Zorg: 'But everyone is technically an audience.'");
 console.log("🏏💥 NOT IN AN AUTHENTICATION POLICY, ZORG.");
 console.log("[4H.1] PASS");

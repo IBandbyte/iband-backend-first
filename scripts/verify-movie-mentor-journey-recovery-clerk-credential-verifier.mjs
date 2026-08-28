@@ -176,10 +176,11 @@ for (const mutation of [
 }
 
 const server = fs.readFileSync(new URL("../server.js", import.meta.url), "utf8");
-assert.match(server, /verifyCredential:\s*null/);
-assert.match(server, /expectedIssuer:\s*null/);
-assert.match(server, /expectedAudience:\s*null/);
+assert.match(server, /MovieMentorJourneyRecoveryProductionBootAssembly\.js/);
 assert.doesNotMatch(server, /MovieMentorJourneyRecoveryClerkCredentialVerifier/);
+assert.doesNotMatch(server, /verifyCredential:\s*null/);
+assert.doesNotMatch(server, /expectedIssuer:\s*null/);
+assert.doesNotMatch(server, /expectedAudience:\s*null/);
 
 console.log("[4H.2] pinned Clerk public key required; private key forbidden");
 console.log("[4H.2] explicit authorized parties required; wildcard trust forbidden");
@@ -188,7 +189,7 @@ console.log("[4H.2] Clerk verifier receives pinned key, exact audience, exact au
 console.log("[4H.2] issuer and audience are independently re-checked after provider verification");
 console.log("[4H.2] verified Unix timestamps are normalized before the deterministic principal boundary");
 console.log("[4H.2] provider rejection and malformed verified claims fail closed");
-console.log("[4H.2] server.js remains deliberately unwired; recovery route remains closed");
+console.log("[4H.2] server.js cannot import provider verification directly; final boot assembly owns the production path");
 console.log("🐔 Zorg: 'I changed alg to none. That means less cryptography to go wrong.'");
 console.log("🏏💥 IT ALSO MEANS LESS ZORG TO GO RIGHT.");
 console.log("[4H.2] PASS");

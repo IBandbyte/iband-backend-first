@@ -168,18 +168,25 @@ assert.equal(realReadyStatus.provider, "clerk");
 assert.equal(realReadyStatus.bootWired, true);
 
 const server = fs.readFileSync(new URL("../server.js", import.meta.url), "utf8");
-assert.match(server, /verifyCredential:\s*null/);
-assert.match(server, /expectedIssuer:\s*null/);
-assert.match(server, /expectedAudience:\s*null/);
+assert.match(server, /MovieMentorJourneyRecoveryProductionBootAssembly\.js/);
 assert.doesNotMatch(server, /MovieMentorJourneyRecoveryProductionBootAuthentication/);
 assert.doesNotMatch(server, /createMovieMentorJourneyRecoveryProductionAuthenticationComposition/);
+assert.doesNotMatch(server, /verifyCredential:\s*null/);
+assert.doesNotMatch(server, /expectedIssuer:\s*null/);
+assert.doesNotMatch(server, /expectedAudience:\s*null/);
+
+const assembly = fs.readFileSync(new URL("../ai/MovieMentorJourneyRecoveryProductionBootAssembly.js", import.meta.url), "utf8");
+assert.match(assembly, /MovieMentorJourneyRecoveryProductionBootAuthentication\.js/);
+assert.match(assembly, /verifyCredential:\s*bootAuthentication\?\.verifyCredential/);
+assert.match(assembly, /expectedIssuer:\s*bootAuthentication\?\.expectedIssuer/);
+assert.match(assembly, /expectedAudience:\s*bootAuthentication\?\.expectedAudience/);
 
 console.log("[4H.4] absent and partial composition readiness leaks zero boot authentication authority");
 console.log("[4H.4] closed status prevents composition construction");
 console.log("[4H.4] malformed ready composition cannot manufacture boot authority");
 console.log("[4H.4] exact verifier, issuer, audience and authorized parties cross the boot adapter boundary");
 console.log("[4H.4] composition remains bootWired=false while the explicit adapter becomes bootWired=true");
-console.log("[4H.4] server.js still contains all three authentication nulls and imports no boot auth adapter");
+console.log("[4H.4] final production assembly consumes the certified boot adapter; server.js never manufactures auth authority");
 console.log("🐔 Zorg: 'You built the wire. Surely I can plug it in now.'");
-console.log("🏏💥 STEP AWAY FROM THE SOCKET, ZORG.");
+console.log("🏏💥 ONLY THE FINAL ASSEMBLY GETS THE SOCKET, ZORG.");
 console.log("[4H.4] PASS");

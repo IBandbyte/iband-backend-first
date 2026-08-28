@@ -173,10 +173,11 @@ expectCode(
 );
 
 const server = fs.readFileSync(new URL("../server.js", import.meta.url), "utf8");
-assert.match(server, /verifyCredential:\s*null/);
-assert.match(server, /expectedIssuer:\s*null/);
-assert.match(server, /expectedAudience:\s*null/);
+assert.match(server, /MovieMentorJourneyRecoveryProductionBootAssembly\.js/);
 assert.doesNotMatch(server, /MovieMentorJourneyRecoveryProductionAuthenticationComposition/);
+assert.doesNotMatch(server, /verifyCredential:\s*null/);
+assert.doesNotMatch(server, /expectedIssuer:\s*null/);
+assert.doesNotMatch(server, /expectedAudience:\s*null/);
 
 console.log("[4H.3] absent and partial production auth environment leaks zero authority");
 console.log("[4H.3] authorized parties require strict non-empty JSON and Clerk validation");
@@ -184,7 +185,7 @@ console.log("[4H.3] private keys and wildcard trust remain forbidden downstream"
 console.log("[4H.3] escaped PEM newlines normalize before verifier construction");
 console.log("[4H.3] verifier -> configuration authority composition preserves exact dependencies");
 console.log("[4H.3] composition status exposes readiness without exposing trust material");
-console.log("[4H.3] server.js still contains all three authentication nulls and imports no composition");
+console.log("[4H.3] server.js reaches production authentication only through the final certified boot assembly");
 console.log("🐔 Zorg: 'I wasn't touching the nulls. I was hovering.'");
-console.log("🏏💥 BACK AWAY FROM THE NULLS.");
+console.log("🏏💥 THE NULLS ARE GONE, ZORG. NOW BACK AWAY FROM THE ASSEMBLY.");
 console.log("[4H.3] PASS");

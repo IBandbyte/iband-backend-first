@@ -194,11 +194,16 @@ assert.equal(typeof production.assertFence, "function");
 assert.equal(production.processInstanceId, "recovery-process-42-process-token");
 
 const server = fs.readFileSync(new URL("../server.js", import.meta.url), "utf8");
-assert.match(server, /verifyCredential:\s*null/);
-assert.match(server, /expectedIssuer:\s*null/);
-assert.match(server, /expectedAudience:\s*null/);
-assert.match(server, /renewActivation:\s*recoveryActivation\.renewActivation/);
-assert.match(server, /assertFence:\s*recoveryActivation\.assertFence/);
+assert.match(server, /MovieMentorJourneyRecoveryProductionBootAssembly\.js/);
+assert.doesNotMatch(server, /verifyCredential:\s*null/);
+assert.doesNotMatch(server, /expectedIssuer:\s*null/);
+assert.doesNotMatch(server, /expectedAudience:\s*null/);
+
+const assembly = fs.readFileSync(new URL("../ai/MovieMentorJourneyRecoveryProductionBootAssembly.js", import.meta.url), "utf8");
+assert.match(assembly, /MovieMentorJourneyRecoveryProductionBootActivation\.js/);
+assert.match(assembly, /renewActivation:\s*bootActivation\?\.renewActivation/);
+assert.match(assembly, /assertFence:\s*bootActivation\?\.assertFence/);
+assert.match(assembly, /activationAuthority:\s*bootActivation\?\.activationAuthority/);
 
 const bootMount = fs.readFileSync(new URL("../ai/MovieMentorJourneyRecoveryBootMountIntegration.js", import.meta.url), "utf8");
 assert.match(bootMount, /liveFence\.guardRouter\(router\)/);
@@ -213,7 +218,7 @@ console.log("[4G.4] takeover / stale fence closes route before recovery router e
 console.log("[4G.4] renewal uncertainty closes route; uncertainty never preserves exposure authority");
 console.log("[4G.4] expired lease cannot schedule itself back into authority");
 console.log("[4G.4] physical Express mount survives only as inert middleware after authority loss");
-console.log("[4G.4] server auth verifier / issuer / audience remain null; route remains closed");
+console.log("[4G.4] final production assembly preserves the certified authorize + renew + assert lifecycle powers");
 console.log("🐔 Zorg: 'But app.use still remembers me.'");
 console.log("🏏💥 MONGO REMEMBERS YOUR FENCE EXPIRED, ZORG.");
 console.log("[4G.4] PASS");

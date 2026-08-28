@@ -133,18 +133,25 @@ assert.equal(trueStatus.enabled, true);
 assert.equal(trueStatus.requiredValue, "true");
 
 const server = fs.readFileSync(new URL("../server.js", import.meta.url), "utf8");
-assert.match(server, /verifyCredential:\s*null/);
-assert.match(server, /expectedIssuer:\s*null/);
-assert.match(server, /expectedAudience:\s*null/);
+assert.match(server, /MovieMentorJourneyRecoveryProductionBootAssembly\.js/);
 assert.doesNotMatch(server, /MovieMentorJourneyRecoveryProductionExposureAuthority/);
 assert.doesNotMatch(server, /MOVIE_MENTOR_RECOVERY_EXPOSURE_ENABLED/);
+assert.doesNotMatch(server, /verifyCredential:\s*null/);
+assert.doesNotMatch(server, /expectedIssuer:\s*null/);
+assert.doesNotMatch(server, /expectedAudience:\s*null/);
+
+const assembly = fs.readFileSync(new URL("../ai/MovieMentorJourneyRecoveryProductionBootAssembly.js", import.meta.url), "utf8");
+assert.match(assembly, /MovieMentorJourneyRecoveryProductionExposureAuthority\.js/);
+assert.match(assembly, /authorizeExposure\(\{/);
+assert.match(assembly, /if \(!exposure\?\.authorized\)/);
+assert.doesNotMatch(assembly, /app\.use\s*\(/);
 
 console.log("[4H.5] missing exposure configuration remains closed even when both boot authorities are ready");
-console.log("[4H.5] only the exact affirmative value 'true' authorizes exposure");
+console.log("[4H.5] only the configured affirmative value authorizes exposure under the certified authority contract");
 console.log("[4H.5] incomplete boot authentication cannot be converted into exposure authority");
 console.log("[4H.5] incomplete activation/live-fence authority cannot be converted into exposure authority");
 console.log("[4H.5] readiness and permission remain separate constitutional facts");
-console.log("[4H.5] server.js remains untouched; all three authentication nulls still stand guard");
-console.log("🐔 Zorg: 'What about TRUE? Same letters, more confidence.'");
-console.log("🏏💥 SECURITY IS NOT CASE-INSENSITIVE ENTHUSIASM, ZORG.");
+console.log("[4H.5] final boot assembly consumes exposure permission without granting 4H.5 physical mount power");
+console.log("🐔 Zorg: 'So exposure authority finally gets app.use?'");
+console.log("🏏💥 NO. PERMISSION IS NOT THE MOUNTER, ZORG.");
 console.log("[4H.5] PASS");

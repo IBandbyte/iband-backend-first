@@ -42,6 +42,8 @@ function readyStatus() {
       received = input;
       return { authorized: true, ...input, activationEpoch: "7", activationReference: "ref-7" };
     },
+    async renewActivation(input) { return { authorized: true, ...input }; },
+    async assertFence(input) { return { authorized: true, ...input }; },
   };
   const result = createMovieMentorJourneyRecoveryProductionBootActivation({
     env: { [MOVIE_MENTOR_JOURNEY_RECOVERY_DEPLOYMENT_ENV]: "deploy-green" },
@@ -55,6 +57,8 @@ function readyStatus() {
   assert.equal(result.deploymentId, "deploy-green");
   assert.equal(result.processInstanceId, "recovery-process-4242-process-token");
   assert.equal(typeof result.activationAuthority, "function");
+  assert.equal(typeof result.renewActivation, "function");
+  assert.equal(typeof result.assertFence, "function");
   const request = { processInstanceId: result.processInstanceId, deploymentId: result.deploymentId, basePath: "/api/movie-mentor-recovery", expectedIssuer: "issuer", expectedAudience: "audience" };
   const evidence = await result.activationAuthority(request);
   assert.equal(evidence.authorized, true);
@@ -76,22 +80,21 @@ function readyStatus() {
 
 {
   const server = fs.readFileSync(new URL("../server.js", import.meta.url), "utf8");
-  assert.match(server, /MovieMentorJourneyRecoveryProductionBootActivation\.js/);
-  assert.match(server, /createMovieMentorJourneyRecoveryProductionBootActivation\(\)/);
-  assert.match(server, /activationAuthority:\s*recoveryActivation\.activationAuthority/);
-  assert.match(server, /processInstanceId:\s*recoveryActivation\.processInstanceId/);
-  assert.match(server, /deploymentId:\s*recoveryActivation\.deploymentId/);
-  assert.match(server, /verifyCredential:\s*null/);
-  assert.match(server, /expectedIssuer:\s*null/);
-  assert.match(server, /expectedAudience:\s*null/);
+  assert.match(server, /MovieMentorJourneyRecoveryProductionBootAssembly\.js/);
   assert.doesNotMatch(server, /createMovieMentorJourneyRecoveryActivationLeaseMongoStore/);
   assert.doesNotMatch(server, /createMovieMentorJourneyRecoveryActivationLeaseAuthority/);
+
+  const assembly = fs.readFileSync(new URL("../ai/MovieMentorJourneyRecoveryProductionBootAssembly.js", import.meta.url), "utf8");
+  assert.match(assembly, /MovieMentorJourneyRecoveryProductionBootActivation\.js/);
+  assert.match(assembly, /activationAuthority:\s*bootActivation\?\.activationAuthority/);
+  assert.match(assembly, /renewActivation:\s*bootActivation\?\.renewActivation/);
+  assert.match(assembly, /assertFence:\s*bootActivation\?\.assertFence/);
+  assert.match(assembly, /processInstanceId:\s*bootActivation\?\.processInstanceId/);
+  assert.match(assembly, /deploymentId:\s*bootActivation\?\.deploymentId/);
 }
 
 {
   const composition = fs.readFileSync(new URL("../ai/MovieMentorJourneyRecoveryActivationLeaseComposition.js", import.meta.url), "utf8");
-  // Check executable import statements, not explanatory comments documenting the
-  // constitutional rule that this layer must not import the production entrypoint.
   assert.doesNotMatch(composition, /^\s*import\s+.*(?:from\s+)?["'][^"']*server\.js["']/m);
   assert.doesNotMatch(composition, /\bexpress\s*\(/i);
   assert.doesNotMatch(composition, /from\s+["']express["']/i);
@@ -101,7 +104,7 @@ console.log("✅ 3C.5E.4G.3 production boot activation wiring torture passed");
 console.log("✅ Missing deployment identity remains fail-closed");
 console.log("✅ Unready durable composition cannot be bypassed");
 console.log("✅ Runtime process identity is unique process-scoped evidence, not authority");
-console.log("✅ server.js receives only the certified composition-facing activation function and binding identities");
+console.log("✅ Final boot assembly receives only the certified activation functions and binding identities");
 console.log("✅ Mongo store and lease authority internals do not leak directly into server.js");
-console.log("✅ Authentication remains deliberately unwired: recovery exposure is still closed");
+console.log("✅ Authentication/exposure assembly now sits above activation without weakening durable authority");
 console.log("🏏💥 DROP. THE. IMPORT. The only import allowed through is the certified boot adapter.");
