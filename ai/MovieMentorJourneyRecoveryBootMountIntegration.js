@@ -1,7 +1,7 @@
 import { mountMovieMentorJourneyRecoveryRouteIfReady } from "./MovieMentorJourneyRecoveryRouteMountDependencyGate.js";
 import { createMovieMentorJourneyRecoveryExpressRouter } from "./MovieMentorJourneyRecoveryExpressRouterFactory.js";
 
-const MOVIE_MENTOR_JOURNEY_RECOVERY_BOOT_MOUNT_INTEGRATION_VERSION = "1.1.0";
+const MOVIE_MENTOR_JOURNEY_RECOVERY_BOOT_MOUNT_INTEGRATION_VERSION = "1.2.0";
 const DEFAULT_BASE_PATH = "/api/movie-mentor-recovery";
 const ACTIVATIONS = new WeakMap();
 
@@ -37,23 +37,34 @@ function alreadyMounted(existing) {
   });
 }
 
+function uncertainMount(existing) {
+  const error = new Error(
+    "Recovery route mount outcome is uncertain; refusing to remount without process restart or external reality proof."
+  );
+  error.code = "MOVIE_MENTOR_JOURNEY_RECOVERY_BOOT_MOUNT_OUTCOME_UNCERTAIN";
+  error.basePath = existing.basePath;
+  throw error;
+}
+
 /**
- * 3C.5E.4C/4D — Production Mount Wiring + Activation Integrity
+ * 3C.5E.4C/4D/4E — Production Mount Wiring + Activation Integrity +
+ * Ambiguous Mount Outcome Containment
  *
  * 4C binds the certified 4A dependency gate to the certified 4B Express router
  * factory and the application-owned mount point.
  *
- * 4D makes activation monotonic within one application process:
- * - failed/partial configuration never records an activation;
- * - the first successful mount snapshots the verifier identity, issuer,
- *   audience, base path, router factory and mount gate;
- * - an exact boot retry is idempotent and cannot double-mount;
- * - any later downgrade, verifier replacement, issuer/audience drift, path
- *   drift or factory/gate replacement is an activation conflict;
- * - router construction or app.use failure cannot leave a false activation.
+ * 4D makes successful activation monotonic within one application process.
  *
- * This module still does not invent a verifier. With no real verifier function,
- * boot remains successful and the recovery endpoint remains unmounted.
+ * 4E closes the app.use lost-ack / partial-mount abyss. Once app.use has been
+ * invoked, a thrown error cannot prove that Express routing reality remained
+ * unchanged. The integration therefore records an UNCERTAIN activation before
+ * rethrowing. No retry on that same app instance may call app.use again.
+ *
+ * Constitutional law:
+ *   An uncertain mount outcome is not permission to remount.
+ *
+ * The module still does not invent authentication. With no real verifier,
+ * boot remains successful and recovery remains unmounted.
  */
 function configureMovieMentorJourneyRecoveryBootMount({
   app = null,
@@ -89,26 +100,57 @@ function configureMovieMentorJourneyRecoveryBootMount({
 
   const existing = ACTIVATIONS.get(app);
   if (existing) {
-    if (sameActivation(existing, requested)) {
+    if (!sameActivation(existing, requested)) {
+      fail(
+        "MOVIE_MENTOR_JOURNEY_RECOVERY_BOOT_ACTIVATION_CONFLICT",
+        "Recovery route activation state exists with different dependencies."
+      );
+    }
+
+    if (existing.state === "mounted") {
       return alreadyMounted(existing);
     }
 
-    fail(
-      "MOVIE_MENTOR_JOURNEY_RECOVERY_BOOT_ACTIVATION_CONFLICT",
-      "Recovery route is already mounted with different activation dependencies."
-    );
+    if (existing.state === "uncertain") {
+      uncertainMount(existing);
+    }
   }
 
-  const result = mountGate({
-    verifyCredential: requested.verifyCredential,
-    expectedIssuer: requested.expectedIssuer || null,
-    expectedAudience: requested.expectedAudience || null,
-    createRouter: requested.createRouter,
-    mountRouter: (router) => app.use(requested.basePath, router),
-  });
+  let mountAttempted = false;
+
+  let result;
+  try {
+    result = mountGate({
+      verifyCredential: requested.verifyCredential,
+      expectedIssuer: requested.expectedIssuer || null,
+      expectedAudience: requested.expectedAudience || null,
+      createRouter: requested.createRouter,
+      mountRouter: (router) => {
+        mountAttempted = true;
+        return app.use(requested.basePath, router);
+      },
+    });
+  } catch (error) {
+    if (mountAttempted) {
+      ACTIVATIONS.set(
+        app,
+        Object.freeze({
+          ...requested,
+          state: "uncertain",
+        })
+      );
+    }
+    throw error;
+  }
 
   if (result?.mounted === true) {
-    ACTIVATIONS.set(app, requested);
+    ACTIVATIONS.set(
+      app,
+      Object.freeze({
+        ...requested,
+        state: "mounted",
+      })
+    );
   }
 
   return Object.freeze({
