@@ -1,0 +1,36 @@
+name: Verify Movie Mentor Provider Effect Reality
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/verify-movie-mentor-provider-effect-reality.yml"
+      - "scripts/verify-movie-mentor-provider-effect-reality.mjs"
+      - "ai/MovieMentorProviderEffectMongoStore.js"
+      - "ai/MovieMentorProviderEffectAuthority.js"
+      - "ai/MovieMentorProductionInferenceExecutionComposition.js"
+      - "ai/MovieMentorTurnRuntime.js"
+
+jobs:
+  verify-provider-effect-reality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Syntax check 5A.24 Round Three boundary
+        run: |
+          node --check ai/MovieMentorProviderEffectMongoStore.js
+          node --check ai/MovieMentorProviderEffectAuthority.js
+          node --check ai/MovieMentorProductionInferenceExecutionComposition.js
+          node --check ai/MovieMentorTurnRuntime.js
+          node --check scripts/verify-movie-mentor-provider-effect-reality.mjs
+      - name: Run 5A.24 Round Three provider effect catastrophe torture
+        run: node scripts/verify-movie-mentor-provider-effect-reality.mjs
