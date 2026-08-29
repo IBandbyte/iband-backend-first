@@ -32,7 +32,7 @@ jobs:
           node --check ai/MovieMentorEntitlementIssuanceMongoStore.js
           node --check ai/MovieMentorProductionEntitlementIssuanceComposition.js
           node --check scripts/verify-movie-mentor-entitlement-issuance-authority.mjs
-      - name: Run 5A.6 entitlement issuance authority torture
+      - name: Run 5A.6 entitlement issuance authority torture and sealed 5A.5 regression
         run: |
           node scripts/verify-movie-mentor-entitlement-issuance-authority.mjs
           node scripts/verify-movie-mentor-inference-spend-authority.mjs
