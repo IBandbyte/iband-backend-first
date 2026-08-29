@@ -8,6 +8,7 @@ on:
       - ".github/workflows/verify-movie-mentor-inference-spend-authority.yml"
       - "scripts/verify-movie-mentor-inference-spend-authority.mjs"
       - "scripts/verify-movie-mentor-turn-runtime.mjs"
+      - "scripts/verify-movie-mentor-durable-round-trip.mjs"
       - "ai/MovieMentorInferenceSpendAuthority.js"
       - "ai/MovieMentorInferenceSpendMongoStore.js"
       - "ai/MovieMentorProductionInferenceSpendComposition.js"
@@ -39,7 +40,9 @@ jobs:
           node --check server.js
           node --check scripts/verify-movie-mentor-inference-spend-authority.mjs
           node --check scripts/verify-movie-mentor-turn-runtime.mjs
+          node --check scripts/verify-movie-mentor-durable-round-trip.mjs
       - name: Run 5A.5 inference spend authority torture
         run: |
           node scripts/verify-movie-mentor-inference-spend-authority.mjs
           node scripts/verify-movie-mentor-turn-runtime.mjs
+          node scripts/verify-movie-mentor-durable-round-trip.mjs
