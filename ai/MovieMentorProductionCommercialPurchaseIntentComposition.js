@@ -1,0 +1,8 @@
+import {createMovieMentorCommercialPurchaseIntentMongoStore,getMovieMentorCommercialPurchaseIntentMongoStoreStatus} from "./MovieMentorCommercialPurchaseIntentMongoStore.js";
+import {createMovieMentorCommercialPurchaseIntentAuthority} from "./MovieMentorCommercialPurchaseIntentAuthority.js";
+
+function text(v){return typeof v==="string"?v.trim():"";}
+function fail(code,message){const e=new Error(message);e.code=code;throw e;}
+function createMovieMentorProductionCommercialPurchaseIntentComposition({resolveCommercialPolicy}={}){const status=getMovieMentorCommercialPurchaseIntentMongoStoreStatus();if(!status.configured)fail("MOVIE_MENTOR_PURCHASE_INTENT_STORE_NOT_CONFIGURED","Production purchase-intent authority requires durable Mongo configuration.");if(typeof resolveCommercialPolicy!=="function")fail("MOVIE_MENTOR_PURCHASE_INTENT_POLICY_REQUIRED","Production purchase-intent composition requires explicit server-owned commercial policy.");const store=createMovieMentorCommercialPurchaseIntentMongoStore();const authority=createMovieMentorCommercialPurchaseIntentAuthority({store,resolveCommercialPolicy});return Object.freeze({ready:true,store,authority,resolvePurchaseIntent:authority.resolvePurchaseIntent});}
+function getMovieMentorProductionCommercialPurchaseIntentCompositionStatus(){const store=getMovieMentorCommercialPurchaseIntentMongoStoreStatus();return Object.freeze({configured:store.configured,readiness:store.configured?"policy-required-at-composition":"configuration-required",publicRoute:false,checkoutProvider:false});}
+export{createMovieMentorProductionCommercialPurchaseIntentComposition,getMovieMentorProductionCommercialPurchaseIntentCompositionStatus};export default createMovieMentorProductionCommercialPurchaseIntentComposition;
