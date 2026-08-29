@@ -2,46 +2,9 @@ import { createTurnContextEnvelope } from "./MovieMentorTurnContextControl.js";
 import { orchestrateMovieMentorTurn } from "./MovieMentorTurnOrchestrator.js";
 import { buildCurrentCreatorTruthView } from "./MovieMentorCreatorTruthViewControl.js";
 import { readAuthoritativeTurnSource,readAuthoritativeRevision,readAuthoritativeCreatorState } from "./MovieMentorCreatorStateStore.js";
-
-const MOVIE_MENTOR_TURN_RUNTIME_VERSION="1.2.0";
-function s(v){return typeof v==="string"?v.trim():"";}
-function clone(v){if(v===undefined)return undefined;try{return JSON.parse(JSON.stringify(v));}catch{return v;}}
-function messageFrom(input){return s(input?.input?.message||input?.message||"");}
-function identityFrom(input){return{projectId:s(input?.projectId||input?.context?.projectId)||null,creatorSessionId:s(input?.creatorSessionId||input?.context?.creatorSessionId)||null};}
-function runtimeError(code,message){const error=new Error(message);error.code=code;return error;}
-
-function buildTurnEnvelopeFromDurableState({creatorMessage,state}={}){
- if(!s(creatorMessage))throw runtimeError("MOVIE_MENTOR_TURN_MESSAGE_REQUIRED","A creator message is required for a Movie Mentor turn.");
- if(!state||typeof state!=="object")throw runtimeError("MOVIE_MENTOR_CREATOR_STATE_INVALID","Durable creator state is required to build a Movie Mentor turn.");
- const currentCreatorTruth=buildCurrentCreatorTruthView(state.creatorConfirmedContext||[]);
- return createTurnContextEnvelope({
-  projectId:state.projectId||null,creatorSessionId:state.creatorSessionId||null,creatorMessage:s(creatorMessage),
-  revision:{capturedRevision:state.revision,authoritativeRevision:state.revision,authorityReference:state.revisionAuthorityReference},
-  creatorState:{generation:state.creatorStateGeneration,fingerprint:state.creatorStateFingerprint,authorityReference:state.creatorAuthorityReference},
-  snapshotReference:state.snapshotReference,capturedAt:state.capturedAt,
-  creatorConfirmedContext:clone(currentCreatorTruth),projectJourney:clone(state.projectJourney??null),memoryContext:clone(state.memoryContext??null),responseBlueprint:clone(state.responseBlueprint??null),communicationPlan:clone(state.communicationPlan??null)
- });
-}
-
-async function runMovieMentorTurn(input={},deps={}){
- const creatorMessage=messageFrom(input);
- if(!creatorMessage)throw runtimeError("MOVIE_MENTOR_TURN_MESSAGE_REQUIRED","A creator message is required for a Movie Mentor turn.");
- const identity=identityFrom(input);
- if(!identity.projectId&&!identity.creatorSessionId)throw runtimeError("MOVIE_MENTOR_CREATOR_STATE_IDENTITY_REQUIRED","projectId or creatorSessionId is required for a durable Movie Mentor turn.");
- const readSource=deps.readAuthoritativeTurnSource||readAuthoritativeTurnSource;
- const revisionReader=deps.readAuthoritativeRevision||readAuthoritativeRevision;
- const stateReader=deps.readAuthoritativeCreatorState||readAuthoritativeCreatorState;
- const orchestrate=deps.orchestrateTurn||orchestrateMovieMentorTurn;
- const spendAuthority=deps.inferenceSpendAuthority;
- if(typeof spendAuthority?.reserveTurn!=="function")throw runtimeError("MOVIE_MENTOR_INFERENCE_SPEND_AUTHORITY_REQUIRED","Movie Mentor turn runtime requires inference spend authority before orchestration.");
- const state=await readSource(identity);
- const envelope=buildTurnEnvelopeFromDurableState({creatorMessage,state});
- const durableProjectId=s(state?.projectId||envelope?.projectId);
- const reservation=await spendAuthority.reserveTurn({serverAuthority:deps.serverAuthority,projectId:durableProjectId});
- if(reservation?.authorized!==true)throw runtimeError("MOVIE_MENTOR_INFERENCE_SPEND_RESERVATION_INVALID","Movie Mentor inference spend reservation was not authoritative.");
- const result=await orchestrate({message:creatorMessage,authoritativeTurnContext:envelope,options:clone(input?.options||{})},{readAuthoritativeRevision:revisionReader,readAuthoritativeCreatorState:stateReader});
- return {...result,metadata:{...(result?.metadata||{}),inferenceSpend:{authorized:true,reservationId:reservation.reservationId,units:reservation.units,operation:reservation.operation}}};
-}
-
-export{MOVIE_MENTOR_TURN_RUNTIME_VERSION,buildTurnEnvelopeFromDurableState,runMovieMentorTurn};
-export default runMovieMentorTurn;
+const MOVIE_MENTOR_TURN_RUNTIME_VERSION="1.3.0";
+function s(v){return typeof v==="string"?v.trim():"";} function clone(v){if(v===undefined)return undefined;try{return JSON.parse(JSON.stringify(v));}catch{return v;}}
+function messageFrom(input){return s(input?.input?.message||input?.message||"");} function identityFrom(input){return{projectId:s(input?.projectId||input?.context?.projectId)||null,creatorSessionId:s(input?.creatorSessionId||input?.context?.creatorSessionId)||null};} function runtimeError(code,message){const e=new Error(message);e.code=code;return e;}
+function buildTurnEnvelopeFromDurableState({creatorMessage,state}={}){if(!s(creatorMessage))throw runtimeError("MOVIE_MENTOR_TURN_MESSAGE_REQUIRED","A creator message is required for a Movie Mentor turn.");if(!state||typeof state!=="object")throw runtimeError("MOVIE_MENTOR_CREATOR_STATE_INVALID","Durable creator state is required to build a Movie Mentor turn.");const currentCreatorTruth=buildCurrentCreatorTruthView(state.creatorConfirmedContext||[]);return createTurnContextEnvelope({projectId:state.projectId||null,creatorSessionId:state.creatorSessionId||null,creatorMessage:s(creatorMessage),revision:{capturedRevision:state.revision,authoritativeRevision:state.revision,authorityReference:state.revisionAuthorityReference},creatorState:{generation:state.creatorStateGeneration,fingerprint:state.creatorStateFingerprint,authorityReference:state.creatorAuthorityReference},snapshotReference:state.snapshotReference,capturedAt:state.capturedAt,creatorConfirmedContext:clone(currentCreatorTruth),projectJourney:clone(state.projectJourney??null),memoryContext:clone(state.memoryContext??null),responseBlueprint:clone(state.responseBlueprint??null),communicationPlan:clone(state.communicationPlan??null)});}
+async function runMovieMentorTurn(input={},deps={}){const creatorMessage=messageFrom(input);if(!creatorMessage)throw runtimeError("MOVIE_MENTOR_TURN_MESSAGE_REQUIRED","A creator message is required for a Movie Mentor turn.");const identity=identityFrom(input);if(!identity.projectId&&!identity.creatorSessionId)throw runtimeError("MOVIE_MENTOR_CREATOR_STATE_IDENTITY_REQUIRED","projectId or creatorSessionId is required for a durable Movie Mentor turn.");const readSource=deps.readAuthoritativeTurnSource||readAuthoritativeTurnSource,revisionReader=deps.readAuthoritativeRevision||readAuthoritativeRevision,stateReader=deps.readAuthoritativeCreatorState||readAuthoritativeCreatorState,orchestrate=deps.orchestrateTurn||orchestrateMovieMentorTurn,spendAuthority=deps.inferenceSpendAuthority;if(typeof spendAuthority?.reserveTurn!=="function"||typeof spendAuthority?.settleTurn!=="function")throw runtimeError("MOVIE_MENTOR_INFERENCE_SPEND_AUTHORITY_REQUIRED","Movie Mentor turn runtime requires inference spend reservation and settlement authority.");const state=await readSource(identity),envelope=buildTurnEnvelopeFromDurableState({creatorMessage,state}),durableProjectId=s(state?.projectId||envelope?.projectId);const reservation=await spendAuthority.reserveTurn({serverAuthority:deps.serverAuthority,projectId:durableProjectId});if(reservation?.authorized!==true)throw runtimeError("MOVIE_MENTOR_INFERENCE_SPEND_RESERVATION_INVALID","Movie Mentor inference spend reservation was not authoritative.");let result;try{result=await orchestrate({message:creatorMessage,authoritativeTurnContext:envelope,options:clone(input?.options||{})},{readAuthoritativeRevision:revisionReader,readAuthoritativeCreatorState:stateReader});}catch(error){try{await spendAuthority.settleTurn({reservation,outcome:"released",reason:"orchestration-failed"});}catch(settlementError){settlementError.cause=error;throw settlementError;}throw error;}const settlement=await spendAuthority.settleTurn({reservation,outcome:"consumed",reason:"orchestration-succeeded"});if(settlement?.settled!==true)throw runtimeError("MOVIE_MENTOR_INFERENCE_SPEND_SETTLEMENT_INVALID","Successful Movie Mentor turn requires durable consumed settlement.");return{...result,metadata:{...(result?.metadata||{}),inferenceSpend:{authorized:true,reservationId:reservation.reservationId,units:reservation.units,operation:reservation.operation,settlement:"consumed"}}};}
+export{MOVIE_MENTOR_TURN_RUNTIME_VERSION,buildTurnEnvelopeFromDurableState,runMovieMentorTurn};export default runMovieMentorTurn;
