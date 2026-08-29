@@ -1,151 +1,28 @@
 import mongoose from "mongoose";
 
-const VERSION = "1.0.0";
-const DOMAIN = "iband.movie-mentor.inference-spend";
-const SCHEMA = 1;
-const ENTITLEMENT_COLLECTION = "movie_mentor_inference_entitlement";
-const RESERVATION_COLLECTION = "movie_mentor_inference_spend_reservation";
-
-let connectionPromise = null;
-let entitlementModel = null;
-let reservationModel = null;
-
-function text(value) { return typeof value === "string" ? value.trim() : ""; }
-function units(value) { return Number.isSafeInteger(value) && value > 0 ? value : null; }
-function mongoUri() { return text(process.env.MONGO_URI || process.env.MONGODB_URI || ""); }
-function fail(code, message, extras = {}) { const error = new Error(message); error.code = code; Object.assign(error, extras); throw error; }
-function plain(record) { return record && typeof record.toObject === "function" ? record.toObject() : record; }
-
-function getModels() {
-  if (entitlementModel && reservationModel) return { entitlementModel, reservationModel };
-  const entitlementSchema = new mongoose.Schema({
-    domain: { type: String, required: true, immutable: true },
-    schema: { type: Number, required: true, immutable: true },
-    principalId: { type: String, required: true, trim: true, immutable: true },
-    status: { type: String, enum: ["active", "suspended"], required: true },
-    remainingUnits: { type: Number, min: 0, required: true },
-    reservedUnits: { type: Number, min: 0, required: true },
-    consumedUnits: { type: Number, min: 0, required: true },
-    entitlementRevision: { type: Number, min: 1, required: true },
-  }, { collection: ENTITLEMENT_COLLECTION, timestamps: true, minimize: false, strict: true });
-  entitlementSchema.index({ principalId: 1 }, { unique: true });
-
-  const reservationSchema = new mongoose.Schema({
-    domain: { type: String, required: true, immutable: true },
-    schema: { type: Number, required: true, immutable: true },
-    reservationId: { type: String, required: true, trim: true, immutable: true },
-    principalId: { type: String, required: true, trim: true, immutable: true },
-    projectId: { type: String, required: true, trim: true, immutable: true },
-    operation: { type: String, required: true, trim: true, immutable: true },
-    units: { type: Number, min: 1, required: true, immutable: true },
-    entitlementRevision: { type: Number, min: 1, required: true, immutable: true },
-    status: { type: String, enum: ["reserved"], required: true, immutable: true },
-    reservedAt: { type: Date, required: true, immutable: true },
-  }, { collection: RESERVATION_COLLECTION, timestamps: true, minimize: false, strict: true });
-  reservationSchema.index({ reservationId: 1 }, { unique: true });
-  reservationSchema.index({ principalId: 1, projectId: 1, reservedAt: -1 });
-
-  entitlementModel = mongoose.models.MovieMentorInferenceEntitlement || mongoose.model("MovieMentorInferenceEntitlement", entitlementSchema);
-  reservationModel = mongoose.models.MovieMentorInferenceSpendReservation || mongoose.model("MovieMentorInferenceSpendReservation", reservationSchema);
-  return { entitlementModel, reservationModel };
+const VERSION="1.1.0",DOMAIN="iband.movie-mentor.inference-spend",SCHEMA=1;
+const ENTITLEMENT_COLLECTION="movie_mentor_inference_entitlement",RESERVATION_COLLECTION="movie_mentor_inference_spend_reservation";
+let connectionPromise=null,entitlementModel=null,reservationModel=null;
+function text(v){return typeof v==="string"?v.trim():"";} function units(v){return Number.isSafeInteger(v)&&v>0?v:null;}
+function mongoUri(){return text(process.env.MONGO_URI||process.env.MONGODB_URI||"");}
+function fail(code,message,extras={}){const e=new Error(message);e.code=code;Object.assign(e,extras);throw e;}
+function plain(r){return r&&typeof r.toObject==="function"?r.toObject():r;}
+function getModels(){
+ if(entitlementModel&&reservationModel)return{entitlementModel,reservationModel};
+ const entitlementSchema=new mongoose.Schema({domain:{type:String,required:true,immutable:true},schema:{type:Number,required:true,immutable:true},principalId:{type:String,required:true,trim:true,immutable:true},status:{type:String,enum:["active","suspended"],required:true},remainingUnits:{type:Number,min:0,required:true},reservedUnits:{type:Number,min:0,required:true},consumedUnits:{type:Number,min:0,required:true},entitlementRevision:{type:Number,min:1,required:true}},{collection:ENTITLEMENT_COLLECTION,timestamps:true,minimize:false,strict:true});
+ entitlementSchema.index({principalId:1},{unique:true});
+ const reservationSchema=new mongoose.Schema({domain:{type:String,required:true,immutable:true},schema:{type:Number,required:true,immutable:true},reservationId:{type:String,required:true,trim:true,immutable:true},principalId:{type:String,required:true,trim:true,immutable:true},projectId:{type:String,required:true,trim:true,immutable:true},operation:{type:String,required:true,trim:true,immutable:true},units:{type:Number,min:1,required:true,immutable:true},entitlementRevision:{type:Number,min:1,required:true,immutable:true},status:{type:String,enum:["reserved","consumed","released"],required:true},reservedAt:{type:Date,required:true,immutable:true},settledAt:{type:Date,default:null},settlementReason:{type:String,default:null}},{collection:RESERVATION_COLLECTION,timestamps:true,minimize:false,strict:true});
+ reservationSchema.index({reservationId:1},{unique:true}); reservationSchema.index({principalId:1,projectId:1,reservedAt:-1});
+ entitlementModel=mongoose.models.MovieMentorInferenceEntitlement||mongoose.model("MovieMentorInferenceEntitlement",entitlementSchema); reservationModel=mongoose.models.MovieMentorInferenceSpendReservation||mongoose.model("MovieMentorInferenceSpendReservation",reservationSchema); return{entitlementModel,reservationModel};
 }
-
-async function ensureConnection() {
-  const uri = mongoUri();
-  if (!uri) fail("MOVIE_MENTOR_INFERENCE_SPEND_STORE_NOT_CONFIGURED", "Inference spend store requires MONGO_URI or MONGODB_URI.");
-  if (mongoose.connection.readyState === 1) return mongoose.connection;
-  if (!connectionPromise) {
-    connectionPromise = mongoose.connect(uri, { serverSelectionTimeoutMS: 5000, maxPoolSize: 10 }).catch((error) => {
-      connectionPromise = null;
-      fail("MOVIE_MENTOR_INFERENCE_SPEND_AUTHORITY_UNAVAILABLE", `Inference spend store unavailable: ${error instanceof Error ? error.message : "Mongo connection failed."}`, { retryable: true });
-    });
-  }
-  await connectionPromise;
-  return mongoose.connection;
+async function ensureConnection(){const uri=mongoUri();if(!uri)fail("MOVIE_MENTOR_INFERENCE_SPEND_STORE_NOT_CONFIGURED","Inference spend store requires MONGO_URI or MONGODB_URI.");if(mongoose.connection.readyState===1)return mongoose.connection;if(!connectionPromise)connectionPromise=mongoose.connect(uri,{serverSelectionTimeoutMS:5000,maxPoolSize:10}).catch(error=>{connectionPromise=null;fail("MOVIE_MENTOR_INFERENCE_SPEND_AUTHORITY_UNAVAILABLE",`Inference spend store unavailable: ${error instanceof Error?error.message:"Mongo connection failed."}`,{retryable:true});});await connectionPromise;return mongoose.connection;}
+function normalizeReservation(record){const v=plain(record),status=text(v?.status);if(!v||v.domain!==DOMAIN||v.schema!==SCHEMA||!text(v.reservationId)||!text(v.principalId)||!text(v.projectId)||!text(v.operation)||!units(v.units)||!Number.isSafeInteger(v.entitlementRevision)||v.entitlementRevision<1||!["reserved","consumed","released"].includes(status))fail("MOVIE_MENTOR_INFERENCE_SPEND_RESERVATION_INVALID","Durable inference spend reservation is malformed.");return Object.freeze({reservationId:text(v.reservationId),principalId:text(v.principalId),projectId:text(v.projectId),operation:text(v.operation),units:v.units,entitlementRevision:v.entitlementRevision,status,reservedAt:v.reservedAt?new Date(v.reservedAt).toISOString():null,settledAt:v.settledAt?new Date(v.settledAt).toISOString():null,settlementReason:text(v.settlementReason)||null});}
+function sameBinding(r,q){return text(r.principalId)===q.principalId&&text(r.projectId)===q.projectId&&text(r.operation)===q.operation&&r.units===q.units;}
+function createMovieMentorInferenceSpendMongoStore({models=null,connect=ensureConnection,startSession=()=>mongoose.startSession(),now=()=>new Date()}={}){
+ const modelSet=()=>models||getModels(); async function ready(){if(!models)await connect();}
+ async function reserve(request={}){const n={reservationId:text(request.reservationId),principalId:text(request.principalId),projectId:text(request.projectId),operation:text(request.operation),units:units(request.units)};if(!n.reservationId||!n.principalId||!n.projectId||!n.operation||!n.units)fail("MOVIE_MENTOR_INFERENCE_SPEND_RESERVATION_INVALID","Inference spend reservation requires reservationId, principalId, projectId, operation and positive units.");await ready();const{entitlementModel:Entitlement,reservationModel:Reservation}=modelSet();const session=await startSession();let outcome=null;try{await session.withTransaction(async()=>{const existing=await Reservation.findOne({reservationId:n.reservationId}).session(session).lean().exec();if(existing){const durable=normalizeReservation(existing);if(!sameBinding(durable,n))fail("MOVIE_MENTOR_INFERENCE_SPEND_RESERVATION_CONFLICT","Reservation identity is already bound to different inference spend authority.");if(durable.status!=="reserved")fail("MOVIE_MENTOR_INFERENCE_SPEND_RESERVATION_SETTLED","Settled inference spend authority cannot be reserved again.");outcome=Object.freeze({granted:true,idempotent:true,reservation:durable});return;}const entitlement=await Entitlement.findOneAndUpdate({principalId:n.principalId,domain:DOMAIN,schema:SCHEMA,status:"active",remainingUnits:{$gte:n.units}},{$inc:{remainingUnits:-n.units,reservedUnits:n.units,entitlementRevision:1}},{new:true,runValidators:true,session}).lean().exec();if(!entitlement){outcome=Object.freeze({granted:false,reason:"no-active-entitlement-or-insufficient-units"});return;}const created=await Reservation.create([{domain:DOMAIN,schema:SCHEMA,...n,entitlementRevision:entitlement.entitlementRevision,status:"reserved",reservedAt:now()}],{session});outcome=Object.freeze({granted:true,idempotent:false,reservation:normalizeReservation(created[0])});});if(!outcome)fail("MOVIE_MENTOR_INFERENCE_SPEND_AUTHORITY_UNAVAILABLE","Inference spend transaction completed without a durable decision.",{retryable:true});return outcome;}catch(error){if(error?.code?.startsWith?.("MOVIE_MENTOR_INFERENCE_SPEND_"))throw error;fail("MOVIE_MENTOR_INFERENCE_SPEND_AUTHORITY_UNAVAILABLE",`Inference spend reservation failed: ${error instanceof Error?error.message:"transaction failed"}`,{retryable:true});}finally{await session.endSession();}}
+ async function settle(request={}){const reservationId=text(request.reservationId),principalId=text(request.principalId),outcome=text(request.outcome),reason=text(request.reason);if(!reservationId||!principalId||!["consumed","released"].includes(outcome))fail("MOVIE_MENTOR_INFERENCE_SPEND_SETTLEMENT_INVALID","Settlement requires reservationId, principalId and consumed/released outcome.");await ready();const{entitlementModel:Entitlement,reservationModel:Reservation}=modelSet();const session=await startSession();let result=null;try{await session.withTransaction(async()=>{const current=await Reservation.findOne({reservationId}).session(session).lean().exec();if(!current)fail("MOVIE_MENTOR_INFERENCE_SPEND_RESERVATION_NOT_FOUND","Inference spend reservation does not exist.");const durable=normalizeReservation(current);if(durable.principalId!==principalId)fail("MOVIE_MENTOR_INFERENCE_SPEND_SETTLEMENT_CONFLICT","Settlement principal does not own reservation.");if(durable.status!=="reserved"){if(durable.status!==outcome)fail("MOVIE_MENTOR_INFERENCE_SPEND_SETTLEMENT_CONFLICT","Reservation is already settled to a different outcome.");result=Object.freeze({settled:true,idempotent:true,reservation:durable});return;}const inc=outcome==="consumed"?{reservedUnits:-durable.units,consumedUnits:durable.units,entitlementRevision:1}:{reservedUnits:-durable.units,remainingUnits:durable.units,entitlementRevision:1};const entitlement=await Entitlement.findOneAndUpdate({principalId,domain:DOMAIN,schema:SCHEMA,reservedUnits:{$gte:durable.units}},{$inc:inc},{new:true,runValidators:true,session}).lean().exec();if(!entitlement)fail("MOVIE_MENTOR_INFERENCE_SPEND_SETTLEMENT_LEDGER_CONFLICT","Entitlement cannot atomically settle this reservation.");const updated=await Reservation.findOneAndUpdate({reservationId,status:"reserved"},{$set:{status:outcome,settledAt:now(),settlementReason:reason||outcome}},{new:true,runValidators:true,session}).lean().exec();if(!updated)fail("MOVIE_MENTOR_INFERENCE_SPEND_SETTLEMENT_CONFLICT","Reservation changed during settlement.");result=Object.freeze({settled:true,idempotent:false,reservation:normalizeReservation(updated)});});if(!result)fail("MOVIE_MENTOR_INFERENCE_SPEND_AUTHORITY_UNAVAILABLE","Inference spend settlement completed without durable decision.",{retryable:true});return result;}catch(error){if(error?.code?.startsWith?.("MOVIE_MENTOR_INFERENCE_SPEND_"))throw error;fail("MOVIE_MENTOR_INFERENCE_SPEND_AUTHORITY_UNAVAILABLE",`Inference spend settlement failed: ${error instanceof Error?error.message:"transaction failed"}`,{retryable:true});}finally{await session.endSession();}}
+ return Object.freeze({reserve,settle});
 }
-
-function normalizeReservation(record) {
-  const value = plain(record);
-  if (!value || value.domain !== DOMAIN || value.schema !== SCHEMA || !text(value.reservationId) || !text(value.principalId) || !text(value.projectId) || !text(value.operation) || !units(value.units) || !Number.isSafeInteger(value.entitlementRevision) || value.entitlementRevision < 1 || text(value.status) !== "reserved") {
-    fail("MOVIE_MENTOR_INFERENCE_SPEND_RESERVATION_INVALID", "Durable inference spend reservation is malformed.");
-  }
-  return Object.freeze({
-    reservationId: text(value.reservationId), principalId: text(value.principalId), projectId: text(value.projectId),
-    operation: text(value.operation), units: value.units, entitlementRevision: value.entitlementRevision,
-    status: "reserved", reservedAt: value.reservedAt ? new Date(value.reservedAt).toISOString() : null,
-  });
-}
-
-function sameBinding(record, request) {
-  return text(record.principalId) === request.principalId && text(record.projectId) === request.projectId && text(record.operation) === request.operation && record.units === request.units;
-}
-
-function createMovieMentorInferenceSpendMongoStore({
-  models = null,
-  connect = ensureConnection,
-  startSession = () => mongoose.startSession(),
-  now = () => new Date(),
-} = {}) {
-  const modelSet = () => models || getModels();
-  async function ready() { if (!models) await connect(); }
-
-  async function reserve(request = {}) {
-    const normalized = {
-      reservationId: text(request.reservationId), principalId: text(request.principalId), projectId: text(request.projectId),
-      operation: text(request.operation), units: units(request.units),
-    };
-    if (!normalized.reservationId || !normalized.principalId || !normalized.projectId || !normalized.operation || !normalized.units) {
-      fail("MOVIE_MENTOR_INFERENCE_SPEND_RESERVATION_INVALID", "Inference spend reservation requires reservationId, principalId, projectId, operation and positive units.");
-    }
-    await ready();
-    const { entitlementModel: Entitlement, reservationModel: Reservation } = modelSet();
-    const session = await startSession();
-    let outcome = null;
-    try {
-      await session.withTransaction(async () => {
-        const existing = await Reservation.findOne({ reservationId: normalized.reservationId }).session(session).lean().exec();
-        if (existing) {
-          const durable = normalizeReservation(existing);
-          if (!sameBinding(durable, normalized)) fail("MOVIE_MENTOR_INFERENCE_SPEND_RESERVATION_CONFLICT", "Reservation identity is already bound to different inference spend authority.");
-          outcome = Object.freeze({ granted: true, idempotent: true, reservation: durable });
-          return;
-        }
-
-        const entitlement = await Entitlement.findOneAndUpdate(
-          { principalId: normalized.principalId, domain: DOMAIN, schema: SCHEMA, status: "active", remainingUnits: { $gte: normalized.units } },
-          { $inc: { remainingUnits: -normalized.units, reservedUnits: normalized.units, entitlementRevision: 1 } },
-          { new: true, runValidators: true, session }
-        ).lean().exec();
-        if (!entitlement) {
-          outcome = Object.freeze({ granted: false, reason: "no-active-entitlement-or-insufficient-units" });
-          return;
-        }
-
-        const revision = entitlement.entitlementRevision;
-        const created = await Reservation.create([{
-          domain: DOMAIN, schema: SCHEMA, reservationId: normalized.reservationId, principalId: normalized.principalId,
-          projectId: normalized.projectId, operation: normalized.operation, units: normalized.units,
-          entitlementRevision: revision, status: "reserved", reservedAt: now(),
-        }], { session });
-        outcome = Object.freeze({ granted: true, idempotent: false, reservation: normalizeReservation(created[0]) });
-      });
-      if (!outcome) fail("MOVIE_MENTOR_INFERENCE_SPEND_AUTHORITY_UNAVAILABLE", "Inference spend transaction completed without a durable decision.", { retryable: true });
-      return outcome;
-    } catch (error) {
-      if (error?.code?.startsWith?.("MOVIE_MENTOR_INFERENCE_SPEND_")) throw error;
-      fail("MOVIE_MENTOR_INFERENCE_SPEND_AUTHORITY_UNAVAILABLE", `Inference spend reservation failed: ${error instanceof Error ? error.message : "transaction failed"}`, { retryable: true });
-    } finally {
-      await session.endSession();
-    }
-  }
-
-  return Object.freeze({ reserve });
-}
-
-function getMovieMentorInferenceSpendMongoStoreStatus() {
-  const configured = Boolean(mongoUri());
-  return Object.freeze({ version: VERSION, configured, readiness: configured ? "configured" : "configuration-required", entitlementCollection: ENTITLEMENT_COLLECTION, reservationCollection: RESERVATION_COLLECTION, atomicity: "mongo-transaction", processLocalFallback: false });
-}
-
-export { VERSION as MOVIE_MENTOR_INFERENCE_SPEND_MONGO_STORE_VERSION, DOMAIN as MOVIE_MENTOR_INFERENCE_SPEND_DOMAIN, SCHEMA as MOVIE_MENTOR_INFERENCE_SPEND_SCHEMA, ENTITLEMENT_COLLECTION as MOVIE_MENTOR_INFERENCE_ENTITLEMENT_COLLECTION, RESERVATION_COLLECTION as MOVIE_MENTOR_INFERENCE_SPEND_RESERVATION_COLLECTION, createMovieMentorInferenceSpendMongoStore, getMovieMentorInferenceSpendMongoStoreStatus };
-export default createMovieMentorInferenceSpendMongoStore;
+function getMovieMentorInferenceSpendMongoStoreStatus(){const configured=Boolean(mongoUri());return Object.freeze({version:VERSION,configured,readiness:configured?"configured":"configuration-required",entitlementCollection:ENTITLEMENT_COLLECTION,reservationCollection:RESERVATION_COLLECTION,atomicity:"mongo-transaction",settlement:"consume-or-release",processLocalFallback:false});}
+export{VERSION as MOVIE_MENTOR_INFERENCE_SPEND_MONGO_STORE_VERSION,DOMAIN as MOVIE_MENTOR_INFERENCE_SPEND_DOMAIN,SCHEMA as MOVIE_MENTOR_INFERENCE_SPEND_SCHEMA,ENTITLEMENT_COLLECTION as MOVIE_MENTOR_INFERENCE_ENTITLEMENT_COLLECTION,RESERVATION_COLLECTION as MOVIE_MENTOR_INFERENCE_SPEND_RESERVATION_COLLECTION,createMovieMentorInferenceSpendMongoStore,getMovieMentorInferenceSpendMongoStoreStatus}; export default createMovieMentorInferenceSpendMongoStore;
