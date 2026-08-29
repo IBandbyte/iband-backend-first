@@ -13,6 +13,7 @@ on:
       - 'server.js'
       - 'scripts/verify-movie-mentor-durable-checkout-binding.mjs'
       - 'scripts/verify-movie-mentor-production-commercial-http-ingress.mjs'
+      - 'scripts/verify-movie-mentor-journey-recovery-boot-mount-integration.mjs'
       - '.github/workflows/verify-movie-mentor-durable-checkout-binding.yml'
   workflow_dispatch:
 
@@ -31,5 +32,7 @@ jobs:
         run: node scripts/verify-movie-mentor-production-commercial-http-ingress.mjs
       - name: 5A.4 browser origin authority regression
         run: node scripts/verify-movie-mentor-production-browser-origin-authority.mjs
+      - name: Recovery live-fence boot regression
+        run: node scripts/verify-movie-mentor-journey-recovery-boot-mount-integration.mjs
       - name: Stripe adapter regression
         run: node scripts/verify-movie-mentor-stripe-commercial-provider-adapter.mjs
