@@ -11,15 +11,21 @@ function fakeApp() {
 }
 
 function crossProcessDeps() {
-  return {
+  const lease = Object.freeze({
+    authorized: true,
     processInstanceId: "process-A",
     deploymentId: "deploy-1",
-    activationAuthority: async (request) => ({
-      authorized: true,
-      ...request,
-      activationEpoch: "epoch-1",
-      activationReference: "activation-ref-1",
-    }),
+    activationEpoch: "epoch-1",
+    activationReference: "activation-ref-1",
+    fencingToken: "fence-1",
+    expiresAt: new Date(Date.now() + 60_000).toISOString(),
+  });
+  return {
+    processInstanceId: lease.processInstanceId,
+    deploymentId: lease.deploymentId,
+    activationAuthority: async (request) => ({ ...lease, ...request, authorized: true }),
+    renewActivation: async () => lease,
+    assertFence: async () => Object.freeze({ authorized: true, ...lease }),
   };
 }
 
@@ -50,20 +56,12 @@ for (const fakeVerifier of [null, true, "enabled", "jwt-secret", { verify: true 
 {
   const verifyCredential = async () => ({ verified: true });
   const appA = fakeApp();
-  const noIssuer = await configureMovieMentorJourneyRecoveryBootMount({
-    app: appA,
-    verifyCredential,
-    expectedAudience: "iband.movie-mentor",
-  });
+  const noIssuer = await configureMovieMentorJourneyRecoveryBootMount({ app: appA, verifyCredential, expectedAudience: "iband.movie-mentor" });
   assert.equal(noIssuer.reason, "issuer-unconfigured");
   assert.equal(appA.mounts.length, 0);
 
   const appB = fakeApp();
-  const noAudience = await configureMovieMentorJourneyRecoveryBootMount({
-    app: appB,
-    verifyCredential,
-    expectedIssuer: "https://issuer.example.test",
-  });
+  const noAudience = await configureMovieMentorJourneyRecoveryBootMount({ app: appB, verifyCredential, expectedIssuer: "https://issuer.example.test" });
   assert.equal(noAudience.reason, "audience-unconfigured");
   assert.equal(appB.mounts.length, 0);
 }
@@ -88,13 +86,10 @@ for (const fakeVerifier of [null, true, "enabled", "jwt-secret", { verify: true 
   assert.equal(app.mounts[0].path, "/api/custom-recovery");
 }
 
-await assert.rejects(
-  () => configureMovieMentorJourneyRecoveryBootMount({ app: null }),
-  (error) => error?.code === "MOVIE_MENTOR_JOURNEY_RECOVERY_BOOT_APP_REQUIRED",
-);
+await assert.rejects(() => configureMovieMentorJourneyRecoveryBootMount({ app: null }), (error) => error?.code === "MOVIE_MENTOR_JOURNEY_RECOVERY_BOOT_APP_REQUIRED");
 
 console.log("✓ no real verifier => boot-safe closed route");
 console.log("✓ fake auth claims cannot become verifier infrastructure");
 console.log("✓ explicit issuer/audience remain mandatory");
-console.log("✓ certified cross-process authority permits one server-owned mount");
+console.log("✓ certified cross-process + live-fence authority permits one server-owned mount");
 console.log("3C.5E.4C torture: GREEN");
