@@ -11,9 +11,9 @@ import { createMovieMentorTurnRouter } from "./movieMentorTurn.js";
 const app = express();
 const browserOriginAuthority = createMovieMentorProductionBrowserOriginAuthority();
 
-// Door 5A.15: the provider webhook must see exact request bytes before any
-// general JSON parser can transform them. Provider traffic is not browser-origin
-// authority, and a successful browser redirect is never payment evidence.
+// Provider signatures require exact bytes, so only the Stripe webhook is mounted
+// before general browser-origin/CORS/JSON middleware. The creator commercial router
+// is composed here but physically mounted below after those browser protections.
 let stripeClient = null;
 if (process.env.MOVIE_MENTOR_STRIPE_SECRET_KEY) {
   try {
@@ -24,26 +24,22 @@ if (process.env.MOVIE_MENTOR_STRIPE_SECRET_KEY) {
   }
 }
 const commercialMount=await mountMovieMentorProductionCommercialHttpIngress({app,stripe:stripeClient});
-console.log(`[mount:${commercialMount.mounted ? "ok" : "closed"}] ${commercialMount.creatorBasePath} + ${commercialMount.stripeWebhookPath} (${commercialMount.reason})`);
+console.log(`[mount:${commercialMount.mounted ? "provider-ok" : "closed"}] ${commercialMount.stripeWebhookPath} (${commercialMount.reason})`);
 
 app.use((req, res, next) => {
-  const decision = browserOriginAuthority.authorizeRequest({
-    origin: req.get("Origin") || null,
-    path: req.path,
-  });
-
+  const decision = browserOriginAuthority.authorizeRequest({origin: req.get("Origin") || null,path: req.path});
   if (decision.allowed) return next();
-
-  return res.status(403).json({
-    success: false,
-    code: "MOVIE_MENTOR_BROWSER_ORIGIN_NOT_AUTHORIZED",
-    message: "This browser origin is not authorized for the requested Movie Mentor production surface.",
-  });
+  return res.status(403).json({success:false,code:"MOVIE_MENTOR_BROWSER_ORIGIN_NOT_AUTHORIZED",message:"This browser origin is not authorized for the requested Movie Mentor production surface."});
 });
 
 app.use(cors(browserOriginAuthority.createCorsOptions()));
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
+
+if(commercialMount.mounted&&commercialMount.creatorRouter){
+  app.use(commercialMount.creatorBasePath,commercialMount.creatorRouter);
+  console.log(`[mount:ok] ${commercialMount.creatorBasePath} <- browser-origin + CORS + JSON + authenticated durable commercial authority`);
+}
 
 app.get("/", (_req, res) => res.json({ ok: true, service: "iband-backend-first" }));
 app.get("/health", (_req, res) => res.json({ ok: true }));
@@ -61,11 +57,7 @@ async function mountMovieMentorCreatorGateway() {
     console.log(`[mount:closed] /api/movie-mentor (${reason})`);
     return Object.freeze({ mounted: false, basePath: "/api/movie-mentor", reason });
   }
-  const requestAuthority = createMovieMentorCreatorRequestAuthority({
-    verifyCredential: authentication.verifyCredential,
-    expectedIssuer: authentication.expectedIssuer,
-    expectedAudience: authentication.expectedAudience,
-  });
+  const requestAuthority = createMovieMentorCreatorRequestAuthority({verifyCredential: authentication.verifyCredential,expectedIssuer: authentication.expectedIssuer,expectedAudience: authentication.expectedAudience});
   const router = createMovieMentorTurnRouter({ requestAuthority, inferenceSpendAuthority: spendComposition.authority });
   app.use("/api/movie-mentor", router);
   console.log("[mount:ok] /api/movie-mentor <- authenticated creator gateway + durable inference spend authority");
@@ -74,20 +66,10 @@ async function mountMovieMentorCreatorGateway() {
 
 await mountMovieMentorCreatorGateway();
 
-// Door 5A.2: Semantic, Specialist and Synthesis are internal intelligence
-// capabilities of the canonical authenticated Movie Mentor turn pipeline.
-// Their standalone HTTP adapters intentionally receive no production mount.
-
-// Door 5A.3: Production boot exposes only real, intentional capabilities.
-// Legacy best-effort mounts for missing route modules are intentionally absent.
-
-// Door 5A.4: Browser origin authority is explicit deployment configuration.
-// Missing or invalid configuration grants no cross-origin browser authority to
-// protected Movie Mentor production surfaces. CORS never substitutes for auth.
-
-// Door 5A.5: Authentication and ownership do not grant inference-spend authority.
-// The creator gateway mounts only with durable Mongo-backed spend composition,
-// and every paid turn must reserve entitlement before orchestration begins.
+// Internal Semantic/Specialist/Synthesis capabilities receive no standalone production mount.
+// Production boot exposes only real, intentional capabilities; legacy best-effort mounts stay absent.
+// Browser origin authority is explicit deployment configuration and never substitutes for auth.
+// Authentication and ownership do not grant inference-spend authority.
 
 const recoveryMount = await assembleMovieMentorJourneyRecoveryProductionBoot({ app });
 console.log(`[mount:${recoveryMount.mounted ? "ok" : "closed"}] ${recoveryMount.basePath} (${recoveryMount.reason})`);

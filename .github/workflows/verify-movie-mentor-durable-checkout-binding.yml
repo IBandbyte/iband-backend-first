@@ -1,0 +1,35 @@
+name: Verify Movie Mentor Durable Checkout Binding
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ai/MovieMentorCommercialCheckoutBindingMongoStore.js'
+      - 'ai/MovieMentorCommercialCheckoutInitiationAuthority.js'
+      - 'ai/MovieMentorCommercialCheckoutProviderRegistry.js'
+      - 'ai/MovieMentorStripeCommercialProviderAdapter.js'
+      - 'ai/MovieMentorProductionCommercialCheckoutComposition.js'
+      - 'ai/MovieMentorProductionCommercialHttpIngress.js'
+      - 'server.js'
+      - 'scripts/verify-movie-mentor-durable-checkout-binding.mjs'
+      - 'scripts/verify-movie-mentor-production-commercial-http-ingress.mjs'
+      - '.github/workflows/verify-movie-mentor-durable-checkout-binding.yml'
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: 5A.17 durable checkout catastrophe torture
+        run: node scripts/verify-movie-mentor-durable-checkout-binding.mjs
+      - name: 5A.15 production commercial HTTP ingress regression
+        run: node scripts/verify-movie-mentor-production-commercial-http-ingress.mjs
+      - name: 5A.4 browser origin authority regression
+        run: node scripts/verify-movie-mentor-production-browser-origin-authority.mjs
+      - name: Stripe adapter regression
+        run: node scripts/verify-movie-mentor-stripe-commercial-provider-adapter.mjs
