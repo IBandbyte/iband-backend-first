@@ -6,11 +6,15 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/verify-movie-mentor-provider-effect-reality.yml"
+      - ".github/workflows/verify-movie-mentor-creator-production-authorization.yml"
       - "scripts/verify-movie-mentor-provider-effect-reality.mjs"
+      - "scripts/verify-movie-mentor-creator-production-authorization.mjs"
       - "ai/MovieMentorProviderEffectMongoStore.js"
       - "ai/MovieMentorProviderEffectAuthority.js"
       - "ai/MovieMentorProductionInferenceExecutionComposition.js"
       - "ai/MovieMentorTurnRuntime.js"
+      - "movieMentorTurn.js"
+      - "server.js"
 
 jobs:
   verify-provider-effect-reality:
@@ -31,6 +35,11 @@ jobs:
           node --check ai/MovieMentorProviderEffectAuthority.js
           node --check ai/MovieMentorProductionInferenceExecutionComposition.js
           node --check ai/MovieMentorTurnRuntime.js
+          node --check movieMentorTurn.js
+          node --check server.js
           node --check scripts/verify-movie-mentor-provider-effect-reality.mjs
+          node --check scripts/verify-movie-mentor-creator-production-authorization.mjs
       - name: Run 5A.24 Round Three provider effect catastrophe torture
         run: node scripts/verify-movie-mentor-provider-effect-reality.mjs
+      - name: Run inherited creator production authorization regression
+        run: node scripts/verify-movie-mentor-creator-production-authorization.mjs
