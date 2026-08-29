@@ -5,15 +5,13 @@ import { createMovieMentorProductionAuthenticationComposition } from "./ai/Movie
 import { createMovieMentorCreatorRequestAuthority } from "./ai/MovieMentorCreatorRequestAuthority.js";
 import { createMovieMentorProductionBrowserOriginAuthority } from "./ai/MovieMentorProductionBrowserOriginAuthority.js";
 import { createMovieMentorProductionInferenceSpendComposition } from "./ai/MovieMentorProductionInferenceSpendComposition.js";
+import { createMovieMentorProductionInferenceExecutionComposition } from "./ai/MovieMentorProductionInferenceExecutionComposition.js";
 import { mountMovieMentorProductionCommercialHttpIngress } from "./ai/MovieMentorProductionCommercialHttpIngress.js";
 import { createMovieMentorTurnRouter } from "./movieMentorTurn.js";
 
 const app = express();
 const browserOriginAuthority = createMovieMentorProductionBrowserOriginAuthority();
 
-// Provider signatures require exact bytes, so only the Stripe webhook is mounted
-// before general browser-origin/CORS/JSON middleware. The creator commercial router
-// is composed here but physically mounted below after those browser protections.
 let stripeClient = null;
 if (process.env.MOVIE_MENTOR_STRIPE_SECRET_KEY) {
   try { const { default: Stripe } = await import("stripe"); stripeClient = new Stripe(process.env.MOVIE_MENTOR_STRIPE_SECRET_KEY); } catch { stripeClient = null; }
@@ -39,19 +37,19 @@ async function mountMovieMentorCreatorGateway() {
   if (authentication?.ready !== true || typeof authentication?.verifyCredential !== "function") { const reason = authentication?.reason || "production-authentication-not-ready"; console.log(`[mount:closed] /api/movie-mentor (${reason})`); return Object.freeze({ mounted: false, basePath: "/api/movie-mentor", reason }); }
   const spendComposition = createMovieMentorProductionInferenceSpendComposition();
   if (spendComposition?.ready !== true || typeof spendComposition?.authority?.reserveTurn !== "function") { const reason = spendComposition?.reason || "production-inference-spend-authority-not-ready"; console.log(`[mount:closed] /api/movie-mentor (${reason})`); return Object.freeze({ mounted: false, basePath: "/api/movie-mentor", reason }); }
+  const executionComposition = createMovieMentorProductionInferenceExecutionComposition();
+  if (executionComposition?.ready !== true || typeof executionComposition?.authority?.claimProviderCall !== "function") { const reason = executionComposition?.reason || "production-inference-execution-authority-not-ready"; console.log(`[mount:closed] /api/movie-mentor (${reason})`); return Object.freeze({ mounted: false, basePath: "/api/movie-mentor", reason }); }
   const requestAuthority = createMovieMentorCreatorRequestAuthority({verifyCredential: authentication.verifyCredential,expectedIssuer: authentication.expectedIssuer,expectedAudience: authentication.expectedAudience});
-  const router = createMovieMentorTurnRouter({ requestAuthority, inferenceSpendAuthority: spendComposition.authority });
-  app.use("/api/movie-mentor", router);console.log("[mount:ok] /api/movie-mentor <- authenticated creator gateway + durable inference spend authority");return Object.freeze({ mounted: true, basePath: "/api/movie-mentor", reason: "authenticated-budgeted-creator-gateway-mounted" });
+  const router = createMovieMentorTurnRouter({ requestAuthority, inferenceSpendAuthority: spendComposition.authority, inferenceExecutionAuthority: executionComposition.authority });
+  app.use("/api/movie-mentor", router);
+  console.log("[mount:ok] /api/movie-mentor <- authenticated creator gateway + durable inference spend + live execution lease authority");
+  return Object.freeze({ mounted: true, basePath: "/api/movie-mentor", reason: "authenticated-budgeted-fenced-creator-gateway-mounted" });
 }
 await mountMovieMentorCreatorGateway();
 
-// Internal Semantic/Specialist/Synthesis capabilities receive no standalone production mount.
-// Production boot exposes only real, intentional capabilities; legacy best-effort mounts stay absent.
-// Browser origin authority is explicit deployment configuration and never substitutes for auth.
-// Authentication and ownership do not grant inference-spend authority.
 const recoveryMount = await assembleMovieMentorJourneyRecoveryProductionBoot({ app });
 console.log(`[mount:${recoveryMount.mounted ? "ok" : "closed"}] ${recoveryMount.basePath} (${recoveryMount.reason})`);
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`iBand backend listening on ${PORT}`));
 
-// 5A.17 exact-SHA certification anchor: raw provider ingress and protected creator commerce are deliberately split across the middleware boundary.
+// 5A.24 Round Two: production inference dispatch requires durable provider-call admission under the current execution generation/fence.
