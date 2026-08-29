@@ -10,15 +10,20 @@ on:
       - 'scripts/verify-movie-mentor-commercial-purchase-intent-authority.mjs'
       - '.github/workflows/verify-movie-mentor-commercial-purchase-intent-authority.yml'
   workflow_dispatch:
+permissions:
+  contents: read
 jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node 20
+        uses: actions/setup-node@v4
         with:
-          node-version: 20
-      - run: npm ci
+          node-version: "20"
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund --ignore-scripts
       - name: Check 5A.9 syntax
         run: node --check ai/MovieMentorCommercialPurchaseIntentMongoStore.js && node --check ai/MovieMentorCommercialPurchaseIntentAuthority.js && node --check ai/MovieMentorProductionCommercialPurchaseIntentComposition.js && node --check ai/MovieMentorCommercialPaymentEvidenceAuthority.js
       - name: Verify 5A.9 purchase intent authority
