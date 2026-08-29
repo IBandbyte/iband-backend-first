@@ -1,0 +1,38 @@
+name: Verify Movie Mentor Entitlement Issuance Authority
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/verify-movie-mentor-entitlement-issuance-authority.yml"
+      - "scripts/verify-movie-mentor-entitlement-issuance-authority.mjs"
+      - "ai/MovieMentorEntitlementIssuanceAuthority.js"
+      - "ai/MovieMentorEntitlementIssuanceMongoStore.js"
+      - "ai/MovieMentorProductionEntitlementIssuanceComposition.js"
+      - "ai/MovieMentorInferenceSpendMongoStore.js"
+      - "ai/MovieMentorBudgetSpendingGuardAgent.js"
+
+jobs:
+  verify-entitlement-issuance-authority:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Syntax check 5A.6 boundary
+        run: |
+          node --check ai/MovieMentorEntitlementIssuanceAuthority.js
+          node --check ai/MovieMentorEntitlementIssuanceMongoStore.js
+          node --check ai/MovieMentorProductionEntitlementIssuanceComposition.js
+          node --check scripts/verify-movie-mentor-entitlement-issuance-authority.mjs
+      - name: Run 5A.6 entitlement issuance authority torture
+        run: |
+          node scripts/verify-movie-mentor-entitlement-issuance-authority.mjs
+          node scripts/verify-movie-mentor-inference-spend-authority.mjs
