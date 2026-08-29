@@ -76,3 +76,5 @@ console.log(`[mount:${recoveryMount.mounted ? "ok" : "closed"}] ${recoveryMount.
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`iBand backend listening on ${PORT}`));
+
+// 5A.17 certification anchor: creator commerce remains behind browser authority; provider ingress remains raw-signed.
