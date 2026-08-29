@@ -1,0 +1,40 @@
+name: Verify Movie Mentor Live Execution Lease Enforcement
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/verify-movie-mentor-live-execution-lease-enforcement.yml"
+      - "scripts/verify-movie-mentor-live-execution-lease-enforcement.mjs"
+      - "ai/MovieMentorInferenceExecutionMongoStore.js"
+      - "ai/MovieMentorInferenceExecutionLeaseAuthority.js"
+      - "ai/MovieMentorProductionInferenceExecutionComposition.js"
+      - "ai/MovieMentorTurnRuntime.js"
+      - "movieMentorTurn.js"
+      - "server.js"
+
+jobs:
+  verify-live-execution-lease-enforcement:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install dependencies
+        run: npm install
+      - name: Syntax check 5A.24 Round Two boundary
+        run: |
+          node --check ai/MovieMentorInferenceExecutionMongoStore.js
+          node --check ai/MovieMentorInferenceExecutionLeaseAuthority.js
+          node --check ai/MovieMentorProductionInferenceExecutionComposition.js
+          node --check ai/MovieMentorTurnRuntime.js
+          node --check movieMentorTurn.js
+          node --check server.js
+          node --check scripts/verify-movie-mentor-live-execution-lease-enforcement.mjs
+      - name: Run 5A.24 Round Two stale-owner catastrophe torture
+        run: node scripts/verify-movie-mentor-live-execution-lease-enforcement.mjs
