@@ -1,24 +1,26 @@
 name: Verify Movie Mentor Inference Spend Settlement Authority
 on:
-  workflow_dispatch:
   push:
     branches: [main]
-    paths:
-      - 'ai/MovieMentorInferenceSpendMongoStore.js'
-      - 'ai/MovieMentorInferenceSpendAuthority.js'
-      - 'ai/MovieMentorTurnRuntime.js'
-      - 'scripts/verify-movie-mentor-inference-spend-settlement-authority.mjs'
-      - '.github/workflows/verify-movie-mentor-inference-spend-settlement-authority.yml'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
 jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node 20
+        uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
+          node-version: "20"
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Check 5A.8 syntax
+        run: node --check ai/MovieMentorInferenceSpendMongoStore.js && node --check ai/MovieMentorInferenceSpendAuthority.js && node --check ai/MovieMentorTurnRuntime.js && node --check scripts/verify-movie-mentor-inference-spend-settlement-authority.mjs
       - name: Verify 5A.8 settlement authority
         run: node scripts/verify-movie-mentor-inference-spend-settlement-authority.mjs
       - name: Regress sealed 5A.7 commercial evidence
