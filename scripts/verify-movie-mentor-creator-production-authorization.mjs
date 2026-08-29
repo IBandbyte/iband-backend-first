@@ -8,6 +8,8 @@ console.log("5A.1 — creator-facing production authentication & project ownersh
 
 function verifiedPrincipalAdapter({ principalId="creator-1" }={}) { return async ({ request }) => { if (!request?.headers?.authorization) { const e=new Error("credential required"); e.code="MOVIE_MENTOR_AUTH_CREDENTIAL_REQUIRED"; throw e; } return Object.freeze({authenticated:true,principalId,authenticationSource:"synthetic-verified-principal"}); }; }
 function ownershipAuthority(owner="creator-1") { return { async authorizeProject({principal,projectId}) { return principal?.principalId===owner ? Object.freeze({authorized:true,projectId,ownershipRef:`ownership:${projectId}`,ownershipRevision:1,authorizationSource:"synthetic-ownership"}) : Object.freeze({authorized:false,projectId,reason:"principal-not-owner"}); } }; }
+function spendAuthority(){return{async reserveTurn(){return{authorized:true,reservationId:"test-reservation",principalId:"creator-1",projectId:"project-1",operation:"movie-mentor-turn",units:1};}};}
+function executionAuthority(){return{async openExecution(){return{authorized:true};},async claimProviderCall(){return{authorized:true,dispatchAuthorized:true};}};}
 
 {
  let ownershipCalls=0;
@@ -37,8 +39,9 @@ function ownershipAuthority(owner="creator-1") { return { async authorizeProject
 }
 {
  assert.throws(()=>createMovieMentorTurnRouter({}),e=>e.code==="MOVIE_MENTOR_CREATOR_REQUEST_AUTHORITY_REQUIRED");
+ assert.throws(()=>createMovieMentorTurnRouter({requestAuthority:{async authorize(){return{authorized:true};}},inferenceSpendAuthority:spendAuthority()}),e=>e.code==="MOVIE_MENTOR_INFERENCE_EXECUTION_AUTHORITY_REQUIRED");
  let runCalls=0,stateCalls=0,authorityCalls=0;
- const router=createMovieMentorTurnRouter({requestAuthority:{async authorize({projectId}){authorityCalls++;if(!projectId){const e=new Error("project required");e.code="MOVIE_MENTOR_CREATOR_PROJECT_REQUIRED";throw e;}if(projectId!=="project-1"){const e=new Error("denied");e.code="MOVIE_MENTOR_CREATOR_PROJECT_NOT_AUTHORIZED";throw e;}return{authorized:true,principalId:"creator-1",projectId,ownershipRef:"ownership:project-1"};}},inferenceSpendAuthority:{async reserveTurn(){return{authorized:true,reservationId:"test-reservation",principalId:"creator-1",projectId:"project-1",operation:"movie-mentor-turn",units:1};}},runTurn:async(input)=>{runCalls++;return{success:true,projectId:input.projectId};},applyStateTransition:async(input)=>{stateCalls++;return{projectId:input.projectId};}});
+ const router=createMovieMentorTurnRouter({requestAuthority:{async authorize({projectId}){authorityCalls++;if(!projectId){const e=new Error("project required");e.code="MOVIE_MENTOR_CREATOR_PROJECT_REQUIRED";throw e;}if(projectId!=="project-1"){const e=new Error("denied");e.code="MOVIE_MENTOR_CREATOR_PROJECT_NOT_AUTHORIZED";throw e;}return{authorized:true,principalId:"creator-1",projectId,ownershipRef:"ownership:project-1"};}},inferenceSpendAuthority:spendAuthority(),inferenceExecutionAuthority:executionAuthority(),runTurn:async(input)=>{runCalls++;return{success:true,projectId:input.projectId};},applyStateTransition:async(input)=>{stateCalls++;return{projectId:input.projectId};}});
  const turnLayer=router.stack.find(layer=>layer.route?.path==="/turn");const syncLayer=router.stack.find(layer=>layer.route?.path==="/state/sync");
  const response=()=>({statusCode:200,payload:null,status(code){this.statusCode=code;return this;},json(value){this.payload=value;return this;}});
  let res=response();await turnLayer.route.stack[0].handle({body:{creatorSessionId:"session-only"},headers:{authorization:"Bearer token"}},res);assert.equal(res.statusCode,400);assert.equal(runCalls,0);
@@ -48,17 +51,18 @@ function ownershipAuthority(owner="creator-1") { return { async authorizeProject
 }
 
 const server=fs.readFileSync(new URL("../server.js",import.meta.url),"utf8");
-assert.match(server,/createMovieMentorProductionAuthenticationComposition/);assert.match(server,/createMovieMentorCreatorRequestAuthority/);assert.match(server,/createMovieMentorTurnRouter/);assert.match(server,/app\.use\("\/api\/movie-mentor",\s*router\)/);assert.doesNotMatch(server,/mountRoute\("\/api\/movie-mentor","\.\/movieMentorTurn\.js"\)/);
-const gateway=fs.readFileSync(new URL("../movieMentorTurn.js",import.meta.url),"utf8");assert.match(gateway,/requestAuthority\.authorize/);assert.match(gateway,/projectId/);assert.doesNotMatch(gateway,/creatorSessionId.*authorize/);
+assert.match(server,/createMovieMentorProductionAuthenticationComposition/);assert.match(server,/createMovieMentorCreatorRequestAuthority/);assert.match(server,/createMovieMentorTurnRouter/);assert.match(server,/createMovieMentorProductionInferenceExecutionComposition/);assert.match(server,/inferenceExecutionAuthority:\s*executionComposition\.authority/);assert.match(server,/app\.use\("\/api\/movie-mentor",\s*router\)/);assert.doesNotMatch(server,/mountRoute\("\/api\/movie-mentor","\.\/movieMentorTurn\.js"\)/);
+const gateway=fs.readFileSync(new URL("../movieMentorTurn.js",import.meta.url),"utf8");assert.match(gateway,/requestAuthority\.authorize/);assert.match(gateway,/inferenceExecutionAuthority/);assert.match(gateway,/projectId/);assert.doesNotMatch(gateway,/creatorSessionId.*authorize/);
 
 console.log("✓ projectId is mandatory before ownership evaluation");
 console.log("✓ missing credential fails before project access");
 console.log("✓ forged body identity cannot impersonate the durable owner");
 console.log("✓ authenticated owner receives frozen project authority");
 console.log("✓ production authentication is fail-closed when absent or partial");
+console.log("✓ creator gateway also fails closed without durable execution authority");
 console.log("✓ session-only requests cannot reach turn execution");
 console.log("✓ wrong-project requests cause zero turn execution");
-console.log("✓ valid owner authority reaches turn and state handlers with mandatory spend authority present");
+console.log("✓ valid owner authority reaches turn and state handlers with mandatory spend and execution authority present");
 console.log("✓ server cannot expose creator gateway through generic mountRoute");
-console.log("LAW: project identity is reference; authenticated ownership is authority");
+console.log("LAW: project identity is reference; authenticated ownership is authority; production turn execution also requires durable execution authority");
 console.log("5A.1 torture: GREEN");
