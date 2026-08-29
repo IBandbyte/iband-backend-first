@@ -1,0 +1,144 @@
+import crypto from "node:crypto";
+
+const VERSION = "1.0.0";
+const DOMAIN = "iband.movie-mentor.inference-execution-lease";
+const DEFAULT_LEASE_MS = 60_000;
+const DEFAULT_MAX_PROVIDER_CALLS = 5;
+
+function text(value) { return typeof value === "string" ? value.trim() : ""; }
+function freeze(value) { return Object.freeze(value); }
+function fail(code, message, extras = {}) { const error = new Error(message); error.code = code; Object.assign(error, extras); throw error; }
+function instant(value) { const parsed = value instanceof Date ? new Date(value) : new Date(value); if (Number.isNaN(parsed.getTime())) fail("MOVIE_MENTOR_INFERENCE_EXECUTION_TIME_INVALID", "Inference execution lease time is invalid."); return parsed; }
+function live(record, at) { return record && text(record.phase) === "active" && instant(record.leaseExpiresAt).getTime() > at.getTime(); }
+function sameTurnBinding(record, request) { return text(record?.creatorTurnId) === request.creatorTurnId && text(record?.principalId) === request.principalId && text(record?.projectId) === request.projectId && text(record?.reservationId) === request.reservationId && text(record?.requestDigest) === request.requestDigest && record?.maxProviderCalls === request.maxProviderCalls; }
+function evidence(record, extras = {}) { return freeze({ authorized: true, domain: DOMAIN, executionId: text(record.executionId), creatorTurnId: text(record.creatorTurnId), principalId: text(record.principalId), projectId: text(record.projectId), reservationId: text(record.reservationId), requestDigest: text(record.requestDigest), phase: text(record.phase), ownerId: text(record.ownerId), leaseGeneration: record.leaseGeneration, leaseReference: text(record.leaseReference), fencingToken: text(record.fencingToken), leaseExpiresAt: instant(record.leaseExpiresAt).toISOString(), maxProviderCalls: record.maxProviderCalls, providerCallsClaimed: record.providerCallsClaimed, ...extras }); }
+
+function createMovieMentorInferenceExecutionLeaseAuthority({
+  store = null,
+  now = () => new Date(),
+  leaseMs = DEFAULT_LEASE_MS,
+  maxProviderCalls = DEFAULT_MAX_PROVIDER_CALLS,
+  randomId = () => crypto.randomUUID(),
+} = {}) {
+  if (typeof store?.readExecution !== "function" || typeof store?.readExecutionByCreatorTurn !== "function" || typeof store?.createExecution !== "function" || typeof store?.replaceExecution !== "function") fail("MOVIE_MENTOR_INFERENCE_EXECUTION_STORE_REQUIRED", "Inference execution lease authority requires a durable execution store.");
+  if (!Number.isSafeInteger(leaseMs) || leaseMs <= 0) fail("MOVIE_MENTOR_INFERENCE_EXECUTION_LEASE_DURATION_INVALID", "Inference execution lease duration must be a positive safe integer.");
+  if (!Number.isSafeInteger(maxProviderCalls) || maxProviderCalls < 1) fail("MOVIE_MENTOR_INFERENCE_EXECUTION_PROVIDER_BUDGET_INVALID", "Inference execution provider-call budget must be a positive safe integer.");
+
+  async function rereadExact(executionId, ownerId, generation, reference, fencingToken) {
+    const durable = await store.readExecution(executionId);
+    return durable && text(durable.ownerId) === ownerId && durable.leaseGeneration === generation && text(durable.leaseReference) === reference && text(durable.fencingToken) === fencingToken ? durable : null;
+  }
+
+  async function openExecution(input = {}) {
+    const request = freeze({
+      creatorTurnId: text(input.creatorTurnId), principalId: text(input.principalId), projectId: text(input.projectId), reservationId: text(input.reservationId), requestDigest: text(input.requestDigest),
+      ownerId: text(input.ownerId), maxProviderCalls: input.maxProviderCalls ?? maxProviderCalls,
+    });
+    if ([request.creatorTurnId, request.principalId, request.projectId, request.reservationId, request.requestDigest, request.ownerId].some((value) => !value)) fail("MOVIE_MENTOR_INFERENCE_EXECUTION_BINDING_REQUIRED", "Inference execution requires creator turn, principal, project, reservation, request digest and owner identity.");
+    if (!Number.isSafeInteger(request.maxProviderCalls) || request.maxProviderCalls < 1) fail("MOVIE_MENTOR_INFERENCE_EXECUTION_PROVIDER_BUDGET_INVALID", "Inference execution provider-call budget must be a positive safe integer.");
+
+    const existing = await store.readExecutionByCreatorTurn(request);
+    if (existing) {
+      if (!sameTurnBinding(existing, request)) fail("MOVIE_MENTOR_INFERENCE_EXECUTION_TURN_IDENTITY_CONFLICT", "Creator turn identity is already bound to a different immutable execution request.");
+      return evidence(existing, { idempotent: true, created: false });
+    }
+
+    const at = instant(now());
+    const executionId = `inference-execution-${randomId()}`;
+    const leaseReference = `inference-lease-1-${randomId()}`;
+    const fencingToken = `inference-fence-1-${randomId()}`;
+    const next = freeze({
+      executionId, ...request, phase: "active", leaseGeneration: 1, leaseReference, fencingToken,
+      leaseAcquiredAt: at.toISOString(), leaseExpiresAt: new Date(at.getTime() + leaseMs).toISOString(), providerCallsClaimed: 0,
+    });
+
+    try {
+      const created = await store.createExecution(next);
+      if (created) return evidence(created, { idempotent: false, created: true });
+    } catch (error) {
+      const exact = await rereadExact(executionId, request.ownerId, 1, leaseReference, fencingToken);
+      if (exact) return evidence(exact, { idempotent: true, created: true, reconciledAckLoss: true });
+      const replay = await store.readExecutionByCreatorTurn(request);
+      if (replay) {
+        if (!sameTurnBinding(replay, request)) fail("MOVIE_MENTOR_INFERENCE_EXECUTION_TURN_IDENTITY_CONFLICT", "Creator turn identity is already bound to a different immutable execution request.");
+        return evidence(replay, { idempotent: true, created: false });
+      }
+      throw error;
+    }
+
+    const replay = await store.readExecutionByCreatorTurn(request);
+    if (!replay) fail("MOVIE_MENTOR_INFERENCE_EXECUTION_CREATE_RACE_LOST", "Inference execution creation lost a durable race without a recoverable creator-turn binding.");
+    if (!sameTurnBinding(replay, request)) fail("MOVIE_MENTOR_INFERENCE_EXECUTION_TURN_IDENTITY_CONFLICT", "Creator turn identity is already bound to a different immutable execution request.");
+    return evidence(replay, { idempotent: true, created: false });
+  }
+
+  async function acquireExecution({ executionId, ownerId } = {}) {
+    const id = text(executionId), requestedOwnerId = text(ownerId);
+    if (!id || !requestedOwnerId) fail("MOVIE_MENTOR_INFERENCE_EXECUTION_ACQUIRE_BINDING_REQUIRED", "Execution acquisition requires execution and owner identity.");
+    const current = await store.readExecution(id);
+    if (!current) return freeze({ authorized: false, reason: "execution-not-found" });
+    if (text(current.phase) !== "active") return freeze({ authorized: false, reason: "execution-not-active", phase: text(current.phase) });
+    const at = instant(now());
+    if (live(current, at)) {
+      if (text(current.ownerId) !== requestedOwnerId) return freeze({ authorized: false, reason: "execution-lease-held-by-another-owner", holderOwnerId: text(current.ownerId), leaseGeneration: current.leaseGeneration });
+      return evidence(current, { idempotent: true, acquired: false });
+    }
+
+    const generation = current.leaseGeneration + 1;
+    const leaseReference = `inference-lease-${generation}-${randomId()}`;
+    const fencingToken = `inference-fence-${generation}-${randomId()}`;
+    const next = freeze({ ...current, ownerId: requestedOwnerId, leaseGeneration: generation, leaseReference, fencingToken, leaseAcquiredAt: at.toISOString(), leaseExpiresAt: new Date(at.getTime() + leaseMs).toISOString() });
+    try {
+      const written = await store.replaceExecution(next, { expectedPhase: current.phase, expectedLeaseGeneration: current.leaseGeneration, expectedLeaseReference: current.leaseReference });
+      if (written) return evidence(written, { idempotent: false, acquired: true });
+    } catch (error) {
+      const exact = await rereadExact(id, requestedOwnerId, generation, leaseReference, fencingToken);
+      if (exact) return evidence(exact, { idempotent: true, acquired: true, reconciledAckLoss: true });
+      throw error;
+    }
+    const exact = await rereadExact(id, requestedOwnerId, generation, leaseReference, fencingToken);
+    if (exact) return evidence(exact, { idempotent: true, acquired: true });
+    return freeze({ authorized: false, reason: "execution-lease-race-lost" });
+  }
+
+  async function renewExecution({ executionId, ownerId, leaseGeneration, leaseReference, fencingToken } = {}) {
+    const id = text(executionId), requestedOwnerId = text(ownerId), reference = text(leaseReference), fence = text(fencingToken);
+    if (!id || !requestedOwnerId || !reference || !fence || !Number.isSafeInteger(Number(leaseGeneration))) fail("MOVIE_MENTOR_INFERENCE_EXECUTION_RENEW_BINDING_REQUIRED", "Execution renewal requires complete lease fencing evidence.");
+    const current = await store.readExecution(id);
+    const at = instant(now());
+    if (!current || text(current.phase) !== "active" || text(current.ownerId) !== requestedOwnerId || current.leaseGeneration !== Number(leaseGeneration) || text(current.leaseReference) !== reference || text(current.fencingToken) !== fence) return freeze({ authorized: false, reason: "execution-lease-fenced" });
+    if (!live(current, at)) return freeze({ authorized: false, reason: "execution-lease-expired" });
+
+    const currentExpiry = instant(current.leaseExpiresAt);
+    const nextExpiry = new Date(Math.max(currentExpiry.getTime(), at.getTime()) + leaseMs).toISOString();
+    const next = freeze({ ...current, leaseExpiresAt: nextExpiry });
+    try {
+      const written = await store.replaceExecution(next, { expectedPhase: current.phase, expectedLeaseGeneration: current.leaseGeneration, expectedLeaseReference: current.leaseReference, expectedLeaseExpiresAt: currentExpiry.toISOString() });
+      if (written) return evidence(written, { renewed: true });
+    } catch (error) {
+      const exact = await store.readExecution(id);
+      if (exact && text(exact.ownerId) === requestedOwnerId && exact.leaseGeneration === current.leaseGeneration && text(exact.leaseReference) === reference && text(exact.fencingToken) === fence && instant(exact.leaseExpiresAt).toISOString() === nextExpiry) return evidence(exact, { renewed: true, reconciledAckLoss: true });
+      throw error;
+    }
+    return freeze({ authorized: false, reason: "execution-lease-renewal-race-lost" });
+  }
+
+  async function assertFence({ executionId, ownerId, leaseGeneration, leaseReference, fencingToken } = {}) {
+    const current = await store.readExecution(text(executionId));
+    const at = instant(now());
+    if (!live(current, at) || text(current.ownerId) !== text(ownerId) || current.leaseGeneration !== Number(leaseGeneration) || text(current.leaseReference) !== text(leaseReference) || text(current.fencingToken) !== text(fencingToken)) return freeze({ authorized: false, reason: "execution-lease-fenced" });
+    return evidence(current);
+  }
+
+  return freeze({ openExecution, acquireExecution, renewExecution, assertFence });
+}
+
+export {
+  VERSION as MOVIE_MENTOR_INFERENCE_EXECUTION_LEASE_AUTHORITY_VERSION,
+  DOMAIN as MOVIE_MENTOR_INFERENCE_EXECUTION_LEASE_AUTHORITY_DOMAIN,
+  DEFAULT_LEASE_MS as MOVIE_MENTOR_INFERENCE_EXECUTION_DEFAULT_LEASE_MS,
+  DEFAULT_MAX_PROVIDER_CALLS as MOVIE_MENTOR_INFERENCE_EXECUTION_DEFAULT_MAX_PROVIDER_CALLS,
+  createMovieMentorInferenceExecutionLeaseAuthority,
+};
+
+export default createMovieMentorInferenceExecutionLeaseAuthority;
