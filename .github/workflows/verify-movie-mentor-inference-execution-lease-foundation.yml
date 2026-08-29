@@ -1,0 +1,32 @@
+name: Verify Movie Mentor Inference Execution Lease Foundation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/verify-movie-mentor-inference-execution-lease-foundation.yml"
+      - "scripts/verify-movie-mentor-inference-execution-lease-foundation.mjs"
+      - "ai/MovieMentorInferenceExecutionMongoStore.js"
+      - "ai/MovieMentorInferenceExecutionLeaseAuthority.js"
+
+jobs:
+  verify-inference-execution-lease-foundation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install dependencies
+        run: npm install
+      - name: Syntax check 5A.24 Round One boundary
+        run: |
+          node --check ai/MovieMentorInferenceExecutionMongoStore.js
+          node --check ai/MovieMentorInferenceExecutionLeaseAuthority.js
+          node --check scripts/verify-movie-mentor-inference-execution-lease-foundation.mjs
+      - name: Run 5A.24 Round One execution lease torture
+        run: node scripts/verify-movie-mentor-inference-execution-lease-foundation.mjs
