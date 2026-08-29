@@ -1,0 +1,39 @@
+name: Verify Movie Mentor Commercial Checkout Initiation Authority
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ai/MovieMentorCommercialCheckoutInitiationAuthority.js'
+      - 'ai/MovieMentorCommercialCheckoutProviderRegistry.js'
+      - 'ai/MovieMentorProductionCommercialCheckoutComposition.js'
+      - 'scripts/verify-movie-mentor-commercial-checkout-initiation-authority.mjs'
+      - '.github/workflows/verify-movie-mentor-commercial-checkout-initiation-authority.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Check 5A.10 syntax
+        run: node --check ai/MovieMentorCommercialCheckoutInitiationAuthority.js && node --check ai/MovieMentorCommercialCheckoutProviderRegistry.js && node --check ai/MovieMentorProductionCommercialCheckoutComposition.js
+      - name: Verify 5A.10 checkout initiation authority
+        run: node scripts/verify-movie-mentor-commercial-checkout-initiation-authority.mjs
+      - name: Regress sealed 5A.9 purchase intent
+        run: node scripts/verify-movie-mentor-commercial-purchase-intent-authority.mjs
+      - name: Regress sealed 5A.8 settlement
+        run: node scripts/verify-movie-mentor-inference-spend-settlement-authority.mjs
+      - name: Regress sealed 5A.7 commercial evidence
+        run: node scripts/verify-movie-mentor-commercial-payment-evidence-authority.mjs
+      - name: Regress sealed 5A.6 entitlement issuance
+        run: node scripts/verify-movie-mentor-entitlement-issuance-authority.mjs
+      - name: Regress sealed 5A.5 inference spend
+        run: node scripts/verify-movie-mentor-inference-spend-authority.mjs
