@@ -1,0 +1,33 @@
+name: Verify Movie Mentor Production Browser Origin Authority
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/verify-movie-mentor-production-browser-origin-authority.yml"
+      - "scripts/verify-movie-mentor-production-browser-origin-authority.mjs"
+      - "ai/MovieMentorProductionBrowserOriginAuthority.js"
+      - "server.js"
+      - ".env.example"
+
+jobs:
+  verify-production-browser-origin-authority:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install dependencies
+        run: npm install
+      - name: Syntax check 5A.4 boundary
+        run: |
+          node --check ai/MovieMentorProductionBrowserOriginAuthority.js
+          node --check server.js
+          node --check scripts/verify-movie-mentor-production-browser-origin-authority.mjs
+      - name: Run 5A.4 production browser origin authority torture
+        run: node scripts/verify-movie-mentor-production-browser-origin-authority.mjs

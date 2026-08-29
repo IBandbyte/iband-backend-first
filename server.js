@@ -3,10 +3,28 @@ import cors from "cors";
 import { assembleMovieMentorJourneyRecoveryProductionBoot } from "./ai/MovieMentorJourneyRecoveryProductionBootAssembly.js";
 import { createMovieMentorProductionAuthenticationComposition } from "./ai/MovieMentorProductionAuthenticationComposition.js";
 import { createMovieMentorCreatorRequestAuthority } from "./ai/MovieMentorCreatorRequestAuthority.js";
+import { createMovieMentorProductionBrowserOriginAuthority } from "./ai/MovieMentorProductionBrowserOriginAuthority.js";
 import { createMovieMentorTurnRouter } from "./movieMentorTurn.js";
 
 const app = express();
-app.use(cors());
+const browserOriginAuthority = createMovieMentorProductionBrowserOriginAuthority();
+
+app.use((req, res, next) => {
+  const decision = browserOriginAuthority.authorizeRequest({
+    origin: req.get("Origin") || null,
+    path: req.path,
+  });
+
+  if (decision.allowed) return next();
+
+  return res.status(403).json({
+    success: false,
+    code: "MOVIE_MENTOR_BROWSER_ORIGIN_NOT_AUTHORIZED",
+    message: "This browser origin is not authorized for the requested Movie Mentor production surface.",
+  });
+});
+
+app.use(cors(browserOriginAuthority.createCorsOptions()));
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -39,6 +57,10 @@ await mountMovieMentorCreatorGateway();
 
 // Door 5A.3: Production boot exposes only real, intentional capabilities.
 // Legacy best-effort mounts for missing route modules are intentionally absent.
+
+// Door 5A.4: Browser origin authority is explicit deployment configuration.
+// Missing or invalid configuration grants no cross-origin browser authority to
+// protected Movie Mentor production surfaces. CORS never substitutes for auth.
 
 const recoveryMount = await assembleMovieMentorJourneyRecoveryProductionBoot({ app });
 console.log(`[mount:${recoveryMount.mounted ? "ok" : "closed"}] ${recoveryMount.basePath} (${recoveryMount.reason})`);
