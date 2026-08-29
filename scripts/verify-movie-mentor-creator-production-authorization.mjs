@@ -38,7 +38,7 @@ function ownershipAuthority(owner="creator-1") { return { async authorizeProject
 {
  assert.throws(()=>createMovieMentorTurnRouter({}),e=>e.code==="MOVIE_MENTOR_CREATOR_REQUEST_AUTHORITY_REQUIRED");
  let runCalls=0,stateCalls=0,authorityCalls=0;
- const router=createMovieMentorTurnRouter({requestAuthority:{async authorize({projectId}){authorityCalls++;if(!projectId){const e=new Error("project required");e.code="MOVIE_MENTOR_CREATOR_PROJECT_REQUIRED";throw e;}if(projectId!=="project-1"){const e=new Error("denied");e.code="MOVIE_MENTOR_CREATOR_PROJECT_NOT_AUTHORIZED";throw e;}return{authorized:true,projectId,ownershipRef:"ownership:project-1"};}},runTurn:async(input)=>{runCalls++;return{success:true,projectId:input.projectId};},applyStateTransition:async(input)=>{stateCalls++;return{projectId:input.projectId};}});
+ const router=createMovieMentorTurnRouter({requestAuthority:{async authorize({projectId}){authorityCalls++;if(!projectId){const e=new Error("project required");e.code="MOVIE_MENTOR_CREATOR_PROJECT_REQUIRED";throw e;}if(projectId!=="project-1"){const e=new Error("denied");e.code="MOVIE_MENTOR_CREATOR_PROJECT_NOT_AUTHORIZED";throw e;}return{authorized:true,principalId:"creator-1",projectId,ownershipRef:"ownership:project-1"};}},inferenceSpendAuthority:{async reserveTurn(){return{authorized:true,reservationId:"test-reservation",principalId:"creator-1",projectId:"project-1",operation:"movie-mentor-turn",units:1};}},runTurn:async(input)=>{runCalls++;return{success:true,projectId:input.projectId};},applyStateTransition:async(input)=>{stateCalls++;return{projectId:input.projectId};}});
  const turnLayer=router.stack.find(layer=>layer.route?.path==="/turn");const syncLayer=router.stack.find(layer=>layer.route?.path==="/state/sync");
  const response=()=>({statusCode:200,payload:null,status(code){this.statusCode=code;return this;},json(value){this.payload=value;return this;}});
  let res=response();await turnLayer.route.stack[0].handle({body:{creatorSessionId:"session-only"},headers:{authorization:"Bearer token"}},res);assert.equal(res.statusCode,400);assert.equal(runCalls,0);
@@ -58,7 +58,7 @@ console.log("✓ authenticated owner receives frozen project authority");
 console.log("✓ production authentication is fail-closed when absent or partial");
 console.log("✓ session-only requests cannot reach turn execution");
 console.log("✓ wrong-project requests cause zero turn execution");
-console.log("✓ valid owner authority reaches turn and state handlers");
+console.log("✓ valid owner authority reaches turn and state handlers with mandatory spend authority present");
 console.log("✓ server cannot expose creator gateway through generic mountRoute");
 console.log("LAW: project identity is reference; authenticated ownership is authority");
 console.log("5A.1 torture: GREEN");
