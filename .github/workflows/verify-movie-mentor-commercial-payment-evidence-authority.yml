@@ -1,0 +1,29 @@
+name: Verify Movie Mentor Commercial Payment Evidence Authority
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Check 5A.7 syntax
+        run: node --check ai/MovieMentorCommercialPaymentEvidenceAuthority.js && node --check ai/MovieMentorCommercialPaymentEvidenceBridge.js && node --check scripts/verify-movie-mentor-commercial-payment-evidence-authority.mjs
+      - name: Verify 5A.7 commercial payment evidence authority
+        run: node scripts/verify-movie-mentor-commercial-payment-evidence-authority.mjs
+      - name: Regress sealed 5A.6 entitlement issuance authority
+        run: node scripts/verify-movie-mentor-entitlement-issuance-authority.mjs
+      - name: Regress sealed 5A.5 inference spend authority
+        run: node scripts/verify-movie-mentor-inference-spend-authority.mjs
