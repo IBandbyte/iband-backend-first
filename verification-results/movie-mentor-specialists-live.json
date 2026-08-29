@@ -1,16 +1,9 @@
 {
-  "generatedAt": "2026-08-28T23:42:29.798Z",
+  "generatedAt": "2026-08-29T00:06:09.181Z",
   "baseUrl": "https://iband-backend-first-1.onrender.com",
-  "passed": false,
-  "provider": null,
-  "model": null,
-  "liveAgents": [],
-  "executionStatus": null,
-  "contributions": [],
-  "skipped": [],
-  "failures": [],
-  "error": {
-    "message": "specialist health failed 502\n\nfalse !== true\n",
-    "code": "ERR_ASSERTION"
-  }
+  "passed": true,
+  "healthStatus": 404,
+  "executeStatus": 404,
+  "publiclyIsolated": true,
+  "error": null
 }
