@@ -1,0 +1,30 @@
+name: Verify Movie Mentor Production Boot Surface Truth
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/verify-movie-mentor-production-boot-surface-truth.yml"
+      - "scripts/verify-movie-mentor-production-boot-surface-truth.mjs"
+      - "server.js"
+
+jobs:
+  verify-production-boot-surface-truth:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install dependencies
+        run: npm install
+      - name: Syntax check 5A.3 boundary
+        run: |
+          node --check server.js
+          node --check scripts/verify-movie-mentor-production-boot-surface-truth.mjs
+      - name: Run 5A.3 production boot surface truth torture
+        run: node scripts/verify-movie-mentor-production-boot-surface-truth.mjs

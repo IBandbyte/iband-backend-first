@@ -13,18 +13,6 @@ app.use(express.urlencoded({ extended: true }));
 app.get("/", (_req, res) => res.json({ ok: true, service: "iband-backend-first" }));
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
-async function mountRoute(basePath, modulePath) {
-  try {
-    const mod = await import(modulePath);
-    const router = mod.default || mod.router;
-    if (!router) throw new Error(`No router export from ${modulePath}`);
-    app.use(basePath, router);
-    console.log(`[mount:ok] ${basePath} <- ${modulePath}`);
-  } catch (err) {
-    console.error(`[mount:failed] ${basePath} <- ${modulePath}`, err);
-  }
-}
-
 async function mountMovieMentorCreatorGateway() {
   const authentication = createMovieMentorProductionAuthenticationComposition();
   if (authentication?.ready !== true || typeof authentication?.verifyCredential !== "function") {
@@ -49,10 +37,8 @@ await mountMovieMentorCreatorGateway();
 // capabilities of the canonical authenticated Movie Mentor turn pipeline.
 // Their standalone HTTP adapters intentionally receive no production mount.
 
-await mountRoute("/api/ai-mentor", "./aiMentor.js");
-await mountRoute("/api/mentor", "./mentor.js");
-await mountRoute("/api/generate", "./generate.js");
-await mountRoute("/api/studio", "./studio.js");
+// Door 5A.3: Production boot exposes only real, intentional capabilities.
+// Legacy best-effort mounts for missing route modules are intentionally absent.
 
 const recoveryMount = await assembleMovieMentorJourneyRecoveryProductionBoot({ app });
 console.log(`[mount:${recoveryMount.mounted ? "ok" : "closed"}] ${recoveryMount.basePath} (${recoveryMount.reason})`);
