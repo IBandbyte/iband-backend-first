@@ -1,0 +1,25 @@
+name: Verify Movie Mentor Commercial Package Catalogue Authority
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "movieMentorCommercial.js"
+      - "ai/MovieMentorCommercialPolicyRegistry.js"
+      - "ai/MovieMentorProductionCommercialPolicyComposition.js"
+      - "ai/MovieMentorProductionCreatorCommercialComposition.js"
+      - "ai/MovieMentorProductionCommercialHttpIngress.js"
+      - "scripts/verify-movie-mentor-commercial-package-catalogue-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-commercial-package-catalogue-authority.yml"
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - run: node scripts/verify-movie-mentor-commercial-package-catalogue-authority.mjs

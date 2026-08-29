@@ -8,7 +8,7 @@ import {createMovieMentorProductionEntitlementIssuanceComposition} from "./Movie
 import {createMovieMentorProductionCommercialProviderIngressComposition} from "./MovieMentorProductionCommercialProviderIngressComposition.js";
 import {createMovieMentorStripeCommercialProviderAdapter} from "./MovieMentorStripeCommercialProviderAdapter.js";
 
-const VERSION="1.1.0";
+const VERSION="1.2.0";
 const CREATOR_BASE_PATH="/api/movie-mentor/commercial";
 const STRIPE_WEBHOOK_PATH="/api/movie-mentor/commercial/providers/stripe/webhook";
 function text(v){return typeof v==="string"?v.trim():"";}
@@ -29,13 +29,10 @@ async function mountMovieMentorProductionCommercialHttpIngress({app,env=process.
   if(!stripe||!webhookSecret||!successUrl||!cancelUrl)return closed("stripe-commercial-provider-not-configured");
   adapter=createMovieMentorStripeCommercialProviderAdapter({stripe,webhookSecret,successUrl,cancelUrl});
   checkout=createMovieMentorProductionCommercialCheckoutComposition({purchaseIntentAuthority:purchase.authority,providers:{stripe:adapter}});
-  creator=createMovieMentorProductionCreatorCommercialComposition({authentication,purchaseIntentAuthority:purchase.authority,checkoutAuthority:checkout.authority});
+  creator=createMovieMentorProductionCreatorCommercialComposition({authentication,purchaseIntentAuthority:purchase.authority,checkoutAuthority:checkout.authority,listCommercialPackages:policy.listCommercialPackages});
   ingress=createMovieMentorProductionCommercialProviderIngressComposition({purchaseIntentAuthority:purchase.authority,issuanceAuthority:issuance.authority,providers:{stripe:adapter}});
  }catch(error){return closed(error?.code||"commercial-http-composition-failed");}
 
- // Only the signed provider webhook is mounted before browser-origin middleware and
- // general JSON parsing. The authenticated creator router is returned to server.js
- // and mounted after origin/CORS/JSON authority so it cannot bypass Door 5A.4.
  app.post(STRIPE_WEBHOOK_PATH,express.raw({type:"application/json",limit:"512kb"}),async(req,res)=>{
   try{const result=await ingress.authority.ingest({provider:"stripe",delivery:{rawBody:req.body,signature:req.get("Stripe-Signature")||""}});return res.status(200).json({received:true,status:result?.status||"commercial-evidence-processed"});}
   catch(error){const code=text(error?.code)||"MOVIE_MENTOR_COMMERCIAL_PROVIDER_INGRESS_FAILED";const clientFault=code.includes("SIGNATURE")||code.includes("DELIVERY_INVALID")||code.includes("PROVIDER_NOT_CONFIGURED");return res.status(clientFault?400:500).json({received:false,code});}
