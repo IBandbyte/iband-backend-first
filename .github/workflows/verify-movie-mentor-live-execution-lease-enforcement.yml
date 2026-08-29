@@ -7,6 +7,7 @@ on:
     paths:
       - ".github/workflows/verify-movie-mentor-live-execution-lease-enforcement.yml"
       - "scripts/verify-movie-mentor-live-execution-lease-enforcement.mjs"
+      - "scripts/verify-movie-mentor-inference-spend-authority.mjs"
       - "ai/MovieMentorInferenceExecutionMongoStore.js"
       - "ai/MovieMentorInferenceExecutionLeaseAuthority.js"
       - "ai/MovieMentorProductionInferenceExecutionComposition.js"
@@ -36,5 +37,8 @@ jobs:
           node --check movieMentorTurn.js
           node --check server.js
           node --check scripts/verify-movie-mentor-live-execution-lease-enforcement.mjs
+          node --check scripts/verify-movie-mentor-inference-spend-authority.mjs
       - name: Run 5A.24 Round Two stale-owner catastrophe torture
         run: node scripts/verify-movie-mentor-live-execution-lease-enforcement.mjs
+      - name: Regress inference spend production wiring
+        run: node scripts/verify-movie-mentor-inference-spend-authority.mjs
