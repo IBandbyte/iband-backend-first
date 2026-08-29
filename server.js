@@ -4,6 +4,7 @@ import { assembleMovieMentorJourneyRecoveryProductionBoot } from "./ai/MovieMent
 import { createMovieMentorProductionAuthenticationComposition } from "./ai/MovieMentorProductionAuthenticationComposition.js";
 import { createMovieMentorCreatorRequestAuthority } from "./ai/MovieMentorCreatorRequestAuthority.js";
 import { createMovieMentorProductionBrowserOriginAuthority } from "./ai/MovieMentorProductionBrowserOriginAuthority.js";
+import { createMovieMentorProductionInferenceSpendComposition } from "./ai/MovieMentorProductionInferenceSpendComposition.js";
 import { createMovieMentorTurnRouter } from "./movieMentorTurn.js";
 
 const app = express();
@@ -38,15 +39,21 @@ async function mountMovieMentorCreatorGateway() {
     console.log(`[mount:closed] /api/movie-mentor (${reason})`);
     return Object.freeze({ mounted: false, basePath: "/api/movie-mentor", reason });
   }
+  const spendComposition = createMovieMentorProductionInferenceSpendComposition();
+  if (spendComposition?.ready !== true || typeof spendComposition?.authority?.reserveTurn !== "function") {
+    const reason = spendComposition?.reason || "production-inference-spend-authority-not-ready";
+    console.log(`[mount:closed] /api/movie-mentor (${reason})`);
+    return Object.freeze({ mounted: false, basePath: "/api/movie-mentor", reason });
+  }
   const requestAuthority = createMovieMentorCreatorRequestAuthority({
     verifyCredential: authentication.verifyCredential,
     expectedIssuer: authentication.expectedIssuer,
     expectedAudience: authentication.expectedAudience,
   });
-  const router = createMovieMentorTurnRouter({ requestAuthority });
+  const router = createMovieMentorTurnRouter({ requestAuthority, inferenceSpendAuthority: spendComposition.authority });
   app.use("/api/movie-mentor", router);
-  console.log("[mount:ok] /api/movie-mentor <- authenticated creator gateway");
-  return Object.freeze({ mounted: true, basePath: "/api/movie-mentor", reason: "authenticated-creator-gateway-mounted" });
+  console.log("[mount:ok] /api/movie-mentor <- authenticated creator gateway + durable inference spend authority");
+  return Object.freeze({ mounted: true, basePath: "/api/movie-mentor", reason: "authenticated-budgeted-creator-gateway-mounted" });
 }
 
 await mountMovieMentorCreatorGateway();
@@ -61,6 +68,10 @@ await mountMovieMentorCreatorGateway();
 // Door 5A.4: Browser origin authority is explicit deployment configuration.
 // Missing or invalid configuration grants no cross-origin browser authority to
 // protected Movie Mentor production surfaces. CORS never substitutes for auth.
+
+// Door 5A.5: Authentication and ownership do not grant inference-spend authority.
+// The creator gateway mounts only with durable Mongo-backed spend composition,
+// and every paid turn must reserve entitlement before orchestration begins.
 
 const recoveryMount = await assembleMovieMentorJourneyRecoveryProductionBoot({ app });
 console.log(`[mount:${recoveryMount.mounted ? "ok" : "closed"}] ${recoveryMount.basePath} (${recoveryMount.reason})`);

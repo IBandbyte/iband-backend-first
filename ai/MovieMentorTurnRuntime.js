@@ -3,7 +3,7 @@ import { orchestrateMovieMentorTurn } from "./MovieMentorTurnOrchestrator.js";
 import { buildCurrentCreatorTruthView } from "./MovieMentorCreatorTruthViewControl.js";
 import { readAuthoritativeTurnSource,readAuthoritativeRevision,readAuthoritativeCreatorState } from "./MovieMentorCreatorStateStore.js";
 
-const MOVIE_MENTOR_TURN_RUNTIME_VERSION="1.1.0";
+const MOVIE_MENTOR_TURN_RUNTIME_VERSION="1.2.0";
 function s(v){return typeof v==="string"?v.trim():"";}
 function clone(v){if(v===undefined)return undefined;try{return JSON.parse(JSON.stringify(v));}catch{return v;}}
 function messageFrom(input){return s(input?.input?.message||input?.message||"");}
@@ -32,9 +32,15 @@ async function runMovieMentorTurn(input={},deps={}){
  const revisionReader=deps.readAuthoritativeRevision||readAuthoritativeRevision;
  const stateReader=deps.readAuthoritativeCreatorState||readAuthoritativeCreatorState;
  const orchestrate=deps.orchestrateTurn||orchestrateMovieMentorTurn;
+ const spendAuthority=deps.inferenceSpendAuthority;
+ if(typeof spendAuthority?.reserveTurn!=="function")throw runtimeError("MOVIE_MENTOR_INFERENCE_SPEND_AUTHORITY_REQUIRED","Movie Mentor turn runtime requires inference spend authority before orchestration.");
  const state=await readSource(identity);
  const envelope=buildTurnEnvelopeFromDurableState({creatorMessage,state});
- return orchestrate({message:creatorMessage,authoritativeTurnContext:envelope,options:clone(input?.options||{})},{readAuthoritativeRevision:revisionReader,readAuthoritativeCreatorState:stateReader});
+ const durableProjectId=s(state?.projectId||envelope?.projectId);
+ const reservation=await spendAuthority.reserveTurn({serverAuthority:deps.serverAuthority,projectId:durableProjectId});
+ if(reservation?.authorized!==true)throw runtimeError("MOVIE_MENTOR_INFERENCE_SPEND_RESERVATION_INVALID","Movie Mentor inference spend reservation was not authoritative.");
+ const result=await orchestrate({message:creatorMessage,authoritativeTurnContext:envelope,options:clone(input?.options||{})},{readAuthoritativeRevision:revisionReader,readAuthoritativeCreatorState:stateReader});
+ return {...result,metadata:{...(result?.metadata||{}),inferenceSpend:{authorized:true,reservationId:reservation.reservationId,units:reservation.units,operation:reservation.operation}}};
 }
 
 export{MOVIE_MENTOR_TURN_RUNTIME_VERSION,buildTurnEnvelopeFromDurableState,runMovieMentorTurn};

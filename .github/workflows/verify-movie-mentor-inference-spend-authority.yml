@@ -1,0 +1,41 @@
+name: Verify Movie Mentor Inference Spend Authority
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/verify-movie-mentor-inference-spend-authority.yml"
+      - "scripts/verify-movie-mentor-inference-spend-authority.mjs"
+      - "ai/MovieMentorInferenceSpendAuthority.js"
+      - "ai/MovieMentorInferenceSpendMongoStore.js"
+      - "ai/MovieMentorProductionInferenceSpendComposition.js"
+      - "ai/MovieMentorTurnRuntime.js"
+      - "movieMentorTurn.js"
+      - "server.js"
+      - ".env.example"
+
+jobs:
+  verify-inference-spend-authority:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install dependencies
+        run: npm install
+      - name: Syntax check 5A.5 boundary
+        run: |
+          node --check ai/MovieMentorInferenceSpendAuthority.js
+          node --check ai/MovieMentorInferenceSpendMongoStore.js
+          node --check ai/MovieMentorProductionInferenceSpendComposition.js
+          node --check ai/MovieMentorTurnRuntime.js
+          node --check movieMentorTurn.js
+          node --check server.js
+          node --check scripts/verify-movie-mentor-inference-spend-authority.mjs
+      - name: Run 5A.5 inference spend authority torture
+        run: node scripts/verify-movie-mentor-inference-spend-authority.mjs
