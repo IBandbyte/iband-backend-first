@@ -29,7 +29,7 @@ jobs:
           node-version: "20"
       - name: Install dependencies
         run: npm install --no-audit --no-fund --ignore-scripts
-      - name: Syntax check 5A.24 Round Three boundary
+      - name: Syntax check 5A.24 Round Three boundary and inherited creator gate
         run: |
           node --check ai/MovieMentorProviderEffectMongoStore.js
           node --check ai/MovieMentorProviderEffectAuthority.js
