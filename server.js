@@ -5,10 +5,26 @@ import { createMovieMentorProductionAuthenticationComposition } from "./ai/Movie
 import { createMovieMentorCreatorRequestAuthority } from "./ai/MovieMentorCreatorRequestAuthority.js";
 import { createMovieMentorProductionBrowserOriginAuthority } from "./ai/MovieMentorProductionBrowserOriginAuthority.js";
 import { createMovieMentorProductionInferenceSpendComposition } from "./ai/MovieMentorProductionInferenceSpendComposition.js";
+import { mountMovieMentorProductionCommercialHttpIngress } from "./ai/MovieMentorProductionCommercialHttpIngress.js";
 import { createMovieMentorTurnRouter } from "./movieMentorTurn.js";
 
 const app = express();
 const browserOriginAuthority = createMovieMentorProductionBrowserOriginAuthority();
+
+// Door 5A.15: the provider webhook must see exact request bytes before any
+// general JSON parser can transform them. Provider traffic is not browser-origin
+// authority, and a successful browser redirect is never payment evidence.
+let stripeClient = null;
+if (process.env.MOVIE_MENTOR_STRIPE_SECRET_KEY) {
+  try {
+    const { default: Stripe } = await import("stripe");
+    stripeClient = new Stripe(process.env.MOVIE_MENTOR_STRIPE_SECRET_KEY);
+  } catch {
+    stripeClient = null;
+  }
+}
+const commercialMount=await mountMovieMentorProductionCommercialHttpIngress({app,stripe:stripeClient});
+console.log(`[mount:${commercialMount.mounted ? "ok" : "closed"}] ${commercialMount.creatorBasePath} + ${commercialMount.stripeWebhookPath} (${commercialMount.reason})`);
 
 app.use((req, res, next) => {
   const decision = browserOriginAuthority.authorizeRequest({
