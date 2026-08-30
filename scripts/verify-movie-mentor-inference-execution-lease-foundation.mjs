@@ -26,6 +26,9 @@ const store = {
     if (loseReplaceAck) { loseReplaceAck = false; throw Object.assign(new Error("replace ACK lost"), { code: "ACK_LOST" }); }
     return clone(durable);
   },
+  async claimProviderCall() {
+    throw new Error("Round One lease-foundation torture must not exercise provider-call admission.");
+  },
 };
 
 const authority = createMovieMentorInferenceExecutionLeaseAuthority({ store, now: () => new Date(clock), leaseMs: 1000, maxProviderCalls: 5, randomId: () => `id-${++id}` });
@@ -86,6 +89,7 @@ console.log("✓ expired lease takeover advances generation exactly once");
 console.log("✓ takeover mints fresh lease reference + fencing token");
 console.log("✓ stale/zombie owner loses all forward execution authority");
 console.log("✓ create/takeover/renew ACK loss reconciles from durable reality");
+console.log("✓ Round One fake store satisfies the later claim-store constructor contract without exercising claim authority");
 console.log("LAW: durable execution reality outranks process memory");
 console.log("LAW: stale owner -> zero forward authority");
 console.log("5A.24 Round One foundation torture: GREEN");
