@@ -8,6 +8,7 @@ function response(){return{statusCode:200,payload:null,status(code){this.statusC
 function principalAdapter(){return async({request})=>{if(!request?.headers?.authorization){const error=new Error("credential required");error.code="MOVIE_MENTOR_AUTH_CREDENTIAL_REQUIRED";throw error;}return Object.freeze({authenticated:true,principalId:"creator-1",authenticationSource:"synthetic"});};}
 
 const requestAuthority=createMovieMentorCreatorCommercialRequestAuthority({verifyCredential:async()=>({verified:true}),derivePrincipal:principalAdapter()});
+const authentication={ready:true,verifyCredential:async()=>({verified:true}),expectedIssuer:"issuer",expectedAudience:"audience"};
 let intentInput=null,checkoutInput=null,packageListCalls=0;
 const purchaseIntentAuthority={async createPurchaseIntent(input){intentInput=input;return Object.freeze({commercialIntentId:"intent-1",principalId:input.principalId,packageId:input.packageId,status:"created"});}};
 const checkoutAuthority={async initiateCheckout(input){checkoutInput=input;return Object.freeze({authorized:true,commercialIntentId:input.commercialIntentId,provider:"provider-a",checkoutReference:"session-1",checkoutUrl:"https://checkout.example/session-1"});}};
@@ -31,13 +32,18 @@ res=response();await checkoutLayer.route.stack[0].handle({headers:{authorization
 res=response();await checkoutLayer.route.stack[0].handle({headers:{authorization:"Bearer valid"},body:{}},res);assert.equal(res.statusCode,422);
 
 assert.throws(()=>createMovieMentorCommercialRouter({requestAuthority,purchaseIntentAuthority,listCommercialPackages}),error=>error?.code==="MOVIE_MENTOR_CHECKOUT_AUTHORITY_REQUIRED");
-const production=createMovieMentorProductionCreatorCommercialComposition({authentication:{ready:true,verifyCredential:async()=>({verified:true}),expectedIssuer:"issuer",expectedAudience:"audience"},purchaseIntentAuthority,checkoutAuthority});assert.equal(production.ready,true);assert.equal(production.mounted,false);
+assert.throws(
+  ()=>createMovieMentorProductionCreatorCommercialComposition({authentication,purchaseIntentAuthority,checkoutAuthority}),
+  error=>error?.code==="MOVIE_MENTOR_CREATOR_COMMERCIAL_PACKAGE_CATALOGUE_REQUIRED"
+);
+const production=createMovieMentorProductionCreatorCommercialComposition({authentication,purchaseIntentAuthority,checkoutAuthority,listCommercialPackages});assert.equal(production.ready,true);assert.equal(production.mounted,false);
 
 const server=fs.readFileSync(new URL("../server.js",import.meta.url),"utf8");
 assert.doesNotMatch(server,/createMovieMentorProductionCreatorCommercialComposition/);
 assert.doesNotMatch(server,/app\.use\("\/api\/movie-mentor-commercial"/);
 
 console.log("✓ creator commercial gateway fails closed without server-owned package catalogue authority");
+console.log("✓ production creator commercial composition independently fails closed without package catalogue authority");
 console.log("✓ unauthenticated creator cannot enumerate server-owned commercial packages");
 console.log("✓ authenticated package listing crosses only the server-owned catalogue boundary");
 console.log("✓ unauthenticated creator cannot create a purchase intent");
