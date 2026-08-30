@@ -1,19 +1,46 @@
 name: Verify Movie Mentor Inference Execution Closure Barrier
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
+    paths:
+      - ".github/workflows/verify-movie-mentor-inference-execution-closure-barrier.yml"
+      - "scripts/verify-movie-mentor-inference-execution-closure-barrier.mjs"
+      - "ai/MovieMentorInferenceExecutionMongoStore.js"
+      - "ai/MovieMentorInferenceExecutionLeaseAuthority.js"
+      - "ai/MovieMentorInferenceExecutionClosureAuthority.js"
+      - "ai/MovieMentorProviderEffectMongoStore.js"
+      - "ai/MovieMentorProviderEffectAuthority.js"
+      - "ai/MovieMentorProductionInferenceExecutionComposition.js"
+      - "ai/MovieMentorTurnRuntime.js"
+      - "movieMentorTurn.js"
+      - "server.js"
 
 jobs:
-  verify:
+  verify-execution-closure-barrier:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node 20
+        uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
-      - run: node scripts/verify-movie-mentor-inference-execution-closure-barrier.mjs
+          node-version: "20"
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Syntax check Round Four boundary
+        run: |
+          node --check ai/MovieMentorInferenceExecutionMongoStore.js
+          node --check ai/MovieMentorInferenceExecutionLeaseAuthority.js
+          node --check ai/MovieMentorInferenceExecutionClosureAuthority.js
+          node --check ai/MovieMentorProviderEffectMongoStore.js
+          node --check ai/MovieMentorProviderEffectAuthority.js
+          node --check ai/MovieMentorProductionInferenceExecutionComposition.js
+          node --check ai/MovieMentorTurnRuntime.js
+          node --check movieMentorTurn.js
+          node --check server.js
+          node --check scripts/verify-movie-mentor-inference-execution-closure-barrier.mjs
+      - name: Run Round Four execution closure catastrophe torture
+        run: node scripts/verify-movie-mentor-inference-execution-closure-barrier.mjs
