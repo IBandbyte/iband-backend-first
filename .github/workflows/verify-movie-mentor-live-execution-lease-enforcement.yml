@@ -8,6 +8,7 @@ on:
       - ".github/workflows/verify-movie-mentor-live-execution-lease-enforcement.yml"
       - "scripts/verify-movie-mentor-live-execution-lease-enforcement.mjs"
       - "scripts/verify-movie-mentor-inference-spend-authority.mjs"
+      - "scripts/verify-movie-mentor-round-four-certification-anchor.mjs"
       - "ai/MovieMentorInferenceExecutionMongoStore.js"
       - "ai/MovieMentorInferenceExecutionLeaseAuthority.js"
       - "ai/MovieMentorProductionInferenceExecutionComposition.js"
