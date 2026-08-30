@@ -1,0 +1,30 @@
+name: Verify Movie Mentor Inference Settlement Reconciliation
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ai/MovieMentorInferenceSettlementReconciliationAuthority.js'
+      - 'ai/MovieMentorTurnRuntime.js'
+      - 'movieMentorTurn.js'
+      - 'server.js'
+      - 'scripts/verify-movie-mentor-inference-settlement-reconciliation.mjs'
+      - 'scripts/verify-movie-mentor-round-four-certification-anchor.mjs'
+      - '.github/workflows/verify-movie-mentor-inference-settlement-reconciliation.yml'
+  pull_request:
+    paths:
+      - 'ai/MovieMentorInferenceSettlementReconciliationAuthority.js'
+      - 'ai/MovieMentorTurnRuntime.js'
+      - 'movieMentorTurn.js'
+      - 'server.js'
+      - 'scripts/verify-movie-mentor-inference-settlement-reconciliation.mjs'
+      - '.github/workflows/verify-movie-mentor-inference-settlement-reconciliation.yml'
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - run: node scripts/verify-movie-mentor-inference-settlement-reconciliation.mjs
