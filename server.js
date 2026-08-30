@@ -8,6 +8,48 @@ import { createMovieMentorProductionInferenceSpendComposition } from "./ai/Movie
 import { createMovieMentorProductionInferenceExecutionComposition } from "./ai/MovieMentorProductionInferenceExecutionComposition.js";
 import { mountMovieMentorProductionCommercialHttpIngress } from "./ai/MovieMentorProductionCommercialHttpIngress.js";
 import { createMovieMentorTurnRouter } from "./movieMentorTurn.js";
-const app=express(),browserOriginAuthority=createMovieMentorProductionBrowserOriginAuthority();let stripeClient=null;if(process.env.MOVIE_MENTOR_STRIPE_SECRET_KEY){try{const{default:Stripe}=await import("stripe");stripeClient=new Stripe(process.env.MOVIE_MENTOR_STRIPE_SECRET_KEY);}catch{stripeClient=null;}}const commercialMount=await mountMovieMentorProductionCommercialHttpIngress({app,stripe:stripeClient});console.log(`[mount:${commercialMount.mounted?"provider-ok":"closed"}] ${commercialMount.stripeWebhookPath} (${commercialMount.reason})`);app.use((req,res,next)=>{const decision=browserOriginAuthority.authorizeRequest({origin:req.get("Origin")||null,path:req.path});if(decision.allowed)return next();return res.status(403).json({success:false,code:"MOVIE_MENTOR_BROWSER_ORIGIN_NOT_AUTHORIZED",message:"This browser origin is not authorized for the requested Movie Mentor production surface."});});app.use(cors(browserOriginAuthority.createCorsOptions()));app.use(express.json({limit:"2mb"}));app.use(express.urlencoded({extended:true}));if(commercialMount.mounted&&commercialMount.creatorRouter){app.use(commercialMount.creatorBasePath,commercialMount.creatorRouter);console.log(`[mount:ok] ${commercialMount.creatorBasePath} <- browser-origin + CORS + JSON + authenticated durable commercial authority`);}app.get("/",(_req,res)=>res.json({ok:true,service:"iband-backend-first"}));app.get("/health",(_req,res)=>res.json({ok:true}));
-async function mountMovieMentorCreatorGateway(){const authentication=createMovieMentorProductionAuthenticationComposition();if(authentication?.ready!==true||typeof authentication?.verifyCredential!=="function"){const reason=authentication?.reason||"production-authentication-not-ready";console.log(`[mount:closed] /api/movie-mentor (${reason})`);return Object.freeze({mounted:false,basePath:"/api/movie-mentor",reason});}const spendComposition=createMovieMentorProductionInferenceSpendComposition();if(spendComposition?.ready!==true||typeof spendComposition?.authority?.reserveTurn!=="function"){const reason=spendComposition?.reason||"production-inference-spend-authority-not-ready";console.log(`[mount:closed] /api/movie-mentor (${reason})`);return Object.freeze({mounted:false,basePath:"/api/movie-mentor",reason});}const executionComposition=createMovieMentorProductionInferenceExecutionComposition(),authority=executionComposition?.authority;if(executionComposition?.ready!==true||typeof authority?.claimProviderCall!=="function"||typeof authority?.beginExecutionClosing!=="function"||typeof authority?.reconcileExecutionClosure!=="function"||typeof authority?.commitCanonicalResult!=="function"||typeof authority?.readCanonicalResult!=="function"){const reason=executionComposition?.reason||"production-canonical-result-authority-not-ready";console.log(`[mount:closed] /api/movie-mentor (${reason})`);return Object.freeze({mounted:false,basePath:"/api/movie-mentor",reason});}const requestAuthority=createMovieMentorCreatorRequestAuthority({verifyCredential:authentication.verifyCredential,expectedIssuer:authentication.expectedIssuer,expectedAudience:authentication.expectedAudience}),router=createMovieMentorTurnRouter({requestAuthority,inferenceSpendAuthority:spendComposition.authority,inferenceExecutionAuthority:authority});app.use("/api/movie-mentor",router);console.log("[mount:ok] /api/movie-mentor <- authenticated creator gateway + durable spend + fenced execution + closure + canonical result authority");return Object.freeze({mounted:true,basePath:"/api/movie-mentor",reason:"authenticated-budgeted-fenced-closure-result-gateway-mounted"});}
-await mountMovieMentorCreatorGateway();const recoveryMount=await assembleMovieMentorJourneyRecoveryProductionBoot({app});console.log(`[mount:${recoveryMount.mounted?"ok":"closed"}] ${recoveryMount.basePath} (${recoveryMount.reason})`);const PORT=process.env.PORT||3000;app.listen(PORT,()=>console.log(`iBand backend listening on ${PORT}`));
+
+const app = express();
+const browserOriginAuthority = createMovieMentorProductionBrowserOriginAuthority();
+
+let stripeClient = null;
+if (process.env.MOVIE_MENTOR_STRIPE_SECRET_KEY) {
+  try { const { default: Stripe } = await import("stripe"); stripeClient = new Stripe(process.env.MOVIE_MENTOR_STRIPE_SECRET_KEY); } catch { stripeClient = null; }
+}
+const commercialMount=await mountMovieMentorProductionCommercialHttpIngress({app,stripe:stripeClient});
+console.log(`[mount:${commercialMount.mounted ? "provider-ok" : "closed"}] ${commercialMount.stripeWebhookPath} (${commercialMount.reason})`);
+
+app.use((req, res, next) => {
+  const decision = browserOriginAuthority.authorizeRequest({origin: req.get("Origin") || null,path: req.path});
+  if (decision.allowed) return next();
+  return res.status(403).json({success:false,code:"MOVIE_MENTOR_BROWSER_ORIGIN_NOT_AUTHORIZED",message:"This browser origin is not authorized for the requested Movie Mentor production surface."});
+});
+app.use(cors(browserOriginAuthority.createCorsOptions()));
+app.use(express.json({ limit: "2mb" }));
+app.use(express.urlencoded({ extended: true }));
+if(commercialMount.mounted&&commercialMount.creatorRouter){ app.use(commercialMount.creatorBasePath,commercialMount.creatorRouter); console.log(`[mount:ok] ${commercialMount.creatorBasePath} <- browser-origin + CORS + JSON + authenticated durable commercial authority`); }
+
+app.get("/", (_req, res) => res.json({ ok: true, service: "iband-backend-first" }));
+app.get("/health", (_req, res) => res.json({ ok: true }));
+
+async function mountMovieMentorCreatorGateway() {
+  const authentication = createMovieMentorProductionAuthenticationComposition();
+  if (authentication?.ready !== true || typeof authentication?.verifyCredential !== "function") { const reason = authentication?.reason || "production-authentication-not-ready"; console.log(`[mount:closed] /api/movie-mentor (${reason})`); return Object.freeze({ mounted: false, basePath: "/api/movie-mentor", reason }); }
+  const spendComposition = createMovieMentorProductionInferenceSpendComposition();
+  if (spendComposition?.ready !== true || typeof spendComposition?.authority?.reserveTurn !== "function") { const reason = spendComposition?.reason || "production-inference-spend-authority-not-ready"; console.log(`[mount:closed] /api/movie-mentor (${reason})`); return Object.freeze({ mounted: false, basePath: "/api/movie-mentor", reason }); }
+  const executionComposition = createMovieMentorProductionInferenceExecutionComposition();
+  if (executionComposition?.ready !== true || typeof executionComposition?.authority?.claimProviderCall !== "function" || typeof executionComposition?.authority?.beginExecutionClosing !== "function" || typeof executionComposition?.authority?.reconcileExecutionClosure !== "function" || typeof executionComposition?.authority?.commitCanonicalResult !== "function" || typeof executionComposition?.authority?.readCanonicalResult !== "function") { const reason = executionComposition?.reason || "production-canonical-result-authority-not-ready"; console.log(`[mount:closed] /api/movie-mentor (${reason})`); return Object.freeze({ mounted: false, basePath: "/api/movie-mentor", reason }); }
+  const requestAuthority = createMovieMentorCreatorRequestAuthority({verifyCredential: authentication.verifyCredential,expectedIssuer: authentication.expectedIssuer,expectedAudience: authentication.expectedAudience});
+  const router = createMovieMentorTurnRouter({ requestAuthority, inferenceSpendAuthority: spendComposition.authority, inferenceExecutionAuthority: executionComposition.authority });
+  app.use("/api/movie-mentor", router);
+  console.log("[mount:ok] /api/movie-mentor <- authenticated creator gateway + durable inference spend + fenced execution + closure + canonical result authority");
+  return Object.freeze({ mounted: true, basePath: "/api/movie-mentor", reason: "authenticated-budgeted-fenced-closure-result-gateway-mounted" });
+}
+await mountMovieMentorCreatorGateway();
+
+const recoveryMount = await assembleMovieMentorJourneyRecoveryProductionBoot({ app });
+console.log(`[mount:${recoveryMount.mounted ? "ok" : "closed"}] ${recoveryMount.basePath} (${recoveryMount.reason})`);
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`iBand backend listening on ${PORT}`));
+
+// 5A.24: production inference requires durable admission, closure, and canonical result authority before creator-facing success.
