@@ -1,22 +1,223 @@
 import crypto from "node:crypto";
 import mongoose from "mongoose";
 
-const VERSION="1.1.0",DOMAIN="iband.movie-mentor.inference-settlement-store";
-const EXECUTION_DOMAIN="iband.movie-mentor.inference-execution-store",RESULT_DOMAIN="iband.movie-mentor.canonical-result-store",CANDIDATE_DOMAIN="iband.movie-mentor.result-candidate-store",SPEND_DOMAIN="iband.movie-mentor.inference-spend",EFFECT_DOMAIN="iband.movie-mentor.provider-effect-reality";
-const EXECUTION_COLLECTION="movie_mentor_inference_execution",RESULT_COLLECTION="movie_mentor_canonical_result",CANDIDATE_COLLECTION="movie_mentor_result_candidate",RESERVATION_COLLECTION="movie_mentor_inference_spend_reservation",ENTITLEMENT_COLLECTION="movie_mentor_inference_entitlement",EFFECT_COLLECTION="movie_mentor_provider_effect_reality";
-let connectionPromise=null;
-const text=v=>typeof v==="string"?v.trim():"";const plain=v=>v&&typeof v.toObject==="function"?v.toObject():v;const iso=v=>{const d=v instanceof Date?new Date(v):new Date(v);return Number.isNaN(d.getTime())?"":d.toISOString();};
-function fail(code,message,extras={}){const e=new Error(message);e.code=code;Object.assign(e,extras);throw e;}function mongoUri(){return text(process.env.MONGO_URI||process.env.MONGODB_URI||"");}function digest(value){return crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");}
-function stable(value){if(Array.isArray(value))return value.map(stable);if(value&&typeof value==="object"){const out={};for(const key of Object.keys(value).sort())out[key]=stable(value[key]);return out;}return value;}function stableDigest(value){return crypto.createHash("sha256").update(JSON.stringify(stable(value))).digest("hex");}
-async function ensureConnection(){const uri=mongoUri();if(!uri)fail("MOVIE_MENTOR_INFERENCE_SETTLEMENT_STORE_NOT_CONFIGURED","Inference settlement store requires MONGO_URI or MONGODB_URI.");if(mongoose.connection.readyState===1)return mongoose.connection;if(!connectionPromise)connectionPromise=mongoose.connect(uri,{serverSelectionTimeoutMS:5000,maxPoolSize:10}).catch(error=>{connectionPromise=null;fail("MOVIE_MENTOR_INFERENCE_SETTLEMENT_STORE_UNAVAILABLE",`Inference settlement store unavailable: ${error instanceof Error?error.message:"Mongo connection failed."}`,{retryable:true});});await connectionPromise;return mongoose.connection;}
-function normalizeCall(call){return{providerCallId:text(call?.providerCallId),slotId:text(call?.slotId),task:text(call?.task),leaseGeneration:Number(call?.leaseGeneration),leaseReference:text(call?.leaseReference),fencingToken:text(call?.fencingToken),admittedAt:iso(call?.admittedAt)};}
-function frozenUniverse(calls=[]){return[...calls].map(normalizeCall).sort((a,b)=>a.slotId.localeCompare(b.slotId)||a.providerCallId.localeCompare(b.providerCallId));}
-function normalizeEvidence(items=[]){return(Array.isArray(items)?items:[]).map(item=>({externalEffectId:text(item?.externalEffectId),provider:text(item?.provider),observedAt:iso(item?.observedAt),source:text(item?.source)}));}
-function normalizeEffect(row){const v=plain(row),evidence=normalizeEvidence(v?.evidence),ids=new Set(evidence.map(item=>item.externalEffectId)),state=ids.size===0?"unknown":ids.size===1?"confirmed":"conflict";if(v?.domain!==EFFECT_DOMAIN||![1,2].includes(v?.schema)||![v?.providerCallId,v?.executionId,v?.slotId,v?.task].every(text)||evidence.some(item=>!item.externalEffectId||!item.provider||!item.observedAt||!item.source))fail("MOVIE_MENTOR_SETTLEMENT_PROVIDER_EFFECT_INVALID","Provider-effect reality is malformed at settlement boundary.");if(text(v.state)!==state)fail("MOVIE_MENTOR_SETTLEMENT_PROVIDER_EFFECT_STATE_INVALID","Provider-effect state disagrees with durable evidence at settlement boundary.");return{providerCallId:text(v.providerCallId),executionId:text(v.executionId),slotId:text(v.slotId),task:text(v.task),state,revision:Number.isSafeInteger(v.revision)?v.revision:null,evidence};}
-function bindingMatches(result,execution){return["executionId","creatorTurnId","principalId","projectId","reservationId","requestDigest","closureReference","closureCertificateDigest"].every(key=>text(result?.[key])===text(execution?.[key]));}
-function candidateMatches(candidate,execution,result){if(candidate?.domain!==CANDIDATE_DOMAIN||candidate?.schema!==1||![candidate?.candidateReference,candidate?.executionId,candidate?.creatorTurnId,candidate?.principalId,candidate?.projectId,candidate?.reservationId,candidate?.requestDigest,candidate?.resultDigest].every(text)||candidate?.resultPayload===undefined)return false;if(!["executionId","creatorTurnId","principalId","projectId","reservationId","requestDigest"].every(key=>text(candidate?.[key])===text(execution?.[key])))return false;if(text(candidate.resultDigest)!==text(result?.resultDigest)||stableDigest(candidate.resultPayload)!==text(candidate.resultDigest))return false;if(text(result?.candidateReference)&&text(result.candidateReference)!==text(candidate.candidateReference))return false;return true;}
-function createMovieMentorInferenceSettlementMongoStore({connect=ensureConnection,startSession=()=>mongoose.startSession(),db=()=>mongoose.connection.db,now=()=>new Date()}={}){
- async function settleCanonicalResult({executionId}={}){const id=text(executionId);if(!id)fail("MOVIE_MENTOR_INFERENCE_SETTLEMENT_EXECUTION_REQUIRED","Atomic settlement requires durable execution identity.");await connect();const session=await startSession();let outcome=null;try{await session.withTransaction(async()=>{const database=db(),executions=database.collection(EXECUTION_COLLECTION),results=database.collection(RESULT_COLLECTION),candidates=database.collection(CANDIDATE_COLLECTION),effects=database.collection(EFFECT_COLLECTION),reservations=database.collection(RESERVATION_COLLECTION),entitlements=database.collection(ENTITLEMENT_COLLECTION);const execution=await executions.findOne({executionId:id},{session});if(!execution){outcome=Object.freeze({settled:false,authorized:false,outcome:"reserved",reason:"execution-not-found",executionId:id});return;}if(execution.domain!==EXECUTION_DOMAIN||![3,4].includes(execution.schema)||text(execution.phase)!=="closed"){outcome=Object.freeze({settled:false,authorized:false,outcome:"reserved",reason:text(execution.phase)==="quarantined"?"execution-quarantined":"execution-not-closed",executionId:id});return;}const result=await results.findOne({executionId:id},{session});if(!result||result.domain!==RESULT_DOMAIN||![1,2].includes(result.schema)||!bindingMatches(result,execution)||result.resultPayload===undefined||stableDigest(result.resultPayload)!==text(result.resultDigest)){outcome=Object.freeze({settled:false,authorized:false,outcome:"reserved",reason:"canonical-result-binding-invalid",executionId:id});return;}const candidate=await candidates.findOne({executionId:id},{session});if(!candidateMatches(candidate,execution,result)){outcome=Object.freeze({settled:false,authorized:false,outcome:"reserved",reason:"canonical-result-candidate-lineage-invalid",executionId:id});return;}const certificateCalls=(execution.providerCalls||[]).map(normalizeCall),frozenCalls=frozenUniverse(execution.providerCalls||[]);if(certificateCalls.some(call=>![call.providerCallId,call.slotId,call.task,call.leaseReference,call.fencingToken,call.admittedAt].every(Boolean)||!Number.isSafeInteger(call.leaseGeneration))||frozenCalls.length!==execution.providerCallsClaimed||frozenCalls.length!==execution.frozenProviderCallCount||digest(frozenCalls)!==text(execution.frozenProviderCallSetDigest)){outcome=Object.freeze({settled:false,authorized:false,outcome:"reserved",reason:"frozen-provider-call-universe-invalid",executionId:id});return;}const rows=await effects.find({executionId:id},{session}).toArray(),byCall=new Map();for(const row of rows){const effect=normalizeEffect(row);if(byCall.has(effect.providerCallId)){outcome=Object.freeze({settled:false,authorized:false,outcome:"reserved",reason:"duplicate-provider-effect-reality",executionId:id});return;}byCall.set(effect.providerCallId,effect);}const admittedIds=new Set(certificateCalls.map(call=>call.providerCallId));if([...byCall.keys()].some(callId=>!admittedIds.has(callId))){outcome=Object.freeze({settled:false,authorized:false,outcome:"reserved",reason:"provider-effect-outside-frozen-universe",executionId:id});return;}const realities=[];for(const call of certificateCalls){const effect=byCall.get(call.providerCallId);if(!effect){realities.push({providerCallId:call.providerCallId,slotId:call.slotId,reality:"no-dispatch-authority-established",effectRevision:null,effectDigest:""});continue;}if(effect.slotId!==call.slotId||effect.task!==call.task){outcome=Object.freeze({settled:false,authorized:false,outcome:"reserved",reason:"provider-effect-binding-conflict",executionId:id,providerCallId:call.providerCallId});return;}if(effect.state==="unknown"){outcome=Object.freeze({settled:false,authorized:false,outcome:"reserved",reason:"provider-effect-unknown",executionId:id,providerCallId:call.providerCallId});return;}if(effect.state==="conflict"){outcome=Object.freeze({settled:false,authorized:false,outcome:"reserved",reason:"provider-effect-conflict",executionId:id,providerCallId:call.providerCallId});return;}realities.push({providerCallId:call.providerCallId,slotId:call.slotId,reality:"effect-confirmed",effectRevision:effect.revision,effectDigest:digest(effect.evidence)});}const certificate={executionId:id,creatorTurnId:text(execution.creatorTurnId),principalId:text(execution.principalId),projectId:text(execution.projectId),reservationId:text(execution.reservationId),requestDigest:text(execution.requestDigest),closureReference:text(execution.closureReference),frozenProviderCallSetDigest:text(execution.frozenProviderCallSetDigest),closurePolicyVersion:text(execution.closurePolicyVersion),realities};const certificateDigest=digest(certificate);if(certificateDigest!==text(execution.closureCertificateDigest)||certificateDigest!==text(result.closureCertificateDigest)){outcome=Object.freeze({settled:false,authorized:false,outcome:"reserved",reason:"closure-certificate-current-reality-mismatch",executionId:id});return;}const reservation=await reservations.findOne({reservationId:text(execution.reservationId)},{session});if(!reservation||reservation.domain!==SPEND_DOMAIN||reservation.schema!==1||text(reservation.principalId)!==text(execution.principalId)||text(reservation.projectId)!==text(execution.projectId)||text(reservation.operation)!=="movie-mentor-turn"||!Number.isSafeInteger(reservation.units)||reservation.units<1){outcome=Object.freeze({settled:false,authorized:false,outcome:"reserved",reason:"reservation-binding-invalid",executionId:id});return;}if(text(reservation.status)==="released")fail("MOVIE_MENTOR_INFERENCE_SETTLEMENT_RELEASED_CONFLICT","A released reservation cannot be consumed by canonical result reconciliation.",{retryable:false});const realityRevision=Number.isSafeInteger(execution.providerEffectRealityRevision)?execution.providerEffectRealityRevision:0,revisionFilter=Number.isSafeInteger(execution.providerEffectRealityRevision)?{providerEffectRealityRevision:realityRevision}:{$or:[{providerEffectRealityRevision:{$exists:false}},{providerEffectRealityRevision:0}]};const barrier=await executions.updateOne({executionId:id,phase:"closed",closureReference:text(execution.closureReference),closureCertificateDigest:certificateDigest,...revisionFilter},{$inc:{settlementRealityBarrierRevision:1}},{session});if(barrier.matchedCount!==1)fail("MOVIE_MENTOR_INFERENCE_SETTLEMENT_REALITY_RACE","Provider-effect reality changed during settlement reconciliation.",{retryable:true});if(text(reservation.status)==="consumed"){outcome=Object.freeze({settled:true,authorized:true,outcome:"consumed",idempotent:true,executionId:id,reservationId:text(reservation.reservationId),principalId:text(reservation.principalId),projectId:text(reservation.projectId),resultReference:text(result.resultReference),candidateReference:text(candidate.candidateReference),resultDigest:text(result.resultDigest),closureCertificateDigest:certificateDigest,providerEffectRealityRevision:realityRevision});return;}if(text(reservation.status)!=="reserved"){outcome=Object.freeze({settled:false,authorized:false,outcome:"reserved",reason:"reservation-state-invalid",executionId:id});return;}const entitlement=await entitlements.findOneAndUpdate({principalId:text(reservation.principalId),domain:SPEND_DOMAIN,schema:1,reservedUnits:{$gte:reservation.units}},{$inc:{reservedUnits:-reservation.units,consumedUnits:reservation.units,entitlementRevision:1}},{returnDocument:"after",session});if(!entitlement)fail("MOVIE_MENTOR_INFERENCE_SETTLEMENT_LEDGER_CONFLICT","Entitlement cannot atomically consume the canonical reservation.",{retryable:true});const settledAt=new Date(now()),settled=await reservations.findOneAndUpdate({reservationId:text(reservation.reservationId),status:"reserved"},{$set:{status:"consumed",settledAt,settlementReason:`canonical-result:${text(result.resultReference)}`}}, {returnDocument:"after",session});if(!settled)fail("MOVIE_MENTOR_INFERENCE_SETTLEMENT_RESERVATION_RACE","Reservation changed during canonical settlement.",{retryable:true});outcome=Object.freeze({settled:true,authorized:true,outcome:"consumed",idempotent:false,executionId:id,reservationId:text(reservation.reservationId),principalId:text(reservation.principalId),projectId:text(reservation.projectId),resultReference:text(result.resultReference),candidateReference:text(candidate.candidateReference),resultDigest:text(result.resultDigest),closureCertificateDigest:certificateDigest,providerEffectRealityRevision:realityRevision});},{readConcern:{level:"snapshot"},writeConcern:{w:"majority"}});if(!outcome)fail("MOVIE_MENTOR_INFERENCE_SETTLEMENT_STORE_UNAVAILABLE","Settlement transaction completed without a durable decision.",{retryable:true});return outcome;}catch(error){if(error?.code?.startsWith?.("MOVIE_MENTOR_INFERENCE_SETTLEMENT_"))throw error;fail("MOVIE_MENTOR_INFERENCE_SETTLEMENT_STORE_UNAVAILABLE",`Canonical settlement failed: ${error instanceof Error?error.message:"transaction failed"}`,{retryable:true});}finally{await session.endSession();}}
- return Object.freeze({settleCanonicalResult});}
-function getMovieMentorInferenceSettlementMongoStoreStatus(){const configured=Boolean(mongoUri());return Object.freeze({version:VERSION,domain:DOMAIN,configured,readiness:configured?"configured":"configuration-required",atomicity:"single-mongo-transaction",currentRealityFence:"execution-document-write-conflict",candidateLineage:"revalidated-in-settlement-transaction",processLocalFallback:false});}
-export{VERSION as MOVIE_MENTOR_INFERENCE_SETTLEMENT_MONGO_STORE_VERSION,DOMAIN as MOVIE_MENTOR_INFERENCE_SETTLEMENT_MONGO_STORE_DOMAIN,createMovieMentorInferenceSettlementMongoStore,getMovieMentorInferenceSettlementMongoStoreStatus};export default createMovieMentorInferenceSettlementMongoStore;
+const VERSION = "1.2.0";
+const DOMAIN = "iband.movie-mentor.inference-settlement-store";
+const EXECUTION_DOMAIN = "iband.movie-mentor.inference-execution-store";
+const RESULT_DOMAIN = "iband.movie-mentor.canonical-result-store";
+const CANDIDATE_DOMAIN = "iband.movie-mentor.result-candidate-store";
+const SPEND_DOMAIN = "iband.movie-mentor.inference-spend";
+const EFFECT_DOMAIN = "iband.movie-mentor.provider-effect-reality";
+const EXECUTION_COLLECTION = "movie_mentor_inference_execution";
+const RESULT_COLLECTION = "movie_mentor_canonical_result";
+const CANDIDATE_COLLECTION = "movie_mentor_result_candidate";
+const RESERVATION_COLLECTION = "movie_mentor_inference_spend_reservation";
+const ENTITLEMENT_COLLECTION = "movie_mentor_inference_entitlement";
+const EFFECT_COLLECTION = "movie_mentor_provider_effect_reality";
+let connectionPromise = null;
+
+const text = value => typeof value === "string" ? value.trim() : "";
+const plain = value => value && typeof value.toObject === "function" ? value.toObject() : value;
+const iso = value => {
+  const parsed = value instanceof Date ? new Date(value) : new Date(value);
+  return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString();
+};
+function fail(code, message, extras = {}) {
+  const error = new Error(message);
+  error.code = code;
+  Object.assign(error, extras);
+  throw error;
+}
+function mongoUri() { return text(process.env.MONGO_URI || process.env.MONGODB_URI || ""); }
+function digest(value) { return crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex"); }
+function stable(value) {
+  if (Array.isArray(value)) return value.map(stable);
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const key of Object.keys(value).sort()) out[key] = stable(value[key]);
+    return out;
+  }
+  return value;
+}
+function stableDigest(value) { return crypto.createHash("sha256").update(JSON.stringify(stable(value))).digest("hex"); }
+
+async function ensureConnection() {
+  const uri = mongoUri();
+  if (!uri) fail("MOVIE_MENTOR_INFERENCE_SETTLEMENT_STORE_NOT_CONFIGURED", "Inference settlement store requires MONGO_URI or MONGODB_URI.");
+  if (mongoose.connection.readyState === 1) return mongoose.connection;
+  if (!connectionPromise) connectionPromise = mongoose.connect(uri, { serverSelectionTimeoutMS: 5000, maxPoolSize: 10 }).catch(error => {
+    connectionPromise = null;
+    fail("MOVIE_MENTOR_INFERENCE_SETTLEMENT_STORE_UNAVAILABLE", `Inference settlement store unavailable: ${error instanceof Error ? error.message : "Mongo connection failed."}`, { retryable: true });
+  });
+  await connectionPromise;
+  return mongoose.connection;
+}
+
+function normalizeCall(call) {
+  return { providerCallId: text(call?.providerCallId), slotId: text(call?.slotId), task: text(call?.task), leaseGeneration: Number(call?.leaseGeneration), leaseReference: text(call?.leaseReference), fencingToken: text(call?.fencingToken), admittedAt: iso(call?.admittedAt) };
+}
+function frozenUniverse(calls = []) {
+  return [...calls].map(normalizeCall).sort((a, b) => a.slotId.localeCompare(b.slotId) || a.providerCallId.localeCompare(b.providerCallId));
+}
+function normalizeEvidence(items = []) {
+  return (Array.isArray(items) ? items : []).map(item => ({ externalEffectId: text(item?.externalEffectId), provider: text(item?.provider), observedAt: iso(item?.observedAt), source: text(item?.source) }));
+}
+function normalizeEffect(row) {
+  const value = plain(row);
+  const evidence = normalizeEvidence(value?.evidence);
+  const ids = new Set(evidence.map(item => item.externalEffectId));
+  const state = ids.size === 0 ? "unknown" : ids.size === 1 ? "confirmed" : "conflict";
+  if (value?.domain !== EFFECT_DOMAIN || ![1, 2].includes(value?.schema) || ![value?.providerCallId, value?.executionId, value?.slotId, value?.task].every(text) || evidence.some(item => !item.externalEffectId || !item.provider || !item.observedAt || !item.source)) fail("MOVIE_MENTOR_SETTLEMENT_PROVIDER_EFFECT_INVALID", "Provider-effect reality is malformed at settlement boundary.");
+  if (text(value.state) !== state) fail("MOVIE_MENTOR_SETTLEMENT_PROVIDER_EFFECT_STATE_INVALID", "Provider-effect state disagrees with durable evidence at settlement boundary.");
+  return { providerCallId: text(value.providerCallId), executionId: text(value.executionId), slotId: text(value.slotId), task: text(value.task), state, revision: Number.isSafeInteger(value.revision) ? value.revision : null, evidence };
+}
+function bindingMatches(result, execution) {
+  return ["executionId", "creatorTurnId", "principalId", "projectId", "reservationId", "requestDigest", "closureReference", "closureCertificateDigest"].every(key => text(result?.[key]) === text(execution?.[key]));
+}
+function candidateMatches(candidate, execution, result) {
+  if (candidate?.domain !== CANDIDATE_DOMAIN || candidate?.schema !== 1 || ![candidate?.candidateReference, candidate?.executionId, candidate?.creatorTurnId, candidate?.principalId, candidate?.projectId, candidate?.reservationId, candidate?.requestDigest, candidate?.resultDigest].every(text) || candidate?.resultPayload === undefined) return false;
+  if (!["executionId", "creatorTurnId", "principalId", "projectId", "reservationId", "requestDigest"].every(key => text(candidate?.[key]) === text(execution?.[key]))) return false;
+  if (text(candidate.resultDigest) !== text(result?.resultDigest) || stableDigest(candidate.resultPayload) !== text(candidate.resultDigest)) return false;
+  if (text(result?.candidateReference) && text(result.candidateReference) !== text(candidate.candidateReference)) return false;
+  return true;
+}
+function reservationBindingValid(reservation, execution) {
+  return reservation && reservation.domain === SPEND_DOMAIN && reservation.schema === 1 && text(reservation.principalId) === text(execution.principalId) && text(reservation.projectId) === text(execution.projectId) && text(reservation.operation) === "movie-mentor-turn" && Number.isSafeInteger(reservation.units) && reservation.units > 0;
+}
+
+function createMovieMentorInferenceSettlementMongoStore({ connect = ensureConnection, startSession = () => mongoose.startSession(), db = () => mongoose.connection.db, now = () => new Date() } = {}) {
+  async function settleCanonicalResult({ executionId } = {}) {
+    const id = text(executionId);
+    if (!id) fail("MOVIE_MENTOR_INFERENCE_SETTLEMENT_EXECUTION_REQUIRED", "Atomic settlement requires durable execution identity.");
+    await connect();
+    const session = await startSession();
+    let outcome = null;
+    try {
+      await session.withTransaction(async () => {
+        const database = db();
+        const executions = database.collection(EXECUTION_COLLECTION);
+        const results = database.collection(RESULT_COLLECTION);
+        const candidates = database.collection(CANDIDATE_COLLECTION);
+        const effects = database.collection(EFFECT_COLLECTION);
+        const reservations = database.collection(RESERVATION_COLLECTION);
+        const entitlements = database.collection(ENTITLEMENT_COLLECTION);
+        const execution = await executions.findOne({ executionId: id }, { session });
+        if (!execution) { outcome = Object.freeze({ settled: false, authorized: false, outcome: "reserved", reason: "execution-not-found", executionId: id }); return; }
+        if (execution.domain !== EXECUTION_DOMAIN || ![3, 4, 5].includes(execution.schema) || text(execution.phase) !== "closed") {
+          const phase = text(execution.phase);
+          outcome = Object.freeze({ settled: false, authorized: false, outcome: "reserved", reason: phase === "quarantined" ? "execution-quarantined" : phase === "aborted" ? "execution-aborted" : "execution-not-closed", executionId: id });
+          return;
+        }
+        const result = await results.findOne({ executionId: id }, { session });
+        if (!result || result.domain !== RESULT_DOMAIN || ![1, 2].includes(result.schema) || !bindingMatches(result, execution) || result.resultPayload === undefined || stableDigest(result.resultPayload) !== text(result.resultDigest)) { outcome = Object.freeze({ settled: false, authorized: false, outcome: "reserved", reason: "canonical-result-binding-invalid", executionId: id }); return; }
+        const candidate = await candidates.findOne({ executionId: id }, { session });
+        if (!candidateMatches(candidate, execution, result)) { outcome = Object.freeze({ settled: false, authorized: false, outcome: "reserved", reason: "canonical-result-candidate-lineage-invalid", executionId: id }); return; }
+        const certificateCalls = (execution.providerCalls || []).map(normalizeCall);
+        const frozenCalls = frozenUniverse(execution.providerCalls || []);
+        if (certificateCalls.some(call => ![call.providerCallId, call.slotId, call.task, call.leaseReference, call.fencingToken, call.admittedAt].every(Boolean) || !Number.isSafeInteger(call.leaseGeneration)) || frozenCalls.length !== execution.providerCallsClaimed || frozenCalls.length !== execution.frozenProviderCallCount || digest(frozenCalls) !== text(execution.frozenProviderCallSetDigest)) { outcome = Object.freeze({ settled: false, authorized: false, outcome: "reserved", reason: "frozen-provider-call-universe-invalid", executionId: id }); return; }
+        const rows = await effects.find({ executionId: id }, { session }).toArray();
+        const byCall = new Map();
+        for (const row of rows) {
+          const effect = normalizeEffect(row);
+          if (byCall.has(effect.providerCallId)) { outcome = Object.freeze({ settled: false, authorized: false, outcome: "reserved", reason: "duplicate-provider-effect-reality", executionId: id }); return; }
+          byCall.set(effect.providerCallId, effect);
+        }
+        const admittedIds = new Set(certificateCalls.map(call => call.providerCallId));
+        if ([...byCall.keys()].some(callId => !admittedIds.has(callId))) { outcome = Object.freeze({ settled: false, authorized: false, outcome: "reserved", reason: "provider-effect-outside-frozen-universe", executionId: id }); return; }
+        const realities = [];
+        for (const call of certificateCalls) {
+          const effect = byCall.get(call.providerCallId);
+          if (!effect) { realities.push({ providerCallId: call.providerCallId, slotId: call.slotId, reality: "no-dispatch-authority-established", effectRevision: null, effectDigest: "" }); continue; }
+          if (effect.slotId !== call.slotId || effect.task !== call.task) { outcome = Object.freeze({ settled: false, authorized: false, outcome: "reserved", reason: "provider-effect-binding-conflict", executionId: id, providerCallId: call.providerCallId }); return; }
+          if (effect.state === "unknown") { outcome = Object.freeze({ settled: false, authorized: false, outcome: "reserved", reason: "provider-effect-unknown", executionId: id, providerCallId: call.providerCallId }); return; }
+          if (effect.state === "conflict") { outcome = Object.freeze({ settled: false, authorized: false, outcome: "reserved", reason: "provider-effect-conflict", executionId: id, providerCallId: call.providerCallId }); return; }
+          realities.push({ providerCallId: call.providerCallId, slotId: call.slotId, reality: "effect-confirmed", effectRevision: effect.revision, effectDigest: digest(effect.evidence) });
+        }
+        const certificate = { executionId: id, creatorTurnId: text(execution.creatorTurnId), principalId: text(execution.principalId), projectId: text(execution.projectId), reservationId: text(execution.reservationId), requestDigest: text(execution.requestDigest), closureReference: text(execution.closureReference), frozenProviderCallSetDigest: text(execution.frozenProviderCallSetDigest), closurePolicyVersion: text(execution.closurePolicyVersion), realities };
+        const certificateDigest = digest(certificate);
+        if (certificateDigest !== text(execution.closureCertificateDigest) || certificateDigest !== text(result.closureCertificateDigest)) { outcome = Object.freeze({ settled: false, authorized: false, outcome: "reserved", reason: "closure-certificate-current-reality-mismatch", executionId: id }); return; }
+        const reservation = await reservations.findOne({ reservationId: text(execution.reservationId) }, { session });
+        if (!reservationBindingValid(reservation, execution)) { outcome = Object.freeze({ settled: false, authorized: false, outcome: "reserved", reason: "reservation-binding-invalid", executionId: id }); return; }
+        if (text(reservation.status) === "released") fail("MOVIE_MENTOR_INFERENCE_SETTLEMENT_RELEASED_CONFLICT", "A released reservation cannot be consumed by canonical result reconciliation.", { retryable: false });
+        const realityRevision = Number.isSafeInteger(execution.providerEffectRealityRevision) ? execution.providerEffectRealityRevision : 0;
+        const revisionFilter = Number.isSafeInteger(execution.providerEffectRealityRevision) ? { providerEffectRealityRevision: realityRevision } : { $or: [{ providerEffectRealityRevision: { $exists: false } }, { providerEffectRealityRevision: 0 }] };
+        const barrier = await executions.updateOne({ executionId: id, phase: "closed", closureReference: text(execution.closureReference), closureCertificateDigest: certificateDigest, ...revisionFilter }, { $inc: { settlementRealityBarrierRevision: 1 } }, { session });
+        if (barrier.matchedCount !== 1) fail("MOVIE_MENTOR_INFERENCE_SETTLEMENT_REALITY_RACE", "Provider-effect reality changed during settlement reconciliation.", { retryable: true });
+        if (text(reservation.status) === "consumed") { outcome = Object.freeze({ settled: true, authorized: true, outcome: "consumed", idempotent: true, executionId: id, reservationId: text(reservation.reservationId), principalId: text(reservation.principalId), projectId: text(reservation.projectId), resultReference: text(result.resultReference), candidateReference: text(candidate.candidateReference), resultDigest: text(result.resultDigest), closureCertificateDigest: certificateDigest, providerEffectRealityRevision: realityRevision }); return; }
+        if (text(reservation.status) !== "reserved") { outcome = Object.freeze({ settled: false, authorized: false, outcome: "reserved", reason: "reservation-state-invalid", executionId: id }); return; }
+        const entitlement = await entitlements.findOneAndUpdate({ principalId: text(reservation.principalId), domain: SPEND_DOMAIN, schema: 1, reservedUnits: { $gte: reservation.units } }, { $inc: { reservedUnits: -reservation.units, consumedUnits: reservation.units, entitlementRevision: 1 } }, { returnDocument: "after", session });
+        if (!entitlement) fail("MOVIE_MENTOR_INFERENCE_SETTLEMENT_LEDGER_CONFLICT", "Entitlement cannot atomically consume the canonical reservation.", { retryable: true });
+        const settledAt = new Date(now());
+        const settled = await reservations.findOneAndUpdate({ reservationId: text(reservation.reservationId), status: "reserved" }, { $set: { status: "consumed", settledAt, settlementReason: `canonical-result:${text(result.resultReference)}` } }, { returnDocument: "after", session });
+        if (!settled) fail("MOVIE_MENTOR_INFERENCE_SETTLEMENT_RESERVATION_RACE", "Reservation changed during canonical settlement.", { retryable: true });
+        outcome = Object.freeze({ settled: true, authorized: true, outcome: "consumed", idempotent: false, executionId: id, reservationId: text(reservation.reservationId), principalId: text(reservation.principalId), projectId: text(reservation.projectId), resultReference: text(result.resultReference), candidateReference: text(candidate.candidateReference), resultDigest: text(result.resultDigest), closureCertificateDigest: certificateDigest, providerEffectRealityRevision: realityRevision });
+      }, { readConcern: { level: "snapshot" }, writeConcern: { w: "majority" } });
+      if (!outcome) fail("MOVIE_MENTOR_INFERENCE_SETTLEMENT_STORE_UNAVAILABLE", "Settlement transaction completed without a durable decision.", { retryable: true });
+      return outcome;
+    } catch (error) {
+      if (error?.code?.startsWith?.("MOVIE_MENTOR_INFERENCE_SETTLEMENT_")) throw error;
+      fail("MOVIE_MENTOR_INFERENCE_SETTLEMENT_STORE_UNAVAILABLE", `Canonical settlement failed: ${error instanceof Error ? error.message : "transaction failed"}`, { retryable: true });
+    } finally {
+      await session.endSession();
+    }
+  }
+
+  async function releaseUnclaimedReservation({ executionId } = {}) {
+    const id = text(executionId);
+    if (!id) fail("MOVIE_MENTOR_INFERENCE_RELEASE_EXECUTION_REQUIRED", "Atomic unclaimed release requires durable execution identity.");
+    await connect();
+    const session = await startSession();
+    let outcome = null;
+    try {
+      await session.withTransaction(async () => {
+        const database = db();
+        const executions = database.collection(EXECUTION_COLLECTION);
+        const reservations = database.collection(RESERVATION_COLLECTION);
+        const entitlements = database.collection(ENTITLEMENT_COLLECTION);
+        const execution = await executions.findOne({ executionId: id }, { session });
+        if (!execution) { outcome = Object.freeze({ released: false, authorized: false, outcome: "reserved", reason: "execution-not-found", executionId: id }); return; }
+        if (execution.domain !== EXECUTION_DOMAIN || ![4, 5].includes(execution.schema)) { outcome = Object.freeze({ released: false, authorized: false, outcome: "reserved", reason: "execution-binding-invalid", executionId: id }); return; }
+        const reservation = await reservations.findOne({ reservationId: text(execution.reservationId) }, { session });
+        if (!reservationBindingValid(reservation, execution)) { outcome = Object.freeze({ released: false, authorized: false, outcome: "reserved", reason: "reservation-binding-invalid", executionId: id }); return; }
+        if (text(execution.phase) === "aborted") {
+          if (execution.providerCallsClaimed !== 0 || (execution.providerCalls || []).length !== 0 || text(reservation.status) !== "released") fail("MOVIE_MENTOR_INFERENCE_RELEASE_ABORT_CONFLICT", "Aborted execution does not bind a released zero-claim reservation.", { retryable: false });
+          outcome = Object.freeze({ released: true, authorized: true, outcome: "released", idempotent: true, executionId: id, reservationId: text(reservation.reservationId), principalId: text(reservation.principalId), projectId: text(reservation.projectId) });
+          return;
+        }
+        if (text(execution.phase) !== "active") { outcome = Object.freeze({ released: false, authorized: false, outcome: "reserved", reason: "execution-not-active", executionId: id, phase: text(execution.phase) }); return; }
+        if (execution.providerCallsClaimed !== 0 || (execution.providerCalls || []).length !== 0) { outcome = Object.freeze({ released: false, authorized: false, outcome: "reserved", reason: "provider-call-claims-exist", executionId: id, providerCallsClaimed: execution.providerCallsClaimed }); return; }
+        if (text(reservation.status) === "consumed") fail("MOVIE_MENTOR_INFERENCE_RELEASE_CONSUMED_CONFLICT", "Consumed reservation cannot be released.", { retryable: false });
+        const abortedAt = new Date(now());
+        const barrier = await executions.updateOne({ executionId: id, phase: "active", reservationId: text(reservation.reservationId), providerCallsClaimed: 0, "providerCalls.0": { $exists: false } }, { $set: { schema: 5, phase: "aborted", abortedAt, abortReason: "unclaimed-reservation-released" }, $inc: { settlementRealityBarrierRevision: 1 } }, { session });
+        if (barrier.matchedCount !== 1) fail("MOVIE_MENTOR_INFERENCE_RELEASE_REALITY_RACE", "Execution reality changed while proving zero provider claims for release.", { retryable: true });
+        if (text(reservation.status) === "released") {
+          outcome = Object.freeze({ released: true, authorized: true, outcome: "released", idempotent: true, executionId: id, reservationId: text(reservation.reservationId), principalId: text(reservation.principalId), projectId: text(reservation.projectId) });
+          return;
+        }
+        if (text(reservation.status) !== "reserved") { outcome = Object.freeze({ released: false, authorized: false, outcome: "reserved", reason: "reservation-state-invalid", executionId: id }); return; }
+        const entitlement = await entitlements.findOneAndUpdate({ principalId: text(reservation.principalId), domain: SPEND_DOMAIN, schema: 1, reservedUnits: { $gte: reservation.units } }, { $inc: { reservedUnits: -reservation.units, remainingUnits: reservation.units, entitlementRevision: 1 } }, { returnDocument: "after", session });
+        if (!entitlement) fail("MOVIE_MENTOR_INFERENCE_RELEASE_LEDGER_CONFLICT", "Entitlement cannot atomically release the unclaimed reservation.", { retryable: true });
+        const released = await reservations.findOneAndUpdate({ reservationId: text(reservation.reservationId), status: "reserved" }, { $set: { status: "released", settledAt: abortedAt, settlementReason: "execution-aborted-before-provider-claim" } }, { returnDocument: "after", session });
+        if (!released) fail("MOVIE_MENTOR_INFERENCE_RELEASE_RESERVATION_RACE", "Reservation changed during atomic unclaimed release.", { retryable: true });
+        outcome = Object.freeze({ released: true, authorized: true, outcome: "released", idempotent: false, executionId: id, reservationId: text(reservation.reservationId), principalId: text(reservation.principalId), projectId: text(reservation.projectId) });
+      }, { readConcern: { level: "snapshot" }, writeConcern: { w: "majority" } });
+      if (!outcome) fail("MOVIE_MENTOR_INFERENCE_RELEASE_STORE_UNAVAILABLE", "Unclaimed release transaction completed without a durable decision.", { retryable: true });
+      return outcome;
+    } catch (error) {
+      if (error?.code?.startsWith?.("MOVIE_MENTOR_INFERENCE_RELEASE_")) throw error;
+      fail("MOVIE_MENTOR_INFERENCE_RELEASE_STORE_UNAVAILABLE", `Unclaimed release failed: ${error instanceof Error ? error.message : "transaction failed"}`, { retryable: true });
+    } finally {
+      await session.endSession();
+    }
+  }
+
+  return Object.freeze({ settleCanonicalResult, releaseUnclaimedReservation });
+}
+
+function getMovieMentorInferenceSettlementMongoStoreStatus() {
+  const configured = Boolean(mongoUri());
+  return Object.freeze({ version: VERSION, domain: DOMAIN, configured, readiness: configured ? "configured" : "configuration-required", atomicity: "single-mongo-transaction", currentRealityFence: "execution-document-write-conflict", candidateLineage: "revalidated-in-settlement-transaction", unclaimedRelease: "atomic-execution-abort-plus-ledger-release", processLocalFallback: false });
+}
+
+export { VERSION as MOVIE_MENTOR_INFERENCE_SETTLEMENT_MONGO_STORE_VERSION, DOMAIN as MOVIE_MENTOR_INFERENCE_SETTLEMENT_MONGO_STORE_DOMAIN, createMovieMentorInferenceSettlementMongoStore, getMovieMentorInferenceSettlementMongoStoreStatus };
+export default createMovieMentorInferenceSettlementMongoStore;
