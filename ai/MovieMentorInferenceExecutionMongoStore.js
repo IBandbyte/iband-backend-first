@@ -1,213 +1,23 @@
 import mongoose from "mongoose";
 
-const VERSION = "1.1.0";
-const DOMAIN = "iband.movie-mentor.inference-execution-store";
-const SCHEMA = 2;
-const COLLECTION = "movie_mentor_inference_execution";
-const ACTIVE_PHASE = "active";
-const PHASES = Object.freeze(["active", "closing", "closed", "finalized", "quarantined"]);
-
-let connectionPromise = null;
-let model = null;
-
-function text(value) { return typeof value === "string" ? value.trim() : ""; }
-function fail(code, message, extras = {}) { const error = new Error(message); error.code = code; Object.assign(error, extras); throw error; }
-function date(value) { const parsed = value instanceof Date ? new Date(value) : new Date(value); return Number.isNaN(parsed.getTime()) ? null : parsed; }
-function iso(value) { const parsed = date(value); return parsed ? parsed.toISOString() : ""; }
-function plain(record) { return record && typeof record.toObject === "function" ? record.toObject() : record; }
-function mongoUri() { return text(process.env.MONGO_URI || process.env.MONGODB_URI || ""); }
-
-function getModel() {
-  if (model) return model;
-  const providerCallSchema = new mongoose.Schema({
-    providerCallId: { type: String, required: true, immutable: true, trim: true },
-    slotId: { type: String, required: true, immutable: true, trim: true },
-    task: { type: String, required: true, immutable: true, trim: true },
-    state: { type: String, enum: ["admitted"], required: true },
-    leaseGeneration: { type: Number, min: 1, required: true, immutable: true },
-    leaseReference: { type: String, required: true, immutable: true, trim: true },
-    fencingToken: { type: String, required: true, immutable: true, trim: true },
-    admittedAt: { type: Date, required: true, immutable: true },
-  }, { _id: false, strict: true, minimize: false });
-
-  const schema = new mongoose.Schema({
-    domain: { type: String, required: true, immutable: true },
-    schema: { type: Number, required: true, immutable: true },
-    executionId: { type: String, required: true, immutable: true, trim: true },
-    creatorTurnId: { type: String, required: true, immutable: true, trim: true },
-    principalId: { type: String, required: true, immutable: true, trim: true },
-    projectId: { type: String, required: true, immutable: true, trim: true },
-    reservationId: { type: String, required: true, immutable: true, trim: true },
-    requestDigest: { type: String, required: true, immutable: true, trim: true },
-    phase: { type: String, enum: PHASES, required: true },
-    ownerId: { type: String, required: true, trim: true },
-    leaseGeneration: { type: Number, min: 1, required: true },
-    leaseReference: { type: String, required: true, trim: true },
-    fencingToken: { type: String, required: true, trim: true },
-    leaseAcquiredAt: { type: Date, required: true },
-    leaseExpiresAt: { type: Date, required: true },
-    maxProviderCalls: { type: Number, min: 1, required: true },
-    providerCallsClaimed: { type: Number, min: 0, required: true },
-    providerCalls: { type: [providerCallSchema], default: [] },
-  }, { collection: COLLECTION, timestamps: true, minimize: false, strict: true });
-
-  schema.index({ executionId: 1 }, { unique: true });
-  schema.index({ principalId: 1, projectId: 1, creatorTurnId: 1 }, { unique: true });
-  schema.index({ reservationId: 1 }, { unique: true });
-  schema.index({ executionId: 1, "providerCalls.slotId": 1 });
-  model = mongoose.models.MovieMentorInferenceExecution || mongoose.model("MovieMentorInferenceExecution", schema);
-  return model;
-}
-
-async function ensureConnection() {
-  const uri = mongoUri();
-  if (!uri) fail("MOVIE_MENTOR_INFERENCE_EXECUTION_MONGO_NOT_CONFIGURED", "Inference execution Mongo store requires MONGO_URI or MONGODB_URI.");
-  if (mongoose.connection.readyState === 1) return mongoose.connection;
-  if (!connectionPromise) {
-    connectionPromise = mongoose.connect(uri, { serverSelectionTimeoutMS: 5000, maxPoolSize: 10 }).catch((error) => {
-      connectionPromise = null;
-      fail("MOVIE_MENTOR_INFERENCE_EXECUTION_MONGO_UNAVAILABLE", `Inference execution Mongo store unavailable: ${error instanceof Error ? error.message : "Mongo connection failed."}`, { retryable: true });
-    });
-  }
-  await connectionPromise;
-  return mongoose.connection;
-}
-
-function inspectProviderCall(call) {
-  if (!call || typeof call !== "object" || Array.isArray(call)) return false;
-  if (![call.providerCallId, call.slotId, call.task, call.leaseReference, call.fencingToken].every(text)) return false;
-  if (text(call.state) !== "admitted" || !Number.isSafeInteger(call.leaseGeneration) || call.leaseGeneration < 1 || !iso(call.admittedAt)) return false;
-  return true;
-}
-
-function inspectMovieMentorInferenceExecution(record) {
-  const value = plain(record);
-  if (!value || typeof value !== "object" || Array.isArray(value)) return Object.freeze({ valid: false, reason: "record-not-object" });
-  if (value.domain !== DOMAIN || value.schema !== SCHEMA) return Object.freeze({ valid: false, reason: "domain-or-schema-invalid" });
-  const required = ["executionId", "creatorTurnId", "principalId", "projectId", "reservationId", "requestDigest", "phase", "ownerId", "leaseReference", "fencingToken"];
-  if (required.some((field) => !text(value[field]))) return Object.freeze({ valid: false, reason: "identity-or-fence-invalid" });
-  if (!PHASES.includes(text(value.phase))) return Object.freeze({ valid: false, reason: "phase-invalid" });
-  if (!Number.isSafeInteger(value.leaseGeneration) || value.leaseGeneration < 1) return Object.freeze({ valid: false, reason: "generation-invalid" });
-  if (!Number.isSafeInteger(value.maxProviderCalls) || value.maxProviderCalls < 1) return Object.freeze({ valid: false, reason: "provider-call-budget-invalid" });
-  if (!Number.isSafeInteger(value.providerCallsClaimed) || value.providerCallsClaimed < 0 || value.providerCallsClaimed > value.maxProviderCalls) return Object.freeze({ valid: false, reason: "provider-call-claim-count-invalid" });
-  const providerCalls = Array.isArray(value.providerCalls) ? value.providerCalls : [];
-  if (providerCalls.length !== value.providerCallsClaimed || providerCalls.some((call) => !inspectProviderCall(call))) return Object.freeze({ valid: false, reason: "provider-call-ledger-invalid" });
-  if (new Set(providerCalls.map((call) => text(call.slotId))).size !== providerCalls.length) return Object.freeze({ valid: false, reason: "provider-call-slot-duplicate" });
-  const acquiredAt = iso(value.leaseAcquiredAt), expiresAt = iso(value.leaseExpiresAt);
-  if (!acquiredAt || !expiresAt || new Date(expiresAt).getTime() <= new Date(acquiredAt).getTime()) return Object.freeze({ valid: false, reason: "lease-time-invalid" });
-  return Object.freeze({ valid: true, acquiredAt, expiresAt });
-}
-
-function normalize(record) {
-  if (!record) return null;
-  const value = plain(record);
-  const inspection = inspectMovieMentorInferenceExecution(value);
-  if (!inspection.valid) fail("MOVIE_MENTOR_INFERENCE_EXECUTION_MONGO_RECORD_INVALID", "Durable inference execution record is malformed.", { reason: inspection.reason });
-  return Object.freeze({
-    executionId: text(value.executionId), creatorTurnId: text(value.creatorTurnId), principalId: text(value.principalId), projectId: text(value.projectId), reservationId: text(value.reservationId), requestDigest: text(value.requestDigest),
-    phase: text(value.phase), ownerId: text(value.ownerId), leaseGeneration: value.leaseGeneration, leaseReference: text(value.leaseReference), fencingToken: text(value.fencingToken),
-    leaseAcquiredAt: inspection.acquiredAt, leaseExpiresAt: inspection.expiresAt, maxProviderCalls: value.maxProviderCalls, providerCallsClaimed: value.providerCallsClaimed,
-    providerCalls: Object.freeze((value.providerCalls || []).map((call) => Object.freeze({ providerCallId: text(call.providerCallId), slotId: text(call.slotId), task: text(call.task), state: "admitted", leaseGeneration: call.leaseGeneration, leaseReference: text(call.leaseReference), fencingToken: text(call.fencingToken), admittedAt: iso(call.admittedAt) }))),
-  });
-}
-
-function candidate(record = {}) {
-  const value = {
-    domain: DOMAIN, schema: SCHEMA,
-    executionId: text(record.executionId), creatorTurnId: text(record.creatorTurnId), principalId: text(record.principalId), projectId: text(record.projectId), reservationId: text(record.reservationId), requestDigest: text(record.requestDigest),
-    phase: text(record.phase), ownerId: text(record.ownerId), leaseGeneration: record.leaseGeneration, leaseReference: text(record.leaseReference), fencingToken: text(record.fencingToken),
-    leaseAcquiredAt: date(record.leaseAcquiredAt), leaseExpiresAt: date(record.leaseExpiresAt), maxProviderCalls: record.maxProviderCalls, providerCallsClaimed: record.providerCallsClaimed,
-    providerCalls: (record.providerCalls || []).map((call) => ({ providerCallId: text(call.providerCallId), slotId: text(call.slotId), task: text(call.task), state: text(call.state), leaseGeneration: call.leaseGeneration, leaseReference: text(call.leaseReference), fencingToken: text(call.fencingToken), admittedAt: date(call.admittedAt) })),
-  };
-  const inspection = inspectMovieMentorInferenceExecution(value);
-  if (!inspection.valid) fail("MOVIE_MENTOR_INFERENCE_EXECUTION_MONGO_RECORD_INVALID", "Inference execution write candidate is malformed.", { reason: inspection.reason });
-  return value;
-}
-
-function sameImmutableBinding(left, right) {
-  return ["executionId", "creatorTurnId", "principalId", "projectId", "reservationId", "requestDigest", "maxProviderCalls"].every((field) => String(left?.[field]) === String(right?.[field]));
-}
-
-function createMovieMentorInferenceExecutionMongoStore({ mongoModel = null, connect = ensureConnection } = {}) {
-  const storeModel = () => mongoModel || getModel();
-  async function ready() { if (!mongoModel) await connect(); }
-
-  async function readExecution(executionId) {
-    await ready();
-    const record = await storeModel().findOne({ executionId: text(executionId) }).lean().exec();
-    return record ? normalize(record) : null;
-  }
-
-  async function readExecutionByCreatorTurn({ principalId, projectId, creatorTurnId } = {}) {
-    await ready();
-    const record = await storeModel().findOne({ principalId: text(principalId), projectId: text(projectId), creatorTurnId: text(creatorTurnId) }).lean().exec();
-    return record ? normalize(record) : null;
-  }
-
-  async function createExecution(record = {}) {
-    await ready();
-    const next = candidate(record);
-    if (next.phase !== ACTIVE_PHASE || next.leaseGeneration !== 1 || next.providerCallsClaimed !== 0 || next.providerCalls.length !== 0) fail("MOVIE_MENTOR_INFERENCE_EXECUTION_MONGO_CREATE_STATE_INVALID", "New inference execution must begin active at generation 1 with zero provider calls claimed.");
-    try { return normalize(await storeModel().create(next)); } catch (error) { if (error?.code === 11000) return null; throw error; }
-  }
-
-  async function replaceExecution(record = {}, expected = {}) {
-    await ready();
-    const next = candidate(record);
-    const expectedGeneration = expected.expectedLeaseGeneration, expectedReference = text(expected.expectedLeaseReference), expectedPhase = text(expected.expectedPhase), expectedExpiresAt = expected.expectedLeaseExpiresAt ? iso(expected.expectedLeaseExpiresAt) : "";
-    if (!Number.isSafeInteger(expectedGeneration) || expectedGeneration < 1 || !expectedReference || !expectedPhase) fail("MOVIE_MENTOR_INFERENCE_EXECUTION_MONGO_CAS_REQUIRED", "Inference execution replacement requires expected phase, generation and lease reference.");
-
-    const current = await storeModel().findOne({ executionId: next.executionId }).lean().exec();
-    if (!current) return null;
-    const normalizedCurrent = normalize(current);
-    if (!sameImmutableBinding(normalizedCurrent, next)) fail("MOVIE_MENTOR_INFERENCE_EXECUTION_MONGO_IMMUTABLE_BINDING_CONFLICT", "Inference execution immutable binding cannot change.");
-    if (normalizedCurrent.phase !== expectedPhase || normalizedCurrent.leaseGeneration !== expectedGeneration || normalizedCurrent.leaseReference !== expectedReference) return null;
-    if (expectedExpiresAt && normalizedCurrent.leaseExpiresAt !== expectedExpiresAt) return null;
-    if (JSON.stringify(normalizedCurrent.providerCalls) !== JSON.stringify(next.providerCalls.map((call) => ({ ...call, admittedAt: iso(call.admittedAt) })))) fail("MOVIE_MENTOR_INFERENCE_EXECUTION_MONGO_PROVIDER_CALL_MUTATION_FORBIDDEN", "Lease replacement cannot rewrite durable provider-call claims.");
-
-    const sameGeneration = next.leaseGeneration === expectedGeneration, takeover = next.leaseGeneration === expectedGeneration + 1;
-    if (!sameGeneration && !takeover) fail("MOVIE_MENTOR_INFERENCE_EXECUTION_MONGO_GENERATION_TRANSITION_INVALID", "Inference execution generation may remain stable or advance exactly once.");
-    if (takeover && (next.leaseReference === normalizedCurrent.leaseReference || next.fencingToken === normalizedCurrent.fencingToken || next.ownerId === normalizedCurrent.ownerId)) fail("MOVIE_MENTOR_INFERENCE_EXECUTION_MONGO_TAKEOVER_FENCE_REUSE", "Execution takeover must mint new owner, lease reference and fencing token.");
-
-    const filter = { executionId: next.executionId, phase: expectedPhase, leaseGeneration: expectedGeneration, leaseReference: expectedReference };
-    if (expectedExpiresAt) filter.leaseExpiresAt = new Date(expectedExpiresAt);
-    const written = await storeModel().findOneAndUpdate(filter, { $set: next }, { new: true, runValidators: true }).lean().exec();
-    return written ? normalize(written) : null;
-  }
-
-  async function claimProviderCall({ executionId, ownerId, leaseGeneration, leaseReference, fencingToken, providerCallId, slotId, task, admittedAt } = {}) {
-    await ready();
-    const id = text(executionId), owner = text(ownerId), reference = text(leaseReference), fence = text(fencingToken), callId = text(providerCallId), slot = text(slotId), callTask = text(task), at = date(admittedAt);
-    if (![id, owner, reference, fence, callId, slot, callTask].every(Boolean) || !Number.isSafeInteger(leaseGeneration) || leaseGeneration < 1 || !at) fail("MOVIE_MENTOR_INFERENCE_PROVIDER_CALL_CLAIM_INVALID", "Provider-call claim requires complete execution fencing and call identity.");
-    const call = { providerCallId: callId, slotId: slot, task: callTask, state: "admitted", leaseGeneration, leaseReference: reference, fencingToken: fence, admittedAt: at };
-    const filter = {
-      executionId: id, phase: ACTIVE_PHASE, ownerId: owner, leaseGeneration, leaseReference: reference, fencingToken: fence,
-      leaseExpiresAt: { $gt: at }, "providerCalls.slotId": { $ne: slot }, $expr: { $lt: ["$providerCallsClaimed", "$maxProviderCalls"] },
-    };
-    const written = await storeModel().findOneAndUpdate(filter, { $push: { providerCalls: call }, $inc: { providerCallsClaimed: 1 } }, { new: true, runValidators: true }).lean().exec();
-    if (written) return Object.freeze({ claimed: true, execution: normalize(written), providerCall: Object.freeze({ ...call, admittedAt: at.toISOString() }) });
-    const current = await readExecution(id);
-    const existing = current?.providerCalls?.find((entry) => entry.slotId === slot) || null;
-    return Object.freeze({ claimed: false, execution: current, existingProviderCall: existing });
-  }
-
-  return Object.freeze({ readExecution, readExecutionByCreatorTurn, createExecution, replaceExecution, claimProviderCall });
-}
-
-function getMovieMentorInferenceExecutionMongoStoreStatus() {
-  const configured = Boolean(mongoUri());
-  return Object.freeze({ version: VERSION, configured, readiness: configured ? "configured" : "configuration-required", collection: COLLECTION, durable: true, cas: "phase-generation-reference-expiry-provider-call" });
-}
-
-export {
-  VERSION as MOVIE_MENTOR_INFERENCE_EXECUTION_MONGO_STORE_VERSION,
-  DOMAIN as MOVIE_MENTOR_INFERENCE_EXECUTION_MONGO_STORE_DOMAIN,
-  SCHEMA as MOVIE_MENTOR_INFERENCE_EXECUTION_MONGO_STORE_SCHEMA,
-  COLLECTION as MOVIE_MENTOR_INFERENCE_EXECUTION_MONGO_COLLECTION,
-  PHASES as MOVIE_MENTOR_INFERENCE_EXECUTION_PHASES,
-  inspectMovieMentorInferenceExecution,
-  createMovieMentorInferenceExecutionMongoStore,
-  getMovieMentorInferenceExecutionMongoStoreStatus,
-};
-
-export default createMovieMentorInferenceExecutionMongoStore;
+const VERSION="1.2.0",DOMAIN="iband.movie-mentor.inference-execution-store",SCHEMA=3,COLLECTION="movie_mentor_inference_execution",ACTIVE_PHASE="active";
+const PHASES=Object.freeze(["active","closing","closed","finalized","quarantined"]);let connectionPromise=null,model=null;
+const text=v=>typeof v==="string"?v.trim():"";const date=v=>{const d=v instanceof Date?new Date(v):new Date(v);return Number.isNaN(d.getTime())?null:d;};const iso=v=>{const d=date(v);return d?d.toISOString():"";};const plain=v=>v&&typeof v.toObject==="function"?v.toObject():v;
+function fail(code,message,extras={}){const e=new Error(message);e.code=code;Object.assign(e,extras);throw e;}function mongoUri(){return text(process.env.MONGO_URI||process.env.MONGODB_URI||"");}
+function getModel(){if(model)return model;const callSchema=new mongoose.Schema({providerCallId:{type:String,required:true,immutable:true,trim:true},slotId:{type:String,required:true,immutable:true,trim:true},task:{type:String,required:true,immutable:true,trim:true},state:{type:String,enum:["admitted"],required:true},leaseGeneration:{type:Number,min:1,required:true,immutable:true},leaseReference:{type:String,required:true,immutable:true,trim:true},fencingToken:{type:String,required:true,immutable:true,trim:true},admittedAt:{type:Date,required:true,immutable:true}},{_id:false,strict:true,minimize:false});const schema=new mongoose.Schema({domain:{type:String,required:true,immutable:true},schema:{type:Number,required:true},executionId:{type:String,required:true,immutable:true,trim:true},creatorTurnId:{type:String,required:true,immutable:true,trim:true},principalId:{type:String,required:true,immutable:true,trim:true},projectId:{type:String,required:true,immutable:true,trim:true},reservationId:{type:String,required:true,immutable:true,trim:true},requestDigest:{type:String,required:true,immutable:true,trim:true},phase:{type:String,enum:PHASES,required:true},ownerId:{type:String,required:true,trim:true},leaseGeneration:{type:Number,min:1,required:true},leaseReference:{type:String,required:true,trim:true},fencingToken:{type:String,required:true,trim:true},leaseAcquiredAt:{type:Date,required:true},leaseExpiresAt:{type:Date,required:true},maxProviderCalls:{type:Number,min:1,required:true},providerCallsClaimed:{type:Number,min:0,required:true},providerCalls:{type:[callSchema],default:[]},closureReference:{type:String,trim:true,default:""},frozenProviderCallCount:{type:Number,min:0,default:null},frozenProviderCallSetDigest:{type:String,trim:true,default:""},closingAt:{type:Date,default:null},closedFromExecutionGeneration:{type:Number,min:1,default:null},closurePolicyVersion:{type:String,trim:true,default:""},closureCertificateDigest:{type:String,trim:true,default:""},closedAt:{type:Date,default:null},quarantinedAt:{type:Date,default:null},quarantineReason:{type:String,trim:true,default:""}},{collection:COLLECTION,timestamps:true,minimize:false,strict:true});schema.index({executionId:1},{unique:true});schema.index({principalId:1,projectId:1,creatorTurnId:1},{unique:true});schema.index({reservationId:1},{unique:true});schema.index({executionId:1,"providerCalls.slotId":1});model=mongoose.models.MovieMentorInferenceExecution||mongoose.model("MovieMentorInferenceExecution",schema);return model;}
+async function ensureConnection(){const uri=mongoUri();if(!uri)fail("MOVIE_MENTOR_INFERENCE_EXECUTION_MONGO_NOT_CONFIGURED","Inference execution Mongo store requires MONGO_URI or MONGODB_URI.");if(mongoose.connection.readyState===1)return mongoose.connection;if(!connectionPromise)connectionPromise=mongoose.connect(uri,{serverSelectionTimeoutMS:5000,maxPoolSize:10}).catch(error=>{connectionPromise=null;fail("MOVIE_MENTOR_INFERENCE_EXECUTION_MONGO_UNAVAILABLE",`Inference execution Mongo store unavailable: ${error instanceof Error?error.message:"Mongo connection failed."}`,{retryable:true});});await connectionPromise;return mongoose.connection;}
+function inspectCall(c){return c&&typeof c==="object"&&[c.providerCallId,c.slotId,c.task,c.leaseReference,c.fencingToken].every(text)&&text(c.state)==="admitted"&&Number.isSafeInteger(c.leaseGeneration)&&c.leaseGeneration>0&&Boolean(iso(c.admittedAt));}
+function normalize(record){if(!record)return null;const v=plain(record);if(v.domain!==DOMAIN||![2,SCHEMA].includes(v.schema)||![v.executionId,v.creatorTurnId,v.principalId,v.projectId,v.reservationId,v.requestDigest,v.phase,v.ownerId,v.leaseReference,v.fencingToken].every(text)||!PHASES.includes(text(v.phase)))fail("MOVIE_MENTOR_INFERENCE_EXECUTION_MONGO_RECORD_INVALID","Durable inference execution record is malformed.");const calls=Array.isArray(v.providerCalls)?v.providerCalls:[];if(!Number.isSafeInteger(v.leaseGeneration)||v.leaseGeneration<1||!Number.isSafeInteger(v.maxProviderCalls)||v.maxProviderCalls<1||!Number.isSafeInteger(v.providerCallsClaimed)||v.providerCallsClaimed!==calls.length||calls.some(c=>!inspectCall(c))||new Set(calls.map(c=>text(c.slotId))).size!==calls.length)fail("MOVIE_MENTOR_INFERENCE_EXECUTION_MONGO_RECORD_INVALID","Durable inference execution ledger is malformed.");const acquiredAt=iso(v.leaseAcquiredAt),leaseExpiresAt=iso(v.leaseExpiresAt);if(!acquiredAt||!leaseExpiresAt||new Date(leaseExpiresAt)<=new Date(acquiredAt))fail("MOVIE_MENTOR_INFERENCE_EXECUTION_MONGO_RECORD_INVALID","Durable inference execution lease is malformed.");const closing=text(v.phase)!=="active";if(closing&&(!text(v.closureReference)||!Number.isSafeInteger(v.frozenProviderCallCount)||v.frozenProviderCallCount!==calls.length||!text(v.frozenProviderCallSetDigest)||!iso(v.closingAt)||!Number.isSafeInteger(v.closedFromExecutionGeneration)||!text(v.closurePolicyVersion)))fail("MOVIE_MENTOR_INFERENCE_EXECUTION_CLOSURE_RECORD_INVALID","Closing execution lacks immutable closure identity.");return Object.freeze({executionId:text(v.executionId),creatorTurnId:text(v.creatorTurnId),principalId:text(v.principalId),projectId:text(v.projectId),reservationId:text(v.reservationId),requestDigest:text(v.requestDigest),phase:text(v.phase),ownerId:text(v.ownerId),leaseGeneration:v.leaseGeneration,leaseReference:text(v.leaseReference),fencingToken:text(v.fencingToken),leaseAcquiredAt:acquiredAt,leaseExpiresAt,maxProviderCalls:v.maxProviderCalls,providerCallsClaimed:v.providerCallsClaimed,providerCalls:Object.freeze(calls.map(c=>Object.freeze({providerCallId:text(c.providerCallId),slotId:text(c.slotId),task:text(c.task),state:"admitted",leaseGeneration:c.leaseGeneration,leaseReference:text(c.leaseReference),fencingToken:text(c.fencingToken),admittedAt:iso(c.admittedAt)}))),closureReference:text(v.closureReference),frozenProviderCallCount:Number.isSafeInteger(v.frozenProviderCallCount)?v.frozenProviderCallCount:null,frozenProviderCallSetDigest:text(v.frozenProviderCallSetDigest),closingAt:iso(v.closingAt),closedFromExecutionGeneration:Number.isSafeInteger(v.closedFromExecutionGeneration)?v.closedFromExecutionGeneration:null,closurePolicyVersion:text(v.closurePolicyVersion),closureCertificateDigest:text(v.closureCertificateDigest),closedAt:iso(v.closedAt),quarantinedAt:iso(v.quarantinedAt),quarantineReason:text(v.quarantineReason)});}
+function sameBinding(a,b){return ["executionId","creatorTurnId","principalId","projectId","reservationId","requestDigest","maxProviderCalls"].every(k=>String(a?.[k])===String(b?.[k]));}
+function createMovieMentorInferenceExecutionMongoStore({mongoModel=null,connect=ensureConnection}={}){const storeModel=()=>mongoModel||getModel();async function ready(){if(!mongoModel)await connect();}async function readExecution(executionId){await ready();const r=await storeModel().findOne({executionId:text(executionId)}).lean().exec();return r?normalize(r):null;}async function readExecutionByCreatorTurn({principalId,projectId,creatorTurnId}={}){await ready();const r=await storeModel().findOne({principalId:text(principalId),projectId:text(projectId),creatorTurnId:text(creatorTurnId)}).lean().exec();return r?normalize(r):null;}
+ async function createExecution(record={}){await ready();const next={domain:DOMAIN,schema:SCHEMA,...record,closureReference:"",frozenProviderCallCount:null,frozenProviderCallSetDigest:"",closingAt:null,closedFromExecutionGeneration:null,closurePolicyVersion:"",closureCertificateDigest:"",closedAt:null,quarantinedAt:null,quarantineReason:""};if(text(next.phase)!==ACTIVE_PHASE||next.leaseGeneration!==1||next.providerCallsClaimed!==0||(next.providerCalls||[]).length!==0)fail("MOVIE_MENTOR_INFERENCE_EXECUTION_MONGO_CREATE_STATE_INVALID","New inference execution must begin active at generation 1 with zero provider calls claimed.");try{return normalize(await storeModel().create(next));}catch(error){if(error?.code===11000)return null;throw error;}}
+ async function replaceExecution(record={},expected={}){await ready();const current=await readExecution(record.executionId);if(!current)return null;if(!sameBinding(current,record))fail("MOVIE_MENTOR_INFERENCE_EXECUTION_MONGO_IMMUTABLE_BINDING_CONFLICT","Inference execution immutable binding cannot change.");if(current.phase!=="active"||text(record.phase)!=="active")fail("MOVIE_MENTOR_INFERENCE_EXECUTION_MONGO_PHASE_TRANSITION_FORBIDDEN","Generic lease replacement is active-only; closure transitions require closure primitives.");if(current.phase!==text(expected.expectedPhase)||current.leaseGeneration!==expected.expectedLeaseGeneration||current.leaseReference!==text(expected.expectedLeaseReference))return null;if(expected.expectedLeaseExpiresAt&&current.leaseExpiresAt!==iso(expected.expectedLeaseExpiresAt))return null;if(JSON.stringify(current.providerCalls)!==JSON.stringify(record.providerCalls))fail("MOVIE_MENTOR_INFERENCE_EXECUTION_MONGO_PROVIDER_CALL_MUTATION_FORBIDDEN","Lease replacement cannot rewrite durable provider-call claims.");const same=record.leaseGeneration===current.leaseGeneration,takeover=record.leaseGeneration===current.leaseGeneration+1;if(!same&&!takeover)fail("MOVIE_MENTOR_INFERENCE_EXECUTION_MONGO_GENERATION_TRANSITION_INVALID","Inference execution generation may remain stable or advance exactly once.");if(takeover&&(text(record.leaseReference)===current.leaseReference||text(record.fencingToken)===current.fencingToken||text(record.ownerId)===current.ownerId))fail("MOVIE_MENTOR_INFERENCE_EXECUTION_MONGO_TAKEOVER_FENCE_REUSE","Execution takeover must mint new owner, lease reference and fencing token.");const filter={executionId:current.executionId,phase:"active",leaseGeneration:current.leaseGeneration,leaseReference:current.leaseReference,providerCallsClaimed:current.providerCallsClaimed};if(expected.expectedLeaseExpiresAt)filter.leaseExpiresAt=new Date(current.leaseExpiresAt);const written=await storeModel().findOneAndUpdate(filter,{$set:{...record,schema:SCHEMA}},{new:true,runValidators:true}).lean().exec();return written?normalize(written):null;}
+ async function claimProviderCall(input={}){await ready();const at=date(input.admittedAt),call={providerCallId:text(input.providerCallId),slotId:text(input.slotId),task:text(input.task),state:"admitted",leaseGeneration:input.leaseGeneration,leaseReference:text(input.leaseReference),fencingToken:text(input.fencingToken),admittedAt:at};if(![input.executionId,input.ownerId,call.providerCallId,call.slotId,call.task,call.leaseReference,call.fencingToken].every(text)||!Number.isSafeInteger(call.leaseGeneration)||!at)fail("MOVIE_MENTOR_INFERENCE_PROVIDER_CALL_CLAIM_INVALID","Provider-call claim requires complete execution fencing and call identity.");const filter={executionId:text(input.executionId),phase:"active",ownerId:text(input.ownerId),leaseGeneration:call.leaseGeneration,leaseReference:call.leaseReference,fencingToken:call.fencingToken,leaseExpiresAt:{$gt:at},"providerCalls.slotId":{$ne:call.slotId},$expr:{$lt:["$providerCallsClaimed","$maxProviderCalls"]}};const written=await storeModel().findOneAndUpdate(filter,{$push:{providerCalls:call},$inc:{providerCallsClaimed:1},$set:{schema:SCHEMA}},{new:true,runValidators:true}).lean().exec();if(written)return Object.freeze({claimed:true,execution:normalize(written),providerCall:Object.freeze({...call,admittedAt:at.toISOString()})});const current=await readExecution(input.executionId);return Object.freeze({claimed:false,execution:current,existingProviderCall:current?.providerCalls?.find(c=>c.slotId===call.slotId)||null});}
+ async function beginClosing({executionId,ownerId,leaseGeneration,leaseReference,fencingToken,closureReference,frozenProviderCallCount,frozenProviderCallSetDigest,closingAt,closurePolicyVersion}={}){await ready();const at=date(closingAt);if(![executionId,ownerId,leaseReference,fencingToken,closureReference,frozenProviderCallSetDigest,closurePolicyVersion].every(text)||!Number.isSafeInteger(leaseGeneration)||!Number.isSafeInteger(frozenProviderCallCount)||!at)fail("MOVIE_MENTOR_INFERENCE_CLOSURE_BINDING_INVALID","Closure requires exact execution fence and frozen universe identity.");const written=await storeModel().findOneAndUpdate({executionId:text(executionId),phase:"active",ownerId:text(ownerId),leaseGeneration,leaseReference:text(leaseReference),fencingToken:text(fencingToken),leaseExpiresAt:{$gt:at},providerCallsClaimed:frozenProviderCallCount},{$set:{schema:SCHEMA,phase:"closing",closureReference:text(closureReference),frozenProviderCallCount,frozenProviderCallSetDigest:text(frozenProviderCallSetDigest),closingAt:at,closedFromExecutionGeneration:leaseGeneration,closurePolicyVersion:text(closurePolicyVersion)}},{new:true,runValidators:true}).lean().exec();return written?normalize(written):readExecution(executionId);}
+ async function recoverExpiredIntoClosing({executionId,closureReference,frozenProviderCallCount,frozenProviderCallSetDigest,closingAt,closurePolicyVersion}={}){await ready();const at=date(closingAt);if(![executionId,closureReference,frozenProviderCallSetDigest,closurePolicyVersion].every(text)||!Number.isSafeInteger(frozenProviderCallCount)||!at)fail("MOVIE_MENTOR_INFERENCE_CLOSURE_RECOVERY_INVALID","Expired recovery closure requires frozen universe identity.");const current=await readExecution(executionId);if(!current)return null;if(current.phase!=="active")return current;const written=await storeModel().findOneAndUpdate({executionId:current.executionId,phase:"active",leaseGeneration:current.leaseGeneration,leaseReference:current.leaseReference,leaseExpiresAt:{$lte:at},providerCallsClaimed:frozenProviderCallCount},{$set:{schema:SCHEMA,phase:"closing",closureReference:text(closureReference),frozenProviderCallCount,frozenProviderCallSetDigest:text(frozenProviderCallSetDigest),closingAt:at,closedFromExecutionGeneration:current.leaseGeneration,closurePolicyVersion:text(closurePolicyVersion)}},{new:true,runValidators:true}).lean().exec();return written?normalize(written):readExecution(executionId);}
+ async function completeClosing({executionId,closureReference,frozenProviderCallSetDigest,closureCertificateDigest,closedAt}={}){await ready();const at=date(closedAt);if(![executionId,closureReference,frozenProviderCallSetDigest,closureCertificateDigest].every(text)||!at)fail("MOVIE_MENTOR_INFERENCE_CLOSURE_COMPLETE_INVALID","Closure completion requires exact immutable closure evidence.");const written=await storeModel().findOneAndUpdate({executionId:text(executionId),phase:"closing",closureReference:text(closureReference),frozenProviderCallSetDigest:text(frozenProviderCallSetDigest)},{$set:{phase:"closed",closureCertificateDigest:text(closureCertificateDigest),closedAt:at}},{new:true,runValidators:true}).lean().exec();return written?normalize(written):readExecution(executionId);}
+ async function quarantineExecution({executionId,closureReference,reason,quarantinedAt}={}){await ready();const at=date(quarantinedAt);if(![executionId,closureReference,reason].every(text)||!at)fail("MOVIE_MENTOR_INFERENCE_QUARANTINE_INVALID","Quarantine requires execution, closure and reason.");const written=await storeModel().findOneAndUpdate({executionId:text(executionId),phase:{$in:["closing","closed"]},closureReference:text(closureReference)},{$set:{phase:"quarantined",quarantineReason:text(reason),quarantinedAt:at}},{new:true,runValidators:true}).lean().exec();return written?normalize(written):readExecution(executionId);}
+ return Object.freeze({readExecution,readExecutionByCreatorTurn,createExecution,replaceExecution,claimProviderCall,beginClosing,recoverExpiredIntoClosing,completeClosing,quarantineExecution});}
+function inspectMovieMentorInferenceExecution(record){try{return Object.freeze({valid:Boolean(normalize(record))});}catch(error){return Object.freeze({valid:false,reason:error.code||"record-invalid"});}}
+function getMovieMentorInferenceExecutionMongoStoreStatus(){const configured=Boolean(mongoUri());return Object.freeze({version:VERSION,configured,readiness:configured?"configured":"configuration-required",collection:COLLECTION,durable:true,cas:"active-closure-frozen-universe"});}
+export{VERSION as MOVIE_MENTOR_INFERENCE_EXECUTION_MONGO_STORE_VERSION,DOMAIN as MOVIE_MENTOR_INFERENCE_EXECUTION_MONGO_STORE_DOMAIN,SCHEMA as MOVIE_MENTOR_INFERENCE_EXECUTION_MONGO_STORE_SCHEMA,COLLECTION as MOVIE_MENTOR_INFERENCE_EXECUTION_MONGO_COLLECTION,PHASES as MOVIE_MENTOR_INFERENCE_EXECUTION_PHASES,inspectMovieMentorInferenceExecution,createMovieMentorInferenceExecutionMongoStore,getMovieMentorInferenceExecutionMongoStoreStatus};export default createMovieMentorInferenceExecutionMongoStore;
