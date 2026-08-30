@@ -22,7 +22,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-      - run: npm ci
+      - run: npm install --no-audit --no-fund --ignore-scripts
       - name: Verify durable pre-closure result candidate and crash recovery
         run: node scripts/verify-movie-mentor-result-candidate-recovery.mjs
