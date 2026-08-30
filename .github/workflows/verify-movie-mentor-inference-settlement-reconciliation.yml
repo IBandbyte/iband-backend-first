@@ -4,6 +4,11 @@ on:
     branches: [main]
     paths:
       - 'ai/MovieMentorInferenceSettlementReconciliationAuthority.js'
+      - 'ai/MovieMentorInferenceSettlementMongoStore.js'
+      - 'ai/MovieMentorCanonicalResultAuthority.js'
+      - 'ai/MovieMentorCanonicalResultMongoStore.js'
+      - 'ai/MovieMentorResultCandidateMongoStore.js'
+      - 'ai/MovieMentorProductionInferenceExecutionComposition.js'
       - 'ai/MovieMentorTurnRuntime.js'
       - 'movieMentorTurn.js'
       - 'server.js'
@@ -13,6 +18,11 @@ on:
   pull_request:
     paths:
       - 'ai/MovieMentorInferenceSettlementReconciliationAuthority.js'
+      - 'ai/MovieMentorInferenceSettlementMongoStore.js'
+      - 'ai/MovieMentorCanonicalResultAuthority.js'
+      - 'ai/MovieMentorCanonicalResultMongoStore.js'
+      - 'ai/MovieMentorResultCandidateMongoStore.js'
+      - 'ai/MovieMentorProductionInferenceExecutionComposition.js'
       - 'ai/MovieMentorTurnRuntime.js'
       - 'movieMentorTurn.js'
       - 'server.js'
