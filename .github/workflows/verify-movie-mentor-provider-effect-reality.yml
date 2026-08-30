@@ -9,6 +9,7 @@ on:
       - ".github/workflows/verify-movie-mentor-creator-production-authorization.yml"
       - "scripts/verify-movie-mentor-provider-effect-reality.mjs"
       - "scripts/verify-movie-mentor-creator-production-authorization.mjs"
+      - "scripts/verify-movie-mentor-round-four-certification-anchor.mjs"
       - "ai/MovieMentorProviderEffectMongoStore.js"
       - "ai/MovieMentorProviderEffectAuthority.js"
       - "ai/MovieMentorProductionInferenceExecutionComposition.js"
