@@ -1,0 +1,28 @@
+name: Verify Movie Mentor Result Candidate Recovery
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ai/MovieMentorResultCandidateMongoStore.js"
+      - "ai/MovieMentorTurnRuntime.js"
+      - "ai/MovieMentorInferenceExecutionMongoStore.js"
+      - "ai/MovieMentorInferenceExecutionClosureAuthority.js"
+      - "ai/MovieMentorCanonicalResultAuthority.js"
+      - "ai/MovieMentorProductionInferenceExecutionComposition.js"
+      - "ai/MovieMentorInferenceSettlementMongoStore.js"
+      - "movieMentorTurn.js"
+      - "scripts/verify-movie-mentor-result-candidate-recovery.mjs"
+      - ".github/workflows/verify-movie-mentor-result-candidate-recovery.yml"
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Verify durable pre-closure result candidate and crash recovery
+        run: node scripts/verify-movie-mentor-result-candidate-recovery.mjs
