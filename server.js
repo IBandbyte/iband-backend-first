@@ -6,6 +6,7 @@ import { createMovieMentorCreatorRequestAuthority } from "./ai/MovieMentorCreato
 import { createMovieMentorProductionBrowserOriginAuthority } from "./ai/MovieMentorProductionBrowserOriginAuthority.js";
 import { createMovieMentorProductionInferenceSpendComposition } from "./ai/MovieMentorProductionInferenceSpendComposition.js";
 import { createMovieMentorProductionInferenceExecutionComposition } from "./ai/MovieMentorProductionInferenceExecutionComposition.js";
+import { createMovieMentorInferenceSettlementReconciliationAuthority } from "./ai/MovieMentorInferenceSettlementReconciliationAuthority.js";
 import { mountMovieMentorProductionCommercialHttpIngress } from "./ai/MovieMentorProductionCommercialHttpIngress.js";
 import { createMovieMentorTurnRouter } from "./movieMentorTurn.js";
 
@@ -36,14 +37,15 @@ async function mountMovieMentorCreatorGateway() {
   const authentication = createMovieMentorProductionAuthenticationComposition();
   if (authentication?.ready !== true || typeof authentication?.verifyCredential !== "function") { const reason = authentication?.reason || "production-authentication-not-ready"; console.log(`[mount:closed] /api/movie-mentor (${reason})`); return Object.freeze({ mounted: false, basePath: "/api/movie-mentor", reason }); }
   const spendComposition = createMovieMentorProductionInferenceSpendComposition();
-  if (spendComposition?.ready !== true || typeof spendComposition?.authority?.reserveTurn !== "function") { const reason = spendComposition?.reason || "production-inference-spend-authority-not-ready"; console.log(`[mount:closed] /api/movie-mentor (${reason})`); return Object.freeze({ mounted: false, basePath: "/api/movie-mentor", reason }); }
+  if (spendComposition?.ready !== true || typeof spendComposition?.authority?.reserveTurn !== "function" || typeof spendComposition?.authority?.settleTurn !== "function") { const reason = spendComposition?.reason || "production-inference-spend-authority-not-ready"; console.log(`[mount:closed] /api/movie-mentor (${reason})`); return Object.freeze({ mounted: false, basePath: "/api/movie-mentor", reason }); }
   const executionComposition = createMovieMentorProductionInferenceExecutionComposition();
   if (executionComposition?.ready !== true || typeof executionComposition?.authority?.claimProviderCall !== "function" || typeof executionComposition?.authority?.beginExecutionClosing !== "function" || typeof executionComposition?.authority?.reconcileExecutionClosure !== "function" || typeof executionComposition?.authority?.commitCanonicalResult !== "function" || typeof executionComposition?.authority?.readCanonicalResult !== "function") { const reason = executionComposition?.reason || "production-canonical-result-authority-not-ready"; console.log(`[mount:closed] /api/movie-mentor (${reason})`); return Object.freeze({ mounted: false, basePath: "/api/movie-mentor", reason }); }
+  const settlementAuthority=createMovieMentorInferenceSettlementReconciliationAuthority({readCanonicalResult:executionComposition.authority.readCanonicalResult,settleTurn:spendComposition.authority.settleTurn});
   const requestAuthority = createMovieMentorCreatorRequestAuthority({verifyCredential: authentication.verifyCredential,expectedIssuer: authentication.expectedIssuer,expectedAudience: authentication.expectedAudience});
-  const router = createMovieMentorTurnRouter({ requestAuthority, inferenceSpendAuthority: spendComposition.authority, inferenceExecutionAuthority: executionComposition.authority });
+  const router = createMovieMentorTurnRouter({ requestAuthority, inferenceSpendAuthority: spendComposition.authority, inferenceExecutionAuthority: executionComposition.authority, inferenceSettlementAuthority:settlementAuthority });
   app.use("/api/movie-mentor", router);
-  console.log("[mount:ok] /api/movie-mentor <- authenticated creator gateway + durable inference spend + fenced execution + closure + canonical result authority");
-  return Object.freeze({ mounted: true, basePath: "/api/movie-mentor", reason: "authenticated-budgeted-fenced-closure-result-gateway-mounted" });
+  console.log("[mount:ok] /api/movie-mentor <- authenticated creator gateway + durable inference spend + fenced execution + closure + canonical result + deterministic settlement reconciliation");
+  return Object.freeze({ mounted: true, basePath: "/api/movie-mentor", reason: "authenticated-budgeted-fenced-closure-result-settlement-gateway-mounted" });
 }
 await mountMovieMentorCreatorGateway();
 
@@ -52,4 +54,4 @@ console.log(`[mount:${recoveryMount.mounted ? "ok" : "closed"}] ${recoveryMount.
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`iBand backend listening on ${PORT}`));
 
-// 5A.24: production inference requires durable admission, closure, and canonical result authority before creator-facing success.
+// 5A.24: creator debit requires current immutable canonical result authority and deterministic durable settlement reconciliation.
