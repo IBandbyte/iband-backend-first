@@ -1,11 +1,8 @@
 {
-  "generatedAt": "2026-08-30T13:36:26.330Z",
+  "generatedAt": "2026-08-30T13:53:26.128Z",
   "baseUrl": "https://iband-backend-first-1.onrender.com",
-  "passed": false,
-  "status": 502,
-  "publiclyIsolated": false,
-  "error": {
-    "message": "standalone synthesis execution must not be publicly mounted\n\n502 !== 404\n",
-    "code": "ERR_ASSERTION"
-  }
+  "passed": true,
+  "status": 404,
+  "publiclyIsolated": true,
+  "error": null
 }
