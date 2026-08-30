@@ -7,6 +7,7 @@ on:
     paths:
       - ".github/workflows/verify-movie-mentor-inference-execution-closure-barrier.yml"
       - "scripts/verify-movie-mentor-inference-execution-closure-barrier.mjs"
+      - "scripts/verify-movie-mentor-round-four-certification-anchor.mjs"
       - "ai/MovieMentorInferenceExecutionMongoStore.js"
       - "ai/MovieMentorInferenceExecutionLeaseAuthority.js"
       - "ai/MovieMentorInferenceExecutionClosureAuthority.js"
