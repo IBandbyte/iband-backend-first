@@ -1,4 +1,5 @@
 name: Verify Movie Mentor Result Candidate Recovery
+# Certification wake: staged result authority must agree with the full backend universe on this exact SHA.
 on:
   push:
     branches: [main]
