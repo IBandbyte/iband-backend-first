@@ -1,9 +1,12 @@
 {
-  "generatedAt": "2026-08-29T19:09:09.719Z",
+  "generatedAt": "2026-08-30T13:16:38.757Z",
   "baseUrl": "https://iband-backend-first-1.onrender.com",
-  "passed": true,
-  "healthStatus": 404,
-  "executeStatus": 404,
-  "publiclyIsolated": true,
-  "error": null
+  "passed": false,
+  "healthStatus": 502,
+  "executeStatus": 502,
+  "publiclyIsolated": false,
+  "error": {
+    "message": "standalone specialist health must not be publicly mounted\n\n502 !== 404\n",
+    "code": "ERR_ASSERTION"
+  }
 }
