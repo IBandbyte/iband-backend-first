@@ -7,7 +7,7 @@ import { synthesizeMovieMentorResponse } from "./MovieMentorSynthesisEngine.js";
 import { buildCurrentCreatorTruthView } from "./MovieMentorCreatorTruthViewControl.js";
 import { readAuthoritativeTurnSource, readAuthoritativeRevision, readAuthoritativeCreatorState } from "./MovieMentorCreatorStateStore.js";
 
-const MOVIE_MENTOR_TURN_RUNTIME_VERSION = "2.3.0";
+const MOVIE_MENTOR_TURN_RUNTIME_VERSION = "2.4.0";
 const s = (value) => (typeof value === "string" ? value.trim() : "");
 
 function clone(value) {
@@ -288,7 +288,7 @@ async function acquireExistingExecution({ existing, inferenceExecutionAuthority,
 }
 
 async function replayTerminalTurn({ existing, inferenceExecutionAuthority, settlementAuthority } = {}) {
-  if (s(existing?.phase) !== "closed") return null;
+  if (!["closed", "finalized"].includes(s(existing?.phase))) return null;
   const canonical = await inferenceExecutionAuthority.readCanonicalResult({ executionId: existing.executionId });
   if (canonical?.authorized !== true || canonical?.committed !== true) return null;
   const settlement = await settlementAuthority.reconcile({ executionId: existing.executionId });
@@ -301,7 +301,7 @@ async function replayTerminalTurn({ existing, inferenceExecutionAuthority, settl
 }
 
 async function recoverStagedResultTurn({ existing, inferenceExecutionAuthority, settlementAuthority } = {}) {
-  if (!["closing", "closed"].includes(s(existing?.phase))) return null;
+  if (!["closing", "closed", "finalized"].includes(s(existing?.phase))) return null;
   const candidate = await inferenceExecutionAuthority.readResultCandidate(existing.executionId);
   if (!candidate) {
     throw runtimeError("MOVIE_MENTOR_RESULT_CANDIDATE_RECOVERY_REQUIRED", "Non-executable inference universe has no durable staged result candidate.", {
