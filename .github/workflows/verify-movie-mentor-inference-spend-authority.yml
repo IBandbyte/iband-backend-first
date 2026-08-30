@@ -9,6 +9,7 @@ on:
       - "scripts/verify-movie-mentor-inference-spend-authority.mjs"
       - "scripts/verify-movie-mentor-turn-runtime.mjs"
       - "scripts/verify-movie-mentor-durable-round-trip.mjs"
+      - "scripts/verify-movie-mentor-round-four-certification-anchor.mjs"
       - "ai/MovieMentorInferenceSpendAuthority.js"
       - "ai/MovieMentorInferenceSpendMongoStore.js"
       - "ai/MovieMentorProductionInferenceSpendComposition.js"
