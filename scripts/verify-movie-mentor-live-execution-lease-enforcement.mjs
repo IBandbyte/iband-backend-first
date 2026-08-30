@@ -50,9 +50,14 @@ assert.equal(exhausted.dispatchAuthorized,false);assert.equal(exhausted.reason,"
 const composed=createMovieMentorProductionInferenceExecutionComposition({store});
 assert.equal(composed.ready,true);assert.equal(typeof composed.authority.claimProviderCall,"function");
 
-const slots=[], executed=[];
+const slots=[], executed=[],dispatches=[],evidence=[];
 const fakeExecution={authorized:true,executionId:"execution-live",ownerId:"owner-live",leaseGeneration:7,leaseReference:"lease-7",fencingToken:"fence-7"};
-const fakeAuthority={async claimProviderCall({slotId,task}){slots.push(slotId);return{authorized:true,dispatchAuthorized:true,providerCallId:`call-${slotId}`,slotId,task};}};
+const fakeAuthority={
+  async claimProviderCall({slotId,task}){slots.push(slotId);return{authorized:true,dispatchAuthorized:true,providerCallId:`call-${slotId}`,slotId,task,executionId:"execution-live",ownerId:"owner-live",leaseGeneration:7,leaseReference:"lease-7",fencingToken:"fence-7"};},
+  async beginProviderDispatch({providerCall}){dispatches.push(`begin:${providerCall.slotId}`);return{authorized:true,dispatchAuthorized:true,providerCallId:providerCall.providerCallId};},
+  async assertProviderDispatch({providerCall}){dispatches.push(`assert:${providerCall.slotId}`);return{authorized:true,dispatchAuthorized:true,providerCallId:providerCall.providerCallId};},
+  async contributeProviderEffectEvidence(input){evidence.push(input);return{authorized:true,recorded:true};},
+};
 const fenced=createFencedInferenceOrchestrationDeps({
   execution:fakeExecution,
   inferenceExecutionAuthority:fakeAuthority,
@@ -68,11 +73,18 @@ assert.equal(planResult.status,"completed");
 await fenced.synthesizeResponse({});
 assert.deepEqual(slots,["semantic","story","character","continuity","synthesis"]);
 assert.deepEqual(executed,["semantic","story","character","continuity","synthesis"]);
+assert.deepEqual(dispatches,["begin:semantic","assert:semantic","begin:story","assert:story","begin:character","assert:character","begin:continuity","assert:continuity","begin:synthesis","assert:synthesis"]);
+assert.equal(evidence.length,0);
 
 let escaped=false;
 const denied=createFencedInferenceOrchestrationDeps({
   execution:fakeExecution,
-  inferenceExecutionAuthority:{async claimProviderCall(){return{authorized:false,dispatchAuthorized:false,reason:"execution-lease-fenced"};}},
+  inferenceExecutionAuthority:{
+    async claimProviderCall(){return{authorized:false,dispatchAuthorized:false,reason:"execution-lease-fenced"};},
+    async beginProviderDispatch(){throw new Error("must not reach dispatch-begin after denied claim");},
+    async assertProviderDispatch(){throw new Error("must not reach dispatch-fence after denied claim");},
+    async contributeProviderEffectEvidence(){throw new Error("must not record evidence after denied claim");},
+  },
   deps:{interpretSemantics:async()=>{escaped=true;return{};}},
 });
 await assert.rejects(()=>denied.interpretSemantics({}),error=>error.code==="MOVIE_MENTOR_INFERENCE_PROVIDER_CALL_NOT_AUTHORIZED");
@@ -82,7 +94,7 @@ console.log("✓ provider-call claim is durable and slot-bounded");
 console.log("✓ duplicate logical slot cannot mint second dispatch authority");
 console.log("✓ generation takeover fences zombie provider execution");
 console.log("✓ provider-call budget is enforced at admission");
-console.log("✓ Semantic, Story, Character, Continuity and Synthesis cross the claim gate");
-console.log("✓ denied claim prevents provider function invocation");
-console.log("LAW: NO SUCCESSFUL DURABLE CALL CLAIM → NO PROVIDER DISPATCH");
+console.log("✓ Semantic, Story, Character, Continuity and Synthesis cross claim → durable UNKNOWN → current dispatch fence before provider invocation");
+console.log("✓ denied claim prevents UNKNOWN creation, dispatch fencing and provider invocation");
+console.log("LAW: NO SUCCESSFUL DURABLE CALL CLAIM + NO DURABLE UNKNOWN + NO CURRENT DISPATCH FENCE → NO PROVIDER DISPATCH");
 console.log("5A.24 Round Two torture: GREEN");
