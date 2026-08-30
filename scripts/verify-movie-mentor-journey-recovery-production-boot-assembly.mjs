@@ -4,192 +4,26 @@ import {
   assembleMovieMentorJourneyRecoveryProductionBoot,
 } from "../ai/MovieMentorJourneyRecoveryProductionBootAssembly.js";
 
-function fakeApp() {
-  return { use() {} };
-}
-
-function bootAuthentication(overrides = {}) {
-  const verifyCredential = async () => ({ verified: true });
-  return Object.freeze({
-    ready: true,
-    bootWired: true,
-    verifyCredential,
-    expectedIssuer: "https://clerk.example.test",
-    expectedAudience: "movie-mentor-recovery",
-    ...overrides,
-  });
-}
-
-function bootActivation(overrides = {}) {
-  return Object.freeze({
-    ready: true,
-    bootWired: true,
-    activationAuthority: async () => ({ authorized: true }),
-    renewActivation: async () => ({ authorized: true }),
-    assertFence: async () => ({ authorized: true }),
-    processInstanceId: "recovery-process-42-test",
-    deploymentId: "deployment-test",
-    ...overrides,
-  });
-}
-
+function fakeApp() { return { use() {} }; }
+function bootAuthentication(overrides = {}) { const verifyCredential=async()=>({verified:true});return Object.freeze({ready:true,bootWired:true,verifyCredential,expectedIssuer:"https://clerk.example.test",expectedAudience:"movie-mentor-recovery",...overrides}); }
+function bootActivation(overrides = {}) { return Object.freeze({ready:true,bootWired:true,activationAuthority:async()=>({authorized:true}),renewActivation:async()=>({authorized:true}),assertFence:async()=>({authorized:true}),processInstanceId:"recovery-process-42-test",deploymentId:"deployment-test",...overrides}); }
 console.log("[4H.6] final production boot assembly + recovery exposure torture starting");
-
 {
-  let mountCalls = 0;
-  const result = await assembleMovieMentorJourneyRecoveryProductionBoot({
-    app: fakeApp(),
-    env: {},
-    createBootAuthentication: () => bootAuthentication(),
-    createBootActivation: () => bootActivation(),
-    authorizeExposure: () => Object.freeze({ authorized: false, reason: "production-recovery-exposure-unconfigured" }),
-    configureBootMount: async () => { mountCalls += 1; throw new Error("must not mount"); },
-  });
-  assert.equal(result.mounted, false);
-  assert.equal(result.exposureAuthorized, false);
-  assert.equal(result.reason, "production-recovery-exposure-unconfigured");
-  assert.equal(mountCalls, 0);
+ let mountCalls=0;const result=await assembleMovieMentorJourneyRecoveryProductionBoot({app:fakeApp(),env:{},createBootAuthentication:()=>bootAuthentication(),createBootActivation:()=>bootActivation(),authorizeExposure:()=>Object.freeze({authorized:false,reason:"production-recovery-exposure-unconfigured"}),configureBootMount:async()=>{mountCalls+=1;throw new Error("must not mount");}});assert.equal(result.mounted,false);assert.equal(result.exposureAuthorized,false);assert.equal(result.reason,"production-recovery-exposure-unconfigured");assert.equal(mountCalls,0);
 }
-
 {
-  let mountCalls = 0;
-  const result = await assembleMovieMentorJourneyRecoveryProductionBoot({
-    app: fakeApp(),
-    env: { MOVIE_MENTOR_RECOVERY_EXPOSURE_ENABLED: "true" },
-    createBootAuthentication: () => bootAuthentication({ ready: false, verifyCredential: null }),
-    createBootActivation: () => bootActivation(),
-    authorizeExposure: ({ bootAuthentication }) => Object.freeze({
-      authorized: bootAuthentication.ready === true,
-      reason: "production-recovery-boot-authentication-not-ready",
-    }),
-    configureBootMount: async () => { mountCalls += 1; throw new Error("must not mount"); },
-  });
-  assert.equal(result.mounted, false);
-  assert.equal(result.reason, "production-recovery-boot-authentication-not-ready");
-  assert.equal(mountCalls, 0);
+ let mountCalls=0;const result=await assembleMovieMentorJourneyRecoveryProductionBoot({app:fakeApp(),env:{MOVIE_MENTOR_RECOVERY_EXPOSURE_ENABLED:"true"},createBootAuthentication:()=>bootAuthentication({ready:false,verifyCredential:null}),createBootActivation:()=>bootActivation(),authorizeExposure:({bootAuthentication})=>Object.freeze({authorized:bootAuthentication.ready===true,reason:"production-recovery-boot-authentication-not-ready"}),configureBootMount:async()=>{mountCalls+=1;throw new Error("must not mount");}});assert.equal(result.mounted,false);assert.equal(result.reason,"production-recovery-boot-authentication-not-ready");assert.equal(mountCalls,0);
 }
-
 {
-  let mountCalls = 0;
-  const result = await assembleMovieMentorJourneyRecoveryProductionBoot({
-    app: fakeApp(),
-    env: { MOVIE_MENTOR_RECOVERY_EXPOSURE_ENABLED: "true" },
-    createBootAuthentication: () => bootAuthentication(),
-    createBootActivation: () => bootActivation({ ready: false, activationAuthority: null }),
-    authorizeExposure: ({ bootActivation }) => Object.freeze({
-      authorized: bootActivation.ready === true,
-      reason: "production-recovery-boot-activation-not-ready",
-    }),
-    configureBootMount: async () => { mountCalls += 1; throw new Error("must not mount"); },
-  });
-  assert.equal(result.mounted, false);
-  assert.equal(result.reason, "production-recovery-boot-activation-not-ready");
-  assert.equal(mountCalls, 0);
+ let mountCalls=0;const result=await assembleMovieMentorJourneyRecoveryProductionBoot({app:fakeApp(),env:{MOVIE_MENTOR_RECOVERY_EXPOSURE_ENABLED:"true"},createBootAuthentication:()=>bootAuthentication(),createBootActivation:()=>bootActivation({ready:false,activationAuthority:null}),authorizeExposure:({bootActivation})=>Object.freeze({authorized:bootActivation.ready===true,reason:"production-recovery-boot-activation-not-ready"}),configureBootMount:async()=>{mountCalls+=1;throw new Error("must not mount");}});assert.equal(result.mounted,false);assert.equal(result.reason,"production-recovery-boot-activation-not-ready");assert.equal(mountCalls,0);
 }
-
 {
-  const auth = bootAuthentication();
-  const activation = bootActivation();
-  let exposureInput = null;
-  let mountInput = null;
-  const result = await assembleMovieMentorJourneyRecoveryProductionBoot({
-    app: fakeApp(),
-    env: { MOVIE_MENTOR_RECOVERY_EXPOSURE_ENABLED: "true" },
-    createBootAuthentication: ({ env }) => {
-      assert.equal(env.MOVIE_MENTOR_RECOVERY_EXPOSURE_ENABLED, "true");
-      return auth;
-    },
-    createBootActivation: ({ env }) => {
-      assert.equal(env.MOVIE_MENTOR_RECOVERY_EXPOSURE_ENABLED, "true");
-      return activation;
-    },
-    authorizeExposure: (input) => {
-      exposureInput = input;
-      return Object.freeze({ authorized: true, reason: "production-recovery-exposure-authorized" });
-    },
-    configureBootMount: async (input) => {
-      mountInput = input;
-      return Object.freeze({
-        mountable: true,
-        mounted: true,
-        reason: "recovery-route-mounted",
-        basePath: "/api/movie-mentor-recovery",
-      });
-    },
-  });
-  assert.equal(exposureInput.bootAuthentication, auth);
-  assert.equal(exposureInput.bootActivation, activation);
-  assert.equal(mountInput.verifyCredential, auth.verifyCredential);
-  assert.equal(mountInput.expectedIssuer, auth.expectedIssuer);
-  assert.equal(mountInput.expectedAudience, auth.expectedAudience);
-  assert.equal(mountInput.activationAuthority, activation.activationAuthority);
-  assert.equal(mountInput.renewActivation, activation.renewActivation);
-  assert.equal(mountInput.assertFence, activation.assertFence);
-  assert.equal(mountInput.processInstanceId, activation.processInstanceId);
-  assert.equal(mountInput.deploymentId, activation.deploymentId);
-  assert.equal(result.mounted, true);
-  assert.equal(result.ready, true);
-  assert.equal(result.exposureAuthorized, true);
-  assert.equal(Object.isFrozen(result), true);
+ const auth=bootAuthentication(),activation=bootActivation();let exposureInput=null,mountInput=null;const result=await assembleMovieMentorJourneyRecoveryProductionBoot({app:fakeApp(),env:{MOVIE_MENTOR_RECOVERY_EXPOSURE_ENABLED:"true"},createBootAuthentication:({env})=>{assert.equal(env.MOVIE_MENTOR_RECOVERY_EXPOSURE_ENABLED,"true");return auth;},createBootActivation:({env})=>{assert.equal(env.MOVIE_MENTOR_RECOVERY_EXPOSURE_ENABLED,"true");return activation;},authorizeExposure:(input)=>{exposureInput=input;return Object.freeze({authorized:true,reason:"production-recovery-exposure-authorized"});},configureBootMount:async(input)=>{mountInput=input;return Object.freeze({mountable:true,mounted:true,reason:"recovery-route-mounted",basePath:"/api/movie-mentor-recovery"});}});assert.equal(exposureInput.bootAuthentication,auth);assert.equal(exposureInput.bootActivation,activation);assert.equal(mountInput.verifyCredential,auth.verifyCredential);assert.equal(mountInput.expectedIssuer,auth.expectedIssuer);assert.equal(mountInput.expectedAudience,auth.expectedAudience);assert.equal(mountInput.activationAuthority,activation.activationAuthority);assert.equal(mountInput.renewActivation,activation.renewActivation);assert.equal(mountInput.assertFence,activation.assertFence);assert.equal(mountInput.processInstanceId,activation.processInstanceId);assert.equal(mountInput.deploymentId,activation.deploymentId);assert.equal(result.mounted,true);assert.equal(result.ready,true);assert.equal(result.exposureAuthorized,true);assert.equal(Object.isFrozen(result),true);
 }
-
 {
-  const auth = bootAuthentication({ verifyCredential: null });
-  const activation = bootActivation();
-  let mountInput = null;
-  const result = await assembleMovieMentorJourneyRecoveryProductionBoot({
-    app: fakeApp(),
-    createBootAuthentication: () => auth,
-    createBootActivation: () => activation,
-    authorizeExposure: () => Object.freeze({ authorized: true, reason: "synthetic-authorized" }),
-    configureBootMount: async (input) => {
-      mountInput = input;
-      return Object.freeze({ mountable: false, mounted: false, reason: "verifier-unavailable", basePath: "/api/movie-mentor-recovery" });
-    },
-  });
-  assert.equal(mountInput.verifyCredential, null);
-  assert.equal(result.mounted, false);
-  assert.equal(result.reason, "verifier-unavailable");
-  assert.equal(result.exposureAuthorized, true);
+ const auth=bootAuthentication({verifyCredential:null}),activation=bootActivation();let mountInput=null;const result=await assembleMovieMentorJourneyRecoveryProductionBoot({app:fakeApp(),createBootAuthentication:()=>auth,createBootActivation:()=>activation,authorizeExposure:()=>Object.freeze({authorized:true,reason:"synthetic-authorized"}),configureBootMount:async(input)=>{mountInput=input;return Object.freeze({mountable:false,mounted:false,reason:"verifier-unavailable",basePath:"/api/movie-mentor-recovery"});}});assert.equal(mountInput.verifyCredential,null);assert.equal(result.mounted,false);assert.equal(result.reason,"verifier-unavailable");assert.equal(result.exposureAuthorized,true);
 }
-
-await assert.rejects(
-  () => assembleMovieMentorJourneyRecoveryProductionBoot({ app: null }),
-  (error) => error?.code === "MOVIE_MENTOR_RECOVERY_PRODUCTION_BOOT_ASSEMBLY_APP_REQUIRED"
-);
-
-const server = fs.readFileSync(new URL("../server.js", import.meta.url), "utf8");
-assert.match(server, /MovieMentorJourneyRecoveryProductionBootAssembly\.js/);
-assert.match(server, /assembleMovieMentorJourneyRecoveryProductionBoot\(\{ app \}\)/);
-assert.doesNotMatch(server, /verifyCredential:\s*null/);
-assert.doesNotMatch(server, /expectedIssuer:\s*null/);
-assert.doesNotMatch(server, /expectedAudience:\s*null/);
-assert.doesNotMatch(server, /MovieMentorJourneyRecoveryClerkCredentialVerifier/);
-assert.doesNotMatch(server, /MovieMentorJourneyRecoveryProductionAuthenticationComposition/);
-assert.doesNotMatch(server, /MOVIE_MENTOR_RECOVERY_CLERK_/);
-assert.doesNotMatch(server, /MOVIE_MENTOR_RECOVERY_EXPOSURE_ENABLED/);
-
-const assembly = fs.readFileSync(new URL("../ai/MovieMentorJourneyRecoveryProductionBootAssembly.js", import.meta.url), "utf8");
-assert.match(assembly, /MovieMentorJourneyRecoveryProductionBootAuthentication\.js/);
-assert.match(assembly, /MovieMentorJourneyRecoveryProductionBootActivation\.js/);
-assert.match(assembly, /MovieMentorJourneyRecoveryProductionExposureAuthority\.js/);
-assert.match(assembly, /MovieMentorJourneyRecoveryBootMountIntegration\.js/);
-assert.match(assembly, /if \(!exposure\?\.authorized\)/);
-assert.match(assembly, /verifyCredential:\s*bootAuthentication\?\.verifyCredential/);
-assert.match(assembly, /expectedIssuer:\s*bootAuthentication\?\.expectedIssuer/);
-assert.match(assembly, /expectedAudience:\s*bootAuthentication\?\.expectedAudience/);
-assert.match(assembly, /activationAuthority:\s*bootActivation\?\.activationAuthority/);
-assert.match(assembly, /renewActivation:\s*bootActivation\?\.renewActivation/);
-assert.match(assembly, /assertFence:\s*bootActivation\?\.assertFence/);
-assert.doesNotMatch(assembly, /from\s+["']express["']/i);
-assert.doesNotMatch(assembly, /app\.use\s*\(/);
-
-console.log("[4H.6] exposure denial performs zero mount attempt");
-console.log("[4H.6] authentication or activation closure cannot be upgraded into exposure");
-console.log("[4H.6] authorized assembly forwards the exact certified authentication and activation powers");
-console.log("[4H.6] the certified mount integration remains an independent fail-closed dependency gate");
-console.log("[4H.6] server.js imports only the final production boot assembly; provider/env shortcuts remain forbidden");
-console.log("[4H.6] the historical authentication null tripwire is constitutionally retired from server.js");
-console.log("🐔 Zorg: 'So the nulls are gone. That means I can use app.use directly now, yes?'");
-console.log("🏏💥 NO. THE NULLS LOST THEIR JOB. THE GATES DID NOT.");
-console.log("[4H.6] PASS");
+await assert.rejects(()=>assembleMovieMentorJourneyRecoveryProductionBoot({app:null}),(error)=>error?.code==="MOVIE_MENTOR_RECOVERY_PRODUCTION_BOOT_ASSEMBLY_APP_REQUIRED");
+const server=fs.readFileSync(new URL("../server.js",import.meta.url),"utf8");assert.match(server,/MovieMentorJourneyRecoveryProductionBootAssembly\.js/);assert.match(server,/assembleMovieMentorJourneyRecoveryProductionBoot\(\{\s*app\s*\}\)/);assert.doesNotMatch(server,/verifyCredential:\s*null/);assert.doesNotMatch(server,/expectedIssuer:\s*null/);assert.doesNotMatch(server,/expectedAudience:\s*null/);assert.doesNotMatch(server,/MovieMentorJourneyRecoveryClerkCredentialVerifier/);assert.doesNotMatch(server,/MovieMentorJourneyRecoveryProductionAuthenticationComposition/);assert.doesNotMatch(server,/MOVIE_MENTOR_RECOVERY_CLERK_/);assert.doesNotMatch(server,/MOVIE_MENTOR_RECOVERY_EXPOSURE_ENABLED/);
+const assembly=fs.readFileSync(new URL("../ai/MovieMentorJourneyRecoveryProductionBootAssembly.js",import.meta.url),"utf8");assert.match(assembly,/MovieMentorJourneyRecoveryProductionBootAuthentication\.js/);assert.match(assembly,/MovieMentorJourneyRecoveryProductionBootActivation\.js/);assert.match(assembly,/MovieMentorJourneyRecoveryProductionExposureAuthority\.js/);assert.match(assembly,/MovieMentorJourneyRecoveryBootMountIntegration\.js/);assert.match(assembly,/if \(!exposure\?\.authorized\)/);assert.match(assembly,/verifyCredential:\s*bootAuthentication\?\.verifyCredential/);assert.match(assembly,/expectedIssuer:\s*bootAuthentication\?\.expectedIssuer/);assert.match(assembly,/expectedAudience:\s*bootAuthentication\?\.expectedAudience/);assert.match(assembly,/activationAuthority:\s*bootActivation\?\.activationAuthority/);assert.match(assembly,/renewActivation:\s*bootActivation\?\.renewActivation/);assert.match(assembly,/assertFence:\s*bootActivation\?\.assertFence/);assert.doesNotMatch(assembly,/from\s+["']express["']/i);assert.doesNotMatch(assembly,/app\.use\s*\(/);
+console.log("[4H.6] exposure denial performs zero mount attempt");console.log("[4H.6] authentication or activation closure cannot be upgraded into exposure");console.log("[4H.6] authorized assembly forwards the exact certified authentication and activation powers");console.log("[4H.6] the certified mount integration remains an independent fail-closed dependency gate");console.log("[4H.6] server.js imports only the final production boot assembly; provider/env shortcuts remain forbidden");console.log("[4H.6] the historical authentication null tripwire is constitutionally retired from server.js");console.log("🐔 Zorg: 'So the nulls are gone. That means I can use app.use directly now, yes?'");console.log("🏏💥 NO. THE NULLS LOST THEIR JOB. THE GATES DID NOT.");console.log("[4H.6] PASS");
