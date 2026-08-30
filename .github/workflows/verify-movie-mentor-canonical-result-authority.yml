@@ -1,0 +1,26 @@
+name: Verify Movie Mentor Canonical Result Authority
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Syntax check canonical result authority
+        run: |
+          node --check ai/MovieMentorCanonicalResultMongoStore.js
+          node --check ai/MovieMentorCanonicalResultAuthority.js
+          node --check ai/MovieMentorProductionInferenceExecutionComposition.js
+          node --check ai/MovieMentorTurnRuntime.js
+      - name: Torture canonical result authority
+        run: node scripts/verify-movie-mentor-canonical-result-authority.mjs
