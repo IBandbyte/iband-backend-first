@@ -44,4 +44,20 @@ settlement = settlement.replaceAll('new Date(now())', 'settlementInstant(now())'
 if (settlement.includes('new Date(now())')) throw new Error("settlement unsafe write clock remains");
 fs.writeFileSync(settlementPath, settlement);
 
+const settledGatePath = "scripts/verify-movie-mentor-settled-execution-authority.mjs";
+let settledGate = fs.readFileSync(settledGatePath, "utf8");
+settledGate = replaceExact(
+  settledGate,
+  "const freshBarrier = settlementStore.indexOf('const settledAt=new Date(now());const barrier=');",
+  "const freshBarrier = settlementStore.indexOf('const settledAt=settlementInstant(now());const barrier=');",
+  "settled gate fresh barrier"
+);
+settledGate = replaceExact(
+  settledGate,
+  'assert.ok(consumedBranch > 0 && freshBarrier > consumedBranch && entitlementDebit > freshBarrier && reservationConsume > entitlementDebit,',
+  'assert.match(settlementStore,/function settlementInstant\\(v\\)/, "fresh settlement time must pass through fail-closed clock validation");\nassert.doesNotMatch(settlementStore,/new Date\\(now\\(\\)\\)/, "settlement may not manufacture proof from an absent clock");\nassert.ok(consumedBranch > 0 && freshBarrier > consumedBranch && entitlementDebit > freshBarrier && reservationConsume > entitlementDebit,',
+  "settled gate clock assertions"
+);
+fs.writeFileSync(settledGatePath, settledGate);
+
 console.log(`proof creation-time hardening applied; settlement clocks hardened=${clockCount}`);
