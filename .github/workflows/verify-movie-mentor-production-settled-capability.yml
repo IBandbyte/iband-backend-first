@@ -1,0 +1,49 @@
+name: Verify Movie Mentor Production SETTLED Capability
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ai/MovieMentorInferenceSettlementMongoStore.js"
+      - "ai/MovieMentorProductionInferenceSettlementComposition.js"
+      - "ai/MovieMentorInferenceSettlementReconciliationAuthority.js"
+      - "ai/MovieMentorInferenceExecutionMongoStore.js"
+      - "ai/MovieMentorInferenceExecutionClosureAuthority.js"
+      - "ai/MovieMentorCanonicalResultAuthority.js"
+      - "ai/MovieMentorTurnRuntime.js"
+      - "movieMentorTurn.js"
+      - "server.js"
+      - "scripts/verify-movie-mentor-production-settled-capability.mjs"
+      - "scripts/verify-movie-mentor-settled-execution-authority.mjs"
+      - "scripts/verify-movie-mentor-proof-time-authority.mjs"
+      - "scripts/verify-movie-mentor-proof-creation-time-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-production-settled-capability.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Syntax gates
+        run: |
+          node --check ai/MovieMentorInferenceSettlementMongoStore.js
+          node --check ai/MovieMentorProductionInferenceSettlementComposition.js
+          node --check server.js
+          node --check scripts/verify-movie-mentor-production-settled-capability.mjs
+      - name: Verify production SETTLED capability
+        run: node scripts/verify-movie-mentor-production-settled-capability.mjs
+      - name: Regress SETTLED ownership
+        run: node scripts/verify-movie-mentor-settled-execution-authority.mjs
+      - name: Regress proof time
+        run: |
+          node scripts/verify-movie-mentor-proof-time-authority.mjs
+          node scripts/verify-movie-mentor-proof-creation-time-authority.mjs
+      - name: Regress settlement reconciliation
+        run: node scripts/verify-movie-mentor-inference-settlement-reconciliation.mjs
+      - name: Regress durable runtime
+        run: node scripts/verify-movie-mentor-durable-round-trip.mjs
