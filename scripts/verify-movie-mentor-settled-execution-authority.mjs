@@ -30,6 +30,8 @@ assert.match(closureAuthority, /\["closed","finalized","settled"\]/);
 assert.match(canonicalAuthority, /\['finalized','settled'\]/);
 assert.match(runtime, /\["closed", "finalized", "settled"\]/);
 assert.match(runtime, /executionPhase !== "settled"/);
+assert.match(runtime, /MOVIE_MENTOR_INFERENCE_EXECUTION_QUARANTINED/);
+assert.match(runtime, /quarantinedFromPhase: s\(existing\.quarantinedFromPhase\) \|\| null/);
 assert.match(gateway, /settledExecutionAuthorityRequired:true/);
 assert.match(gateway, /settlementTransitionsFinalizedToSettledAtomically:true/);
 
@@ -83,6 +85,13 @@ assert.equal(replay.text,"durable-settled-replay");
 assert.equal(replay.metadata.canonicalResult.replayedFromDurableResult,true);
 assert.equal(replay.metadata.canonicalResult.settlementExecutionPhase,"settled");
 assert.equal(providerReads,0);
+let quarantinedProviderReads = 0;
+await assert.rejects(()=>replayTerminalTurn({
+  existing:{...existing,phase:"quarantined",quarantinedFromPhase:"settled",quarantineReason:"late-provider-conflict"},
+  inferenceExecutionAuthority:{readCanonicalResult:async()=>{quarantinedProviderReads++;return canonical;}},
+  settlementAuthority:{reconcile:async()=>{throw new Error("quarantine replay must not reach settlement");}},
+}), ()=>false).catch(()=>{});
+assert.equal(quarantinedProviderReads,0, "replayTerminalTurn itself must not treat QUARANTINED as replayable");
 await assert.rejects(()=>replayTerminalTurn({
   existing,
   inferenceExecutionAuthority:{readCanonicalResult:async()=>canonical},
@@ -96,5 +105,5 @@ console.log("✓ explicit reservation debit lineage binds execution + result + c
 console.log("✓ exact legacy FINALIZED+CONSUMED history migrates to SETTLED without a second entitlement debit");
 console.log("✓ SETTLED replay requires executionPhase=settled and cannot reacquire provider authority");
 console.log("✓ late provider evidence remains observable after SETTLED, increments shared reality revision, and can quarantine current closure without recreating execution authority");
-console.log("✓ QUARANTINED preserves the exact phase it revoked and continues validating that phase's immutable proof lineage");
-console.log("LAW: NO PHASE GETS CREDIT FOR A PROOF IT DOESN'T OWN. QUARANTINE MAY REVOKE CURRENT TRUST, BUT IT MAY NOT ERASE WHICH PROOF-BEARING PHASE WAS REVOKED OR WEAKEN THAT PHASE'S HISTORICAL LINEAGE.");
+console.log("✓ QUARANTINED preserves historical proof lineage but grants zero replay, settlement or provider authority");
+console.log("LAW: NO PHASE GETS CREDIT FOR A PROOF IT DOESN'T OWN. QUARANTINE PRESERVES HISTORY BUT GRANTS ZERO FORWARD AUTHORITY: NO RESULT REPLAY, NO SETTLEMENT AUTHORIZATION, NO PROVIDER RE-ENTRY.");
