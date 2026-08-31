@@ -1,0 +1,35 @@
+name: Verify Movie Mentor Settled Execution Authority
+on:
+  push:
+    branches: [main]
+    paths:
+      - ai/MovieMentorInferenceExecutionMongoStore.js
+      - ai/MovieMentorInferenceSettlementMongoStore.js
+      - ai/MovieMentorInferenceSpendMongoStore.js
+      - ai/MovieMentorInferenceExecutionClosureAuthority.js
+      - ai/MovieMentorCanonicalResultAuthority.js
+      - ai/MovieMentorTurnRuntime.js
+      - movieMentorTurn.js
+      - scripts/verify-movie-mentor-settled-execution-authority.mjs
+      - .github/workflows/verify-movie-mentor-settled-execution-authority.yml
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Syntax gates
+        run: |
+          node --check ai/MovieMentorInferenceExecutionMongoStore.js
+          node --check ai/MovieMentorInferenceSettlementMongoStore.js
+          node --check ai/MovieMentorInferenceSpendMongoStore.js
+          node --check ai/MovieMentorInferenceExecutionClosureAuthority.js
+          node --check ai/MovieMentorCanonicalResultAuthority.js
+          node --check ai/MovieMentorTurnRuntime.js
+          node --check scripts/verify-movie-mentor-settled-execution-authority.mjs
+      - name: Verify SETTLED proof ownership catastrophe boundary
+        run: node scripts/verify-movie-mentor-settled-execution-authority.mjs
