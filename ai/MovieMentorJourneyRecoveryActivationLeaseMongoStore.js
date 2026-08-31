@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 
-const VERSION = "1.0.0";
+const VERSION = "1.0.1";
 const DOMAIN = "iband.movie-mentor.journey-recovery-activation-lease-store";
 const SCHEMA = 1;
 const COLLECTION = "movie_mentor_journey_recovery_activation_lease";
@@ -12,7 +12,7 @@ let model = null;
 function text(value) { return typeof value === "string" ? value.trim() : ""; }
 function fail(code, message, extras = {}) { const error = new Error(message); error.code = code; Object.assign(error, extras); throw error; }
 function mongoUri() { return text(process.env.MONGO_URI || process.env.MONGODB_URI || ""); }
-function date(value) { const parsed = value instanceof Date ? new Date(value) : new Date(value); return Number.isNaN(parsed.getTime()) ? null : parsed; }
+function date(value) { if (value === null || value === undefined || value === "") return null; const parsed = value instanceof Date ? new Date(value.getTime()) : new Date(value); return Number.isNaN(parsed.getTime()) ? null : parsed; }
 function iso(value) { const parsed = date(value); return parsed ? parsed.toISOString() : ""; }
 function plain(record) { return record && typeof record.toObject === "function" ? record.toObject() : record; }
 
