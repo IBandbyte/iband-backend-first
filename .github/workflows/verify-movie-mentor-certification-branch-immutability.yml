@@ -1,0 +1,38 @@
+name: Verify Movie Mentor Certification Branch Immutability
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/verify-movie-mentor-certification-branch-immutability.yml"
+      - ".github/workflows/verify-movie-mentor-live.yml"
+      - ".github/workflows/verify-movie-mentor-specialists-live.yml"
+      - ".github/workflows/verify-movie-mentor-synthesis-live.yml"
+      - "scripts/verify-movie-mentor-certification-branch-immutability.mjs"
+  pull_request:
+    paths:
+      - ".github/workflows/verify-movie-mentor-certification-branch-immutability.yml"
+      - ".github/workflows/verify-movie-mentor-live.yml"
+      - ".github/workflows/verify-movie-mentor-specialists-live.yml"
+      - ".github/workflows/verify-movie-mentor-synthesis-live.yml"
+      - "scripts/verify-movie-mentor-certification-branch-immutability.mjs"
+
+permissions:
+  contents: read
+
+jobs:
+  verify-certification-branch-immutability:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Syntax check certification-integrity gate
+        run: node --check scripts/verify-movie-mentor-certification-branch-immutability.mjs
+      - name: Verify live gates cannot move certification branch
+        run: node scripts/verify-movie-mentor-certification-branch-immutability.mjs

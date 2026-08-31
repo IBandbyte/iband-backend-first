@@ -9,7 +9,7 @@ on:
       - "scripts/verify-movie-mentor-live.mjs"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   live-semantic-verification:
@@ -35,19 +35,6 @@ jobs:
           IBAND_LIVE_BACKEND_URL: https://iband-backend-first-1.onrender.com
           IBAND_LIVE_REPORT_PATH: verification-results/movie-mentor-live.json
         run: node scripts/verify-movie-mentor-live.mjs
-
-      - name: Commit verification report
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add verification-results/movie-mentor-live.json
-          if git diff --cached --quiet; then
-            echo "No verification report change to commit."
-          else
-            git commit -m "test: record live Movie Mentor semantic verification"
-            git pull --rebase origin main
-            git push origin HEAD:main
-          fi
 
       - name: Enforce live verification result
         run: |
