@@ -1,0 +1,38 @@
+name: Verify Movie Mentor Revoked Reality Authority
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ai/MovieMentorInferenceExecutionMongoStore.js"
+      - "ai/MovieMentorInferenceSettlementMongoStore.js"
+      - "ai/MovieMentorCanonicalResultMongoStore.js"
+      - "ai/MovieMentorTurnRuntime.js"
+      - "movieMentorTurn.js"
+      - "scripts/verify-movie-mentor-revoked-reality-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-revoked-reality-authority.yml"
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Check revoked-reality gate syntax
+        run: node --check scripts/verify-movie-mentor-revoked-reality-authority.mjs && node --check movieMentorTurn.js
+      - name: Verify revoked reality authority
+        run: node scripts/verify-movie-mentor-revoked-reality-authority.mjs
+      - name: Regress SETTLED catastrophe authority
+        run: node scripts/verify-movie-mentor-settled-execution-authority.mjs
+      - name: Regress post-settlement reality races
+        run: node scripts/verify-movie-mentor-post-settlement-reality-race.mjs
+      - name: Regress canonical finalization
+        run: node scripts/verify-movie-mentor-canonical-result-authority.mjs
+      - name: Regress settlement reconciliation
+        run: node scripts/verify-movie-mentor-inference-settlement-reconciliation.mjs
