@@ -1,11 +1,12 @@
-const MOVIE_MENTOR_DETERMINISTIC_PRINCIPAL_ADAPTER_VERSION = "1.0.0";
+const MOVIE_MENTOR_DETERMINISTIC_PRINCIPAL_ADAPTER_VERSION = "1.0.1";
 
 function cleanString(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
 function safeDate(value) {
-  const date = value instanceof Date ? value : new Date(value);
+  if (value === null || value === undefined || value === "") return null;
+  const date = value instanceof Date ? new Date(value.getTime()) : new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
