@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import {createMovieMentorCanonicalResultAuthority} from "../ai/MovieMentorCanonicalResultAuthority.js";
 
 const executionSource=fs.readFileSync(new URL("../ai/MovieMentorInferenceExecutionMongoStore.js",import.meta.url),"utf8");
 const settlementSource=fs.readFileSync(new URL("../ai/MovieMentorInferenceSettlementMongoStore.js",import.meta.url),"utf8");
-const canonicalSource=fs.readFileSync(new URL("../ai/MovieMentorCanonicalResultMongoStore.js",import.meta.url),"utf8");
+const canonicalStoreSource=fs.readFileSync(new URL("../ai/MovieMentorCanonicalResultMongoStore.js",import.meta.url),"utf8");
+const canonicalAuthoritySource=fs.readFileSync(new URL("../ai/MovieMentorCanonicalResultAuthority.js",import.meta.url),"utf8");
+const closureAuthoritySource=fs.readFileSync(new URL("../ai/MovieMentorInferenceExecutionClosureAuthority.js",import.meta.url),"utf8");
 const runtimeSource=fs.readFileSync(new URL("../ai/MovieMentorTurnRuntime.js",import.meta.url),"utf8");
 const gatewaySource=fs.readFileSync(new URL("../movieMentorTurn.js",import.meta.url),"utf8");
 
@@ -13,11 +16,11 @@ const currentSchema=Number(schemaMatch[1]);
 assert.ok(Number.isSafeInteger(currentSchema)&&currentSchema>0);
 
 const settlementSchemas=settlementSource.match(/!\[([^\]]+)\]\.includes\(execution\.schema\)/)?.[1]?.split(",").map(Number)??[];
-const canonicalSchemas=canonicalSource.match(/\[([^\]]+)\]\.includes\(execution\.schema\)/)?.[1]?.split(",").map(Number)??[];
+const canonicalSchemas=canonicalStoreSource.match(/\[([^\]]+)\]\.includes\(execution\.schema\)/)?.[1]?.split(",").map(Number)??[];
 assert.ok(settlementSchemas.includes(currentSchema),`current execution schema ${currentSchema} must cross settlement boundary`);
 assert.ok(canonicalSchemas.includes(currentSchema),`current execution schema ${currentSchema} must cross canonical finalization boundary`);
 assert.match(settlementSource,new RegExp(`executionSchemaCompatibility:\"[^\"]*${currentSchema}[^\"]*\"`));
-assert.match(canonicalSource,new RegExp(`executionSchemaCompatibility:\"[^\"]*${currentSchema}[^\"]*\"`));
+assert.match(canonicalStoreSource,new RegExp(`executionSchemaCompatibility:\"[^\"]*${currentSchema}[^\"]*\"`));
 
 assert.match(runtimeSource,/if \(s\(existing\.phase\) === "quarantined"\)/);
 assert.match(runtimeSource,/MOVIE_MENTOR_INFERENCE_EXECUTION_QUARANTINED/);
@@ -36,10 +39,34 @@ assert.match(settlementSource,/MOVIE_MENTOR_INFERENCE_UNBOUND_RELEASE_CONSUMED_C
 assert.match(executionSource,/quarantinedFromPhase:current\.phase/);
 assert.match(executionSource,/proofPhase=phase==="quarantined"\?quarantinedFromPhase:phase/);
 assert.match(executionSource,/proofPhase==="settled"/);
+assert.match(closureAuthoritySource,/quarantinedFromPhase:text\(record\.quarantinedFromPhase\)\|\|null/);
+assert.match(closureAuthoritySource,/revoked:true/);
+assert.match(canonicalAuthoritySource,/canonical-result-historical-revoked/);
+
+const historicalRecord={resultReference:"result-history",candidateReference:"candidate-history",executionId:"execution-history",creatorTurnId:"turn-history",principalId:"creator-history",projectId:"project-history",reservationId:"reservation-history",requestDigest:"request-history",closureReference:"closure-history",closureCertificateDigest:"closure-digest-history",resultDigest:"digest-history",resultPayload:{text:"historical-only"},committedAt:"2032-01-01T00:00:00.000Z"};
+let candidateReads=0;
+const canonicalAuthority=createMovieMentorCanonicalResultAuthority({
+  store:{readByExecution:async()=>historicalRecord,commit:async()=>{throw new Error("revoked history must never recommit");}},
+  assertCurrentClosure:async()=>({authorized:false,closed:false,currentRealityVerified:false,phase:"quarantined",quarantined:true,revoked:true,quarantinedFromPhase:"settled",reason:"late-provider-effect-conflict"}),
+  readResultCandidate:async()=>{candidateReads+=1;throw new Error("revoked historical read must not inspect candidate as current authority");},
+});
+const historical=await canonicalAuthority.readResult({executionId:"execution-history"});
+assert.equal(historical.authorized,false);
+assert.equal(historical.committed,true);
+assert.equal(historical.revoked,true);
+assert.equal(historical.quarantined,true);
+assert.equal(historical.reason,"canonical-result-historical-revoked");
+assert.equal(historical.quarantinedFromPhase,"settled");
+assert.equal(historical.quarantineReason,"late-provider-effect-conflict");
+assert.equal(historical.resultReference,"result-history");
+assert.equal(historical.reservationId,"reservation-history");
+assert.equal("resultPayload" in historical,false,"historical visibility must not smuggle revoked creator-facing payload into an authority-shaped response");
+assert.equal(candidateReads,0);
 
 console.log("ROUND SEVEN revoked-reality authority catastrophe gate: GREEN");
 console.log(`✓ current durable execution schema ${currentSchema} crosses settlement + canonical finalization boundaries`);
 console.log("✓ QUARANTINED is a non-retryable HTTP conflict, not a retry invitation");
-console.log("✓ quarantined history preserves proof provenance without gaining replay, settlement, provider, or release authority");
+console.log("✓ canonical result remains historically identifiable after quarantine but authorized=false and payload-free");
+console.log("✓ quarantine closure evidence preserves exact prior proof-bearing phase without converting history back into current reality");
 console.log("✓ consumed economic history cannot be released by post-settlement or unbound release paths");
 console.log("LAW: HISTORY MAY SURVIVE REVOCATION. AUTHORITY MAY NOT. CURRENT DURABLE SCHEMA MUST CROSS EVERY IRREVERSIBLE BOUNDARY OR THE GATE FAILS CLOSED.");
