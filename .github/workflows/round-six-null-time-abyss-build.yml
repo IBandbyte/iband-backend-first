@@ -1,0 +1,28 @@
+name: Round Six Null Time Abyss Build
+on:
+  push:
+    branches: [round-six-null-time-abyss]
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: round-six-null-time-abyss
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Patch null-time authority
+        run: node scripts/patch-round-six-null-time-authority.mjs
+      - name: Verify catastrophe gates
+        run: node --check ai/MovieMentorInferenceExecutionMongoStore.js && node --check ai/MovieMentorProviderEffectMongoStore.js && node --check ai/MovieMentorInferenceSettlementMongoStore.js && node scripts/verify-movie-mentor-post-settlement-reality-race.mjs && node scripts/verify-movie-mentor-settled-execution-authority.mjs && node scripts/verify-movie-mentor-inference-settlement-reconciliation.mjs
+      - name: Commit hardened sources
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ai/MovieMentorInferenceExecutionMongoStore.js ai/MovieMentorProviderEffectMongoStore.js ai/MovieMentorInferenceSettlementMongoStore.js
+          git commit -m "Reject absent timestamps as durable proof" || exit 0
+          git push origin HEAD:round-six-null-time-abyss
