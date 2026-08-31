@@ -90,6 +90,10 @@ await expectCode("MOVIE_MENTOR_AUTH_TIME_IN_FUTURE", () =>
   deriveMovieMentorPrincipal({ request: request(), verifyCredential: async () => evidence({ authenticatedAt: "2026-08-27T21:30:00.000Z" }), now: NOW })
 );
 
+await expectCode("MOVIE_MENTOR_AUTH_CLOCK_INVALID", () =>
+  deriveMovieMentorPrincipal({ request: request(), verifyCredential: async () => evidence(), now: null })
+);
+
 await expectCode("MOVIE_MENTOR_AUTH_SUBJECT_REQUIRED", async () => {
   validateVerifiedEvidence(evidence({ subject: "" }), { now: NOW });
 });
@@ -147,4 +151,5 @@ assert.deepEqual(
   }
 );
 
+console.log("✓ absent authentication evaluation time cannot coerce to the Unix epoch");
 console.log("PASS Movie Mentor deterministic principal adapter torture");
