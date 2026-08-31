@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { certifyLegacyProjectOwnershipAdoption } from "../ai/MovieMentorLegacyProjectOwnershipAdoptionBoundary.js";
+import {
+  certifyLegacyProjectOwnershipAdoption,
+  isMovieMentorLegacyProjectOwnershipAdoptionAttestationOwnedProof,
+} from "../ai/MovieMentorLegacyProjectOwnershipAdoptionBoundary.js";
 
 const now = Date.parse("2026-08-27T21:30:00.000Z");
 const principal = Object.freeze({ principalId: "creator-1", authenticated: true });
@@ -54,6 +57,12 @@ await reject("MOVIE_MENTOR_LEGACY_ADOPTION_AUTHENTICATION_REQUIRED", {
   principal: { principalId: "creator-1", authenticated: false },
   verifyAdoptionCredential: async () => verifiedEvidence(),
 });
+for (const invalidNow of [null, NaN, Infinity, -Infinity, "2026-08-27T21:30:00.000Z", {}, []]) {
+  await reject("MOVIE_MENTOR_LEGACY_ADOPTION_CLOCK_INVALID", {
+    now: invalidNow,
+    verifyAdoptionCredential: async () => verifiedEvidence(),
+  });
+}
 await reject("MOVIE_MENTOR_LEGACY_ADOPTION_PROOF_INVALID", {
   verifyAdoptionCredential: async () => ({ verified: false }),
 });
@@ -96,6 +105,7 @@ assert.equal(certified.certified, true);
 assert.equal(certified.principalId, principal.principalId);
 assert.equal(certified.projectId, project.id);
 assert.equal(certified.adoptionId, "legacy-adoption-1");
+assert.equal(certified.ownerBoundProof, true);
 assert.deepEqual(certified.projectIdentity, {
   domain: "iband.movie-mentor.project",
   schema: 0,
@@ -103,7 +113,16 @@ assert.deepEqual(certified.projectIdentity, {
 });
 assert.ok(Object.isFrozen(certified));
 assert.ok(Object.isFrozen(certified.projectIdentity));
+assert.equal(isMovieMentorLegacyProjectOwnershipAdoptionAttestationOwnedProof(certified), true);
+const reconstructed = Object.freeze({ ...certified, projectIdentity: Object.freeze({ ...certified.projectIdentity }) });
+assert.deepEqual(reconstructed, certified);
+assert.notEqual(reconstructed, certified);
+assert.equal(isMovieMentorLegacyProjectOwnershipAdoptionAttestationOwnedProof(reconstructed), false, "structural equality must not reincarnate adoption authority");
+const jsonClone = JSON.parse(JSON.stringify(certified));
+assert.deepEqual(jsonClone, certified);
+assert.equal(isMovieMentorLegacyProjectOwnershipAdoptionAttestationOwnedProof(jsonClone), false, "JSON photocopy must carry history but zero owner-bound authority");
 assert.equal("title" in certified, false, "project title must never become ownership evidence");
 assert.equal("credential" in certified, false, "raw migration credential must not escape the verifier boundary");
 
-console.log("Movie Mentor legacy ownership adoption quarantine: PASS — local project knowledge grants zero ownership; only independently verified exact principal/project/identity migration attestation crosses the adoption boundary.");
+console.log("Movie Mentor legacy ownership adoption quarantine: PASS — finite present proof time plus independently verified exact principal/project/identity evidence creates one owner-bound attestation; reconstructed history grants zero authority.");
+console.log("LAW: HISTORY MAY SURVIVE COPYING. ADOPTION AUTHORITY MAY NOT. PROOF DOES NOT REINCARNATE.");
