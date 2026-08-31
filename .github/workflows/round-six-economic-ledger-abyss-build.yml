@@ -1,0 +1,28 @@
+name: Round Six Economic Ledger Abyss Build
+on:
+  push:
+    branches: [round-six-economic-ledger-abyss]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Check economic authority syntax
+        run: node --check ai/MovieMentorInferenceSpendMongoStore.js && node --check ai/MovieMentorInferenceSpendAuthority.js && node --check ai/MovieMentorInferenceSettlementMongoStore.js && node --check scripts/verify-movie-mentor-inference-spend-settlement-authority.mjs
+      - name: Prove generic spend has zero settlement authority
+        run: node scripts/verify-movie-mentor-inference-spend-settlement-authority.mjs
+      - name: Regress spend reservation authority
+        run: node scripts/verify-movie-mentor-inference-spend-authority.mjs
+      - name: Regress settled execution authority
+        run: node scripts/verify-movie-mentor-settled-execution-authority.mjs
+      - name: Regress deterministic settlement reconciliation
+        run: node scripts/verify-movie-mentor-inference-settlement-reconciliation.mjs
+      - name: Regress durable runtime
+        run: node scripts/verify-movie-mentor-turn-runtime.mjs && node scripts/verify-movie-mentor-durable-round-trip.mjs
