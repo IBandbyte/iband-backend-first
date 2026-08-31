@@ -1,0 +1,38 @@
+name: Round Six Canonical Store Time Abyss Build
+on:
+  push:
+    branches: [round-six-canonical-store-time-abyss]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Patch canonical store proof-time boundary
+        run: node scripts/patch-round-six-canonical-store-time-abyss.mjs
+      - name: Verify canonical store catastrophe and regressions
+        run: |
+          node --check ai/MovieMentorCanonicalResultMongoStore.js
+          node --check scripts/verify-movie-mentor-canonical-store-time-authority.mjs
+          node scripts/verify-movie-mentor-canonical-store-time-authority.mjs
+          node scripts/verify-movie-mentor-proof-creation-time-authority.mjs
+          node scripts/verify-movie-mentor-proof-time-authority.mjs
+          node scripts/verify-movie-mentor-canonical-result-authority.mjs
+          node scripts/verify-movie-mentor-result-candidate-recovery.mjs
+          node scripts/verify-movie-mentor-settled-execution-authority.mjs
+          node scripts/verify-movie-mentor-inference-settlement-reconciliation.mjs
+          node scripts/verify-movie-mentor-durable-round-trip.mjs
+      - name: Commit hardened source
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ai/MovieMentorCanonicalResultMongoStore.js
+          git diff --cached --quiet && exit 0
+          git commit -m "Reject absent canonical store commit clocks"
+          git push
