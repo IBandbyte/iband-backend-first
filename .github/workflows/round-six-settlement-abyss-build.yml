@@ -1,0 +1,36 @@
+name: Round Six Settlement Abyss Build
+on:
+  push:
+    branches: [round-six-settlement-abyss]
+    paths:
+      - scripts/patch-round-six-settled-phase.mjs
+      - .github/workflows/round-six-settlement-abyss-build.yml
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: round-six-settlement-abyss
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Apply authority patch
+        run: node scripts/patch-round-six-settled-phase.mjs
+      - name: Syntax gates
+        run: |
+          node --check ai/MovieMentorInferenceExecutionMongoStore.js
+          node --check ai/MovieMentorInferenceSettlementMongoStore.js
+          node --check ai/MovieMentorInferenceSettlementReconciliationAuthority.js
+          node --check ai/MovieMentorInferenceExecutionClosureAuthority.js
+      - name: Commit isolated authority build
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ai/MovieMentorInferenceExecutionMongoStore.js ai/MovieMentorInferenceSettlementMongoStore.js ai/MovieMentorInferenceSettlementReconciliationAuthority.js ai/MovieMentorInferenceExecutionClosureAuthority.js
+          git diff --cached --exit-code && { echo "No authority patch produced"; exit 1; } || true
+          git commit -m "Build atomic settled execution authority"
+          git push origin HEAD:round-six-settlement-abyss
