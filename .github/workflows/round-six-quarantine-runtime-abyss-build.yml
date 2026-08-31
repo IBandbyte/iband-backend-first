@@ -22,8 +22,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-      - run: npm ci
+      - run: npm install --ignore-scripts --no-audit --no-fund
       - run: node scripts/patch-round-six-quarantine-runtime.mjs
       - run: node --check ai/MovieMentorTurnRuntime.js
       - run: node --check scripts/verify-movie-mentor-settled-execution-authority.mjs
