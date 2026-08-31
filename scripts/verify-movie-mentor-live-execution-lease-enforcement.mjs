@@ -6,6 +6,7 @@ import { createMovieMentorProductionInferenceExecutionComposition } from "../ai/
 const clone=(v)=>v==null?v:structuredClone(v);
 let clock=new Date("2031-01-01T00:00:00.000Z"), durable=null, id=0;
 const store={
+  getStatus:()=>({configured:true,readiness:"injected-proven",durable:true,cas:"reservation-binding-active-closure-frozen-universe-provider-reality-revision-finalized-result-binding-and-atomic-abort"}),
   async readExecution(executionId){return durable?.executionId===executionId?clone(durable):null;},
   async readExecutionByCreatorTurn({principalId,projectId,creatorTurnId}={}){return durable&&durable.principalId===principalId&&durable.projectId===projectId&&durable.creatorTurnId===creatorTurnId?clone(durable):null;},
   async createExecution(next){if(durable)return null;durable=clone(next);return clone(durable);},
@@ -23,6 +24,10 @@ const store={
     durable.providerCalls.push(providerCall);durable.providerCallsClaimed+=1;
     return{claimed:true,execution:clone(durable),providerCall:clone(providerCall)};
   },
+  async beginClosing(){return null;},
+  async recoverExpiredIntoClosing(){return null;},
+  async completeClosing(){return null;},
+  async quarantineExecution(){return null;},
 };
 
 const authority=createMovieMentorInferenceExecutionLeaseAuthority({store,now:()=>new Date(clock),leaseMs:1000,maxProviderCalls:2,randomId:()=>`id-${++id}`});
@@ -49,6 +54,34 @@ assert.equal(exhausted.dispatchAuthorized,false);assert.equal(exhausted.reason,"
 
 const composed=createMovieMentorProductionInferenceExecutionComposition({store});
 assert.equal(composed.ready,true);assert.equal(typeof composed.authority.claimProviderCall,"function");
+
+const unprovenExecutionStore={...store,getStatus:undefined};
+const rejectedExecution=createMovieMentorProductionInferenceExecutionComposition({store:unprovenExecutionStore});
+assert.equal(rejectedExecution.ready,false);
+assert.equal(rejectedExecution.reason,"inference-execution-injected-capability-not-proven");
+const selfDescribedButUnprovenExecutionStore={...store,getStatus:()=>({configured:true,readiness:"injected"})};
+const rejectedExecutionClaim=createMovieMentorProductionInferenceExecutionComposition({store:selfDescribedButUnprovenExecutionStore});
+assert.equal(rejectedExecutionClaim.ready,false);
+assert.equal(rejectedExecutionClaim.reason,"inference-execution-injected-capability-not-proven");
+
+const unprovenEffectStore={readEffect:async()=>null,beginUnknown:async()=>null,appendEvidence:async()=>null};
+const rejectedEffect=createMovieMentorProductionInferenceExecutionComposition({store,effectStore:unprovenEffectStore});
+assert.equal(rejectedEffect.ready,false);
+assert.equal(rejectedEffect.reason,"provider-effect-injected-capability-not-proven");
+const provenEffectStore={
+  getStatus:()=>({configured:true,readiness:"injected-proven",cas:"revision",crossLedgerSerialization:"execution-providerEffectRealityRevision"}),
+  readEffect:async()=>null,
+  beginUnknown:async()=>null,
+  appendEvidence:async()=>null,
+};
+const methodShapedResultStore={readByExecution:async()=>null,readByCreatorTurn:async()=>null,commit:async()=>null};
+const rejectedResult=createMovieMentorProductionInferenceExecutionComposition({store,effectStore:provenEffectStore,resultStore:methodShapedResultStore});
+assert.equal(rejectedResult.ready,false);
+assert.equal(rejectedResult.reason,"canonical-result-injected-capability-not-proven");
+const methodShapedCandidateStore={stageCandidate:async()=>null,readByExecution:async()=>null};
+const rejectedCandidate=createMovieMentorProductionInferenceExecutionComposition({store,effectStore:provenEffectStore,candidateStore:methodShapedCandidateStore});
+assert.equal(rejectedCandidate.ready,false);
+assert.equal(rejectedCandidate.reason,"result-candidate-injected-capability-not-proven");
 
 const slots=[], executed=[],dispatches=[],evidence=[];
 const fakeExecution={authorized:true,executionId:"execution-live",ownerId:"owner-live",leaseGeneration:7,leaseReference:"lease-7",fencingToken:"fence-7"};
@@ -94,7 +127,9 @@ console.log("✓ provider-call claim is durable and slot-bounded");
 console.log("✓ duplicate logical slot cannot mint second dispatch authority");
 console.log("✓ generation takeover fences zombie provider execution");
 console.log("✓ provider-call budget is enforced at admission");
+console.log("✓ injected execution/provider-effect/canonical-result/result-candidate stores receive zero capability credit from method shape or composition");
+console.log("✓ each injected dependency must own getStatus() and expose the exact durable capability contract consumed by production composition");
 console.log("✓ Semantic, Story, Character, Continuity and Synthesis cross claim → durable UNKNOWN → current dispatch fence before provider invocation");
 console.log("✓ denied claim prevents UNKNOWN creation, dispatch fencing and provider invocation");
-console.log("LAW: NO SUCCESSFUL DURABLE CALL CLAIM + NO DURABLE UNKNOWN + NO CURRENT DISPATCH FENCE → NO PROVIDER DISPATCH");
+console.log("LAW: NO COMPONENT GETS CREDIT FOR ITS NEIGHBOUR'S PROOF. METHOD PRESENCE IS NOT DURABLE AUTHORITY. NO SUCCESSFUL DURABLE CALL CLAIM + NO DURABLE UNKNOWN + NO CURRENT DISPATCH FENCE → NO PROVIDER DISPATCH");
 console.log("5A.24 Round Two torture: GREEN");
