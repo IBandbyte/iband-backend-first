@@ -30,7 +30,7 @@ const http=await fs.readFile(new URL("../ai/MovieMentorProductionCommercialHttpI
 assert.match(http,/const creatorStatus=ownedStatus\(creator\)/,"HTTP boundary must consume creator-composition-owned proof.");
 assert.match(http,/creatorProven\(creatorStatus\)/,"HTTP boundary must prove creator commercial provenance.");
 assert.match(http,/creator-commercial-capability-not-proven/);
-assert.match(http,/status\?\.domain===CREATOR_DOMAIN/);assert.match(http,/purchaseProven\(s\?\.purchaseIntentStatus\)/);assert.match(http,/checkoutProven\(s\?\.checkoutStatus\)/);assert.match(http,/catalogueProven\(s\?\.catalogueStatus\)/);
+assert.match(http,/s\?\.domain===CREATOR_DOMAIN/);assert.match(http,/purchaseProven\(s\?\.purchaseIntentStatus\)/);assert.match(http,/checkoutProven\(s\?\.checkoutStatus\)/);assert.match(http,/catalogueProven\(s\?\.catalogueStatus\)/);
 const proofIndex=http.indexOf("creatorProven(creatorStatus)");
 const routeExposureIndex=http.indexOf("creatorRouter:creator.router");
 assert(proofIndex>=0&&routeExposureIndex>proofIndex,"Creator router must never cross the HTTP mount boundary before owner provenance is proven.");
