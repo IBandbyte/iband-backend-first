@@ -8,7 +8,7 @@ import {createMovieMentorProductionEntitlementIssuanceComposition} from "./Movie
 import {createMovieMentorProductionCommercialProviderIngressComposition} from "./MovieMentorProductionCommercialProviderIngressComposition.js";
 import {createMovieMentorStripeCommercialProviderAdapter} from "./MovieMentorStripeCommercialProviderAdapter.js";
 
-const VERSION="1.2.0";
+const VERSION="1.3.0";
 const CREATOR_BASE_PATH="/api/movie-mentor/commercial";
 const STRIPE_WEBHOOK_PATH="/api/movie-mentor/commercial/providers/stripe/webhook";
 function text(v){return typeof v==="string"?v.trim():"";}
@@ -29,7 +29,7 @@ async function mountMovieMentorProductionCommercialHttpIngress({app,env=process.
   if(!stripe||!webhookSecret||!successUrl||!cancelUrl)return closed("stripe-commercial-provider-not-configured");
   adapter=createMovieMentorStripeCommercialProviderAdapter({stripe,webhookSecret,successUrl,cancelUrl});
   checkout=createMovieMentorProductionCommercialCheckoutComposition({purchaseIntentAuthority:purchase.authority,providers:{stripe:adapter}});
-  creator=createMovieMentorProductionCreatorCommercialComposition({authentication,purchaseIntentAuthority:purchase.authority,checkoutAuthority:checkout.authority,listCommercialPackages:policy.listCommercialPackages});
+  creator=createMovieMentorProductionCreatorCommercialComposition({authentication,purchaseIntentAuthority:purchase.authority,checkoutAuthority:checkout.authority,packageCatalogueAuthority:policy.catalogueAuthority});
   ingress=createMovieMentorProductionCommercialProviderIngressComposition({purchaseIntentAuthority:purchase.authority,issuanceAuthority:issuance.authority,providers:{stripe:adapter}});
  }catch(error){return closed(error?.code||"commercial-http-composition-failed");}
 
