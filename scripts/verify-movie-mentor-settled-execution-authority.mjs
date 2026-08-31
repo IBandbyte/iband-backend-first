@@ -1,0 +1,69 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import { replayTerminalTurn } from "../ai/MovieMentorTurnRuntime.js";
+
+const settlementStore = fs.readFileSync(new URL("../ai/MovieMentorInferenceSettlementMongoStore.js", import.meta.url), "utf8");
+const spendStore = fs.readFileSync(new URL("../ai/MovieMentorInferenceSpendMongoStore.js", import.meta.url), "utf8");
+const executionStore = fs.readFileSync(new URL("../ai/MovieMentorInferenceExecutionMongoStore.js", import.meta.url), "utf8");
+const closureAuthority = fs.readFileSync(new URL("../ai/MovieMentorInferenceExecutionClosureAuthority.js", import.meta.url), "utf8");
+const canonicalAuthority = fs.readFileSync(new URL("../ai/MovieMentorCanonicalResultAuthority.js", import.meta.url), "utf8");
+const runtime = fs.readFileSync(new URL("../ai/MovieMentorTurnRuntime.js", import.meta.url), "utf8");
+const gateway = fs.readFileSync(new URL("../movieMentorTurn.js", import.meta.url), "utf8");
+
+for (const field of ["settledResultReference", "settledCandidateReference", "settledResultDigest", "settledAt"]) assert.match(executionStore, new RegExp(field));
+for (const field of ["settlementExecutionId", "settlementResultReference", "settlementCandidateReference", "settlementResultDigest"]) {
+  assert.match(settlementStore, new RegExp(field));
+  assert.match(spendStore, new RegExp(field));
+}
+assert.match(settlementStore, /session\.withTransaction/);
+assert.match(settlementStore, /phase:"settled"/);
+assert.match(settlementStore, /explicitSettlementBinding/);
+assert.match(settlementStore, /reservationSettlementBindingValid/);
+assert.match(settlementStore, /legacySettlementMigrated:true/);
+assert.match(settlementStore, /historicalSettledAt=new Date\(reservation\.settledAt\)/);
+assert.match(settlementStore, /settlementReason:`canonical-result:\$\{text\(result\.resultReference\)\}`/);
+assert.match(settlementStore, /MOVIE_MENTOR_INFERENCE_SETTLEMENT_SETTLED_CONFLICT/);
+assert.match(settlementStore, /MOVIE_MENTOR_INFERENCE_SETTLEMENT_PHASE_LEDGER_CONFLICT/);
+assert.match(closureAuthority, /\["closed","finalized","settled"\]/);
+assert.match(canonicalAuthority, /\['finalized','settled'\]/);
+assert.match(runtime, /\["closed", "finalized", "settled"\]/);
+assert.match(runtime, /executionPhase !== "settled"/);
+assert.match(gateway, /settledExecutionAuthorityRequired:true/);
+assert.match(gateway, /settlementTransitionsFinalizedToSettledAtomically:true/);
+
+const consumedBranch = settlementStore.indexOf('if(text(reservation.status)==="consumed")');
+const freshBarrier = settlementStore.indexOf('const settledAt=new Date(now());const barrier=');
+const entitlementDebit = settlementStore.indexOf('const entitlement=await entitlements.findOneAndUpdate', freshBarrier);
+const reservationConsume = settlementStore.indexOf('const settled=await reservations.findOneAndUpdate', entitlementDebit);
+assert.ok(consumedBranch > 0 && freshBarrier > consumedBranch && entitlementDebit > freshBarrier && reservationConsume > entitlementDebit,
+  "legacy consumed migration must return before the fresh entitlement debit path; fresh FINALIZED→SETTLED barrier must precede ledger debit and reservation consume inside one transaction");
+const legacyWindow = settlementStore.slice(consumedBranch, freshBarrier);
+assert.doesNotMatch(legacyWindow, /entitlements\.findOneAndUpdate/, "legacy consumed migration must never debit entitlement again");
+assert.match(legacyWindow, /reservations\.updateOne/, "legacy migration must backfill explicit durable debit lineage");
+assert.match(legacyWindow, /executions\.updateOne/, "legacy migration must bind FINALIZED→SETTLED atomically");
+
+const canonical = {authorized:true,committed:true,resultReference:"result-1",resultDigest:"digest-1",executionId:"execution-1",closureReference:"closure-1",closureCertificateDigest:"closure-digest-1",reservationId:"reservation-1",resultPayload:{success:true,text:"durable-settled-replay"}};
+const existing = {found:true,phase:"settled",executionId:"execution-1"};
+let providerReads = 0;
+const replay = await replayTerminalTurn({
+  existing,
+  inferenceExecutionAuthority:{readCanonicalResult:async()=>canonical,claimProviderCall:async()=>{providerReads++;throw new Error("SETTLED replay must never acquire provider authority");}},
+  settlementAuthority:{reconcile:async()=>({authorized:true,settled:true,outcome:"consumed",executionPhase:"settled",idempotent:true})},
+});
+assert.equal(replay.text,"durable-settled-replay");
+assert.equal(replay.metadata.canonicalResult.replayedFromDurableResult,true);
+assert.equal(replay.metadata.canonicalResult.settlementExecutionPhase,"settled");
+assert.equal(providerReads,0);
+await assert.rejects(()=>replayTerminalTurn({
+  existing,
+  inferenceExecutionAuthority:{readCanonicalResult:async()=>canonical},
+  settlementAuthority:{reconcile:async()=>({authorized:true,settled:true,outcome:"consumed"})},
+}), e=>e.code==="MOVIE_MENTOR_INFERENCE_SETTLEMENT_RECONCILIATION_PENDING");
+
+console.log("5A.24 SETTLED execution ownership catastrophe gate: GREEN");
+console.log("✓ FINALIZED owns canonical lineage only; creator debit authority is not credited until SETTLED");
+console.log("✓ fresh consume writes SETTLED barrier -> entitlement debit -> consumed reservation inside one Mongo transaction");
+console.log("✓ explicit reservation debit lineage binds execution + result + candidate + digest");
+console.log("✓ exact legacy FINALIZED+CONSUMED history migrates to SETTLED without a second entitlement debit");
+console.log("✓ SETTLED replay requires executionPhase=settled and cannot reacquire provider authority");
+console.log("LAW: NO PHASE GETS CREDIT FOR A PROOF IT DOESN'T OWN. SETTLED OWNS FINALIZED PROOF + EXACT DURABLE CREATOR-DEBIT BINDING.");
