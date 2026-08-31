@@ -1,0 +1,36 @@
+name: Round Six Quarantine Runtime Abyss Build
+
+on:
+  push:
+    branches:
+      - round-six-quarantine-runtime-abyss
+    paths:
+      - scripts/patch-round-six-quarantine-runtime.mjs
+      - .github/workflows/round-six-quarantine-runtime-abyss-build.yml
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: round-six-quarantine-runtime-abyss
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/patch-round-six-quarantine-runtime.mjs
+      - run: node --check ai/MovieMentorTurnRuntime.js
+      - run: node --check scripts/verify-movie-mentor-settled-execution-authority.mjs
+      - run: node scripts/verify-movie-mentor-settled-execution-authority.mjs
+      - name: Commit hardened source
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ai/MovieMentorTurnRuntime.js scripts/verify-movie-mentor-settled-execution-authority.mjs
+          git diff --cached --quiet && exit 0
+          git commit -m "Fail closed quarantined runtime convergence"
+          git push origin HEAD:round-six-quarantine-runtime-abyss
