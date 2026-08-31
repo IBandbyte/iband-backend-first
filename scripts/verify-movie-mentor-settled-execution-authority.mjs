@@ -26,6 +26,14 @@ assert.match(settlementStore, /historicalSettledAt=new Date\(reservation\.settle
 assert.match(settlementStore, /settlementReason:`canonical-result:\$\{text\(result\.resultReference\)\}`/);
 assert.match(settlementStore, /MOVIE_MENTOR_INFERENCE_SETTLEMENT_SETTLED_CONFLICT/);
 assert.match(settlementStore, /MOVIE_MENTOR_INFERENCE_SETTLEMENT_PHASE_LEDGER_CONFLICT/);
+assert.match(settlementStore, /!\[3,4,5,6\]\.includes\(execution\.schema\)/,
+  "canonical settlement must accept the current schema-6 execution universe as well as readable legacy schemas");
+assert.match(settlementStore, /!\[4,5,6\]\.includes\(execution\.schema\)/,
+  "zero-claim release must accept current schema-6 executions without weakening legacy compatibility");
+assert.doesNotMatch(settlementStore, /\$set:\{schema:5,phase:"aborted"/,
+  "economic release must never downgrade a current execution document to an older schema");
+assert.match(settlementStore, /schemaPreservation:true/,
+  "settlement status must attest that phase transitions preserve execution schema");
 assert.match(closureAuthority, /\["closed","finalized","settled"\]/);
 assert.match(canonicalAuthority, /\['finalized','settled'\]/);
 assert.match(runtime, /\["closed", "finalized", "settled"\]/);
@@ -102,10 +110,11 @@ await assert.rejects(()=>replayTerminalTurn({
 
 console.log("5A.24 SETTLED execution ownership catastrophe gate: GREEN");
 console.log("✓ FINALIZED owns canonical lineage only; creator debit authority is not credited until SETTLED");
+console.log("✓ current schema-6 execution universes can cross settlement/release boundaries without schema downgrade");
 console.log("✓ fresh consume writes SETTLED barrier -> entitlement debit -> consumed reservation inside one Mongo transaction");
 console.log("✓ explicit reservation debit lineage binds execution + result + candidate + digest");
 console.log("✓ exact legacy FINALIZED+CONSUMED history migrates to SETTLED without a second entitlement debit");
 console.log("✓ SETTLED replay requires executionPhase=settled and cannot reacquire provider authority");
 console.log("✓ late provider evidence remains observable after SETTLED, increments shared reality revision, and can quarantine current closure without recreating execution authority");
 console.log("✓ QUARANTINED preserves historical proof lineage but grants zero replay, settlement or provider authority");
-console.log("LAW: NO PHASE GETS CREDIT FOR A PROOF IT DOESN'T OWN. QUARANTINE PRESERVES HISTORY BUT GRANTS ZERO FORWARD AUTHORITY: NO RESULT REPLAY, NO SETTLEMENT AUTHORIZATION, NO PROVIDER RE-ENTRY.");
+console.log("LAW: NO PHASE GETS CREDIT FOR A PROOF IT DOESN'T OWN. CURRENT DURABLE SCHEMA MUST CROSS EVERY OWNED PROOF BOUNDARY WITHOUT DOWNGRADE. QUARANTINE PRESERVES HISTORY BUT GRANTS ZERO FORWARD AUTHORITY.");
