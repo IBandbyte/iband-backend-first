@@ -1,0 +1,36 @@
+name: Round Six Proof Time Closure Abyss Build
+on:
+  push:
+    branches: [round-six-proof-time-closure-abyss]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Patch closure and reservation proof-time authority
+        run: node scripts/patch-round-six-proof-time-closure-abyss.mjs
+      - name: Verify proof-time catastrophe and regressions
+        run: |
+          node --check ai/MovieMentorInferenceExecutionClosureAuthority.js
+          node --check ai/MovieMentorInferenceSpendMongoStore.js
+          node scripts/verify-movie-mentor-proof-time-authority.mjs
+          node scripts/verify-movie-mentor-inference-spend-authority.mjs
+          node scripts/verify-movie-mentor-inference-spend-settlement-authority.mjs
+          node scripts/verify-movie-mentor-result-candidate-recovery.mjs
+          node scripts/verify-movie-mentor-settled-execution-authority.mjs
+          node scripts/verify-movie-mentor-inference-settlement-reconciliation.mjs
+      - name: Commit hardened sources
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ai/MovieMentorInferenceExecutionClosureAuthority.js ai/MovieMentorInferenceSpendMongoStore.js
+          git diff --cached --quiet && exit 0
+          git commit -m "Reject absent closure and reservation timestamps as proof"
+          git push
