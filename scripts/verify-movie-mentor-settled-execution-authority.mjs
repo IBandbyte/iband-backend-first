@@ -63,9 +63,11 @@ assert.equal(inspectMovieMentorInferenceExecution({...quarantineRecord,schema:5,
   "legacy quarantine remains readable through deterministic evidence-based provenance inference without gaining new authority");
 
 const consumedBranch = settlementStore.indexOf('if(text(reservation.status)==="consumed")');
-const freshBarrier = settlementStore.indexOf('const settledAt=new Date(now());const barrier=');
+const freshBarrier = settlementStore.indexOf('const settledAt=settlementInstant(now());const barrier=');
 const entitlementDebit = settlementStore.indexOf('const entitlement=await entitlements.findOneAndUpdate', freshBarrier);
 const reservationConsume = settlementStore.indexOf('const settled=await reservations.findOneAndUpdate', entitlementDebit);
+assert.match(settlementStore,/function settlementInstant\(v\)/, "fresh settlement time must pass through fail-closed clock validation");
+assert.doesNotMatch(settlementStore,/new Date\(now\(\)\)/, "settlement may not manufacture proof from an absent clock");
 assert.ok(consumedBranch > 0 && freshBarrier > consumedBranch && entitlementDebit > freshBarrier && reservationConsume > entitlementDebit,
   "legacy consumed migration must return before the fresh entitlement debit path; fresh FINALIZED→SETTLED barrier must precede ledger debit and reservation consume inside one transaction");
 const legacyWindow = settlementStore.slice(consumedBranch, freshBarrier);
