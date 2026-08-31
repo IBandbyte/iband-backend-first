@@ -1,5 +1,5 @@
 // MovieMentorJourneyRecoveryCrossProcessActivationBoundary.js
-// Version: 1.1.0
+// Version: 1.1.1
 //
 // 3C.5E.4F / 4G.4 — Cross-Process Activation Reality + Live Fence Evidence
 //
@@ -38,6 +38,7 @@ function closed(reason) {
 }
 
 function validExpiry(value) {
+  if (value === null || value === undefined || value === "") return "";
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "" : date.toISOString();
 }
