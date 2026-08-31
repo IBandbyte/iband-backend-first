@@ -1,7 +1,8 @@
 import { createMovieMentorInferenceSpendAuthority } from "./MovieMentorInferenceSpendAuthority.js";
 import { createMovieMentorInferenceSpendMongoStore, getMovieMentorInferenceSpendMongoStoreStatus } from "./MovieMentorInferenceSpendMongoStore.js";
 
-const VERSION = "1.1.0";
+const VERSION = "1.2.0";
+const DOMAIN = "iband.movie-mentor.production-inference-spend-composition";
 const ATOMICITY = "mongo-transaction";
 const SETTLEMENT = "external-durable-current-reality-authority-only";
 
@@ -24,32 +25,55 @@ function capabilityProven(status) {
     status?.processLocalFallback === false;
 }
 
-function rejected(reason, status) {
-  return Object.freeze({ ready: false, reason, version: VERSION, authority: null, storeStatus: status });
+function rejected(reason, storeStatus) {
+  return Object.freeze({ ready: false, reason, version: VERSION, authority: null, storeStatus, status: null, getStatus: () => null });
 }
 
 function createMovieMentorProductionInferenceSpendComposition({ store = null } = {}) {
   const injectedStore = Boolean(store);
-  const status = injectedStore ? ownedStatus(store) : getMovieMentorInferenceSpendMongoStoreStatus();
+  const storeStatus = injectedStore ? ownedStatus(store) : getMovieMentorInferenceSpendMongoStoreStatus();
 
-  if (injectedStore && !capabilityProven(status)) {
-    return rejected("inference-spend-injected-capability-not-proven", status);
+  if (injectedStore && !capabilityProven(storeStatus)) {
+    return rejected("inference-spend-injected-capability-not-proven", storeStatus);
   }
-  if (status?.configured !== true) {
-    return rejected("inference-spend-store-not-configured", status);
+  if (storeStatus?.configured !== true) {
+    return rejected("inference-spend-store-not-configured", storeStatus);
   }
-  if (!capabilityProven(status)) {
-    return rejected("inference-spend-capability-not-proven", status);
+  if (!capabilityProven(storeStatus)) {
+    return rejected("inference-spend-capability-not-proven", storeStatus);
   }
 
   try {
     const durableStore = store || createMovieMentorInferenceSpendMongoStore();
     const authority = createMovieMentorInferenceSpendAuthority({ store: durableStore });
-    return Object.freeze({ ready: true, reason: "durable-inference-spend-authority-composed", version: VERSION, authority, storeStatus: status });
+    const status = Object.freeze({
+      domain: DOMAIN,
+      version: VERSION,
+      production: true,
+      ready: true,
+      durableStoreProvenanceRequired: true,
+      storeStatus,
+      reserveTurn: true,
+      durableReservationRead: true,
+      processLocalFallback: false
+    });
+    return Object.freeze({
+      ready: true,
+      reason: "durable-inference-spend-authority-composed",
+      version: VERSION,
+      authority,
+      storeStatus,
+      status,
+      getStatus() { return status; }
+    });
   } catch (error) {
-    return rejected(error?.code || "inference-spend-composition-failed", status);
+    return rejected(error?.code || "inference-spend-composition-failed", storeStatus);
   }
 }
 
-export { VERSION as MOVIE_MENTOR_PRODUCTION_INFERENCE_SPEND_COMPOSITION_VERSION, createMovieMentorProductionInferenceSpendComposition };
+export {
+  VERSION as MOVIE_MENTOR_PRODUCTION_INFERENCE_SPEND_COMPOSITION_VERSION,
+  DOMAIN as MOVIE_MENTOR_PRODUCTION_INFERENCE_SPEND_COMPOSITION_DOMAIN,
+  createMovieMentorProductionInferenceSpendComposition
+};
 export default createMovieMentorProductionInferenceSpendComposition;
