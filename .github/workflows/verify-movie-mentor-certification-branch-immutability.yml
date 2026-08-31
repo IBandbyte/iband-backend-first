@@ -7,15 +7,19 @@ on:
     paths:
       - ".github/workflows/verify-movie-mentor-certification-branch-immutability.yml"
       - ".github/workflows/verify-movie-mentor-live.yml"
+      - ".github/workflows/verify-movie-mentor-semantic-live-isolation.yml"
       - ".github/workflows/verify-movie-mentor-specialists-live.yml"
       - ".github/workflows/verify-movie-mentor-synthesis-live.yml"
+      - "scripts/verify-movie-mentor-live.mjs"
       - "scripts/verify-movie-mentor-certification-branch-immutability.mjs"
   pull_request:
     paths:
       - ".github/workflows/verify-movie-mentor-certification-branch-immutability.yml"
       - ".github/workflows/verify-movie-mentor-live.yml"
+      - ".github/workflows/verify-movie-mentor-semantic-live-isolation.yml"
       - ".github/workflows/verify-movie-mentor-specialists-live.yml"
       - ".github/workflows/verify-movie-mentor-synthesis-live.yml"
+      - "scripts/verify-movie-mentor-live.mjs"
       - "scripts/verify-movie-mentor-certification-branch-immutability.mjs"
 
 permissions:

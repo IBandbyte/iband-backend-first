@@ -8,6 +8,8 @@ on:
       - "scripts/verify-movie-mentor-semantic-live-isolation.mjs"
       - "movieMentorSemantic.js"
       - "server.js"
+permissions:
+  contents: read
 jobs:
   live-semantic-isolation:
     runs-on: ubuntu-latest
