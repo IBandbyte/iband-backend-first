@@ -1,0 +1,46 @@
+name: Round Six Proof Time Abyss Build
+on:
+  push:
+    branches: [round-six-proof-time-abyss]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Patch proof-time authority
+        run: node scripts/patch-round-six-proof-time-abyss.mjs
+      - name: Verify proof-time syntax and regressions
+        run: |
+          node --check ai/MovieMentorCanonicalResultMongoStore.js
+          node --check ai/MovieMentorResultCandidateMongoStore.js
+          node scripts/verify-movie-mentor-result-candidate-recovery.mjs
+          node scripts/verify-movie-mentor-settled-execution-authority.mjs
+          node scripts/verify-movie-mentor-inference-settlement-reconciliation.mjs
+      - name: Prove null timestamps cannot manufacture result proof
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import {createMovieMentorResultCandidateMongoStore} from './ai/MovieMentorResultCandidateMongoStore.js';
+          let row={domain:'iband.movie-mentor.result-candidate-store',schema:1,candidateReference:'c',executionId:'e',creatorTurnId:'t',principalId:'p',projectId:'pr',reservationId:'r',requestDigest:'q',resultDigest:'x',resultPayload:{},stagedFromLeaseGeneration:1,stagedFromLeaseReference:'l',stagedFromFencingToken:'f',stagedAt:null};
+          const model={findOne(){return{lean(){return{exec:async()=>row}}}}};
+          const store=createMovieMentorResultCandidateMongoStore({mongoModel:model,executionCollection:false});
+          await assert.rejects(()=>store.readByExecution('e'),e=>e.code==='MOVIE_MENTOR_RESULT_CANDIDATE_RECORD_INVALID');
+          const canonical=await import('node:fs').then(fs=>fs.readFileSync('ai/MovieMentorCanonicalResultMongoStore.js','utf8'));
+          assert.match(canonical,/if\(v===null\|\|v===undefined\|\|v===""\)return ""/);
+          console.log('proof-time null catastrophe: GREEN');
+          NODE
+      - name: Commit hardened sources
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ai/MovieMentorCanonicalResultMongoStore.js ai/MovieMentorResultCandidateMongoStore.js
+          git diff --cached --quiet && exit 0
+          git commit -m "Reject absent result timestamps as durable proof"
+          git push
