@@ -21,6 +21,7 @@ const BASE = Object.freeze({
   expectedAudience: "movie-mentor-recovery",
   activationEpoch: "7",
   activationReference: "activation-7",
+  leaseReference: "lease-7",
   fencingToken: "fence-7-secret",
   leaseGeneration: 7,
   status: "active",
