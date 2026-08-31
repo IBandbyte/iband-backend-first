@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import {createMovieMentorCommercialPurchaseIntentAuthority} from "../ai/MovieMentorCommercialPurchaseIntentAuthority.js";
 import {createMovieMentorCommercialPaymentEvidenceAuthority} from "../ai/MovieMentorCommercialPaymentEvidenceAuthority.js";
+import {createMovieMentorProductionCommercialPurchaseIntentComposition} from "../ai/MovieMentorProductionCommercialPurchaseIntentComposition.js";
 function digest(v){return crypto.createHash("sha256").update(JSON.stringify(v)).digest("hex");}
 const records=new Map();const store={async create(r){const out=Object.freeze({...r,status:"created",createdAt:new Date().toISOString()});records.set(r.commercialIntentId,out);return out;},async resolve({commercialIntentId}){return records.get(commercialIntentId)||null;}};
 let policy={packageId:"creator-20",provider:"test-provider",providerProductId:"prod_creator20_v1",amountMinor:1200,currency:"GBP",environment:"live",units:20,policyVersion:"2026-08-29.1"};
@@ -15,4 +16,12 @@ const evidence=createMovieMentorCommercialPaymentEvidenceAuthority({verifyDelive
 const event={eventId:"evt_old_terms",provider:"test-provider",eventKind:"payment-completed",commercialIntentId:intent.commercialIntentId,commerciallyFinal:true,providerProductId:"prod_creator20_v1",amountMinor:1200,currency:"GBP",environment:"live"};const verified=await evidence.verifyCommercialDelivery({delivery:{signature:"valid",payload:event}});assert.equal(verified.units,20,"5A.7 must honor immutable intent snapshot, not later policy");
 await assert.rejects(()=>evidence.verifyCommercialDelivery({delivery:{signature:"valid",payload:{...event,providerProductId:"prod_creator20_v2",amountMinor:1800}}}),e=>e.code==="MOVIE_MENTOR_COMMERCIAL_EVIDENCE_PRODUCT_MISMATCH");
 const bad={...resolved,policyDigest:digest({...policy})};records.set(resolved.commercialIntentId,bad);await assert.rejects(()=>evidence.verifyCommercialDelivery({delivery:{signature:"valid",payload:event}}),e=>e.code==="MOVIE_MENTOR_COMMERCIAL_EVIDENCE_INTENT_SNAPSHOT_INVALID");
+
+const oldMongo=process.env.MONGO_URI;process.env.MONGO_URI="mongodb://configured.example/test";
+const production=createMovieMentorProductionCommercialPurchaseIntentComposition({resolveCommercialPolicy:async()=>policy});
+assert.equal(production.ready,true);assert.equal(typeof production.authority.getStatus,"function");
+const productionStatus=production.authority.getStatus();assert.equal(productionStatus.domain,"iband.movie-mentor.production-commercial-purchase-intent-authority");assert.equal(productionStatus.durablePurchaseIntent,true);assert.equal(productionStatus.immutableCommercialTerms,true);assert.equal(productionStatus.serverOwnedPolicy,true);assert.equal(productionStatus.processLocalFallback,false);
+if(oldMongo===undefined)delete process.env.MONGO_URI;else process.env.MONGO_URI=oldMongo;
+
+console.log("✓ production purchase-intent composition exports the capability proof it owns");
 console.log("PASS Door 5A.9 — authenticated principal plus package request creates durable server-owned immutable commercial intent; creator cannot dictate price/units; later policy cannot rewrite an existing purchase; 5A.7 verifies against the frozen intent snapshot.");
