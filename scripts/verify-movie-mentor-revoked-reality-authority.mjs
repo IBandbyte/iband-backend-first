@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import express from "express";
 import {createMovieMentorCanonicalResultAuthority} from "../ai/MovieMentorCanonicalResultAuthority.js";
+import {createMovieMentorTurnRouter} from "../movieMentorTurn.js";
 
 const executionSource=fs.readFileSync(new URL("../ai/MovieMentorInferenceExecutionMongoStore.js",import.meta.url),"utf8");
 const settlementSource=fs.readFileSync(new URL("../ai/MovieMentorInferenceSettlementMongoStore.js",import.meta.url),"utf8");
@@ -63,9 +65,44 @@ assert.equal(historical.reservationId,"reservation-history");
 assert.equal("resultPayload" in historical,false,"historical visibility must not smuggle revoked creator-facing payload into an authority-shaped response");
 assert.equal(candidateReads,0);
 
+// Prove the actual Express gateway preserves revocation semantics instead of translating it into a retryable 5xx.
+const noop=async()=>({});
+const executionAuthority={
+  findExecutionByCreatorTurn:noop,openExecution:noop,acquireExecution:noop,assertFence:noop,claimProviderCall:noop,
+  beginProviderDispatch:noop,assertProviderDispatch:noop,contributeProviderEffectEvidence:noop,stageResultCandidate:noop,
+  readResultCandidate:noop,beginExecutionClosing:noop,reconcileExecutionClosure:noop,assertCurrentExecutionClosure:noop,
+  commitCanonicalResult:noop,readCanonicalResult:noop,
+};
+const spendAuthority={reserveTurn:noop,readReservation:noop};
+const settlementAuthority={reconcile:noop,releaseUnclaimed:noop,releaseUnbound:noop};
+const quarantineError=Object.assign(new Error("durably quarantined"),{code:"MOVIE_MENTOR_INFERENCE_EXECUTION_QUARANTINED",retryable:false,quarantinedFromPhase:"settled"});
+const router=createMovieMentorTurnRouter({
+  requestAuthority:{authorize:async()=>({authorized:true,projectId:"project-gateway",principalId:"creator-gateway",ownershipRef:"owner-ref"})},
+  inferenceSpendAuthority:spendAuthority,
+  inferenceExecutionAuthority:executionAuthority,
+  inferenceSettlementAuthority:settlementAuthority,
+  runTurn:async()=>{throw quarantineError;},
+  applyStateTransition:noop,
+});
+const app=express();app.use(express.json());app.use("/movie-mentor",router);
+const server=await new Promise(resolve=>{const value=app.listen(0,"127.0.0.1",()=>resolve(value));});
+try{
+  const address=server.address();
+  assert.ok(address&&typeof address!=="string");
+  const response=await fetch(`http://127.0.0.1:${address.port}/movie-mentor/turn`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({projectId:"project-gateway",message:"retry old turn",creatorTurnId:"turn-gateway"})});
+  const body=await response.json();
+  assert.equal(response.status,409);
+  assert.equal(body.success,false);
+  assert.equal(body.code,"MOVIE_MENTOR_INFERENCE_EXECUTION_QUARANTINED");
+  assert.equal(body.retryable,false);
+  assert.equal(body.authority?.quarantinedExecutionIsNonRetryableConflict,true);
+}finally{
+  await new Promise((resolve,reject)=>server.close(error=>error?reject(error):resolve()));
+}
+
 console.log("ROUND SEVEN revoked-reality authority catastrophe gate: GREEN");
 console.log(`✓ current durable execution schema ${currentSchema} crosses settlement + canonical finalization boundaries`);
-console.log("✓ QUARANTINED is a non-retryable HTTP conflict, not a retry invitation");
+console.log("✓ actual Express gateway returns QUARANTINED as HTTP 409 + retryable=false, never a retry invitation");
 console.log("✓ canonical result remains historically identifiable after quarantine but authorized=false and payload-free");
 console.log("✓ quarantine closure evidence preserves exact prior proof-bearing phase without converting history back into current reality");
 console.log("✓ consumed economic history cannot be released by post-settlement or unbound release paths");
