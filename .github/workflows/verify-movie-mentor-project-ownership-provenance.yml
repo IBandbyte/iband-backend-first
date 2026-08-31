@@ -1,0 +1,23 @@
+name: Verify Movie Mentor Project Ownership Provenance
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  verify-movie-mentor-project-ownership-provenance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Syntax check project ownership provenance
+        run: |
+          node --check ai/MovieMentorProjectOwnershipRegistry.js
+          node --check ai/MovieMentorCreatorRequestAuthority.js
+          node --check scripts/verify-movie-mentor-project-ownership-provenance.mjs
+      - name: Run project ownership three-layer provenance torture
+        run: node scripts/verify-movie-mentor-project-ownership-provenance.mjs

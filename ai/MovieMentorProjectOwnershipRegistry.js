@@ -1,9 +1,11 @@
 import mongoose from "mongoose";
 
-const MOVIE_MENTOR_PROJECT_OWNERSHIP_REGISTRY_VERSION = "1.2.0";
+const MOVIE_MENTOR_PROJECT_OWNERSHIP_REGISTRY_VERSION = "1.3.0";
 const MOVIE_MENTOR_PROJECT_OWNERSHIP_COLLECTION = "movie_mentor_project_ownership";
 const MOVIE_MENTOR_PROJECT_OWNERSHIP_DOMAIN = "iband.movie-mentor.project-ownership";
 const MOVIE_MENTOR_PROJECT_OWNERSHIP_SCHEMA = 1;
+const MOVIE_MENTOR_PROJECT_OWNERSHIP_STORE_CAPABILITY_DOMAIN = "iband.movie-mentor.project-ownership-store";
+const MOVIE_MENTOR_PROJECT_OWNERSHIP_AUTHORITY_CAPABILITY_DOMAIN = "iband.movie-mentor.project-ownership-authority";
 const LEGACY_ADOPTION_ATTESTATION_DOMAIN = "iband.movie-mentor.legacy-ownership-adoption-attestation";
 const LEGACY_ADOPTION_ATTESTATION_SCHEMA = 1;
 
@@ -15,6 +17,40 @@ function n(value) { return Number.isSafeInteger(value) && value >= 0 ? value : n
 function clone(value) { if (value === undefined) return undefined; try { return JSON.parse(JSON.stringify(value)); } catch { return value; } }
 function mongoUri() { return s(process.env.MONGO_URI || process.env.MONGODB_URI || ""); }
 function fail(code, message, extras = {}) { const error = new Error(message); error.code = code; Object.assign(error, extras); throw error; }
+
+function getMovieMentorProjectOwnershipRegistryStatus() {
+  const configured = Boolean(mongoUri());
+  return Object.freeze({
+    version: MOVIE_MENTOR_PROJECT_OWNERSHIP_REGISTRY_VERSION,
+    domain: MOVIE_MENTOR_PROJECT_OWNERSHIP_STORE_CAPABILITY_DOMAIN,
+    configured,
+    readiness: configured ? "configured" : "configuration-required",
+    collection: MOVIE_MENTOR_PROJECT_OWNERSHIP_COLLECTION,
+    storage: "mongodb",
+    durable: true,
+    singleton: true,
+    projectUnique: true,
+    establishmentAuthorityUnique: true,
+    createOnce: true,
+    legacyAdoption: "certified-attestation-only",
+    ownershipTransfer: false,
+    processLocalFallback: false,
+  });
+}
+
+function storeCapabilityProven(status) {
+  return status?.domain === MOVIE_MENTOR_PROJECT_OWNERSHIP_STORE_CAPABILITY_DOMAIN &&
+    status?.configured === true &&
+    status?.storage === "mongodb" &&
+    status?.durable === true &&
+    status?.singleton === true &&
+    status?.projectUnique === true &&
+    status?.establishmentAuthorityUnique === true &&
+    status?.createOnce === true &&
+    status?.legacyAdoption === "certified-attestation-only" &&
+    status?.ownershipTransfer === false &&
+    status?.processLocalFallback === false;
+}
 
 function getModel() {
   if (model) return model;
@@ -120,6 +156,42 @@ function createMovieMentorProjectOwnershipAuthority({
   createOwnership = createMovieMentorProjectOwnership,
   now = () => new Date().toISOString(),
 } = {}) {
+  const moduleOwnedStore = readOwnership === readMovieMentorProjectOwnership && createOwnership === createMovieMentorProjectOwnership;
+  const storeStatus = moduleOwnedStore
+    ? getMovieMentorProjectOwnershipRegistryStatus()
+    : Object.freeze({
+        version: MOVIE_MENTOR_PROJECT_OWNERSHIP_REGISTRY_VERSION,
+        domain: MOVIE_MENTOR_PROJECT_OWNERSHIP_STORE_CAPABILITY_DOMAIN,
+        configured: false,
+        readiness: "injected-functions-unproven",
+        collection: MOVIE_MENTOR_PROJECT_OWNERSHIP_COLLECTION,
+        storage: "unknown",
+        durable: false,
+        singleton: false,
+        projectUnique: false,
+        establishmentAuthorityUnique: false,
+        createOnce: false,
+        legacyAdoption: "unproven",
+        ownershipTransfer: false,
+        processLocalFallback: true,
+      });
+  const provenStore = storeCapabilityProven(storeStatus);
+  const authorityStatus = Object.freeze({
+    version: MOVIE_MENTOR_PROJECT_OWNERSHIP_REGISTRY_VERSION,
+    domain: MOVIE_MENTOR_PROJECT_OWNERSHIP_AUTHORITY_CAPABILITY_DOMAIN,
+    configured: provenStore,
+    readiness: provenStore ? "store-proven" : "store-capability-not-proven",
+    durable: provenStore,
+    authorization: "durable-owner-match",
+    createOnce: provenStore,
+    projectUnique: provenStore,
+    establishmentAuthorityUnique: provenStore,
+    legacyAdoption: provenStore ? "certified-attestation-only" : "unproven",
+    ownershipTransfer: false,
+    processLocalFallback: !provenStore,
+    store: storeStatus,
+  });
+
   async function establishFromTrustedAuthority({ principalId, projectId, authorityId, establishmentSource }) {
     const existing = await readOwnership({ projectId });
     if (existing) {
@@ -243,21 +315,7 @@ function createMovieMentorProjectOwnershipAuthority({
     });
   }
 
-  return Object.freeze({ establishNativeOwnership, adoptLegacyOwnership, authorizeProject });
-}
-
-function getMovieMentorProjectOwnershipRegistryStatus() {
-  const configured = Boolean(mongoUri());
-  return Object.freeze({
-    version: MOVIE_MENTOR_PROJECT_OWNERSHIP_REGISTRY_VERSION,
-    configured,
-    readiness: configured ? "configured" : "configuration-required",
-    collection: MOVIE_MENTOR_PROJECT_OWNERSHIP_COLLECTION,
-    authority: "deterministic-project-ownership",
-    createOnce: true,
-    legacyAdoption: "certified-attestation-only",
-    ownershipTransfer: false,
-  });
+  return Object.freeze({ establishNativeOwnership, adoptLegacyOwnership, authorizeProject, getStatus: () => authorityStatus });
 }
 
 export {
@@ -265,6 +323,8 @@ export {
   MOVIE_MENTOR_PROJECT_OWNERSHIP_COLLECTION,
   MOVIE_MENTOR_PROJECT_OWNERSHIP_DOMAIN,
   MOVIE_MENTOR_PROJECT_OWNERSHIP_SCHEMA,
+  MOVIE_MENTOR_PROJECT_OWNERSHIP_STORE_CAPABILITY_DOMAIN,
+  MOVIE_MENTOR_PROJECT_OWNERSHIP_AUTHORITY_CAPABILITY_DOMAIN,
   inspectMovieMentorProjectOwnership,
   readMovieMentorProjectOwnership,
   createMovieMentorProjectOwnership,
