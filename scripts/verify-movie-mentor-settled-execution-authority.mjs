@@ -5,6 +5,7 @@ import { replayTerminalTurn } from "../ai/MovieMentorTurnRuntime.js";
 const settlementStore = fs.readFileSync(new URL("../ai/MovieMentorInferenceSettlementMongoStore.js", import.meta.url), "utf8");
 const spendStore = fs.readFileSync(new URL("../ai/MovieMentorInferenceSpendMongoStore.js", import.meta.url), "utf8");
 const executionStore = fs.readFileSync(new URL("../ai/MovieMentorInferenceExecutionMongoStore.js", import.meta.url), "utf8");
+const providerEffectStore = fs.readFileSync(new URL("../ai/MovieMentorProviderEffectMongoStore.js", import.meta.url), "utf8");
 const closureAuthority = fs.readFileSync(new URL("../ai/MovieMentorInferenceExecutionClosureAuthority.js", import.meta.url), "utf8");
 const canonicalAuthority = fs.readFileSync(new URL("../ai/MovieMentorCanonicalResultAuthority.js", import.meta.url), "utf8");
 const runtime = fs.readFileSync(new URL("../ai/MovieMentorTurnRuntime.js", import.meta.url), "utf8");
@@ -30,6 +31,16 @@ assert.match(runtime, /\["closed", "finalized", "settled"\]/);
 assert.match(runtime, /executionPhase !== "settled"/);
 assert.match(gateway, /settledExecutionAuthorityRequired:true/);
 assert.match(gateway, /settlementTransitionsFinalizedToSettledAtomically:true/);
+
+// Late provider reality must remain observable after SETTLED without recreating forward execution authority.
+assert.match(executionStore, /phase:\{\$in:\["closing","closed","finalized","settled"\]\}/,
+  "closure quarantine must accept SETTLED so late provider conflict can be made durable");
+assert.match(executionStore, /executionId:text\(input\.executionId\),phase:"active",ownerId:/,
+  "new provider-call admission must remain ACTIVE-only");
+assert.match(providerEffectStore, /executionLedger\(\)\.updateOne\(\{executionId:current\.executionId\},\{\$inc:\{providerEffectRealityRevision:1\}\}/,
+  "late evidence must increment shared execution provider-reality revision without requiring ACTIVE phase");
+assert.doesNotMatch(providerEffectStore, /appendEvidence[\s\S]*?executionLedger\(\)\.updateOne\(\{executionId:current\.executionId,phase:"active"/,
+  "late evidence observation must not be discarded merely because execution is SETTLED");
 
 const consumedBranch = settlementStore.indexOf('if(text(reservation.status)==="consumed")');
 const freshBarrier = settlementStore.indexOf('const settledAt=new Date(now());const barrier=');
@@ -66,4 +77,5 @@ console.log("✓ fresh consume writes SETTLED barrier -> entitlement debit -> co
 console.log("✓ explicit reservation debit lineage binds execution + result + candidate + digest");
 console.log("✓ exact legacy FINALIZED+CONSUMED history migrates to SETTLED without a second entitlement debit");
 console.log("✓ SETTLED replay requires executionPhase=settled and cannot reacquire provider authority");
-console.log("LAW: NO PHASE GETS CREDIT FOR A PROOF IT DOESN'T OWN. SETTLED OWNS FINALIZED PROOF + EXACT DURABLE CREATOR-DEBIT BINDING.");
+console.log("✓ late provider evidence remains observable after SETTLED, increments shared reality revision, and can quarantine current closure without recreating execution authority");
+console.log("LAW: NO PHASE GETS CREDIT FOR A PROOF IT DOESN'T OWN. SETTLED OWNS FINALIZED PROOF + EXACT DURABLE CREATOR-DEBIT BINDING; LATE REALITY MAY REVOKE CURRENT TRUST, NEVER RECREATE FORWARD AUTHORITY.");
