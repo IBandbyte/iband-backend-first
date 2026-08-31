@@ -1,0 +1,27 @@
+name: Round Seven Lease Revocation Abyss
+on:
+  push:
+    branches: [round-seven-lease-revocation-abyss]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Check lease revocation syntax
+        run: node --check ai/MovieMentorInferenceExecutionLeaseAuthority.js && node --check scripts/verify-movie-mentor-inference-execution-lease-foundation.mjs
+      - name: Verify lease revocation races
+        run: node scripts/verify-movie-mentor-inference-execution-lease-foundation.mjs
+      - name: Regress live execution lease enforcement
+        run: node scripts/verify-movie-mentor-live-execution-lease-enforcement.mjs
+      - name: Regress revoked reality authority
+        run: node scripts/verify-movie-mentor-revoked-reality-authority.mjs
+      - name: Regress provider effect reality
+        run: node scripts/verify-movie-mentor-provider-effect-reality.mjs
+      - name: Regress durable runtime
+        run: node scripts/verify-movie-mentor-turn-runtime.mjs && node scripts/verify-movie-mentor-durable-round-trip.mjs
