@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { replayTerminalTurn } from "../ai/MovieMentorTurnRuntime.js";
+import { inspectMovieMentorInferenceExecution } from "../ai/MovieMentorInferenceExecutionMongoStore.js";
 
 const settlementStore = fs.readFileSync(new URL("../ai/MovieMentorInferenceSettlementMongoStore.js", import.meta.url), "utf8");
 const spendStore = fs.readFileSync(new URL("../ai/MovieMentorInferenceSpendMongoStore.js", import.meta.url), "utf8");
@@ -33,14 +34,31 @@ assert.match(gateway, /settledExecutionAuthorityRequired:true/);
 assert.match(gateway, /settlementTransitionsFinalizedToSettledAtomically:true/);
 
 // Late provider reality must remain observable after SETTLED without recreating forward execution authority.
-assert.match(executionStore, /phase:\{\$in:\["closing","closed","finalized","settled"\]\}/,
+assert.match(executionStore, /\["closing","closed","finalized","settled"\]\.includes\(current\.phase\)/,
   "closure quarantine must accept SETTLED so late provider conflict can be made durable");
+assert.match(executionStore, /quarantinedFromPhase:current\.phase/,
+  "quarantine must durably preserve the exact proof-bearing phase it revoked");
+assert.match(executionStore, /proofPhase=phase==="quarantined"\?quarantinedFromPhase:phase/,
+  "quarantined records must continue validating the proof contract of their prior phase");
+assert.match(executionStore, /MOVIE_MENTOR_INFERENCE_EXECUTION_QUARANTINE_PROVENANCE_INVALID/);
 assert.match(executionStore, /executionId:text\(input\.executionId\),phase:"active",ownerId:/,
   "new provider-call admission must remain ACTIVE-only");
 assert.match(providerEffectStore, /executionLedger\(\)\.updateOne\(\{executionId:current\.executionId\},\{\$inc:\{providerEffectRealityRevision:1\}\}/,
   "late evidence must increment shared execution provider-reality revision without requiring ACTIVE phase");
 assert.doesNotMatch(providerEffectStore, /appendEvidence[\s\S]*?executionLedger\(\)\.updateOne\(\{executionId:current\.executionId,phase:"active"/,
   "late evidence observation must not be discarded merely because execution is SETTLED");
+
+const quarantineRecord = {
+  domain:"iband.movie-mentor.inference-execution-store",schema:6,executionId:"execution-q",creatorTurnId:"turn-q",principalId:"creator-q",projectId:"project-q",reservationId:"reservation-q",requestDigest:"request-q",phase:"quarantined",ownerId:"owner-q",leaseGeneration:1,leaseReference:"lease-q",fencingToken:"fence-q",leaseAcquiredAt:"2032-01-01T00:00:00.000Z",leaseExpiresAt:"2032-01-01T00:10:00.000Z",maxProviderCalls:1,providerCallsClaimed:0,providerCalls:[],providerEffectRealityRevision:4,settlementRealityBarrierRevision:1,resultFinalizationBarrierRevision:1,closureReference:"closure-q",frozenProviderCallCount:0,frozenProviderCallSetDigest:"frozen-q",closingAt:"2032-01-01T00:01:00.000Z",closedFromExecutionGeneration:1,closurePolicyVersion:"policy-q",closureCertificateDigest:"certificate-q",closedAt:"2032-01-01T00:02:00.000Z",finalizedResultReference:"result-q",finalizedCandidateReference:"candidate-q",finalizedResultDigest:"digest-q",resultFinalizedAt:"2032-01-01T00:03:00.000Z",settledResultReference:"result-q",settledCandidateReference:"candidate-q",settledResultDigest:"digest-q",settledAt:"2032-01-01T00:04:00.000Z",abortedAt:null,abortReason:"",quarantinedAt:"2032-01-01T00:05:00.000Z",quarantineReason:"late-provider-conflict",quarantinedFromPhase:"settled"
+};
+assert.equal(inspectMovieMentorInferenceExecution(quarantineRecord).valid,true,
+  "a current-schema quarantine from SETTLED must preserve and validate exact settled lineage");
+assert.equal(inspectMovieMentorInferenceExecution({...quarantineRecord,quarantinedFromPhase:""}).valid,false,
+  "current-schema quarantine may not erase its source phase");
+assert.equal(inspectMovieMentorInferenceExecution({...quarantineRecord,settledResultDigest:"wrong"}).valid,false,
+  "quarantine from SETTLED may not weaken exact finalized/settled lineage validation");
+assert.equal(inspectMovieMentorInferenceExecution({...quarantineRecord,schema:5,quarantinedFromPhase:undefined}).valid,true,
+  "legacy quarantine remains readable through deterministic evidence-based provenance inference without gaining new authority");
 
 const consumedBranch = settlementStore.indexOf('if(text(reservation.status)==="consumed")');
 const freshBarrier = settlementStore.indexOf('const settledAt=new Date(now());const barrier=');
@@ -78,4 +96,5 @@ console.log("✓ explicit reservation debit lineage binds execution + result + c
 console.log("✓ exact legacy FINALIZED+CONSUMED history migrates to SETTLED without a second entitlement debit");
 console.log("✓ SETTLED replay requires executionPhase=settled and cannot reacquire provider authority");
 console.log("✓ late provider evidence remains observable after SETTLED, increments shared reality revision, and can quarantine current closure without recreating execution authority");
-console.log("LAW: NO PHASE GETS CREDIT FOR A PROOF IT DOESN'T OWN. SETTLED OWNS FINALIZED PROOF + EXACT DURABLE CREATOR-DEBIT BINDING; LATE REALITY MAY REVOKE CURRENT TRUST, NEVER RECREATE FORWARD AUTHORITY.");
+console.log("✓ QUARANTINED preserves the exact phase it revoked and continues validating that phase's immutable proof lineage");
+console.log("LAW: NO PHASE GETS CREDIT FOR A PROOF IT DOESN'T OWN. QUARANTINE MAY REVOKE CURRENT TRUST, BUT IT MAY NOT ERASE WHICH PROOF-BEARING PHASE WAS REVOKED OR WEAKEN THAT PHASE'S HISTORICAL LINEAGE.");
