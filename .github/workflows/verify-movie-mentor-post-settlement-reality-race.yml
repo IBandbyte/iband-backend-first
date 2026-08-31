@@ -1,0 +1,34 @@
+name: Verify Movie Mentor Post-Settlement Reality Race
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ai/MovieMentorProviderEffectMongoStore.js"
+      - "ai/MovieMentorInferenceExecutionMongoStore.js"
+      - "ai/MovieMentorInferenceExecutionClosureAuthority.js"
+      - "ai/MovieMentorInferenceSettlementMongoStore.js"
+      - "ai/MovieMentorTurnRuntime.js"
+      - "scripts/verify-movie-mentor-post-settlement-reality-race.mjs"
+      - ".github/workflows/verify-movie-mentor-post-settlement-reality-race.yml"
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Check post-settlement catastrophe syntax
+        run: node --check scripts/verify-movie-mentor-post-settlement-reality-race.mjs && node --check ai/MovieMentorProviderEffectMongoStore.js && node --check ai/MovieMentorInferenceExecutionMongoStore.js && node --check ai/MovieMentorInferenceSettlementMongoStore.js
+      - name: Verify post-SETTLED provider-reality catastrophe authority
+        run: node scripts/verify-movie-mentor-post-settlement-reality-race.mjs
+      - name: Regress SETTLED ownership catastrophe gate
+        run: node scripts/verify-movie-mentor-settled-execution-authority.mjs
+      - name: Regress deterministic settlement reconciliation
+        run: node scripts/verify-movie-mentor-inference-settlement-reconciliation.mjs
