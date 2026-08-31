@@ -1,0 +1,38 @@
+name: Round Six Settlement Composition Abyss Build
+on:
+  push:
+    branches: [round-six-settlement-composition-abyss]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Patch production SETTLED capability authority
+        run: node scripts/patch-round-six-settlement-composition-capability.mjs
+      - name: Verify production capability and regressions
+        run: |
+          node --check ai/MovieMentorInferenceSettlementMongoStore.js
+          node --check ai/MovieMentorProductionInferenceSettlementComposition.js
+          node --check server.js
+          node --check scripts/verify-movie-mentor-production-settled-capability.mjs
+          node scripts/verify-movie-mentor-production-settled-capability.mjs
+          node scripts/verify-movie-mentor-settled-execution-authority.mjs
+          node scripts/verify-movie-mentor-proof-time-authority.mjs
+          node scripts/verify-movie-mentor-proof-creation-time-authority.mjs
+          node scripts/verify-movie-mentor-inference-settlement-reconciliation.mjs
+          node scripts/verify-movie-mentor-durable-round-trip.mjs
+      - name: Commit hardened sources
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ai/MovieMentorInferenceSettlementMongoStore.js ai/MovieMentorProductionInferenceSettlementComposition.js server.js scripts/verify-movie-mentor-production-settled-capability.mjs
+          git diff --cached --quiet && exit 0
+          git commit -m "Require explicit SETTLED capability at production mount"
+          git push
