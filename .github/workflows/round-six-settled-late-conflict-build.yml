@@ -1,0 +1,30 @@
+name: Round Six Settled Late Conflict Build
+on:
+  push:
+    branches: [round-six-settled-late-conflict]
+    paths:
+      - scripts/patch-round-six-settled-late-conflict.mjs
+      - .github/workflows/round-six-settled-late-conflict-build.yml
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: round-six-settled-late-conflict
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node scripts/patch-round-six-settled-late-conflict.mjs
+      - run: node --check ai/MovieMentorInferenceExecutionMongoStore.js
+      - name: Commit isolated late-conflict build
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ai/MovieMentorInferenceExecutionMongoStore.js
+          git diff --cached --exit-code && { echo "No execution-store patch produced"; exit 1; } || true
+          git commit -m "Allow settled catastrophe quarantine"
+          git push origin HEAD:round-six-settled-late-conflict
