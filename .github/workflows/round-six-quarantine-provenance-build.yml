@@ -1,0 +1,30 @@
+name: Round Six Quarantine Provenance Build
+on:
+  push:
+    branches: [round-six-quarantine-provenance]
+    paths:
+      - scripts/patch-round-six-quarantine-provenance.mjs
+      - .github/workflows/round-six-quarantine-provenance-build.yml
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: round-six-quarantine-provenance
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node scripts/patch-round-six-quarantine-provenance.mjs
+      - run: node --check ai/MovieMentorInferenceExecutionMongoStore.js
+      - name: Commit isolated provenance build
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ai/MovieMentorInferenceExecutionMongoStore.js
+          git diff --cached --exit-code && { echo "No provenance patch produced"; exit 1; } || true
+          git commit -m "Preserve quarantine proof provenance"
+          git push origin HEAD:round-six-quarantine-provenance
