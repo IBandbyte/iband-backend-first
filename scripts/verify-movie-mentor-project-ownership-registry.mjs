@@ -3,6 +3,7 @@ import {
   createMovieMentorProjectOwnershipAuthority,
   inspectMovieMentorProjectOwnership,
 } from "../ai/MovieMentorProjectOwnershipRegistry.js";
+import { certifyLegacyProjectOwnershipAdoption } from "../ai/MovieMentorLegacyProjectOwnershipAdoptionBoundary.js";
 
 function clone(value) { return value == null ? value : JSON.parse(JSON.stringify(value)); }
 function createMemoryStore() {
@@ -51,7 +52,7 @@ function principal(id, authenticated = true) { return { principalId: id, authent
 function nativeAuthority(projectId, principalId, authorityId) {
   return { verified: true, type: "native-project-creation", projectId, principalId, authorityId };
 }
-function legacyAttestation(projectId, principalId, adoptionId) {
+function forgedLegacyAttestation(projectId, principalId, adoptionId) {
   return {
     certified: true,
     domain: "iband.movie-mentor.legacy-ownership-adoption-attestation",
@@ -59,12 +60,39 @@ function legacyAttestation(projectId, principalId, adoptionId) {
     projectId,
     principalId,
     adoptionId,
+    ownerBoundProof: true,
     projectIdentity: {
       domain: "iband.movie-mentor.project",
       schema: 0,
       issuance: "legacy-preserved",
     },
   };
+}
+async function legacyAttestation(projectId, principalId, adoptionId) {
+  const legacyProject = Object.freeze({
+    id: projectId,
+    identity: Object.freeze({ domain: "iband.movie-mentor.project", schema: 0, issuance: "legacy-preserved", legacy: true }),
+  });
+  return certifyLegacyProjectOwnershipAdoption({
+    principal: principal(principalId),
+    project: legacyProject,
+    credential: { opaqueMigrationProof: adoptionId },
+    expectedIssuer: "iband-migration-authority",
+    now: Date.parse("2026-08-27T21:10:00.000Z"),
+    verifyAdoptionCredential: async () => ({
+      verified: true,
+      subject: principalId,
+      projectId,
+      adoptionId,
+      issuer: "iband-migration-authority",
+      audience: "iband.movie-mentor.legacy-ownership-adoption",
+      verificationMethod: "deterministic-migration-attestation-v1",
+      issuedAt: "2026-08-27T21:09:00.000Z",
+      expiresAt: "2026-08-27T21:20:00.000Z",
+      revoked: false,
+      projectIdentity: legacyProject.identity,
+    }),
+  });
 }
 
 const store = createMemoryStore();
@@ -136,10 +164,37 @@ await assert.rejects(
   authority.adoptLegacyOwnership({ principal: principal("principal-L"), projectId: "project-legacy-L" }),
   (error) => error?.code === "MOVIE_MENTOR_PROJECT_OWNERSHIP_LEGACY_ATTESTATION_REQUIRED"
 );
+
+await assert.rejects(
+  authority.adoptLegacyOwnership({
+    principal: principal("principal-forged"),
+    projectId: "project-forged",
+    adoptionAttestation: forgedLegacyAttestation("project-forged", "principal-forged", "adoption-forged"),
+  }),
+  (error) => error?.code === "MOVIE_MENTOR_PROJECT_OWNERSHIP_LEGACY_ATTESTATION_NOT_OWNER_BOUND",
+  "shape-equivalent certified JSON must not establish ownership"
+);
+assert.equal(store.records.has("project-forged"), false);
+
+const genuinePhotocopySource = await legacyAttestation("project-photocopy", "principal-photocopy", "adoption-photocopy");
+const genuinePhotocopy = clone(genuinePhotocopySource);
+assert.deepEqual(genuinePhotocopy, genuinePhotocopySource);
+await assert.rejects(
+  authority.adoptLegacyOwnership({
+    principal: principal("principal-photocopy"),
+    projectId: "project-photocopy",
+    adoptionAttestation: genuinePhotocopy,
+  }),
+  (error) => error?.code === "MOVIE_MENTOR_PROJECT_OWNERSHIP_LEGACY_ATTESTATION_NOT_OWNER_BOUND",
+  "JSON photocopy of genuine history must carry zero forward ownership authority"
+);
+assert.equal(store.records.has("project-photocopy"), false);
+
+const adoptedProof = await legacyAttestation("project-legacy-L", "principal-L", "adoption-L");
 const adopted = await authority.adoptLegacyOwnership({
   principal: principal("principal-L"),
   projectId: "project-legacy-L",
-  adoptionAttestation: legacyAttestation("project-legacy-L", "principal-L", "adoption-L"),
+  adoptionAttestation: adoptedProof,
 });
 assert.equal(adopted.status, "established");
 assert.equal(adopted.ownership.ownerPrincipalId, "principal-L");
@@ -150,7 +205,7 @@ assert.equal(adopted.ownership.ownershipRevision, 1);
 const adoptedRetry = await authority.adoptLegacyOwnership({
   principal: principal("principal-L"),
   projectId: "project-legacy-L",
-  adoptionAttestation: legacyAttestation("project-legacy-L", "principal-L", "adoption-L"),
+  adoptionAttestation: adoptedProof,
 });
 assert.equal(adoptedRetry.status, "already-established");
 assert.equal(adoptedRetry.ownership.ownershipRevision, 1);
@@ -159,7 +214,7 @@ await assert.rejects(
   authority.adoptLegacyOwnership({
     principal: principal("principal-X"),
     projectId: "project-legacy-L",
-    adoptionAttestation: legacyAttestation("project-legacy-L", "principal-X", "adoption-X"),
+    adoptionAttestation: await legacyAttestation("project-legacy-L", "principal-X", "adoption-X"),
   }),
   (error) => error?.code === "MOVIE_MENTOR_PROJECT_OWNERSHIP_HIJACK_REJECTED"
 );
@@ -167,7 +222,7 @@ await assert.rejects(
   authority.adoptLegacyOwnership({
     principal: principal("principal-L"),
     projectId: "project-legacy-L",
-    adoptionAttestation: legacyAttestation("project-legacy-L", "principal-L", "adoption-L-other"),
+    adoptionAttestation: await legacyAttestation("project-legacy-L", "principal-L", "adoption-L-other"),
   }),
   (error) => error?.code === "MOVIE_MENTOR_PROJECT_OWNERSHIP_ESTABLISHMENT_REPLAY_CONFLICT"
 );
@@ -175,7 +230,7 @@ await assert.rejects(
   authority.adoptLegacyOwnership({
     principal: principal("principal-L"),
     projectId: "project-other-L",
-    adoptionAttestation: legacyAttestation("project-other-L", "principal-L", "adoption-L"),
+    adoptionAttestation: await legacyAttestation("project-other-L", "principal-L", "adoption-L"),
   }),
   (error) => error?.code === "MOVIE_MENTOR_PROJECT_OWNERSHIP_AUTHORITY_REPLAY_REJECTED",
   "one-time adoption identity must not establish a second project"
@@ -188,11 +243,12 @@ const ackAuthority = createMovieMentorProjectOwnershipAuthority({
   createOwnership: ackStore.createOwnership,
   now: () => "2026-08-27T21:10:30.000Z",
 });
+const ackProof = await legacyAttestation("project-legacy-ack", "principal-ack", "adoption-ack");
 ackStore.loseNextAck();
 const ackAdoption = await ackAuthority.adoptLegacyOwnership({
   principal: principal("principal-ack"),
   projectId: "project-legacy-ack",
-  adoptionAttestation: legacyAttestation("project-legacy-ack", "principal-ack", "adoption-ack"),
+  adoptionAttestation: ackProof,
 });
 assert.equal(ackAdoption.status, "established-after-ack-loss");
 assert.equal(ackAdoption.ownership.ownerPrincipalId, "principal-ack");
@@ -202,7 +258,7 @@ assert.equal(ackStore.records.size, 1, "lost ACK must not cause a second ownersh
 const ackRetry = await ackAuthority.adoptLegacyOwnership({
   principal: principal("principal-ack"),
   projectId: "project-legacy-ack",
-  adoptionAttestation: legacyAttestation("project-legacy-ack", "principal-ack", "adoption-ack"),
+  adoptionAttestation: ackProof,
 });
 assert.equal(ackRetry.status, "already-established");
 assert.equal(ackRetry.ownership.ownershipRevision, 1);
@@ -243,15 +299,17 @@ const legacyRaceAuthority = createMovieMentorProjectOwnershipAuthority({
   createOwnership: legacyRaceStore.createOwnership,
   now: () => "2026-08-27T21:11:30.000Z",
 });
+const legacyRaceProofA = await legacyAttestation("project-legacy-race", "principal-legacy-race-A", "adoption-race-A");
+const legacyRaceProofB = await legacyAttestation("project-legacy-race", "principal-legacy-race-B", "adoption-race-B");
 const legacyRaceA = legacyRaceAuthority.adoptLegacyOwnership({
   principal: principal("principal-legacy-race-A"),
   projectId: "project-legacy-race",
-  adoptionAttestation: legacyAttestation("project-legacy-race", "principal-legacy-race-A", "adoption-race-A"),
+  adoptionAttestation: legacyRaceProofA,
 });
 const legacyRaceB = legacyRaceAuthority.adoptLegacyOwnership({
   principal: principal("principal-legacy-race-B"),
   projectId: "project-legacy-race",
-  adoptionAttestation: legacyAttestation("project-legacy-race", "principal-legacy-race-B", "adoption-race-B"),
+  adoptionAttestation: legacyRaceProofB,
 });
 const legacySettled = await Promise.allSettled([legacyRaceA, legacyRaceB]);
 assert.equal(legacySettled.filter((entry) => entry.status === "fulfilled").length, 1);
@@ -267,9 +325,10 @@ assert.equal(typeof authority.adoptLegacyOwnership, "function", "certified legac
 
 console.log("Movie Mentor project ownership registry verification passed.");
 console.log("- native ownership remains create-once and server-revisioned");
-console.log("- certified legacy adoption establishes exactly one immutable owner");
+console.log("- only exact owner-bound legacy adoption proof establishes durable ownership; forged/reconstructed history is rejected");
 console.log("- exact adoption retry is idempotent and one-time adoption authority cannot cross projects");
 console.log("- lost ACK reconciles from durable ownership reality without a second create");
 console.log("- concurrent certified legacy attestations produce exactly one durable owner");
 console.log("- different-principal and different-attestation replays cannot hijack ownership");
 console.log("- generic claim and ownership transfer remain unavailable");
+console.log("LAW: HISTORY MAY SURVIVE COPYING. AUTHORITY MAY NOT. PROOF DOES NOT REINCARNATE.");

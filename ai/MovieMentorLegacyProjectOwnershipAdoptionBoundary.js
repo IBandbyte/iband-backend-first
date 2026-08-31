@@ -1,4 +1,5 @@
-const MOVIE_MENTOR_LEGACY_OWNERSHIP_ADOPTION_VERSION = "1.0.0";
+const MOVIE_MENTOR_LEGACY_OWNERSHIP_ADOPTION_VERSION = "1.1.0";
+const adoptionAttestationProofs = new WeakSet();
 
 function clean(value) {
   return typeof value === "string" ? value.trim() : "";
@@ -14,6 +15,14 @@ function fail(code, message, extras = {}) {
 function parseTime(value) {
   const ms = Date.parse(value || "");
   return Number.isFinite(ms) ? ms : null;
+}
+
+function currentProofTime(value) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+function isMovieMentorLegacyProjectOwnershipAdoptionAttestationOwnedProof(attestation) {
+  return Boolean(attestation && typeof attestation === "object" && adoptionAttestationProofs.has(attestation));
 }
 
 async function certifyLegacyProjectOwnershipAdoption({
@@ -46,6 +55,14 @@ async function certifyLegacyProjectOwnershipAdoption({
     fail(
       "MOVIE_MENTOR_LEGACY_ADOPTION_VERIFIER_REQUIRED",
       "Legacy ownership adoption requires an independent trusted migration verifier."
+    );
+  }
+
+  const nowMs = currentProofTime(now);
+  if (nowMs === null) {
+    fail(
+      "MOVIE_MENTOR_LEGACY_ADOPTION_CLOCK_INVALID",
+      "Legacy ownership adoption requires a finite current proof time."
     );
   }
 
@@ -114,13 +131,13 @@ async function certifyLegacyProjectOwnershipAdoption({
       "Legacy adoption proof has invalid issuance or expiry bounds."
     );
   }
-  if (issuedAtMs > now + 30_000) {
+  if (issuedAtMs > nowMs + 30_000) {
     fail(
       "MOVIE_MENTOR_LEGACY_ADOPTION_NOT_YET_VALID",
       "Legacy adoption proof was issued in the future."
     );
   }
-  if (expiresAtMs <= now) {
+  if (expiresAtMs <= nowMs) {
     fail(
       "MOVIE_MENTOR_LEGACY_ADOPTION_EXPIRED",
       "Legacy adoption proof has expired."
@@ -148,7 +165,7 @@ async function certifyLegacyProjectOwnershipAdoption({
     );
   }
 
-  return Object.freeze({
+  const attestation = Object.freeze({
     certified: true,
     domain: "iband.movie-mentor.legacy-ownership-adoption-attestation",
     schema: 1,
@@ -165,11 +182,15 @@ async function certifyLegacyProjectOwnershipAdoption({
     verificationMethod,
     issuedAt: new Date(issuedAtMs).toISOString(),
     expiresAt: new Date(expiresAtMs).toISOString(),
+    ownerBoundProof: true,
   });
+  adoptionAttestationProofs.add(attestation);
+  return attestation;
 }
 
 export {
   MOVIE_MENTOR_LEGACY_OWNERSHIP_ADOPTION_VERSION,
   certifyLegacyProjectOwnershipAdoption,
+  isMovieMentorLegacyProjectOwnershipAdoptionAttestationOwnedProof,
 };
 export default certifyLegacyProjectOwnershipAdoption;
