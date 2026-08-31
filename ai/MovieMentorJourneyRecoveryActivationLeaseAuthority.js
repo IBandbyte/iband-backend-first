@@ -1,12 +1,12 @@
 import crypto from "node:crypto";
 
-const VERSION = "1.0.1";
+const VERSION = "1.0.2";
 const DOMAIN = "iband.movie-mentor.journey-recovery-activation-lease";
 
 function text(value) { return typeof value === "string" ? value.trim() : ""; }
 function freeze(value) { return Object.freeze(value); }
 function fail(code, message) { const error = new Error(message); error.code = code; throw error; }
-function instant(value) { const date = value instanceof Date ? new Date(value) : new Date(value); if (Number.isNaN(date.getTime())) fail("MOVIE_MENTOR_RECOVERY_ACTIVATION_LEASE_TIME_INVALID", "Activation lease time is invalid."); return date; }
+function instant(value) { if (value === null || value === undefined || value === "") fail("MOVIE_MENTOR_RECOVERY_ACTIVATION_LEASE_TIME_INVALID", "Activation lease time is invalid."); const date = value instanceof Date ? new Date(value.getTime()) : new Date(value); if (Number.isNaN(date.getTime())) fail("MOVIE_MENTOR_RECOVERY_ACTIVATION_LEASE_TIME_INVALID", "Activation lease time is invalid."); return date; }
 function sameBinding(record, request) { return text(record?.processInstanceId) === request.processInstanceId && text(record?.deploymentId) === request.deploymentId && text(record?.basePath) === request.basePath && text(record?.expectedIssuer) === request.expectedIssuer && text(record?.expectedAudience) === request.expectedAudience; }
 function active(record, at) { return record && text(record.status || "active") === "active" && instant(record.expiresAt).getTime() > at.getTime(); }
 function evidence(record) { return freeze({ authorized: true, processInstanceId: text(record.processInstanceId), deploymentId: text(record.deploymentId), basePath: text(record.basePath), expectedIssuer: text(record.expectedIssuer), expectedAudience: text(record.expectedAudience), activationEpoch: String(record.leaseGeneration), activationReference: text(record.leaseReference), fencingToken: text(record.fencingToken), leaseGeneration: record.leaseGeneration, expiresAt: instant(record.expiresAt).toISOString(), authorizationSource: DOMAIN }); }
