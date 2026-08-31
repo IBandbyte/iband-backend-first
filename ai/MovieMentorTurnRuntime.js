@@ -7,7 +7,7 @@ import { synthesizeMovieMentorResponse } from "./MovieMentorSynthesisEngine.js";
 import { buildCurrentCreatorTruthView } from "./MovieMentorCreatorTruthViewControl.js";
 import { readAuthoritativeTurnSource, readAuthoritativeRevision, readAuthoritativeCreatorState } from "./MovieMentorCreatorStateStore.js";
 
-const MOVIE_MENTOR_TURN_RUNTIME_VERSION = "2.5.0";
+const MOVIE_MENTOR_TURN_RUNTIME_VERSION = "2.6.0";
 const s = (value) => (typeof value === "string" ? value.trim() : "");
 
 function clone(value) {
@@ -338,6 +338,14 @@ async function convergeExistingTurn({ existing, inferenceExecutionAuthority, set
   if (s(existing.phase) === "aborted") {
     throw runtimeError("MOVIE_MENTOR_INFERENCE_EXECUTION_ABORTED", "Creator turn was durably aborted before any provider claim; use a new creatorTurnId for a new attempt.", {
       executionId: existing.executionId, retryable: false,
+    });
+  }
+  if (s(existing.phase) === "quarantined") {
+    throw runtimeError("MOVIE_MENTOR_INFERENCE_EXECUTION_QUARANTINED", "Creator turn belongs to a durably quarantined inference universe whose current proof is revoked; historical settlement remains preserved but cannot authorize replay or new provider work.", {
+      executionId: existing.executionId,
+      quarantinedFromPhase: s(existing.quarantinedFromPhase) || null,
+      reason: s(existing.quarantineReason) || "durable-inference-universe-quarantined",
+      retryable: false,
     });
   }
   const replay = await replayTerminalTurn({ existing, inferenceExecutionAuthority, settlementAuthority });
