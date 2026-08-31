@@ -1,0 +1,29 @@
+name: Verify Movie Mentor Provider Registry Transitive Provenance
+
+on:
+  push:
+    paths:
+      - "ai/MovieMentorCommercialProviderIngressRegistry.js"
+      - "ai/MovieMentorCommercialProviderIngressAuthority.js"
+      - "ai/MovieMentorProductionCommercialProviderIngressComposition.js"
+      - "ai/MovieMentorProductionCommercialHttpIngress.js"
+      - "scripts/verify-movie-mentor-provider-registry-transitive-provenance.mjs"
+      - ".github/workflows/verify-movie-mentor-provider-registry-transitive-provenance.yml"
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - run: node --check ai/MovieMentorCommercialProviderIngressRegistry.js
+      - run: node --check ai/MovieMentorCommercialProviderIngressAuthority.js
+      - run: node --check ai/MovieMentorProductionCommercialProviderIngressComposition.js
+      - run: node --check ai/MovieMentorProductionCommercialHttpIngress.js
+      - run: node scripts/verify-movie-mentor-provider-registry-transitive-provenance.mjs
+      - run: node scripts/verify-movie-mentor-commercial-provider-ingress-authority.mjs
+      - run: node scripts/verify-movie-mentor-production-commercial-http-ingress.mjs

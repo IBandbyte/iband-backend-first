@@ -8,14 +8,16 @@ import {createMovieMentorProductionEntitlementIssuanceComposition} from "./Movie
 import {createMovieMentorProductionCommercialProviderIngressComposition} from "./MovieMentorProductionCommercialProviderIngressComposition.js";
 import {createMovieMentorStripeCommercialProviderAdapter} from "./MovieMentorStripeCommercialProviderAdapter.js";
 
-const VERSION="1.4.0";
+const VERSION="1.5.0";
 const CREATOR_BASE_PATH="/api/movie-mentor/commercial";
 const STRIPE_WEBHOOK_PATH="/api/movie-mentor/commercial/providers/stripe/webhook";
 const INGRESS_DOMAIN="iband.movie-mentor.commercial-provider-ingress-authority";
+const REGISTRY_DOMAIN="iband.movie-mentor.commercial-provider-ingress-registry";
 function text(v){return typeof v==="string"?v.trim():"";}
 function closed(reason){return Object.freeze({mounted:false,reason,creatorBasePath:CREATOR_BASE_PATH,stripeWebhookPath:STRIPE_WEBHOOK_PATH,creatorRouter:null});}
 function ownedStatus(authority){if(typeof authority?.getStatus!=="function")return null;try{const status=authority.getStatus();return status&&typeof status==="object"?status:null;}catch{return null;}}
-function ingressProven(status){return status?.domain===INGRESS_DOMAIN&&status?.providerNeutral===true&&status?.purchaseIntentProvenanceRequired===true&&status?.issuanceProvenanceRequired===true&&status?.processLocalFallback===false;}
+function registryProven(status){return status?.domain===REGISTRY_DOMAIN&&status?.providerAdapterProvenanceRequired===true&&status?.rawBodyDeliveryVerificationRequired===true&&status?.signatureVerificationRequired===true&&status?.evidenceNormalizationRequired===true&&status?.creatorPayloadIsNotPaymentAuthority===true&&status?.processLocalFallback===false&&Array.isArray(status?.configuredProviders)&&status.configuredProviders.length>0;}
+function ingressProven(status){return status?.domain===INGRESS_DOMAIN&&status?.providerNeutral===true&&status?.providerRegistryProvenanceRequired===true&&registryProven(status?.providerRegistryStatus)&&status?.purchaseIntentProvenanceRequired===true&&status?.issuanceProvenanceRequired===true&&status?.processLocalFallback===false;}
 
 async function mountMovieMentorProductionCommercialHttpIngress({app,env=process.env,stripe=null}={}){
  if(!app||typeof app.post!=="function")return closed("express-app-required");

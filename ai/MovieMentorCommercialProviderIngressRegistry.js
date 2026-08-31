@@ -1,5 +1,6 @@
-const VERSION="1.1.0";
+const VERSION="1.2.0";
 const ADAPTER_DOMAIN="iband.movie-mentor.commercial-provider-adapter";
+const DOMAIN="iband.movie-mentor.commercial-provider-ingress-registry";
 
 function text(value){return typeof value==="string"?value.trim():"";}
 function fail(code,message){const error=new Error(message);error.code=code;throw error;}
@@ -16,6 +17,10 @@ function createMovieMentorCommercialProviderIngressRegistry({providers={}}={}){
     entries.set(provider,Object.freeze({verifyDelivery:adapter.verifyDelivery,normalizeEvent:adapter.normalizeEvent,status}));
   }
 
+  const configuredProviders=Object.freeze([...entries.keys()]);
+  const providerStatuses=Object.freeze(Object.fromEntries([...entries].map(([name,entry])=>[name,entry.status])));
+  const status=Object.freeze({version:VERSION,domain:DOMAIN,configuredProviders,providerStatuses,providerAdapterProvenanceRequired:true,rawBodyDeliveryVerificationRequired:true,signatureVerificationRequired:true,evidenceNormalizationRequired:true,creatorPayloadIsNotPaymentAuthority:true,processLocalFallback:false});
+
   function resolveProvider({provider}={}){
     const key=text(provider);
     const adapter=entries.get(key);
@@ -23,8 +28,8 @@ function createMovieMentorCommercialProviderIngressRegistry({providers={}}={}){
     return adapter;
   }
 
-  return Object.freeze({resolveProvider,configuredProviders:Object.freeze([...entries.keys()]),providerStatuses:Object.freeze(Object.fromEntries([...entries].map(([name,entry])=>[name,entry.status])))});
+  return Object.freeze({resolveProvider,configuredProviders,providerStatuses,getStatus:()=>status});
 }
 
-export{VERSION as MOVIE_MENTOR_COMMERCIAL_PROVIDER_INGRESS_REGISTRY_VERSION,createMovieMentorCommercialProviderIngressRegistry};
+export{VERSION as MOVIE_MENTOR_COMMERCIAL_PROVIDER_INGRESS_REGISTRY_VERSION,DOMAIN as MOVIE_MENTOR_COMMERCIAL_PROVIDER_INGRESS_REGISTRY_DOMAIN,createMovieMentorCommercialProviderIngressRegistry};
 export default createMovieMentorCommercialProviderIngressRegistry;
