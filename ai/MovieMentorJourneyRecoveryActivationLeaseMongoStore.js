@@ -1,10 +1,11 @@
 import mongoose from "mongoose";
 
-const VERSION = "1.0.1";
+const VERSION = "1.1.0";
 const DOMAIN = "iband.movie-mentor.journey-recovery-activation-lease-store";
 const SCHEMA = 1;
 const COLLECTION = "movie_mentor_journey_recovery_activation_lease";
 const SERVICE_KEY = "movie-mentor-journey-recovery-activation";
+const CAS = "generation-reference-expiry";
 
 let connectionPromise = null;
 let model = null;
@@ -15,6 +16,23 @@ function mongoUri() { return text(process.env.MONGO_URI || process.env.MONGODB_U
 function date(value) { if (value === null || value === undefined || value === "") return null; const parsed = value instanceof Date ? new Date(value.getTime()) : new Date(value); return Number.isNaN(parsed.getTime()) ? null : parsed; }
 function iso(value) { const parsed = date(value); return parsed ? parsed.toISOString() : ""; }
 function plain(record) { return record && typeof record.toObject === "function" ? record.toObject() : record; }
+
+function capabilityStatus({ configured, readiness }) {
+  return Object.freeze({
+    version: VERSION,
+    domain: DOMAIN,
+    configured,
+    readiness,
+    collection: COLLECTION,
+    serviceKey: SERVICE_KEY,
+    durable: true,
+    singleton: true,
+    generationFenced: true,
+    renewalCas: true,
+    cas: CAS,
+    processLocalFallback: false,
+  });
+}
 
 function getModel() {
   if (model) return model;
@@ -123,6 +141,7 @@ function createMovieMentorJourneyRecoveryActivationLeaseMongoStore({
   connect = ensureConnection,
 } = {}) {
   const storeModel = () => mongoModel || getModel();
+  const status = capabilityStatus({ configured: Boolean(mongoModel) || Boolean(mongoUri()), readiness: mongoModel ? "injected-mongo-model" : (mongoUri() ? "configured" : "configuration-required") });
 
   async function ready() { if (!mongoModel) await connect(); }
 
@@ -177,12 +196,12 @@ function createMovieMentorJourneyRecoveryActivationLeaseMongoStore({
     return written ? normalize(written) : null;
   }
 
-  return Object.freeze({ readLease, createLease, replaceLease });
+  return Object.freeze({ readLease, createLease, replaceLease, getStatus: () => status });
 }
 
 function getMovieMentorJourneyRecoveryActivationLeaseMongoStoreStatus() {
   const configured = Boolean(mongoUri());
-  return Object.freeze({ version: VERSION, configured, readiness: configured ? "configured" : "configuration-required", collection: COLLECTION, serviceKey: SERVICE_KEY, singleton: true, cas: "generation-reference-expiry" });
+  return capabilityStatus({ configured, readiness: configured ? "configured" : "configuration-required" });
 }
 
 export {

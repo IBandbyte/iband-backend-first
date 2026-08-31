@@ -4,6 +4,21 @@ import {
   createMovieMentorJourneyRecoveryActivationLeaseComposition,
 } from "../ai/MovieMentorJourneyRecoveryActivationLeaseComposition.js";
 
+const STORE_STATUS = Object.freeze({
+  version: "test",
+  domain: "iband.movie-mentor.journey-recovery-activation-lease-store",
+  configured: true,
+  readiness: "test-durable-store",
+  collection: "test-shared-durable-activation-lease",
+  serviceKey: "movie-mentor-journey-recovery-activation",
+  durable: true,
+  singleton: true,
+  generationFenced: true,
+  renewalCas: true,
+  cas: "generation-reference-expiry",
+  processLocalFallback: false,
+});
+
 function clone(value) {
   return value == null ? value : structuredClone(value);
 }
@@ -12,11 +27,14 @@ function expectCode(fn, code) {
   assert.throws(fn, (error) => error?.code === code, `expected ${code}`);
 }
 
-function createSharedDurableStore() {
+function createSharedDurableStore({ status = STORE_STATUS } = {}) {
   let durable = null;
   let replaceAckLoss = false;
 
   return {
+    getStatus() {
+      return status;
+    },
     corruptReadWith(error) {
       durable = { __throw: error };
     },
@@ -54,6 +72,14 @@ function createSharedDurableStore() {
   };
 }
 
+function methodOnlyStore() {
+  return {
+    async readLease() { return null; },
+    async createLease() { return null; },
+    async replaceLease() { return null; },
+  };
+}
+
 function binding(processInstanceId, deploymentId) {
   return {
     processInstanceId,
@@ -82,6 +108,28 @@ expectCode(
 console.log("[4G.2] malformed durable store contract fails closed: GREEN");
 
 expectCode(
+  () => createMovieMentorJourneyRecoveryActivationLeaseComposition({ store: methodOnlyStore() }),
+  "MOVIE_MENTOR_RECOVERY_ACTIVATION_LEASE_COMPOSITION_STORE_CAPABILITY_NOT_PROVEN"
+);
+console.log("[4G.2] method-shaped injected store receives zero durability authority: GREEN");
+
+expectCode(
+  () => createMovieMentorJourneyRecoveryActivationLeaseComposition({
+    store: createSharedDurableStore({ status: Object.freeze({ configured: true, injected: true }) }),
+  }),
+  "MOVIE_MENTOR_RECOVERY_ACTIVATION_LEASE_COMPOSITION_STORE_CAPABILITY_NOT_PROVEN"
+);
+console.log("[4G.2] deceptive configured/injected status receives zero durability authority: GREEN");
+
+expectCode(
+  () => createMovieMentorJourneyRecoveryActivationLeaseComposition({
+    store: createSharedDurableStore({ status: Object.freeze({ ...STORE_STATUS, processLocalFallback: true }) }),
+  }),
+  "MOVIE_MENTOR_RECOVERY_ACTIVATION_LEASE_COMPOSITION_STORE_CAPABILITY_NOT_PROVEN"
+);
+console.log("[4G.2] process-local fallback cannot masquerade as durable authority: GREEN");
+
+expectCode(
   () => createMovieMentorJourneyRecoveryActivationLeaseComposition({
     store: createSharedDurableStore(),
     createAuthority: () => ({}),
@@ -106,7 +154,9 @@ const processA = createMovieMentorJourneyRecoveryActivationLeaseComposition(opti
 assert.equal(processA.getStatus().ready, true);
 assert.equal(processA.getStatus().durable, true);
 assert.equal(processA.getStatus().source, "injected-store");
+assert.equal(processA.getStatus().store, STORE_STATUS);
 assert.equal(processA.getStatus().bootWired, false);
+console.log("[4G.2] composition consumes exact store-owned durability proof: GREEN");
 
 const aBinding = binding("process-A", "deploy-A");
 const first = await processA.authorizeActivation(aBinding);
@@ -196,11 +246,13 @@ const serverSource = await readFile(new URL("../server.js", import.meta.url), "u
 assert.equal(/from\s+["'][^"']*server\.js["']/.test(compositionSource), false);
 assert.equal(/\bapp\.use\s*\(/.test(compositionSource), false);
 assert.equal(compositionSource.includes("express"), false);
+assert.equal(compositionSource.includes("freeze({ configured: true, injected: true })"), false);
 assert.equal(serverSource.includes("MovieMentorJourneyRecoveryActivationLeaseComposition"), false);
-console.log("[4G.2] composition has no Express/server mount authority and server.js remains untouched: GREEN");
+console.log("[4G.2] composition has no Express/server mount authority and cannot manufacture injected durability proof: GREEN");
 
-console.log("[4G.2] law: Mongo Store -> Lease Authority -> Composition Boundary -> Torture -> Certification");
+console.log("[4G.2] law: Mongo Store -> Store-Owned Capability Proof -> Lease Authority -> Composition Boundary -> Torture -> Certification");
 console.log("[4G.2] law: missing durable configuration is not permission to degrade to process-local authority");
+console.log("[4G.2] law: method shape is not durability; the store owns the proof");
 console.log("[4G.2] law: restart may recover durable holder reality; stale epochs may not recover authority");
 console.log("[4G.2] law: COMPOSITION FIRST. BOOT LATER.");
 console.log("[4G.2] ALL GREEN");

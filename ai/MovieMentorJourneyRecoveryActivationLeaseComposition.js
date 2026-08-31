@@ -6,8 +6,10 @@ import {
   getMovieMentorJourneyRecoveryActivationLeaseMongoStoreStatus,
 } from "./MovieMentorJourneyRecoveryActivationLeaseMongoStore.js";
 
-const VERSION = "1.0.0";
+const VERSION = "1.1.0";
 const DOMAIN = "iband.movie-mentor.journey-recovery-activation-lease-composition";
+const STORE_DOMAIN = "iband.movie-mentor.journey-recovery-activation-lease-store";
+const STORE_CAS = "generation-reference-expiry";
 
 function freeze(value) {
   return Object.freeze(value);
@@ -32,6 +34,40 @@ function assertStoreContract(store) {
     );
   }
   return store;
+}
+
+function ownedStoreStatus(store) {
+  if (typeof store?.getStatus !== "function") return null;
+  try {
+    const status = store.getStatus();
+    return status && typeof status === "object" && !Array.isArray(status) ? status : null;
+  } catch {
+    return null;
+  }
+}
+
+function storeCapabilityProven(status) {
+  return Boolean(
+    status &&
+    status.domain === STORE_DOMAIN &&
+    status.configured === true &&
+    status.durable === true &&
+    status.singleton === true &&
+    status.generationFenced === true &&
+    status.renewalCas === true &&
+    status.cas === STORE_CAS &&
+    status.processLocalFallback === false
+  );
+}
+
+function assertStoreCapability(status) {
+  if (!storeCapabilityProven(status)) {
+    fail(
+      "MOVIE_MENTOR_RECOVERY_ACTIVATION_LEASE_COMPOSITION_STORE_CAPABILITY_NOT_PROVEN",
+      "Activation lease composition requires store-owned durable singleton fencing and renewal-CAS capability proof."
+    );
+  }
+  return status;
 }
 
 function assertAuthorityContract(authority) {
@@ -60,6 +96,7 @@ function assertAuthorityContract(authority) {
  *   Mongo Store -> Lease Authority -> Composition Boundary.
  *   Composition first. Boot later.
  *   Missing durable configuration is not authority to degrade to process memory.
+ *   The store owns durability proof; composition may consume it, never invent it.
  */
 function createMovieMentorJourneyRecoveryActivationLeaseComposition({
   store = null,
@@ -88,19 +125,21 @@ function createMovieMentorJourneyRecoveryActivationLeaseComposition({
       );
     }
 
-    storeStatus = getStoreStatus();
-    if (!storeStatus?.configured) {
+    const configuredStatus = getStoreStatus();
+    if (!configuredStatus?.configured) {
       fail(
         "MOVIE_MENTOR_RECOVERY_ACTIVATION_LEASE_COMPOSITION_NOT_CONFIGURED",
         "Durable activation lease composition requires configured Mongo durability."
       );
     }
+    assertStoreCapability(configuredStatus);
 
     durableStore = createStore(storeOptions);
     source = "mongo-store";
   }
 
   assertStoreContract(durableStore);
+  storeStatus = assertStoreCapability(ownedStoreStatus(durableStore));
 
   const authority = assertAuthorityContract(
     createAuthority({
@@ -116,8 +155,8 @@ function createMovieMentorJourneyRecoveryActivationLeaseComposition({
     domain: DOMAIN,
     ready: true,
     source,
-    durable: true,
-    store: source === "mongo-store" ? storeStatus : freeze({ configured: true, injected: true }),
+    durable: storeStatus.durable,
+    store: storeStatus,
     bootWired: false,
   });
 
@@ -131,12 +170,13 @@ function createMovieMentorJourneyRecoveryActivationLeaseComposition({
 
 function getMovieMentorJourneyRecoveryActivationLeaseCompositionStatus() {
   const store = getMovieMentorJourneyRecoveryActivationLeaseMongoStoreStatus();
+  const ready = storeCapabilityProven(store);
   return freeze({
     version: VERSION,
     domain: DOMAIN,
-    ready: Boolean(store?.configured),
+    ready,
     source: "mongo-store",
-    durable: true,
+    durable: ready && store.durable === true,
     store,
     bootWired: false,
   });
