@@ -7,7 +7,7 @@ import { synthesizeMovieMentorResponse } from "./MovieMentorSynthesisEngine.js";
 import { buildCurrentCreatorTruthView } from "./MovieMentorCreatorTruthViewControl.js";
 import { readAuthoritativeTurnSource, readAuthoritativeRevision, readAuthoritativeCreatorState } from "./MovieMentorCreatorStateStore.js";
 
-const MOVIE_MENTOR_TURN_RUNTIME_VERSION = "2.4.0";
+const MOVIE_MENTOR_TURN_RUNTIME_VERSION = "2.5.0";
 const s = (value) => (typeof value === "string" ? value.trim() : "");
 
 function clone(value) {
@@ -115,6 +115,7 @@ function resultResponse(canonical, settlement, { replayed = false } = {}) {
         closureCertificateDigest: canonical.closureCertificateDigest,
         reservationId: canonical.reservationId,
         settlement: "consumed",
+        settlementExecutionPhase: settlement?.executionPhase || null,
         settlementIdempotent: settlement?.idempotent === true,
         replayedFromDurableResult: replayed,
       },
@@ -288,11 +289,11 @@ async function acquireExistingExecution({ existing, inferenceExecutionAuthority,
 }
 
 async function replayTerminalTurn({ existing, inferenceExecutionAuthority, settlementAuthority } = {}) {
-  if (!["closed", "finalized"].includes(s(existing?.phase))) return null;
+  if (!["closed", "finalized", "settled"].includes(s(existing?.phase))) return null;
   const canonical = await inferenceExecutionAuthority.readCanonicalResult({ executionId: existing.executionId });
   if (canonical?.authorized !== true || canonical?.committed !== true) return null;
   const settlement = await settlementAuthority.reconcile({ executionId: existing.executionId });
-  if (settlement?.authorized !== true || settlement?.settled !== true || settlement?.outcome !== "consumed") {
+  if (settlement?.authorized !== true || settlement?.settled !== true || settlement?.outcome !== "consumed" || settlement?.executionPhase !== "settled") {
     throw runtimeError("MOVIE_MENTOR_INFERENCE_SETTLEMENT_RECONCILIATION_PENDING", "Durable canonical result exists but settlement has not converged.", {
       executionId: existing.executionId, retryable: true,
     });
@@ -301,7 +302,7 @@ async function replayTerminalTurn({ existing, inferenceExecutionAuthority, settl
 }
 
 async function recoverStagedResultTurn({ existing, inferenceExecutionAuthority, settlementAuthority } = {}) {
-  if (!["closing", "closed", "finalized"].includes(s(existing?.phase))) return null;
+  if (!["closing", "closed", "finalized", "settled"].includes(s(existing?.phase))) return null;
   const candidate = await inferenceExecutionAuthority.readResultCandidate(existing.executionId);
   if (!candidate) {
     throw runtimeError("MOVIE_MENTOR_RESULT_CANDIDATE_RECOVERY_REQUIRED", "Non-executable inference universe has no durable staged result candidate.", {
@@ -324,7 +325,7 @@ async function recoverStagedResultTurn({ existing, inferenceExecutionAuthority, 
     });
   }
   const settlement = await settlementAuthority.reconcile({ executionId: existing.executionId });
-  if (settlement?.authorized !== true || settlement?.settled !== true || settlement?.outcome !== "consumed") {
+  if (settlement?.authorized !== true || settlement?.settled !== true || settlement?.outcome !== "consumed" || settlement?.executionPhase !== "settled") {
     throw runtimeError("MOVIE_MENTOR_INFERENCE_SETTLEMENT_RECONCILIATION_PENDING", "Recovered canonical result has not converged to settlement.", {
       executionId: existing.executionId, retryable: true,
     });
@@ -574,7 +575,7 @@ async function runMovieMentorTurn(input = {}, deps = {}) {
     });
   }
   const settlement = await settlementAuthority.reconcile({ executionId: execution.executionId });
-  if (settlement?.authorized !== true || settlement?.settled !== true || settlement?.outcome !== "consumed") {
+  if (settlement?.authorized !== true || settlement?.settled !== true || settlement?.outcome !== "consumed" || settlement?.executionPhase !== "settled") {
     throw runtimeError("MOVIE_MENTOR_INFERENCE_SETTLEMENT_RECONCILIATION_PENDING", "Canonical result exists but deterministic creator debit has not converged; result remains durable and retryable.", {
       executionId: execution.executionId, reservationId: canonical.reservationId, retryable: true,
     });
