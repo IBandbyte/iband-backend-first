@@ -10,7 +10,10 @@ on:
       - "ai/MovieMentorInferenceSettlementMongoStore.js"
       - "ai/MovieMentorResultCandidateMongoStore.js"
       - "ai/MovieMentorCanonicalResultMongoStore.js"
+      - "ai/MovieMentorCanonicalResultAuthority.js"
       - "scripts/verify-movie-mentor-proof-time-authority.mjs"
+      - "scripts/verify-movie-mentor-proof-creation-time-authority.mjs"
+      - "scripts/verify-movie-mentor-settled-execution-authority.mjs"
       - ".github/workflows/verify-movie-mentor-proof-time-authority.yml"
   pull_request:
     branches: [main]
@@ -35,16 +38,25 @@ jobs:
           node --check ai/MovieMentorInferenceSettlementMongoStore.js
           node --check ai/MovieMentorResultCandidateMongoStore.js
           node --check ai/MovieMentorCanonicalResultMongoStore.js
+          node --check ai/MovieMentorCanonicalResultAuthority.js
           node --check scripts/verify-movie-mentor-proof-time-authority.mjs
-      - name: Verify durable proof-time authority
+          node --check scripts/verify-movie-mentor-proof-creation-time-authority.mjs
+          node --check scripts/verify-movie-mentor-settled-execution-authority.mjs
+      - name: Verify durable proof-time reads
         run: node scripts/verify-movie-mentor-proof-time-authority.mjs
+      - name: Verify durable proof-time writes
+        run: node scripts/verify-movie-mentor-proof-creation-time-authority.mjs
       - name: Regress creator spend reservation authority
         run: node scripts/verify-movie-mentor-inference-spend-authority.mjs
       - name: Regress economic settlement capability boundary
         run: node scripts/verify-movie-mentor-inference-spend-settlement-authority.mjs
       - name: Regress staged result recovery
         run: node scripts/verify-movie-mentor-result-candidate-recovery.mjs
+      - name: Regress canonical result authority
+        run: node scripts/verify-movie-mentor-canonical-result-authority.mjs
       - name: Regress settled execution authority
         run: node scripts/verify-movie-mentor-settled-execution-authority.mjs
       - name: Regress deterministic settlement reconciliation
         run: node scripts/verify-movie-mentor-inference-settlement-reconciliation.mjs
+      - name: Regress durable runtime
+        run: node scripts/verify-movie-mentor-durable-round-trip.mjs
