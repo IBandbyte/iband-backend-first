@@ -1,0 +1,32 @@
+name: Round Six Settled Runtime Build
+on:
+  push:
+    branches: [round-six-settled-runtime]
+    paths:
+      - scripts/patch-round-six-settled-runtime.mjs
+      - .github/workflows/round-six-settled-runtime-build.yml
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: round-six-settled-runtime
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Apply runtime authority patch
+        run: node scripts/patch-round-six-settled-runtime.mjs
+      - name: Syntax gate
+        run: node --check ai/MovieMentorTurnRuntime.js
+      - name: Commit isolated runtime build
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ai/MovieMentorTurnRuntime.js
+          git diff --cached --exit-code && { echo "No runtime patch produced"; exit 1; } || true
+          git commit -m "Require durable settled proof at runtime"
+          git push origin HEAD:round-six-settled-runtime
