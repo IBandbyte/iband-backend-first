@@ -1,0 +1,6 @@
+import fs from "node:fs";
+const files=["ai/MovieMentorInferenceExecutionMongoStore.js","ai/MovieMentorProviderEffectMongoStore.js"];
+const old='const date=v=>{const d=v instanceof Date?new Date(v):new Date(v);return Number.isNaN(d.getTime())?null:d;}';
+const next='const date=v=>{if(v===null||v===undefined||v==="")return null;const d=v instanceof Date?new Date(v):new Date(v);return Number.isNaN(d.getTime())?null:d;}';
+for(const file of files){let source=fs.readFileSync(file,"utf8");if(!source.includes(old))throw new Error(`date authority anchor missing: ${file}`);source=source.replace(old,next);fs.writeFileSync(file,source);}
+const settlement="ai/MovieMentorInferenceSettlementMongoStore.js";let source=fs.readFileSync(settlement,"utf8");const oldIso='const iso=v=>{const d=v instanceof Date?new Date(v):new Date(v);return Number.isNaN(d.getTime())?"":d.toISOString();};';const nextIso='const iso=v=>{if(v===null||v===undefined||v==="")return "";const d=v instanceof Date?new Date(v):new Date(v);return Number.isNaN(d.getTime())?"":d.toISOString();};';if(!source.includes(oldIso))throw new Error("settlement time authority anchor missing");source=source.replace(oldIso,nextIso);fs.writeFileSync(settlement,source);
