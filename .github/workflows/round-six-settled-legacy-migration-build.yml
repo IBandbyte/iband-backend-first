@@ -1,0 +1,34 @@
+name: Round Six Settled Legacy Migration Build
+on:
+  push:
+    branches: [round-six-settled-legacy-migration]
+    paths:
+      - scripts/patch-round-six-settled-legacy-migration.mjs
+      - .github/workflows/round-six-settled-legacy-migration-build.yml
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: round-six-settled-legacy-migration
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Apply settled legacy migration patch
+        run: node scripts/patch-round-six-settled-legacy-migration.mjs
+      - name: Syntax gates
+        run: |
+          node --check ai/MovieMentorInferenceSettlementMongoStore.js
+          node --check ai/MovieMentorInferenceSpendMongoStore.js
+      - name: Commit isolated migration build
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ai/MovieMentorInferenceSettlementMongoStore.js ai/MovieMentorInferenceSpendMongoStore.js
+          git diff --cached --exit-code && { echo "No migration patch produced"; exit 1; } || true
+          git commit -m "Migrate exact legacy debit proof into settled phase"
+          git push origin HEAD:round-six-settled-legacy-migration
