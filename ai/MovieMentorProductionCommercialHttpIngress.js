@@ -8,11 +8,14 @@ import {createMovieMentorProductionEntitlementIssuanceComposition} from "./Movie
 import {createMovieMentorProductionCommercialProviderIngressComposition} from "./MovieMentorProductionCommercialProviderIngressComposition.js";
 import {createMovieMentorStripeCommercialProviderAdapter} from "./MovieMentorStripeCommercialProviderAdapter.js";
 
-const VERSION="1.3.0";
+const VERSION="1.4.0";
 const CREATOR_BASE_PATH="/api/movie-mentor/commercial";
 const STRIPE_WEBHOOK_PATH="/api/movie-mentor/commercial/providers/stripe/webhook";
+const INGRESS_DOMAIN="iband.movie-mentor.commercial-provider-ingress-authority";
 function text(v){return typeof v==="string"?v.trim():"";}
 function closed(reason){return Object.freeze({mounted:false,reason,creatorBasePath:CREATOR_BASE_PATH,stripeWebhookPath:STRIPE_WEBHOOK_PATH,creatorRouter:null});}
+function ownedStatus(authority){if(typeof authority?.getStatus!=="function")return null;try{const status=authority.getStatus();return status&&typeof status==="object"?status:null;}catch{return null;}}
+function ingressProven(status){return status?.domain===INGRESS_DOMAIN&&status?.providerNeutral===true&&status?.purchaseIntentProvenanceRequired===true&&status?.issuanceProvenanceRequired===true&&status?.processLocalFallback===false;}
 
 async function mountMovieMentorProductionCommercialHttpIngress({app,env=process.env,stripe=null}={}){
  if(!app||typeof app.post!=="function")return closed("express-app-required");
@@ -31,6 +34,8 @@ async function mountMovieMentorProductionCommercialHttpIngress({app,env=process.
   checkout=createMovieMentorProductionCommercialCheckoutComposition({purchaseIntentAuthority:purchase.authority,providers:{stripe:adapter}});
   creator=createMovieMentorProductionCreatorCommercialComposition({authentication,purchaseIntentAuthority:purchase.authority,checkoutAuthority:checkout.authority,packageCatalogueAuthority:policy.catalogueAuthority});
   ingress=createMovieMentorProductionCommercialProviderIngressComposition({purchaseIntentAuthority:purchase.authority,issuanceAuthority:issuance.authority,providers:{stripe:adapter}});
+  const ingressStatus=ownedStatus(ingress?.authority);
+  if(ingress?.ready!==true||!ingressProven(ingressStatus))return closed("commercial-provider-ingress-capability-not-proven");
  }catch(error){return closed(error?.code||"commercial-http-composition-failed");}
 
  app.post(STRIPE_WEBHOOK_PATH,express.raw({type:"application/json",limit:"512kb"}),async(req,res)=>{
