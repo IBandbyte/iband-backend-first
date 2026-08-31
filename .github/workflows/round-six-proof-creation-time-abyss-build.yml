@@ -22,6 +22,7 @@ jobs:
           node --check ai/MovieMentorCanonicalResultAuthority.js
           node --check ai/MovieMentorInferenceSettlementMongoStore.js
           node --check scripts/verify-movie-mentor-proof-creation-time-authority.mjs
+          node --check scripts/verify-movie-mentor-settled-execution-authority.mjs
           node scripts/verify-movie-mentor-proof-creation-time-authority.mjs
           node scripts/verify-movie-mentor-proof-time-authority.mjs
           node scripts/verify-movie-mentor-result-candidate-recovery.mjs
@@ -33,7 +34,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add ai/MovieMentorResultCandidateMongoStore.js ai/MovieMentorCanonicalResultAuthority.js ai/MovieMentorInferenceSettlementMongoStore.js
+          git add ai/MovieMentorResultCandidateMongoStore.js ai/MovieMentorCanonicalResultAuthority.js ai/MovieMentorInferenceSettlementMongoStore.js scripts/verify-movie-mentor-settled-execution-authority.mjs
           git diff --cached --quiet && exit 0
           git commit -m "Reject absent proof creation clocks"
           git push
