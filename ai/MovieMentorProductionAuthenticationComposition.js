@@ -1,6 +1,10 @@
-import { createMovieMentorJourneyRecoveryClerkCredentialVerifier } from "./MovieMentorJourneyRecoveryClerkCredentialVerifier.js";
+import {
+  createMovieMentorJourneyRecoveryClerkCredentialVerifier,
+  MOVIE_MENTOR_JOURNEY_RECOVERY_CLERK_CREDENTIAL_VERIFIER_VERSION,
+  MOVIE_MENTOR_JOURNEY_RECOVERY_CLERK_CREDENTIAL_VERIFIER_DOMAIN,
+} from "./MovieMentorJourneyRecoveryClerkCredentialVerifier.js";
 
-const VERSION = "1.0.0";
+const VERSION = "1.1.0";
 const DOMAIN = "iband.movie-mentor.production-authentication-composition";
 const ENV = Object.freeze({
   jwtKey: "MOVIE_MENTOR_CLERK_JWT_KEY",
@@ -42,8 +46,36 @@ function parseAuthorizedParties(value) {
   return parsed;
 }
 
+function verifierCapabilityProven(verifier) {
+  return Boolean(
+    verifier &&
+    typeof verifier.verifyCredential === "function" &&
+    verifier.version === MOVIE_MENTOR_JOURNEY_RECOVERY_CLERK_CREDENTIAL_VERIFIER_VERSION &&
+    verifier.domain === MOVIE_MENTOR_JOURNEY_RECOVERY_CLERK_CREDENTIAL_VERIFIER_DOMAIN &&
+    verifier.provider === "clerk" &&
+    verifier.algorithm === "RS256" &&
+    verifier.networkMode === "pinned-public-key" &&
+    Array.isArray(verifier.authorizedParties) &&
+    verifier.authorizedParties.length > 0
+  );
+}
+
 function closed(reason) {
-  return freeze({ version: VERSION, domain: DOMAIN, ready: false, reason, provider: "clerk", verifyCredential: null, expectedIssuer: null, expectedAudience: null, authorizedParties: freeze([]) });
+  return freeze({
+    version: VERSION,
+    domain: DOMAIN,
+    ready: false,
+    reason,
+    provider: "clerk",
+    verifyCredential: null,
+    expectedIssuer: null,
+    expectedAudience: null,
+    authorizedParties: freeze([]),
+    verifierVersion: null,
+    verifierDomain: null,
+    verifierAlgorithm: null,
+    verifierNetworkMode: null,
+  });
 }
 
 function createMovieMentorProductionAuthenticationComposition({
@@ -68,8 +100,12 @@ function createMovieMentorProductionAuthenticationComposition({
     jwtKey: normalizePem(jwtKeyRaw),
     authorizedParties: parseAuthorizedParties(authorizedPartiesRaw),
   });
-  if (!verifier || typeof verifier.verifyCredential !== "function") {
-    fail("MOVIE_MENTOR_PRODUCTION_AUTHENTICATION_VERIFIER_INVALID", "Certified Clerk verifier did not expose verifyCredential.");
+
+  if (!verifierCapabilityProven(verifier)) {
+    fail(
+      "MOVIE_MENTOR_PRODUCTION_AUTHENTICATION_VERIFIER_CAPABILITY_NOT_PROVEN",
+      "Production authentication requires the Clerk verifier to own the exact pinned-key RS256 capability contract."
+    );
   }
 
   return freeze({
@@ -81,16 +117,36 @@ function createMovieMentorProductionAuthenticationComposition({
     verifyCredential: verifier.verifyCredential,
     expectedIssuer,
     expectedAudience,
-    authorizedParties: freeze([...(verifier.authorizedParties || [])]),
-    verifierVersion: text(verifier.version) || null,
-    verifierDomain: text(verifier.domain) || null,
+    authorizedParties: freeze([...verifier.authorizedParties]),
+    verifierVersion: verifier.version,
+    verifierDomain: verifier.domain,
+    verifierAlgorithm: verifier.algorithm,
+    verifierNetworkMode: verifier.networkMode,
   });
 }
 
 function getMovieMentorProductionAuthenticationCompositionStatus({ env = process.env } = {}) {
-  const configured = [text(env?.[ENV.jwtKey]), text(env?.[ENV.authorizedParties]), text(env?.[ENV.expectedIssuer]), text(env?.[ENV.expectedAudience])].map(Boolean);
+  const configured = [
+    text(env?.[ENV.jwtKey]),
+    text(env?.[ENV.authorizedParties]),
+    text(env?.[ENV.expectedIssuer]),
+    text(env?.[ENV.expectedAudience]),
+  ].map(Boolean);
   const configuredCount = configured.filter(Boolean).length;
-  return freeze({ version: VERSION, domain: DOMAIN, ready: configuredCount === configured.length, configured: configuredCount === configured.length, partiallyConfigured: configuredCount > 0 && configuredCount < configured.length, provider: "clerk", environment: ENV });
+  return freeze({
+    version: VERSION,
+    domain: DOMAIN,
+    ready: configuredCount === configured.length,
+    configured: configuredCount === configured.length,
+    partiallyConfigured: configuredCount > 0 && configuredCount < configured.length,
+    provider: "clerk",
+    verifierDomain: MOVIE_MENTOR_JOURNEY_RECOVERY_CLERK_CREDENTIAL_VERIFIER_DOMAIN,
+    verifierVersion: MOVIE_MENTOR_JOURNEY_RECOVERY_CLERK_CREDENTIAL_VERIFIER_VERSION,
+    verifierAlgorithm: "RS256",
+    verifierNetworkMode: "pinned-public-key",
+    verifierCapabilityRequired: true,
+    environment: ENV,
+  });
 }
 
 export {
