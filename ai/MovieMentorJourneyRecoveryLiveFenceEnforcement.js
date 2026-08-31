@@ -1,4 +1,4 @@
-const VERSION = "1.0.0";
+const VERSION = "1.0.1";
 const DOMAIN = "iband.movie-mentor.journey-recovery-live-fence-enforcement";
 
 function text(value) {
@@ -10,6 +10,7 @@ function freeze(value) {
 }
 
 function safeInstant(value) {
+  if (value === null || value === undefined || value === "") return null;
   const date = value instanceof Date ? new Date(value.getTime()) : new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
 }
