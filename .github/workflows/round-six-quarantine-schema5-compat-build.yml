@@ -1,0 +1,30 @@
+name: Round Six Quarantine Schema5 Compatibility Build
+on:
+  push:
+    branches: [round-six-quarantine-schema5-compat]
+    paths:
+      - scripts/patch-round-six-quarantine-schema5-compat.mjs
+      - .github/workflows/round-six-quarantine-schema5-compat-build.yml
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: round-six-quarantine-schema5-compat
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node scripts/patch-round-six-quarantine-schema5-compat.mjs
+      - run: node --check ai/MovieMentorInferenceExecutionMongoStore.js
+      - name: Commit compatibility build
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ai/MovieMentorInferenceExecutionMongoStore.js
+          git diff --cached --exit-code && { echo "No compatibility patch produced"; exit 1; } || true
+          git commit -m "Preserve schema5 quarantine compatibility"
+          git push origin HEAD:round-six-quarantine-schema5-compat
