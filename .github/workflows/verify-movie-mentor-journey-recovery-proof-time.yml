@@ -1,0 +1,39 @@
+name: Verify Movie Mentor Journey Recovery Proof Time
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Syntax check activation lease authority
+        run: node --check ai/MovieMentorJourneyRecoveryActivationLeaseAuthority.js
+
+      - name: Syntax check live fence enforcement
+        run: node --check ai/MovieMentorJourneyRecoveryLiveFenceEnforcement.js
+
+      - name: Syntax check cross-process activation boundary
+        run: node --check ai/MovieMentorJourneyRecoveryCrossProcessActivationBoundary.js
+
+      - name: Syntax check activation lease Mongo store
+        run: node --check ai/MovieMentorJourneyRecoveryActivationLeaseMongoStore.js
+
+      - name: Syntax check proof-time torture
+        run: node --check scripts/verify-movie-mentor-journey-recovery-proof-time.mjs
+
+      - name: Verify journey recovery proof-time absence law
+        run: node scripts/verify-movie-mentor-journey-recovery-proof-time.mjs
