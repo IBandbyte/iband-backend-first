@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
+import { isMovieMentorLegacyProjectOwnershipAdoptionAttestationOwnedProof } from "./MovieMentorLegacyProjectOwnershipAdoptionBoundary.js";
 
-const MOVIE_MENTOR_PROJECT_OWNERSHIP_REGISTRY_VERSION = "1.3.0";
+const MOVIE_MENTOR_PROJECT_OWNERSHIP_REGISTRY_VERSION = "1.4.0";
 const MOVIE_MENTOR_PROJECT_OWNERSHIP_COLLECTION = "movie_mentor_project_ownership";
 const MOVIE_MENTOR_PROJECT_OWNERSHIP_DOMAIN = "iband.movie-mentor.project-ownership";
 const MOVIE_MENTOR_PROJECT_OWNERSHIP_SCHEMA = 1;
@@ -277,6 +278,9 @@ function createMovieMentorProjectOwnershipAuthority({
       adoptionAttestation?.schema !== LEGACY_ADOPTION_ATTESTATION_SCHEMA
     ) {
       fail("MOVIE_MENTOR_PROJECT_OWNERSHIP_LEGACY_ATTESTATION_REQUIRED", "Legacy ownership adoption requires a certified migration attestation.");
+    }
+    if (!isMovieMentorLegacyProjectOwnershipAdoptionAttestationOwnedProof(adoptionAttestation)) {
+      fail("MOVIE_MENTOR_PROJECT_OWNERSHIP_LEGACY_ATTESTATION_NOT_OWNER_BOUND", "Legacy ownership adoption requires the exact attestation owned by the migration certification boundary.");
     }
 
     const adoptionId = s(adoptionAttestation.adoptionId);
