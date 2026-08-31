@@ -8,6 +8,7 @@ function digest(value){return crypto.createHash("sha256").update(JSON.stringify(
 async function rejects(code,fn){await assert.rejects(fn,error=>error?.code===code);}
 const purchaseCapability=Object.freeze({domain:"iband.movie-mentor.production-commercial-purchase-intent-authority",production:true,durablePurchaseIntent:true,immutableCommercialTerms:true,serverOwnedPolicy:true,processLocalFallback:false});
 const issuanceCapability=Object.freeze({domain:"iband.movie-mentor.production-entitlement-issuance-authority",production:true,durableAtomicIssuance:true,evidenceIdentityUnique:true,issuanceReceiptDurable:true,processLocalFallback:false});
+const providerCapability=Object.freeze({domain:"iband.movie-mentor.commercial-provider-adapter",provider:"provider-a",productionCommercialProviderAdapter:true,checkoutTransport:true,serverOwnedIdempotencyRequired:true,rawBodyDeliveryVerification:true,signatureVerification:true,normalizesCommercialEvidence:true,creatorPayloadIsNotPaymentAuthority:true,processLocalFallback:false});
 
 const snapshot=Object.freeze({packageId:"creator-20",provider:"provider-a",providerProductId:"prod_creator20",amountMinor:1200,currency:"GBP",environment:"live",units:20,policyVersion:"v1"});
 const intent=Object.freeze({commercialIntentId:"intent_1",principalId:"principal_A",...snapshot,policyDigest:digest(snapshot),status:"created"});
@@ -19,6 +20,7 @@ const issuanceAuthority={async issueVerifiedEvidence({evidence}){issuanceCalls++
 const providerA={
   async verifyDelivery({delivery}){return delivery?.signature==="provider-a-valid"?Object.freeze({verified:true,payload:delivery.payload}):Object.freeze({verified:false});},
   async normalizeEvent({verifiedDelivery}){return verifiedDelivery.payload;},
+  getStatus(){return providerCapability;},
 };
 const authority=createMovieMentorCommercialProviderIngressAuthority({providers:{"provider-a":providerA},resolvePurchaseIntent:async({commercialIntentId})=>commercialIntentId===intent.commercialIntentId?intent:null,issuanceAuthority});
 
@@ -26,7 +28,9 @@ await rejects("MOVIE_MENTOR_COMMERCIAL_EVIDENCE_DELIVERY_UNVERIFIED",()=>authori
 assert.equal(issuanceCalls,0,"forged provider delivery must cause zero issuance");
 await rejects("MOVIE_MENTOR_COMMERCIAL_PROVIDER_INGRESS_NOT_CONFIGURED",()=>authority.processProviderDelivery({provider:"provider-b",delivery:{signature:"provider-a-valid",payload:baseEvent}}));
 assert.equal(issuanceCalls,0,"unconfigured provider must cause zero issuance");
-const mismatched=createMovieMentorCommercialProviderIngressAuthority({providers:{"provider-a":{verifyDelivery:providerA.verifyDelivery,normalizeEvent:async({verifiedDelivery})=>({...verifiedDelivery.payload,provider:"provider-b"})}},resolvePurchaseIntent:async()=>intent,issuanceAuthority});
+assert.throws(()=>createMovieMentorCommercialProviderIngressAuthority({providers:{"provider-a":{verifyDelivery:providerA.verifyDelivery,normalizeEvent:providerA.normalizeEvent}},resolvePurchaseIntent:async()=>intent,issuanceAuthority}),error=>error?.code==="MOVIE_MENTOR_COMMERCIAL_PROVIDER_INGRESS_INVALID");
+assert.throws(()=>createMovieMentorCommercialProviderIngressAuthority({providers:{"provider-a":{...providerA,getStatus:()=>({...providerCapability,signatureVerification:false})}},resolvePurchaseIntent:async()=>intent,issuanceAuthority}),error=>error?.code==="MOVIE_MENTOR_COMMERCIAL_PROVIDER_INGRESS_INVALID");
+const mismatched=createMovieMentorCommercialProviderIngressAuthority({providers:{"provider-a":{verifyDelivery:providerA.verifyDelivery,normalizeEvent:async({verifiedDelivery})=>({...verifiedDelivery.payload,provider:"provider-b"}),getStatus:()=>providerCapability}},resolvePurchaseIntent:async()=>intent,issuanceAuthority});
 await rejects("MOVIE_MENTOR_COMMERCIAL_PROVIDER_INGRESS_PROVIDER_MISMATCH",()=>mismatched.processProviderDelivery({provider:"provider-a",delivery:{signature:"provider-a-valid",payload:baseEvent}}));
 assert.equal(issuanceCalls,0,"provider-route identity mismatch must cause zero issuance");
 await rejects("MOVIE_MENTOR_COMMERCIAL_EVIDENCE_AMOUNT_MISMATCH",()=>authority.processProviderDelivery({provider:"provider-a",delivery:{signature:"provider-a-valid",payload:{...baseEvent,amountMinor:1}}}));
@@ -41,15 +45,19 @@ assert.throws(()=>createMovieMentorProductionCommercialProviderIngressCompositio
 assert.throws(()=>createMovieMentorProductionCommercialProviderIngressComposition({purchaseIntentAuthority:{...provenPurchase,getStatus:()=>({...purchaseCapability,durablePurchaseIntent:false})},issuanceAuthority:provenIssuance,providers:{"provider-a":providerA}}),error=>error?.code==="MOVIE_MENTOR_COMMERCIAL_PROVIDER_INGRESS_PURCHASE_INTENT_REQUIRED");
 assert.throws(()=>createMovieMentorProductionCommercialProviderIngressComposition({purchaseIntentAuthority:provenPurchase,issuanceAuthority:{...provenIssuance,getStatus(){throw new Error("uncertain");}},providers:{"provider-a":providerA}}),error=>error?.code==="MOVIE_MENTOR_COMMERCIAL_PROVIDER_INGRESS_ISSUANCE_REQUIRED");
 assert.throws(()=>createMovieMentorProductionCommercialProviderIngressComposition({purchaseIntentAuthority:provenPurchase,issuanceAuthority:provenIssuance,providers:{}}),error=>error?.code==="MOVIE_MENTOR_COMMERCIAL_PROVIDER_INGRESS_NOT_CONFIGURED");
+assert.throws(()=>createMovieMentorProductionCommercialProviderIngressComposition({purchaseIntentAuthority:provenPurchase,issuanceAuthority:provenIssuance,providers:{"provider-a":{verifyDelivery:providerA.verifyDelivery,normalizeEvent:providerA.normalizeEvent}}}),error=>error?.code==="MOVIE_MENTOR_COMMERCIAL_PROVIDER_INGRESS_INVALID");
 const production=createMovieMentorProductionCommercialProviderIngressComposition({purchaseIntentAuthority:provenPurchase,issuanceAuthority:provenIssuance,providers:{"provider-a":providerA}});assert.equal(production.ready,true);assert.deepEqual(production.configuredProviders,["provider-a"]);assert.equal(production.publicRoute,false);assert.equal(production.rawBodyBoundaryRequired,true);
 
 const source=fs.readFileSync(new URL("../ai/MovieMentorProductionCommercialProviderIngressComposition.js",import.meta.url),"utf8");
 assert.match(source,/ownedStatus\(purchaseIntentAuthority\)/);assert.match(source,/ownedStatus\(issuanceAuthority\)/);assert.match(source,/purchaseIntentProvenanceRequired:true/);assert.match(source,/issuanceProvenanceRequired:true/);
+const registrySource=fs.readFileSync(new URL("../ai/MovieMentorCommercialProviderIngressRegistry.js",import.meta.url),"utf8");assert.match(registrySource,/ownedStatus\(adapter\)/);assert.match(registrySource,/rawBodyDeliveryVerification===true/);assert.match(registrySource,/signatureVerification===true/);assert.match(registrySource,/creatorPayloadIsNotPaymentAuthority===true/);
 const server=fs.readFileSync(new URL("../server.js",import.meta.url),"utf8");
 assert.doesNotMatch(server,/MovieMentorProductionCommercialProviderIngressComposition/);
 assert.doesNotMatch(server,/commercial-provider-ingress/);
 
 console.log("✓ forged provider delivery cannot reach entitlement issuance");
+console.log("✓ method-shaped provider adapters grant zero ingress transport credit");
+console.log("✓ ingress registry consumes adapter-owned raw-body signature verification + normalization proof");
 console.log("✓ unconfigured providers fail closed before evidence authority");
 console.log("✓ provider identity cannot change during normalization");
 console.log("✓ amount/product/currency/environment remain bound to immutable purchase-intent terms");
@@ -58,5 +66,5 @@ console.log("✓ method-shaped purchase or issuance neighbours grant zero produc
 console.log("✓ incomplete or uncertain neighbouring capability provenance fails closed");
 console.log("✓ verified final evidence alone crosses the sealed 5A.7 → 5A.6 bridge");
 console.log("✓ provider ingress remains internal until a raw-body-safe production HTTP boundary is explicitly certified");
-console.log("LAW: provider transport may prove a delivery; it may never become Movie Mentor commercial authority, and neighbouring methods are not capability proofs");
+console.log("LAW: provider transport may prove a delivery; it may never become Movie Mentor commercial authority, and transport methods are not capability proofs");
 console.log("5A.11 commercial provider ingress authority torture: GREEN");
