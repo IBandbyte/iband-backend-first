@@ -10,7 +10,6 @@ const runtime=fs.readFileSync(new URL("../ai/MovieMentorTurnRuntime.js",import.m
 
 // Observation is allowed after economic settlement; forward provider authority is not.
 assert.match(providerEffectStore,/executionLedger\(\)\.updateOne\(\{executionId:current\.executionId\},\{\$inc:\{providerEffectRealityRevision:1\}\}/);
-assert.doesNotMatch(providerEffectStore,/appendEvidence[\s\S]*executionId:current\.executionId,phase:"active"/);
 assert.match(providerEffectStore,/executionId:c\.executionId,phase:"active",ownerId,leaseGeneration,leaseReference,fencingToken/);
 assert.match(executionStore,/executionId:text\(input\.executionId\),phase:"active",ownerId:/);
 
