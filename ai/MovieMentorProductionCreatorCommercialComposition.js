@@ -1,7 +1,8 @@
 import {createMovieMentorCreatorCommercialRequestAuthority} from "./MovieMentorCreatorCommercialRequestAuthority.js";
 import {createMovieMentorCommercialRouter} from "../movieMentorCommercial.js";
 
-const VERSION="1.1.0";
+const VERSION="1.2.0";
+const DOMAIN="iband.movie-mentor.production-creator-commercial-composition";
 const AUTH_DOMAIN="iband.movie-mentor.production-authentication-composition";
 const PURCHASE_DOMAIN="iband.movie-mentor.production-commercial-purchase-intent-authority";
 const CHECKOUT_DOMAIN="iband.movie-mentor.production-commercial-checkout-authority";
@@ -24,10 +25,11 @@ function createMovieMentorProductionCreatorCommercialComposition({authentication
   if(typeof packageCatalogueAuthority?.listCommercialPackages!=="function"||!catalogueProven(catalogueStatus))fail("MOVIE_MENTOR_CREATOR_COMMERCIAL_PACKAGE_CATALOGUE_REQUIRED","Production creator commercial composition requires production-proven server-owned package catalogue authority.");
   const requestAuthority=createMovieMentorCreatorCommercialRequestAuthority({verifyCredential:authentication.verifyCredential,expectedIssuer:authentication.expectedIssuer,expectedAudience:authentication.expectedAudience});
   const router=createMovieMentorCommercialRouter({requestAuthority,purchaseIntentAuthority,checkoutAuthority,listCommercialPackages:packageCatalogueAuthority.listCommercialPackages});
-  return Object.freeze({version:VERSION,ready:true,requestAuthority,router,publicRouteCandidate:true,mounted:false,authenticationDomain:authentication.domain,purchaseIntentStatus:purchaseStatus,checkoutStatus,catalogueStatus});
+  const status=Object.freeze({version:VERSION,domain:DOMAIN,production:true,authenticatedCreatorPrincipalRequired:true,authenticationProvenanceRequired:true,authenticationDomain:authentication.domain,authenticationProvider:authentication.provider,authenticationVerifierVersion:authentication.verifierVersion,authenticationVerifierDomain:authentication.verifierDomain,purchaseIntentProvenanceRequired:true,purchaseIntentStatus:purchaseStatus,checkoutProvenanceRequired:true,checkoutStatus,packageCatalogueProvenanceRequired:true,catalogueStatus,publicRouteCandidate:true,processLocalFallback:false});
+  return Object.freeze({version:VERSION,ready:true,requestAuthority,router,publicRouteCandidate:true,mounted:false,authenticationDomain:authentication.domain,purchaseIntentStatus:purchaseStatus,checkoutStatus,catalogueStatus,getStatus(){return status;}});
 }
 
-function getMovieMentorProductionCreatorCommercialCompositionStatus(){return Object.freeze({version:VERSION,authenticatedCreatorPrincipalRequired:true,authenticationProvenanceRequired:true,projectOwnershipNotRequiredForAccountLevelPurchase:true,durablePurchaseIntentRequired:true,purchaseIntentProvenanceRequired:true,checkoutAuthorityRequired:true,checkoutProvenanceRequired:true,serverOwnedPackageCatalogueRequired:true,packageCatalogueProvenanceRequired:true,mounted:false});}
+function getMovieMentorProductionCreatorCommercialCompositionStatus(){return Object.freeze({version:VERSION,domain:DOMAIN,authenticatedCreatorPrincipalRequired:true,authenticationProvenanceRequired:true,projectOwnershipNotRequiredForAccountLevelPurchase:true,durablePurchaseIntentRequired:true,purchaseIntentProvenanceRequired:true,checkoutAuthorityRequired:true,checkoutProvenanceRequired:true,serverOwnedPackageCatalogueRequired:true,packageCatalogueProvenanceRequired:true,runtimeOwnerProofRequired:true,mounted:false});}
 
-export{VERSION as MOVIE_MENTOR_PRODUCTION_CREATOR_COMMERCIAL_COMPOSITION_VERSION,createMovieMentorProductionCreatorCommercialComposition,getMovieMentorProductionCreatorCommercialCompositionStatus};
+export{VERSION as MOVIE_MENTOR_PRODUCTION_CREATOR_COMMERCIAL_COMPOSITION_VERSION,DOMAIN as MOVIE_MENTOR_PRODUCTION_CREATOR_COMMERCIAL_COMPOSITION_DOMAIN,createMovieMentorProductionCreatorCommercialComposition,getMovieMentorProductionCreatorCommercialCompositionStatus};
 export default createMovieMentorProductionCreatorCommercialComposition;
