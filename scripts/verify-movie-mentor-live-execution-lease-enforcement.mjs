@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { createMovieMentorInferenceExecutionLeaseAuthority } from "../ai/MovieMentorInferenceExecutionLeaseAuthority.js";
 import { createFencedInferenceOrchestrationDeps } from "../ai/MovieMentorTurnRuntime.js";
 import { createMovieMentorProductionInferenceExecutionComposition } from "../ai/MovieMentorProductionInferenceExecutionComposition.js";
@@ -33,7 +34,7 @@ const store={
 const authority=createMovieMentorInferenceExecutionLeaseAuthority({store,now:()=>new Date(clock),leaseMs:1000,maxProviderCalls:2,randomId:()=>`id-${++id}`});
 const binding={creatorTurnId:"turn-1",principalId:"creator-1",projectId:"project-1",reservationId:"reservation-1",requestDigest:"digest-1",ownerId:"worker-A",maxProviderCalls:2};
 
-console.log("5A.24 Round Two — live execution lease enforcement torture");
+console.log("5A.24 Round Seven — execution owner-proof mount torture");
 
 const g1=await authority.openExecution(binding);
 assert.equal(g1.authorized,true);assert.equal(g1.leaseGeneration,1);
@@ -54,6 +55,19 @@ assert.equal(exhausted.dispatchAuthorized,false);assert.equal(exhausted.reason,"
 
 const composed=createMovieMentorProductionInferenceExecutionComposition({store});
 assert.equal(composed.ready,true);assert.equal(typeof composed.authority.claimProviderCall,"function");
+const composedStatus=composed.getStatus();
+assert.equal(composedStatus,composed.status);
+assert.equal(composed.getStatus(),composedStatus);
+assert.equal(Object.isFrozen(composedStatus),true);
+assert.equal(composedStatus.domain,"iband.movie-mentor.production-inference-execution-composition");
+assert.equal(composedStatus.production,true);
+assert.equal(composedStatus.ready,true);
+assert.equal(composedStatus.authority,composed.authority);
+assert.equal(composedStatus.storeStatus,composed.storeStatus);
+assert.equal(composedStatus.fullExecutionAuthority,false);
+const reconstructedStatus=Object.freeze({...composedStatus});
+assert.deepEqual(reconstructedStatus,composedStatus);
+assert.notEqual(reconstructedStatus,composedStatus);
 
 const unprovenExecutionStore={...store,getStatus:undefined};
 const rejectedExecution=createMovieMentorProductionInferenceExecutionComposition({store:unprovenExecutionStore});
@@ -82,6 +96,19 @@ const methodShapedCandidateStore={stageCandidate:async()=>null,readByExecution:a
 const rejectedCandidate=createMovieMentorProductionInferenceExecutionComposition({store,effectStore:provenEffectStore,candidateStore:methodShapedCandidateStore});
 assert.equal(rejectedCandidate.ready,false);
 assert.equal(rejectedCandidate.reason,"result-candidate-injected-capability-not-proven");
+
+const serverSource=readFileSync(new URL("../server.js",import.meta.url),"utf8");
+assert.match(serverSource,/const EXECUTION_DOMAIN="iband\.movie-mentor\.production-inference-execution-composition"/);
+assert.match(serverSource,/function executionCompositionProven\(composition,status\)/);
+assert.match(serverSource,/status===composition\?\.status/);
+assert.match(serverSource,/status\?\.authority===composition\?\.authority/);
+assert.match(serverSource,/status\?\.storeStatus===composition\?\.storeStatus/);
+assert.match(serverSource,/status\?\.effectStoreStatus===composition\?\.effectStoreStatus/);
+assert.match(serverSource,/status\?\.resultStoreStatus===composition\?\.resultStoreStatus/);
+assert.match(serverSource,/status\?\.candidateStoreStatus===composition\?\.candidateStoreStatus/);
+assert.match(serverSource,/status\?\.fullExecutionAuthority===true/);
+assert.match(serverSource,/!executionCompositionProven\(executionComposition,executionStatus\)/);
+assert.ok(serverSource.indexOf("!executionCompositionProven(executionComposition,executionStatus)")<serverSource.indexOf("createMovieMentorTurnRouter({requestAuthority"),"execution owner proof must be consumed before creator router construction");
 
 const slots=[], executed=[],dispatches=[],evidence=[];
 const fakeExecution={authorized:true,executionId:"execution-live",ownerId:"owner-live",leaseGeneration:7,leaseReference:"lease-7",fencingToken:"fence-7"};
@@ -128,8 +155,11 @@ console.log("✓ duplicate logical slot cannot mint second dispatch authority");
 console.log("✓ generation takeover fences zombie provider execution");
 console.log("✓ provider-call budget is enforced at admission");
 console.log("✓ injected execution/provider-effect/canonical-result/result-candidate stores receive zero capability credit from method shape or composition");
-console.log("✓ each injected dependency must own getStatus() and expose the exact durable capability contract consumed by production composition");
+console.log("✓ production execution composition owns one stable immutable proof object bound to its exact authority and store statuses");
+console.log("✓ reconstructed structurally equal proof is not the owner proof");
+console.log("✓ server consumes the exact production execution owner proof before creator router construction; readiness plus method shape cannot mount the route");
 console.log("✓ Semantic, Story, Character, Continuity and Synthesis cross claim → durable UNKNOWN → current dispatch fence before provider invocation");
 console.log("✓ denied claim prevents UNKNOWN creation, dispatch fencing and provider invocation");
-console.log("LAW: NO COMPONENT GETS CREDIT FOR ITS NEIGHBOUR'S PROOF. METHOD PRESENCE IS NOT DURABLE AUTHORITY. NO SUCCESSFUL DURABLE CALL CLAIM + NO DURABLE UNKNOWN + NO CURRENT DISPATCH FENCE → NO PROVIDER DISPATCH");
-console.log("5A.24 Round Two torture: GREEN");
+console.log("LAW: EXECUTION STORE PROOFS → PRODUCTION EXECUTION COMPOSITION OWNS ONE STABLE PROOF → SERVER CONSUMES THAT EXACT OWNER PROOF → ROUTE");
+console.log("LAW: READY + METHOD SHAPE IS NOT HTTP AUTHORITY. PROOF DOES NOT REINCARNATE.");
+console.log("5A.24 Round Seven torture: GREEN");
