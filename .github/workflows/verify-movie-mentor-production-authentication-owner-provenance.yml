@@ -1,0 +1,33 @@
+name: Verify Movie Mentor Production Authentication Owner Provenance
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ai/MovieMentorProductionAuthenticationComposition.js"
+      - "ai/MovieMentorProductionCommercialHttpIngress.js"
+      - "server.js"
+      - "scripts/verify-movie-mentor-production-authentication-owner-provenance.mjs"
+      - ".github/workflows/verify-movie-mentor-production-authentication-owner-provenance.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - name: Syntax check authentication owner provenance
+        run: |
+          node --check ai/MovieMentorProductionAuthenticationComposition.js
+          node --check ai/MovieMentorProductionCommercialHttpIngress.js
+          node --check server.js
+          node --check scripts/verify-movie-mentor-production-authentication-owner-provenance.mjs
+      - name: Verify production authentication owner provenance
+        run: node scripts/verify-movie-mentor-production-authentication-owner-provenance.mjs

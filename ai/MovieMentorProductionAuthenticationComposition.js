@@ -4,7 +4,7 @@ import {
   MOVIE_MENTOR_JOURNEY_RECOVERY_CLERK_CREDENTIAL_VERIFIER_DOMAIN,
 } from "./MovieMentorJourneyRecoveryClerkCredentialVerifier.js";
 
-const VERSION = "1.1.0";
+const VERSION = "1.2.0";
 const DOMAIN = "iband.movie-mentor.production-authentication-composition";
 const ENV = Object.freeze({
   jwtKey: "MOVIE_MENTOR_CLERK_JWT_KEY",
@@ -75,6 +75,9 @@ function closed(reason) {
     verifierDomain: null,
     verifierAlgorithm: null,
     verifierNetworkMode: null,
+    verifier: null,
+    status: null,
+    getStatus() { return null; },
   });
 }
 
@@ -108,20 +111,45 @@ function createMovieMentorProductionAuthenticationComposition({
     );
   }
 
+  const authorizedParties = freeze([...verifier.authorizedParties]);
+  const verifyCredential = verifier.verifyCredential;
+  const status = freeze({
+    version: VERSION,
+    domain: DOMAIN,
+    production: true,
+    ready: true,
+    provider: "clerk",
+    ownerBoundAuthentication: true,
+    pinnedPublicKeyVerifierRequired: true,
+    verifier,
+    verifyCredential,
+    expectedIssuer,
+    expectedAudience,
+    authorizedParties,
+    verifierVersion: verifier.version,
+    verifierDomain: verifier.domain,
+    verifierAlgorithm: verifier.algorithm,
+    verifierNetworkMode: verifier.networkMode,
+    processLocalFallback: false,
+  });
+
   return freeze({
     version: VERSION,
     domain: DOMAIN,
     ready: true,
     reason: "production-authentication-composed",
     provider: "clerk",
-    verifyCredential: verifier.verifyCredential,
+    verifyCredential,
     expectedIssuer,
     expectedAudience,
-    authorizedParties: freeze([...verifier.authorizedParties]),
+    authorizedParties,
     verifierVersion: verifier.version,
     verifierDomain: verifier.domain,
     verifierAlgorithm: verifier.algorithm,
     verifierNetworkMode: verifier.networkMode,
+    verifier,
+    status,
+    getStatus() { return status; },
   });
 }
 
@@ -145,6 +173,7 @@ function getMovieMentorProductionAuthenticationCompositionStatus({ env = process
     verifierAlgorithm: "RS256",
     verifierNetworkMode: "pinned-public-key",
     verifierCapabilityRequired: true,
+    ownerProofRequired: true,
     environment: ENV,
   });
 }
