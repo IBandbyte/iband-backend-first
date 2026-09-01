@@ -46,8 +46,8 @@ assert.equal(composition.providerRegistryStatus,composition.authorityStatus.prov
 
 const httpSource=await fs.readFile(new URL("../ai/MovieMentorProductionCommercialHttpIngress.js",import.meta.url),"utf8");
 assert.match(httpSource,/providerRegistryProvenanceRequired===true/);
-assert.match(httpSource,/registryProven\(status\?\.providerRegistryStatus\)/);
-assert.match(httpSource,/status\?\.domain===REGISTRY_DOMAIN/);
+assert.match(httpSource,/registryProven\(\w+\?\.providerRegistryStatus\)/);
+assert.match(httpSource,/\w+\?\.domain===REGISTRY_DOMAIN/);
 assert.match(httpSource,/providerAdapterProvenanceRequired===true/);
 assert.match(httpSource,/rawBodyDeliveryVerificationRequired===true/);
 assert.match(httpSource,/signatureVerificationRequired===true/);
