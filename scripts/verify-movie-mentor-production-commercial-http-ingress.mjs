@@ -1,16 +1,30 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
+import {mountMovieMentorProductionCommercialHttpIngress} from "../ai/MovieMentorProductionCommercialHttpIngress.js";
 
 const source=await fs.readFile(new URL("../ai/MovieMentorProductionCommercialHttpIngress.js",import.meta.url),"utf8");
 const server=await fs.readFile(new URL("../server.js",import.meta.url),"utf8");
 assert.match(source,/express\.raw\(\{type:"application\/json",limit:"512kb"\}\)/,"Stripe webhook must preserve raw bytes.");
 assert.match(source,/Stripe-Signature/);assert.match(source,/delivery:\{rawBody:req\.body,signature:/);assert.match(source,/createMovieMentorStripeCommercialProviderAdapter/);assert.match(source,/createMovieMentorProductionCommercialProviderIngressComposition/);assert.match(source,/createMovieMentorProductionEntitlementIssuanceComposition/);assert.match(source,/createMovieMentorProductionCreatorCommercialComposition/);assert.doesNotMatch(source,/principalId:req\.body|units:req\.body|amountMinor:req\.body|currency:req\.body/);assert.match(source,/if\(!stripe\|\|!webhookSecret\|\|!successUrl\|\|!cancelUrl\)return closed/);
+assert.match(source,/isMovieMentorProductionAuthenticationOwnerProof/);assert.match(source,/isMovieMentorProductionAuthenticationOwnerProof\(c,s\)/,"Commercial HTTP boundary must consume the authentication owner's private proof predicate.");assert.match(source,/authenticationProven\(authentication,authenticationStatus\)/);assert.match(source,/production-authentication-owner-proof-not-proven/);
 assert.match(source,/ownedStatus\(ingress\?\.authority\)/,"HTTP mount must consume ingress-authority-owned capability proof.");
 assert.match(source,/ingressProven\(ingressStatus\)/,"HTTP mount must require exact ingress provenance before route registration.");
 assert.match(source,/s\?\.domain===INGRESS_DOMAIN/);assert.match(source,/purchaseIntentProvenanceRequired===true/);assert.match(source,/issuanceProvenanceRequired===true/);assert.match(source,/processLocalFallback===false/);
 assert.match(source,/commercial-provider-ingress-capability-not-proven/);
-const proofIndex=source.indexOf("ingressProven(ingressStatus)");const routeIndex=source.indexOf("app.post(STRIPE_WEBHOOK_PATH");assert(proofIndex>=0&&routeIndex>proofIndex,"No provider HTTP route may mount before ingress authority provenance is proven.");
+const authProofIndex=source.indexOf("authenticationProven(authentication,authenticationStatus)");const proofIndex=source.indexOf("ingressProven(ingressStatus)");const routeIndex=source.indexOf("app.post(STRIPE_WEBHOOK_PATH");assert(authProofIndex>=0&&routeIndex>authProofIndex,"No commercial HTTP route may mount before exact authentication owner proof is consumed.");assert(proofIndex>=0&&routeIndex>proofIndex,"No provider HTTP route may mount before ingress authority provenance is proven.");
 assert.match(server,/await mountMovieMentorProductionCommercialHttpIngress\(\{app,stripe:stripeClient\}\)/);const rawIndex=server.indexOf("mountMovieMentorProductionCommercialHttpIngress");const jsonIndex=server.indexOf("app.use(express.json");const creatorIndex=server.indexOf("app.use(commercialMount.creatorBasePath");assert(rawIndex>=0&&jsonIndex>rawIndex,"Raw provider ingress must compose before JSON parser.");assert(creatorIndex>jsonIndex,"Creator commercial router must mount after JSON and browser-origin middleware.");assert.doesNotMatch(source,/app\.use\(CREATOR_BASE_PATH,creator\.router\)/,"Pre-parser ingress must never mount browser creator routes.");
+
+const verifyCredential=async()=>Object.freeze({verified:true,principalId:"creator-1"});
+const verifier=Object.freeze({version:"1.0.0",domain:"iband.movie-mentor.journey-recovery-clerk-credential-verifier",provider:"clerk",algorithm:"RS256",networkMode:"pinned-public-key",authorizedParties:Object.freeze(["https://app.example.com"]),verifyCredential});
+const forgedStatus=Object.freeze({version:"1.3.0",domain:"iband.movie-mentor.production-authentication-composition",production:true,ready:true,provider:"clerk",ownerBoundAuthentication:true,pinnedPublicKeyVerifierRequired:true,verifier,verifyCredential,expectedIssuer:"https://issuer.example.com",expectedAudience:"movie-mentor",authorizedParties:verifier.authorizedParties,verifierVersion:verifier.version,verifierDomain:verifier.domain,verifierAlgorithm:verifier.algorithm,verifierNetworkMode:verifier.networkMode,processLocalFallback:false});
+const persuasiveForgery=Object.freeze({version:"1.3.0",domain:forgedStatus.domain,ready:true,reason:"production-authentication-composed",provider:"clerk",verifyCredential,expectedIssuer:forgedStatus.expectedIssuer,expectedAudience:forgedStatus.expectedAudience,authorizedParties:verifier.authorizedParties,verifierVersion:verifier.version,verifierDomain:verifier.domain,verifierAlgorithm:verifier.algorithm,verifierNetworkMode:verifier.networkMode,verifier,status:forgedStatus,getStatus(){return forgedStatus;}});
+assert.equal(persuasiveForgery.status,persuasiveForgery.getStatus());assert.equal(persuasiveForgery.status.verifier,persuasiveForgery.verifier);assert.equal(persuasiveForgery.status.verifyCredential,persuasiveForgery.verifyCredential);
+let postCalls=0;const fakeApp={post(){postCalls+=1;}};
+const forgedMount=await mountMovieMentorProductionCommercialHttpIngress({app:fakeApp,env:{},stripe:{},createAuthentication:()=>persuasiveForgery});
+assert.equal(forgedMount.mounted,false);assert.equal(forgedMount.reason,"production-authentication-owner-proof-not-proven");assert.equal(postCalls,0,"A self-consistent forged authentication composition must receive zero HTTP route authority.");
+
 console.log("PASS 5A.15 regression: raw signed provider ingress remains before JSON while authenticated creator commerce is mounted only after browser-origin/CORS/JSON authority.");
-console.log("PASS ROUND SEVEN: production HTTP ingress consumes exact provider-ingress authority provenance before exposing the irreversible webhook boundary.");
-console.log("LAW: composition readiness is not HTTP authority; the boundary must consume the authority's own proof before mounting.");
+console.log("PASS GATES OF PERSUASION: commercial HTTP consumes the authentication owner's private proof predicate before any irreversible route registration.");
+console.log("PASS: a completely self-consistent forged authentication composition receives ZERO commercial HTTP route authority.");
+console.log("LAW: AUTHENTICATION OWNER REGISTRY → AUTHENTICATION OWNER PREDICATE → COMMERCIAL HTTP BOUNDARY → ROUTE.");
+console.log("🐔 Zorg: ‘But every field agrees.’ ⚔️ Kraken: ‘YOU ARE NOT IN THE OWNER REGISTRY, ZORG.’");
