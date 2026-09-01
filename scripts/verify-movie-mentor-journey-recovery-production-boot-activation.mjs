@@ -9,6 +9,14 @@ function readyStatus() {
   return Object.freeze({ ready: true, durable: true, source: "test-durable-store", bootWired: false });
 }
 
+function ownerStatus() {
+  return Object.freeze({
+    domain: "iband.movie-mentor.journey-recovery-activation-lease-composition",
+    ready: true,
+    durable: true,
+  });
+}
+
 {
   let created = 0;
   const result = createMovieMentorJourneyRecoveryProductionBootActivation({
@@ -37,6 +45,7 @@ function readyStatus() {
 
 {
   let received = null;
+  const status = ownerStatus();
   const composition = {
     async authorizeActivation(input) {
       received = input;
@@ -44,6 +53,7 @@ function readyStatus() {
     },
     async renewActivation(input) { return { authorized: true, ...input }; },
     async assertFence(input) { return { authorized: true, ...input }; },
+    getStatus() { return status; },
   };
   const result = createMovieMentorJourneyRecoveryProductionBootActivation({
     env: { [MOVIE_MENTOR_JOURNEY_RECOVERY_DEPLOYMENT_ENV]: "deploy-green" },
@@ -56,6 +66,8 @@ function readyStatus() {
   assert.equal(result.bootWired, true);
   assert.equal(result.deploymentId, "deploy-green");
   assert.equal(result.processInstanceId, "recovery-process-4242-process-token");
+  assert.equal(result.composition, composition, "boot proof must bind the exact activation composition owner");
+  assert.equal(result.compositionStatus, status, "boot proof must bind the exact composition-owned status");
   assert.equal(typeof result.activationAuthority, "function");
   assert.equal(typeof result.renewActivation, "function");
   assert.equal(typeof result.assertFence, "function");
@@ -75,6 +87,25 @@ function readyStatus() {
       getCompositionStatus: readyStatus,
     }),
     (error) => error?.code === "MOVIE_MENTOR_RECOVERY_PRODUCTION_BOOT_ACTIVATION_AUTHORITY_INVALID"
+  );
+}
+
+{
+  const lookalike = {
+    authorizeActivation: async () => ({}),
+    renewActivation: async () => ({}),
+    assertFence: async () => ({}),
+    getStatus: () => ({ ...ownerStatus(), domain: "forged.activation.composition" }),
+  };
+  assert.throws(
+    () => createMovieMentorJourneyRecoveryProductionBootActivation({
+      env: { [MOVIE_MENTOR_JOURNEY_RECOVERY_DEPLOYMENT_ENV]: "deploy-lookalike" },
+      pid: 2,
+      randomId: () => "token",
+      createComposition: () => lookalike,
+      getCompositionStatus: readyStatus,
+    }),
+    (error) => error?.code === "MOVIE_MENTOR_RECOVERY_PRODUCTION_BOOT_ACTIVATION_CAPABILITY_NOT_PROVEN"
   );
 }
 
@@ -105,6 +136,8 @@ console.log("✅ Missing deployment identity remains fail-closed");
 console.log("✅ Unready durable composition cannot be bypassed");
 console.log("✅ Runtime process identity is unique process-scoped evidence, not authority");
 console.log("✅ Final boot assembly receives only the certified activation functions and binding identities");
+console.log("✅ Activation boot proof binds the exact composition owner and exact owner status");
+console.log("✅ Shape-equivalent or wrong-domain composition proof fails closed");
 console.log("✅ Mongo store and lease authority internals do not leak directly into server.js");
 console.log("✅ Authentication/exposure assembly now sits above activation without weakening durable authority");
 console.log("🏏💥 DROP. THE. IMPORT. The only import allowed through is the certified boot adapter.");

@@ -1,14 +1,8 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import {
-  createMovieMentorJourneyRecoveryLiveFenceEnforcement,
-} from "../ai/MovieMentorJourneyRecoveryLiveFenceEnforcement.js";
-import {
-  authorizeMovieMentorJourneyRecoveryProcessActivation,
-} from "../ai/MovieMentorJourneyRecoveryCrossProcessActivationBoundary.js";
-import {
-  createMovieMentorJourneyRecoveryProductionBootActivation,
-} from "../ai/MovieMentorJourneyRecoveryProductionBootActivation.js";
+import { createMovieMentorJourneyRecoveryLiveFenceEnforcement } from "../ai/MovieMentorJourneyRecoveryLiveFenceEnforcement.js";
+import { authorizeMovieMentorJourneyRecoveryProcessActivation } from "../ai/MovieMentorJourneyRecoveryCrossProcessActivationBoundary.js";
+import { createMovieMentorJourneyRecoveryProductionBootActivation } from "../ai/MovieMentorJourneyRecoveryProductionBootActivation.js";
 
 console.log("[4G.4] production activation lease renewal + live fence torture starting");
 
@@ -36,20 +30,13 @@ let routerCalls = 0;
 const live = createMovieMentorJourneyRecoveryLiveFenceEnforcement({
   activationEvidence: BASE,
   now: () => new Date(nowMs),
-  setTimer: (fn, delay) => {
-    const handle = { fn, delay, id: scheduled.length + 1 };
-    scheduled.push(handle);
-    return handle;
-  },
+  setTimer: (fn, delay) => { const handle = { fn, delay, id: scheduled.length + 1 }; scheduled.push(handle); return handle; },
   clearTimer: (handle) => cleared.push(handle?.id),
   renewActivation: async (request) => {
     renewCalls += 1;
     assert.equal(request.fencingToken, BASE.fencingToken);
     assert.equal(request.activationEpoch, BASE.activationEpoch);
-    return Object.freeze({
-      ...BASE,
-      expiresAt: "2026-08-28T18:02:00.000Z",
-    });
+    return Object.freeze({ ...BASE, expiresAt: "2026-08-28T18:02:00.000Z" });
   },
   assertFence: async (request) => {
     assertCalls += 1;
@@ -62,16 +49,12 @@ assert.equal(live.getStatus().authorized, true);
 live.start();
 assert.equal(scheduled.length, 1);
 assert.equal(scheduled[0].delay, 20_000);
-
 const renewed = await live.renewNow();
 assert.equal(renewed.authorized, true);
 assert.equal(renewCalls, 1);
 assert.equal(live.getStatus().expiresAt, "2026-08-28T18:02:00.000Z");
 
-const guarded = live.guardRouter(async () => {
-  routerCalls += 1;
-  return "router-ran";
-});
+const guarded = live.guardRouter(async () => { routerCalls += 1; return "router-ran"; });
 const allowedResult = await guarded({}, {}, () => {});
 assert.equal(allowedResult, "router-ran");
 assert.equal(assertCalls, 1);
@@ -83,17 +66,9 @@ const takeover = createMovieMentorJourneyRecoveryLiveFenceEnforcement({
   activationEvidence: BASE,
   now: () => new Date(nowMs),
   renewActivation: async () => ({ ...BASE, expiresAt: "2026-08-28T18:02:00.000Z" }),
-  assertFence: async () => {
-    takeoverFenceChecks += 1;
-    return Object.freeze({ authorized: false, reason: "activation-lease-fenced" });
-  },
+  assertFence: async () => { takeoverFenceChecks += 1; return Object.freeze({ authorized: false, reason: "activation-lease-fenced" }); },
 });
-const takeoverResponse = {
-  statusCode: null,
-  body: null,
-  status(code) { this.statusCode = code; return this; },
-  json(body) { this.body = body; return body; },
-};
+const takeoverResponse = { statusCode: null, body: null, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return body; } };
 await takeover.guardRouter(async () => { takeoverRouterCalls += 1; })({}, takeoverResponse, () => {});
 assert.equal(takeoverFenceChecks, 1);
 assert.equal(takeoverRouterCalls, 0);
@@ -111,11 +86,7 @@ const uncertain = createMovieMentorJourneyRecoveryLiveFenceEnforcement({
 const uncertainRenewal = await uncertain.renewNow();
 assert.equal(uncertainRenewal.authorized, false);
 assert.equal(uncertainRenewal.reason, "activation-lease-renewal-uncertain");
-const uncertainResponse = {
-  statusCode: null,
-  status(code) { this.statusCode = code; return this; },
-  json(body) { return body; },
-};
+const uncertainResponse = { statusCode: null, status(code) { this.statusCode = code; return this; }, json(body) { return body; } };
 await uncertain.guardRouter(async () => { throw new Error("must never run"); })({}, uncertainResponse, () => {});
 assert.equal(uncertainResponse.statusCode, 503);
 assert.equal(uncertainAssertCalls, 0);
@@ -123,13 +94,7 @@ assert.equal(uncertainAssertCalls, 0);
 const stale = createMovieMentorJourneyRecoveryLiveFenceEnforcement({
   activationEvidence: BASE,
   now: () => new Date(nowMs),
-  renewActivation: async () => ({
-    ...BASE,
-    activationEpoch: "8",
-    activationReference: "activation-8",
-    fencingToken: "fence-8-new-owner",
-    expiresAt: "2026-08-28T18:02:00.000Z",
-  }),
+  renewActivation: async () => ({ ...BASE, activationEpoch: "8", activationReference: "activation-8", fencingToken: "fence-8-new-owner", expiresAt: "2026-08-28T18:02:00.000Z" }),
   assertFence: async () => BASE,
 });
 const staleRenewal = await stale.renewNow();
@@ -167,18 +132,21 @@ const incompleteBoundary = await authorizeMovieMentorJourneyRecoveryProcessActiv
   basePath: BASE.basePath,
   expectedIssuer: BASE.expectedIssuer,
   expectedAudience: BASE.expectedAudience,
-  authorizeActivation: async () => ({
-    ...BASE,
-    fencingToken: "",
-  }),
+  authorizeActivation: async () => ({ ...BASE, fencingToken: "" }),
 });
 assert.equal(incompleteBoundary.authorized, false);
 assert.equal(incompleteBoundary.reason, "cross-process-activation-evidence-incomplete");
 
+const compositionStatus = Object.freeze({
+  domain: "iband.movie-mentor.journey-recovery-activation-lease-composition",
+  ready: true,
+  durable: true,
+});
 const composition = Object.freeze({
   authorizeActivation: async () => BASE,
   renewActivation: async () => BASE,
   assertFence: async () => BASE,
+  getStatus: () => compositionStatus,
 });
 const production = createMovieMentorJourneyRecoveryProductionBootActivation({
   env: { MOVIE_MENTOR_RECOVERY_DEPLOYMENT_ID: "deployment-a" },
@@ -188,6 +156,8 @@ const production = createMovieMentorJourneyRecoveryProductionBootActivation({
   createComposition: () => composition,
 });
 assert.equal(production.ready, true);
+assert.equal(production.composition, composition, "production boot must retain exact activation composition owner");
+assert.equal(production.compositionStatus, compositionStatus, "production boot must retain exact owner status proof");
 assert.equal(typeof production.activationAuthority, "function");
 assert.equal(typeof production.renewActivation, "function");
 assert.equal(typeof production.assertFence, "function");
@@ -212,6 +182,7 @@ assert.match(bootMount, /existing\.liveFence\.assertCurrentAuthority\(\)/);
 
 console.log("[4G.4] mount evidence preserves fencing token + expiry");
 console.log("[4G.4] production boot exposes authorize + renew + assert authority");
+console.log("[4G.4] production boot consumes exact activation composition owner proof");
 console.log("[4G.4] successful renewal advances expiry without changing fencing identity");
 console.log("[4G.4] request-time assertFence gates every live recovery request");
 console.log("[4G.4] takeover / stale fence closes route before recovery router executes");
