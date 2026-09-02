@@ -1,4 +1,4 @@
-name: Verify Movie Mentor Gates of Execution Provider Dispatch Owner Proof
+name: Verify Movie Mentor Gates of Execution Provider Dispatch Durable Proof
 
 on:
   workflow_dispatch:
@@ -6,11 +6,11 @@ on:
     branches: [main]
     paths:
       - "ai/MovieMentorInferenceExecutionLeaseAuthority.js"
-      - "scripts/verify-movie-mentor-provider-dispatch-owner-proof.mjs"
-      - ".github/workflows/verify-movie-mentor-provider-dispatch-owner-proof.yml"
+      - "scripts/verify-movie-mentor-provider-dispatch-durable-proof.mjs"
+      - ".github/workflows/verify-movie-mentor-provider-dispatch-durable-proof.yml"
 
 jobs:
-  verify-provider-dispatch-owner-proof:
+  verify-provider-dispatch-durable-proof:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -28,7 +28,7 @@ jobs:
         run: node --check ai/MovieMentorInferenceExecutionLeaseAuthority.js
 
       - name: Check provider dispatch gate syntax
-        run: node --check scripts/verify-movie-mentor-provider-dispatch-owner-proof.mjs
+        run: node --check scripts/verify-movie-mentor-provider-dispatch-durable-proof.mjs
 
-      - name: Verify provider dispatch owner proof
-        run: node scripts/verify-movie-mentor-provider-dispatch-owner-proof.mjs
+      - name: Verify provider dispatch durable proof
+        run: node scripts/verify-movie-mentor-provider-dispatch-durable-proof.mjs
