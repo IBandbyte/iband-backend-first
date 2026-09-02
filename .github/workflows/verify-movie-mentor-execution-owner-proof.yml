@@ -1,0 +1,24 @@
+name: Verify Movie Mentor Gates of Execution Owner Proof
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "ai/MovieMentorInferenceExecutionLeaseAuthority.js"
+      - "scripts/verify-movie-mentor-execution-owner-proof.mjs"
+      - ".github/workflows/verify-movie-mentor-execution-owner-proof.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install
+      - run: node --check ai/MovieMentorInferenceExecutionLeaseAuthority.js
+      - run: node --check scripts/verify-movie-mentor-execution-owner-proof.mjs
+      - run: node scripts/verify-movie-mentor-execution-owner-proof.mjs
