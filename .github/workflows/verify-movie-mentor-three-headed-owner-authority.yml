@@ -1,0 +1,29 @@
+name: Verify Movie Mentor Three-Headed Owner Authority
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "server.js"
+      - "ai/MovieMentorProductionInferenceSpendComposition.js"
+      - "ai/MovieMentorProductionInferenceExecutionComposition.js"
+      - "ai/MovieMentorProductionInferenceSettlementComposition.js"
+      - "scripts/verify-movie-mentor-three-headed-owner-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-three-headed-owner-authority.yml"
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm install
+      - run: node --check ai/MovieMentorProductionInferenceSpendComposition.js
+      - run: node --check ai/MovieMentorProductionInferenceExecutionComposition.js
+      - run: node --check ai/MovieMentorProductionInferenceSettlementComposition.js
+      - run: node --check server.js
+      - run: node scripts/verify-movie-mentor-three-headed-owner-authority.mjs

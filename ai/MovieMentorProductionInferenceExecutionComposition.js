@@ -7,7 +7,7 @@ import { createMovieMentorCanonicalResultMongoStore, getMovieMentorCanonicalResu
 import { createMovieMentorCanonicalResultAuthority } from "./MovieMentorCanonicalResultAuthority.js";
 import { createMovieMentorResultCandidateMongoStore, getMovieMentorResultCandidateMongoStoreStatus } from "./MovieMentorResultCandidateMongoStore.js";
 
-const VERSION="1.9.0";
+const VERSION="1.10.0";
 const DOMAIN="iband.movie-mentor.production-inference-execution-composition";
 const EXECUTION_CAS="reservation-binding-active-closure-frozen-universe-provider-reality-revision-finalized-result-binding-and-atomic-abort";
 const EFFECT_SERIALIZATION="execution-providerEffectRealityRevision";
@@ -16,6 +16,7 @@ const RESULT_LINEAGE="revalidated-in-finalization-transaction";
 const RESULT_FRESHNESS="exact-provider-effect-reality-revision";
 const CANDIDATE_AUTHORITY="zero-until-current-closure-and-canonical-finalization";
 const CANDIDATE_FENCE="shared-execution-write-barrier-before-closure";
+const ownedCompositionProofs=new WeakMap();
 
 function ownedStatus(store){
   if(typeof store?.getStatus!=="function")return null;
@@ -25,6 +26,7 @@ function executionCapabilityProven(status){return status?.configured===true&&sta
 function effectCapabilityProven(status){return status?.configured===true&&status?.cas==="revision"&&status?.crossLedgerSerialization===EFFECT_SERIALIZATION;}
 function resultCapabilityProven(status){return status?.configured===true&&status?.candidateLineage===RESULT_LINEAGE&&status?.resultFinalization===RESULT_FINALIZATION&&status?.finalizationFreshnessFence===RESULT_FRESHNESS;}
 function candidateCapabilityProven(status){return status?.configured===true&&status?.authority===CANDIDATE_AUTHORITY&&status?.atomicFence===CANDIDATE_FENCE;}
+function isMovieMentorProductionInferenceExecutionOwnerProof(composition,status){return Boolean(composition&&status&&ownedCompositionProofs.get(composition)===status&&composition.status===status&&typeof composition.getStatus==="function"&&composition.getStatus()===status);}
 function rejected(reason,statuses={}){return Object.freeze({ready:false,reason,version:VERSION,authority:null,...statuses,status:null,getStatus:()=>null});}
 function ownedComposition({reason,authority,storeStatus,effectStoreStatus=null,resultStoreStatus=null,candidateStoreStatus=null,fullExecutionAuthority=false}){
   const status=Object.freeze({
@@ -44,7 +46,9 @@ function ownedComposition({reason,authority,storeStatus,effectStoreStatus=null,r
     processLocalFallback:false,
   });
   const getStatus=()=>status;
-  return Object.freeze({ready:true,reason,version:VERSION,authority,storeStatus,effectStoreStatus,resultStoreStatus,candidateStoreStatus,status,getStatus});
+  const composition=Object.freeze({ready:true,reason,version:VERSION,authority,storeStatus,effectStoreStatus,resultStoreStatus,candidateStoreStatus,status,getStatus});
+  ownedCompositionProofs.set(composition,status);
+  return composition;
 }
 
 function createMovieMentorProductionInferenceExecutionComposition({store=null,effectStore=null,resultStore=null,candidateStore=null}={}){
@@ -84,4 +88,4 @@ function createMovieMentorProductionInferenceExecutionComposition({store=null,ef
     return ownedComposition({reason:"durable-inference-execution-provider-effect-closure-atomic-finalized-result-candidate-lineage-current-reality-and-result-authority-composed",authority,storeStatus:status,effectStoreStatus:effectStatus,resultStoreStatus:resultStatus,candidateStoreStatus:candidateStatus,fullExecutionAuthority:true});
   }catch(error){return rejected(error?.code||"inference-execution-composition-failed",{storeStatus:status});}
 }
-export{VERSION as MOVIE_MENTOR_PRODUCTION_INFERENCE_EXECUTION_COMPOSITION_VERSION,DOMAIN as MOVIE_MENTOR_PRODUCTION_INFERENCE_EXECUTION_COMPOSITION_DOMAIN,createMovieMentorProductionInferenceExecutionComposition};export default createMovieMentorProductionInferenceExecutionComposition;
+export{VERSION as MOVIE_MENTOR_PRODUCTION_INFERENCE_EXECUTION_COMPOSITION_VERSION,DOMAIN as MOVIE_MENTOR_PRODUCTION_INFERENCE_EXECUTION_COMPOSITION_DOMAIN,createMovieMentorProductionInferenceExecutionComposition,isMovieMentorProductionInferenceExecutionOwnerProof};export default createMovieMentorProductionInferenceExecutionComposition;
