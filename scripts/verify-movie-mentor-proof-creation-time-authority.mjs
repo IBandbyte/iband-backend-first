@@ -5,6 +5,7 @@ import { createMovieMentorCanonicalResultAuthority } from "../ai/MovieMentorCano
 
 const execution = Object.freeze({
   authorized:true,
+  executionAuthorized:true,
   executionId:"execution-time",
   creatorTurnId:"turn-time",
   principalId:"creator-time",
