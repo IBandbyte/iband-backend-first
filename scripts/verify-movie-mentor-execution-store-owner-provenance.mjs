@@ -82,7 +82,7 @@ assert.equal(
   "self-attested injected store lookalikes must not create a production-ready execution composition",
 );
 assert.equal(
-  status && isMovieMentorProductionInferenceExecutionOwnerProof(composition, status),
+  isMovieMentorProductionInferenceExecutionOwnerProof(composition, status),
   false,
   "composition owner proof must not launder unowned store capability claims into production authority",
 );
