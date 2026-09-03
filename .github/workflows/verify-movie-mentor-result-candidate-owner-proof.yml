@@ -1,0 +1,27 @@
+name: Verify Movie Mentor Gates of Progress Result Candidate Owner Proof
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ai/MovieMentorInferenceExecutionLeaseAuthority.js"
+      - "ai/MovieMentorProductionInferenceExecutionComposition.js"
+      - "ai/MovieMentorResultCandidateMongoStore.js"
+      - "scripts/verify-movie-mentor-result-candidate-owner-proof.mjs"
+      - ".github/workflows/verify-movie-mentor-result-candidate-owner-proof.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-result-candidate-owner-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --ignore-scripts
+      - run: node scripts/verify-movie-mentor-result-candidate-owner-proof.mjs
