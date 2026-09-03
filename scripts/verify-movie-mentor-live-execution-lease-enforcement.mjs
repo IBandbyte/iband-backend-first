@@ -53,35 +53,24 @@ assert.equal(story.dispatchAuthorized,true);
 const exhausted=await authority.claimProviderCall({execution:g2,slotId:"synthesis",task:"movie-mentor-synthesis"});
 assert.equal(exhausted.dispatchAuthorized,false);assert.equal(exhausted.reason,"provider-call-budget-exhausted");
 
-const composed=createMovieMentorProductionInferenceExecutionComposition({store});
-assert.equal(composed.ready,true);assert.equal(typeof composed.authority.claimProviderCall,"function");
-const composedStatus=composed.getStatus();
-assert.equal(composedStatus,composed.status);
-assert.equal(composed.getStatus(),composedStatus);
-assert.equal(Object.isFrozen(composedStatus),true);
-assert.equal(composedStatus.domain,"iband.movie-mentor.production-inference-execution-composition");
-assert.equal(composedStatus.production,true);
-assert.equal(composedStatus.ready,true);
-assert.equal(composedStatus.authority,composed.authority);
-assert.equal(composedStatus.storeStatus,composed.storeStatus);
-assert.equal(composedStatus.fullExecutionAuthority,false);
-const reconstructedStatus=Object.freeze({...composedStatus});
-assert.deepEqual(reconstructedStatus,composedStatus);
-assert.notEqual(reconstructedStatus,composedStatus);
+const rejectedInjectedExecution=createMovieMentorProductionInferenceExecutionComposition({store});
+assert.equal(rejectedInjectedExecution.ready,false);
+assert.equal(rejectedInjectedExecution.reason,"inference-execution-external-store-provenance-not-owned");
+assert.equal(rejectedInjectedExecution.getStatus(),null);
 
 const unprovenExecutionStore={...store,getStatus:undefined};
 const rejectedExecution=createMovieMentorProductionInferenceExecutionComposition({store:unprovenExecutionStore});
 assert.equal(rejectedExecution.ready,false);
-assert.equal(rejectedExecution.reason,"inference-execution-injected-capability-not-proven");
+assert.equal(rejectedExecution.reason,"inference-execution-external-store-provenance-not-owned");
 const selfDescribedButUnprovenExecutionStore={...store,getStatus:()=>({configured:true,readiness:"injected"})};
 const rejectedExecutionClaim=createMovieMentorProductionInferenceExecutionComposition({store:selfDescribedButUnprovenExecutionStore});
 assert.equal(rejectedExecutionClaim.ready,false);
-assert.equal(rejectedExecutionClaim.reason,"inference-execution-injected-capability-not-proven");
+assert.equal(rejectedExecutionClaim.reason,"inference-execution-external-store-provenance-not-owned");
 
 const unprovenEffectStore={readEffect:async()=>null,beginUnknown:async()=>null,appendEvidence:async()=>null};
 const rejectedEffect=createMovieMentorProductionInferenceExecutionComposition({store,effectStore:unprovenEffectStore});
 assert.equal(rejectedEffect.ready,false);
-assert.equal(rejectedEffect.reason,"provider-effect-injected-capability-not-proven");
+assert.equal(rejectedEffect.reason,"inference-execution-external-store-provenance-not-owned");
 const provenEffectStore={
   getStatus:()=>({configured:true,readiness:"injected-proven",cas:"revision",crossLedgerSerialization:"execution-providerEffectRealityRevision"}),
   readEffect:async()=>null,
@@ -91,11 +80,11 @@ const provenEffectStore={
 const methodShapedResultStore={readByExecution:async()=>null,readByCreatorTurn:async()=>null,commit:async()=>null};
 const rejectedResult=createMovieMentorProductionInferenceExecutionComposition({store,effectStore:provenEffectStore,resultStore:methodShapedResultStore});
 assert.equal(rejectedResult.ready,false);
-assert.equal(rejectedResult.reason,"canonical-result-injected-capability-not-proven");
+assert.equal(rejectedResult.reason,"inference-execution-external-store-provenance-not-owned");
 const methodShapedCandidateStore={stageCandidate:async()=>null,readByExecution:async()=>null};
 const rejectedCandidate=createMovieMentorProductionInferenceExecutionComposition({store,effectStore:provenEffectStore,candidateStore:methodShapedCandidateStore});
 assert.equal(rejectedCandidate.ready,false);
-assert.equal(rejectedCandidate.reason,"result-candidate-injected-capability-not-proven");
+assert.equal(rejectedCandidate.reason,"inference-execution-external-store-provenance-not-owned");
 
 const serverSource=readFileSync(new URL("../server.js",import.meta.url),"utf8");
 assert.match(serverSource,/const EXECUTION_DOMAIN="iband\.movie-mentor\.production-inference-execution-composition"/);
@@ -154,12 +143,11 @@ console.log("✓ provider-call claim is durable and slot-bounded");
 console.log("✓ duplicate logical slot cannot mint second dispatch authority");
 console.log("✓ generation takeover fences zombie provider execution");
 console.log("✓ provider-call budget is enforced at admission");
-console.log("✓ injected execution/provider-effect/canonical-result/result-candidate stores receive zero capability credit from method shape or composition");
-console.log("✓ production execution composition owns one stable immutable proof object bound to its exact authority and store statuses");
-console.log("✓ reconstructed structurally equal proof is not the owner proof");
+console.log("✓ externally injected execution/provider-effect/canonical-result/result-candidate stores receive zero production provenance credit regardless of method shape or self-attested capability strings");
+console.log("✓ production execution composition may mint owner proof only from stores it constructs through its production store factories");
 console.log("✓ server consumes the exact production execution owner proof before creator router construction; readiness plus method shape cannot mount the route");
 console.log("✓ Semantic, Story, Character, Continuity and Synthesis cross claim → durable UNKNOWN → current dispatch fence before provider invocation");
 console.log("✓ denied claim prevents UNKNOWN creation, dispatch fencing and provider invocation");
-console.log("LAW: EXECUTION STORE PROOFS → PRODUCTION EXECUTION COMPOSITION OWNS ONE STABLE PROOF → SERVER CONSUMES THAT EXACT OWNER PROOF → ROUTE");
-console.log("LAW: READY + METHOD SHAPE IS NOT HTTP AUTHORITY. PROOF DOES NOT REINCARNATE.");
+console.log("LAW: PRODUCTION-OWNED DURABLE STORES → PRODUCTION EXECUTION COMPOSITION OWNS ONE STABLE PROOF → SERVER CONSUMES THAT EXACT OWNER PROOF → ROUTE");
+console.log("LAW: READY + METHOD SHAPE + SELF-ATTESTED STATUS IS NOT PRODUCTION AUTHORITY. PROOF DOES NOT TELEPORT.");
 console.log("5A.24 Round Seven torture: GREEN");

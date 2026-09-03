@@ -25,7 +25,11 @@ torture("spend",createMovieMentorProductionInferenceSpendComposition({store:spen
 
 const executionStoreStatus=Object.freeze({configured:true,readiness:"injected-proven",durable:true,cas:"reservation-binding-active-closure-frozen-universe-provider-reality-revision-finalized-result-binding-and-atomic-abort"});
 const executionStore={getStatus:()=>executionStoreStatus,readExecution:async()=>null,readExecutionByCreatorTurn:async()=>null,createExecution:async()=>null,replaceExecution:async()=>null,claimProviderCall:async()=>({claimed:false}),beginClosing:async()=>null,recoverExpiredIntoClosing:async()=>null,completeClosing:async()=>null,quarantineExecution:async()=>null};
-torture("execution",createMovieMentorProductionInferenceExecutionComposition({store:executionStore}),isMovieMentorProductionInferenceExecutionOwnerProof);
+const rejectedExecution=createMovieMentorProductionInferenceExecutionComposition({store:executionStore});
+assert.equal(rejectedExecution.ready,false,"execution production composition must reject externally injected store provenance");
+assert.equal(rejectedExecution.reason,"inference-execution-external-store-provenance-not-owned");
+assert.equal(rejectedExecution.getStatus(),null);
+assert.equal(isMovieMentorProductionInferenceExecutionOwnerProof(rejectedExecution,null),false,"rejected external execution store must receive zero owner proof");
 
 const settlementStoreStatus=Object.freeze({configured:true,readiness:"injected-proven",atomicity:"single-mongo-transaction",settledExecutionAuthority:true,atomicFinalizedToSettledDebit:true,explicitDebitBinding:true,proofTimeFailClosed:true});
 const settlementStore={getStatus:()=>settlementStoreStatus,settleCanonicalResult:async()=>({}),releaseUnclaimedReservation:async()=>({}),releaseUnboundReservation:async()=>({})};
@@ -47,9 +51,10 @@ assert.ok(serverSource.indexOf("!executionCompositionProven(executionComposition
 assert.ok(serverSource.indexOf("!settlementCompositionProven(settlementComposition,settlementStatus)")<serverSource.indexOf("createMovieMentorTurnRouter({requestAuthority"));
 
 console.log("✓ spend owner registry rejects reconstructed and self-consistent forged compositions");
-console.log("✓ execution owner registry rejects reconstructed and self-consistent forged compositions");
+console.log("✓ execution production composition rejects self-attested external store provenance before owner proof can exist");
 console.log("✓ settlement owner registry rejects reconstructed and self-consistent forged compositions");
 console.log("✓ creator HTTP boundary consumes all three private owner predicates before route registration");
 console.log("LAW: SPEND / EXECUTION / SETTLEMENT OWNER REGISTRY → EXACT OWNER PREDICATE → CREATOR HTTP BOUNDARY → ROUTE");
-console.log('🐔 Zorg: "Three folders. Every reference matches." ⚔️ Kraken: "THREE OWNER REGISTRIES?" 🐔 Zorg: "...no."');
+console.log("LAW: EXECUTION PRODUCTION STORE PROVENANCE MUST BE OWNED BY THE PRODUCTION COMPOSITION; SELF-ATTESTATION GETS ZERO AUTHORITY");
+console.log('🐔 Zorg: "Three folders. Every reference matches." ⚔️ Kraken: "WHO OWNS THE EXECUTION STORE?" 🐔 Zorg: "...it says it owns itself."');
 console.log("Gates of Authority — Three-Headed Kraken: GREEN");
