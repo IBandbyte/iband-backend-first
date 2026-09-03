@@ -1,0 +1,36 @@
+name: Verify Movie Mentor Gates of Execution No Proof Teleportation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ai/MovieMentorProductionInferenceExecutionComposition.js"
+      - "ai/MovieMentorInferenceExecutionMongoStore.js"
+      - "ai/MovieMentorProviderEffectMongoStore.js"
+      - "ai/MovieMentorCanonicalResultMongoStore.js"
+      - "ai/MovieMentorResultCandidateMongoStore.js"
+      - "scripts/verify-movie-mentor-execution-store-owner-provenance.mjs"
+      - ".github/workflows/verify-movie-mentor-execution-store-owner-provenance.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-execution-store-owner-provenance:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm install
+      - name: Syntax check execution composition
+        run: node --check ai/MovieMentorProductionInferenceExecutionComposition.js
+      - name: Syntax check adversarial verifier
+        run: node --check scripts/verify-movie-mentor-execution-store-owner-provenance.mjs
+      - name: Verify no proof teleportation
+        run: node scripts/verify-movie-mentor-execution-store-owner-provenance.mjs
