@@ -7,7 +7,7 @@ import { createMovieMentorCanonicalResultMongoStore, getMovieMentorCanonicalResu
 import { createMovieMentorCanonicalResultAuthority } from "./MovieMentorCanonicalResultAuthority.js";
 import { createMovieMentorResultCandidateMongoStore, getMovieMentorResultCandidateMongoStoreStatus } from "./MovieMentorResultCandidateMongoStore.js";
 
-const VERSION="1.11.0";
+const VERSION="1.12.0";
 const DOMAIN="iband.movie-mentor.production-inference-execution-composition";
 const EXECUTION_CAS="reservation-binding-active-closure-frozen-universe-provider-reality-revision-finalized-result-binding-and-atomic-abort";
 const EFFECT_SERIALIZATION="execution-providerEffectRealityRevision";
@@ -98,13 +98,20 @@ function createMovieMentorProductionInferenceExecutionComposition({store=null,ef
       assertCurrentClosure:closureAuthority.assertCurrentClosure,
       readResultCandidate:durableCandidateStore.readByExecution,
     });
+    const stageResultCandidate=async({execution=null,resultPayload=null}={})=>{
+      const currentExecution=await leaseAuthority.assertFence(execution);
+      if(currentExecution?.authorized!==true||currentExecution?.executionAuthorized!==true){
+        return Object.freeze({authorized:false,staged:false,reason:currentExecution?.reason||"execution-forward-authority-required"});
+      }
+      return durableCandidateStore.stageCandidate({execution:currentExecution,resultPayload});
+    };
     const authority=Object.freeze({
       ...leaseAuthority,
       beginProviderDispatch:providerEffectAuthority.beginDispatch,
       contributeProviderEffectEvidence:providerEffectAuthority.contributeEvidence,
       readProviderEffectReality:providerEffectAuthority.readReality,
       ...closureCapabilities,
-      stageResultCandidate:durableCandidateStore.stageCandidate,
+      stageResultCandidate,
       readResultCandidate:durableCandidateStore.readByExecution,
       commitCanonicalResult:resultAuthority.commitResult,
       readCanonicalResult:resultAuthority.readResult,
