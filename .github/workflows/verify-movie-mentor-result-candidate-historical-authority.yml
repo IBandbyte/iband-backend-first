@@ -1,0 +1,22 @@
+name: Verify Movie Mentor Result Candidate Historical Authority Isolation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ai/MovieMentorResultCandidateMongoStore.js"
+      - "scripts/verify-movie-mentor-result-candidate-historical-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-result-candidate-historical-authority.yml"
+  workflow_dispatch:
+
+jobs:
+  verify-result-candidate-historical-authority:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: node scripts/verify-movie-mentor-result-candidate-historical-authority.mjs
