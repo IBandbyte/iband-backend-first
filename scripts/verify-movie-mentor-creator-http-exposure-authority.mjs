@@ -1,0 +1,41 @@
+import assert from "node:assert/strict";
+import crypto from "node:crypto";
+import fs from "node:fs";
+import { buildRequestDigest } from "../ai/MovieMentorTurnRuntime.js";
+import { assertCreatorHttpExposureAuthority, createMovieMentorTurnRouter } from "../movieMentorTurn.js";
+console.log("5A.25 — creator HTTP response exposure authority torture");
+const canonicalize=value=>value===null||typeof value!=="object"?value:Array.isArray(value)?value.map(canonicalize):Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonicalize(value[key])]));
+const digest=value=>crypto.createHash("sha256").update(JSON.stringify(canonicalize(value))).digest("hex");
+const body={projectId:"project-1",creatorTurnId:"turn-1",message:"Help me shape this scene",options:{mode:"guide"}};
+const authority={authorized:true,principalId:"creator-1",projectId:"project-1",ownershipRef:"ownership:project-1"};
+const payload={success:true,projectId:"project-1",mentorResponse:{text:"Start with the emotional turn."},metadata:{source:"runtime"}};
+const requestDigest=buildRequestDigest({creatorMessage:body.message,projectId:body.projectId,options:body.options});
+const canonicalBase={authorized:true,committed:true,currentRealityVerified:true,candidateLineageVerified:true,resultFinalizationVerified:true,executionPhase:"finalized",executionId:"execution-1",creatorTurnId:"turn-1",principalId:"creator-1",projectId:"project-1",reservationId:"reservation-1",requestDigest,resultReference:"result-1",candidateReference:"candidate-1",closureReference:"closure-1",closureCertificateDigest:"closure-digest-1",resultDigest:digest(payload),resultPayload:structuredClone(payload),providerEffectRealityRevision:7};
+const settlementBase={authorized:true,settled:true,outcome:"consumed",resultFinalizationVerified:true,executionPhase:"settled",providerEffectRealityRevision:7,executionId:"execution-1",principalId:"creator-1",projectId:"project-1",reservationId:"reservation-1",resultReference:"result-1",resultDigest:canonicalBase.resultDigest,closureCertificateDigest:"closure-digest-1"};
+function runtimeResult(overrides={}){return{...structuredClone(payload),metadata:{...structuredClone(payload.metadata),canonicalResult:{authorized:true,currentRealityVerified:true,candidateLineageVerified:true,resultFinalizationVerified:true,creatorResponseAuthorityVerified:true,resultReference:"result-1",resultDigest:canonicalBase.resultDigest,executionId:"execution-1",closureReference:"closure-1",closureCertificateDigest:"closure-digest-1",reservationId:"reservation-1",settlement:"consumed",settlementExecutionPhase:"settled",...overrides}}};}
+const authorized={body,authority};
+const execution=(canonical=canonicalBase)=>({readCanonicalResult:async()=>structuredClone(canonical)});
+const settlement=(value=settlementBase)=>({reconcile:async()=>structuredClone(value)});
+assert.equal(await assertCreatorHttpExposureAuthority({result:runtimeResult(),authorized,inferenceExecutionAuthority:execution(),inferenceSettlementAuthority:settlement()}),true);
+for(const [field,value] of [["projectId","other-project"],["principalId","intruder"],["creatorTurnId","other-turn"],["requestDigest","stale-digest"]]){const canonical={...canonicalBase,[field]:value};await assert.rejects(()=>assertCreatorHttpExposureAuthority({result:runtimeResult(),authorized,inferenceExecutionAuthority:execution(canonical),inferenceSettlementAuthority:settlement()}),e=>e.code==="MOVIE_MENTOR_CREATOR_HTTP_EXPOSURE_BINDING_INVALID"&&e.field===field);}
+const tampered=runtimeResult();tampered.mentorResponse.text="tampered after runtime proof";await assert.rejects(()=>assertCreatorHttpExposureAuthority({result:tampered,authorized,inferenceExecutionAuthority:execution(),inferenceSettlementAuthority:settlement()}),e=>e.code==="MOVIE_MENTOR_CREATOR_HTTP_EXPOSURE_DIGEST_INVALID");
+await assert.rejects(()=>assertCreatorHttpExposureAuthority({result:runtimeResult({resultReference:"forged-result"}),authorized,inferenceExecutionAuthority:execution(),inferenceSettlementAuthority:settlement()}),e=>e.code==="MOVIE_MENTOR_CREATOR_HTTP_EXPOSURE_RUNTIME_BINDING_INVALID");
+await assert.rejects(()=>assertCreatorHttpExposureAuthority({result:runtimeResult(),authorized,inferenceExecutionAuthority:execution({...canonicalBase,currentRealityVerified:false}),inferenceSettlementAuthority:settlement()}),e=>e.code==="MOVIE_MENTOR_CREATOR_HTTP_EXPOSURE_CANONICAL_AUTHORITY_REQUIRED");
+await assert.rejects(()=>assertCreatorHttpExposureAuthority({result:runtimeResult(),authorized,inferenceExecutionAuthority:execution(),inferenceSettlementAuthority:settlement({...settlementBase,resultDigest:"other"})}),e=>e.code==="MOVIE_MENTOR_CREATOR_HTTP_EXPOSURE_SETTLEMENT_BINDING_INVALID");
+
+const spend={reserveTurn:async()=>({}),readReservation:async()=>({})};
+const executionMethods=()=>Object.fromEntries(["findExecutionByCreatorTurn","openExecution","acquireExecution","assertFence","claimProviderCall","beginProviderDispatch","assertProviderDispatch","contributeProviderEffectEvidence","stageResultCandidate","readResultCandidate","beginExecutionClosing","reconcileExecutionClosure","assertCurrentExecutionClosure","commitCanonicalResult"].map(name=>[name,async()=>({})]));
+const requestAuthority={authorize:async()=>authority};
+const response=()=>({statusCode:200,payload:null,status(code){this.statusCode=code;return this;},json(value){this.payload=value;return this;}});
+let gatewayExecution={...executionMethods(),readCanonicalResult:async()=>structuredClone(canonicalBase)};
+let gatewaySettlement={reconcile:async()=>structuredClone(settlementBase),releaseUnclaimed:async()=>({}),releaseUnbound:async()=>({})};
+let router=createMovieMentorTurnRouter({requestAuthority,inferenceSpendAuthority:spend,inferenceExecutionAuthority:gatewayExecution,inferenceSettlementAuthority:gatewaySettlement,runTurn:async()=>({success:true}),applyStateTransition:async()=>({})});
+let turn=router.stack.find(layer=>layer.route?.path==="/turn"),res=response();await turn.route.stack[0].handle({body,headers:{authorization:"Bearer token"}},res);assert.equal(res.statusCode,503);assert.equal(res.payload.code,"MOVIE_MENTOR_CREATOR_HTTP_EXPOSURE_AUTHORITY_REQUIRED");
+router=createMovieMentorTurnRouter({requestAuthority,inferenceSpendAuthority:spend,inferenceExecutionAuthority:gatewayExecution,inferenceSettlementAuthority:gatewaySettlement,runTurn:async()=>runtimeResult(),applyStateTransition:async()=>({})});turn=router.stack.find(layer=>layer.route?.path==="/turn");res=response();await turn.route.stack[0].handle({body,headers:{authorization:"Bearer token"}},res);assert.equal(res.statusCode,200);assert.equal(res.payload.metadata.canonicalResult.creatorResponseAuthorityVerified,true);
+const gateway=fs.readFileSync(new URL("../movieMentorTurn.js",import.meta.url),"utf8");assert.match(gateway,/await assertCreatorHttpExposureAuthority\(\{result,authorized,inferenceExecutionAuthority,inferenceSettlementAuthority\}\);return res\.json/);assert.match(gateway,/readCanonicalResult/);assert.match(gateway,/inferenceSettlementAuthority\.reconcile/);assert.match(gateway,/MOVIE_MENTOR_CREATOR_HTTP_EXPOSURE_DIGEST_INVALID/);assert.match(gateway,/creatorHttpExposureRereadsCanonicalReality:true/);
+console.log("✓ incomplete or forged runtime proof cannot cross the creator HTTP boundary");
+console.log("✓ gateway rereads current canonical reality and binds principal, project, creator turn and request digest itself");
+console.log("✓ gateway recomputes the exact payload digest and rejects post-runtime mutation");
+console.log("✓ gateway independently rereconciles settlement and exact canonical settlement binding before res.json");
+console.log("LAW: runtime authority is not HTTP exposure authority; the final component touching the creator response proves the exact current authenticated response universe it emits");
+console.log("5A.25 creator HTTP exposure torture: GREEN");
