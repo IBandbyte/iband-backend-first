@@ -127,7 +127,6 @@ await rejectsCode(
   "MOVIE_MENTOR_CREATOR_STATE_CONSUMPTION_OWNERSHIP_CHANGED",
 );
 
-// Two-boundary revocation race: history remains readable; promotion succeeds; ownership disappears before provider dispatch.
 let raceCalls = 0;
 let durableReads = 0;
 let providerFenceCalls = 0;
@@ -171,7 +170,6 @@ assert.equal(providerFenceCalls, 1, "existing execution fence must still own its
 assert.equal(raceCalls, 2, "provider dispatch must independently ask current ownership again");
 assert.equal(providerEffects, 0, "revoked ownership must produce zero provider effects");
 
-// Stable authority proves both boundaries independently.
 let stableBoundaryCalls = 0;
 const stableBoundaryCapability = createMovieMentorCreatorStateConsumptionAuthority({
   request: {},
@@ -198,8 +196,8 @@ const coreRuntimeSource = fs.readFileSync(new URL("../ai/MovieMentorTurnRuntime.
 
 assert.match(gatewaySource, /createMovieMentorCreatorStateConsumptionAuthority/);
 assert.match(gatewaySource, /creatorStateConsumptionAuthority=consumptionAuthorityFrom\(req,authorized\)/);
-assert.match(gatewaySource, /creatorStateConsumptionAuthority,commitCreatorDecision/);
-assert.match(gatewaySource, /runMovieMentorTurnWithCreatorStateConsumptionAuthority/);
+assert.match(gatewaySource, /creatorStateConsumptionAuthority,forwardExecutionAuthority,commitCreatorDecision/);
+assert.match(gatewaySource, /runMovieMentorTurnWithForwardExecutionAuthority/);
 assert.match(runtimeSource, /const state = await baseRead\(identity\);[\s\S]*stage: "state-promotion"[\s\S]*liveStateUniverse = universe;[\s\S]*return state;/);
 assert.match(runtimeSource, /const current = await method\.call\(target, args\);[\s\S]*stage: "provider-dispatch"[\s\S]*return current;/);
 assert.match(coreRuntimeSource, /const state = await readSource\(identity\);\s*const envelope = buildTurnEnvelopeFromDurableState/);
