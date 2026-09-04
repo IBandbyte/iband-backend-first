@@ -154,7 +154,7 @@ await assert.rejects(()=>replayTerminalTurn({
   existing,
   inferenceExecutionAuthority:{readCanonicalResult:async()=>canonical},
   settlementAuthority:{reconcile:async()=>({...settledConsume,resultFinalizationVerified:false})},
-}), e=>e.code==="MOVIE_MENTOR_INFERENCE_SETTLEMENT_RECONCILIATION_PENDING");
+}), e=>e.code==="MOVIE_MENTOR_CREATOR_RESPONSE_SETTLEMENT_AUTHORITY_REQUIRED");
 
 console.log("5A.24 SETTLED execution ownership catastrophe gate: GREEN");
 console.log("✓ FINALIZED owns canonical lineage only; creator debit authority is not credited until SETTLED");
