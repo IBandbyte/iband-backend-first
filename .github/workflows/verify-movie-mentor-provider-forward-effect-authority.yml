@@ -1,0 +1,46 @@
+name: Verify Movie Mentor Provider Forward Effect Authority
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "ai/MovieMentorForwardExecutionAuthority.js"
+      - "ai/MovieMentorForwardExecutionRuntime.js"
+      - "ai/MovieMentorInferenceExecutionLeaseAuthority.js"
+      - "ai/MovieMentorProviderEffectAuthority.js"
+      - "ai/MovieMentorProductionInferenceExecutionComposition.js"
+      - "scripts/verify-movie-mentor-provider-forward-effect-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-provider-forward-effect-authority.yml"
+  push:
+    branches: [main]
+    paths:
+      - "ai/MovieMentorForwardExecutionAuthority.js"
+      - "ai/MovieMentorForwardExecutionRuntime.js"
+      - "ai/MovieMentorInferenceExecutionLeaseAuthority.js"
+      - "ai/MovieMentorProviderEffectAuthority.js"
+      - "ai/MovieMentorProductionInferenceExecutionComposition.js"
+      - "scripts/verify-movie-mentor-provider-forward-effect-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-provider-forward-effect-authority.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Check provider forward-effect authority syntax
+        run: |
+          node --check ai/MovieMentorForwardExecutionAuthority.js
+          node --check ai/MovieMentorForwardExecutionRuntime.js
+          node --check ai/MovieMentorInferenceExecutionLeaseAuthority.js
+          node --check ai/MovieMentorProviderEffectAuthority.js
+          node --check ai/MovieMentorProductionInferenceExecutionComposition.js
+          node --check scripts/verify-movie-mentor-provider-forward-effect-authority.mjs
+      - name: Verify provider forward-effect authority
+        run: node scripts/verify-movie-mentor-provider-forward-effect-authority.mjs

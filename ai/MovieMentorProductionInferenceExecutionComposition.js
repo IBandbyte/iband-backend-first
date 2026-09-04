@@ -7,7 +7,7 @@ import { createMovieMentorCanonicalResultMongoStore, getMovieMentorCanonicalResu
 import { createMovieMentorCanonicalResultAuthority } from "./MovieMentorCanonicalResultAuthority.js";
 import { createMovieMentorResultCandidateMongoStore, getMovieMentorResultCandidateMongoStoreStatus } from "./MovieMentorResultCandidateMongoStore.js";
 
-const VERSION="1.13.0";
+const VERSION="1.14.0";
 const DOMAIN="iband.movie-mentor.production-inference-execution-composition";
 const EXECUTION_CAS="reservation-binding-active-closure-frozen-universe-provider-reality-revision-finalized-result-binding-and-atomic-abort";
 const EFFECT_SERIALIZATION="execution-providerEffectRealityRevision";
@@ -39,6 +39,8 @@ function ownedComposition({reason,authority,storeStatus,effectStoreStatus=null,r
     canonicalResultStoreProvenanceRequired:fullExecutionAuthority===true,
     resultCandidateStoreProvenanceRequired:fullExecutionAuthority===true,
     freshExecutionCreationAuthorityRequired:true,
+    providerCallAdmissionCurrentOwnershipRequired:true,
+    providerEffectUnknownCurrentOwnershipRequired:true,
     authority,
     storeStatus,
     effectStoreStatus,
@@ -68,14 +70,14 @@ function createMovieMentorProductionInferenceExecutionComposition({store=null,ef
 
   try{
     const durableStore=createMovieMentorInferenceExecutionMongoStore();
-    const leaseAuthority=createMovieMentorInferenceExecutionLeaseAuthority({store:durableStore,requireCreationAuthority:true});
+    const leaseAuthority=createMovieMentorInferenceExecutionLeaseAuthority({store:durableStore,requireCreationAuthority:true,requireProviderCallAuthority:true});
 
     const effectStatus=getMovieMentorProviderEffectMongoStoreStatus();
     if(effectStatus?.configured!==true)return rejected("provider-effect-store-not-configured",{storeStatus:status,effectStoreStatus:effectStatus});
     if(!effectCapabilityProven(effectStatus))return rejected("provider-effect-capability-not-proven",{storeStatus:status,effectStoreStatus:effectStatus});
 
     const durableEffectStore=createMovieMentorProviderEffectMongoStore();
-    const providerEffectAuthority=createMovieMentorProviderEffectAuthority({store:durableEffectStore});
+    const providerEffectAuthority=createMovieMentorProviderEffectAuthority({store:durableEffectStore,requireUnknownAuthority:true});
     const closureAuthority=createMovieMentorInferenceExecutionClosureAuthority({store:durableStore,effectStore:durableEffectStore});
 
     const resultStatus=getMovieMentorCanonicalResultMongoStoreStatus();
