@@ -1,0 +1,34 @@
+name: Verify Movie Mentor Canonical Result Store Authority
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ai/MovieMentorCanonicalResultMongoStore.js"
+      - "scripts/verify-movie-mentor-canonical-result-store-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-canonical-result-store-authority.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "ai/MovieMentorCanonicalResultMongoStore.js"
+      - "scripts/verify-movie-mentor-canonical-result-store-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-canonical-result-store-authority.yml"
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Syntax check canonical result store authority boundary
+        run: |
+          node --check ai/MovieMentorCanonicalResultMongoStore.js
+          node --check ai/MovieMentorCanonicalResultAuthority.js
+          node --check scripts/verify-movie-mentor-canonical-result-store-authority.mjs
+      - name: Verify canonical result store owns its write authority
+        run: node scripts/verify-movie-mentor-canonical-result-store-authority.mjs
