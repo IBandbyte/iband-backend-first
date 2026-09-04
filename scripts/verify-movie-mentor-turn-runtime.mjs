@@ -1,14 +1,468 @@
 import assert from "node:assert/strict";
-import {buildTurnEnvelopeFromDurableState,createFencedInferenceOrchestrationDeps,runMovieMentorTurn} from "../ai/MovieMentorTurnRuntime.js";
-import {MOVIE_MENTOR_TURN_CONTEXT_DOMAIN,MOVIE_MENTOR_TURN_CONTEXT_SCHEMA} from "../ai/MovieMentorTurnContextControl.js";
-const durable={projectId:"project-77",creatorSessionId:"session-9",revision:42,revisionAuthorityReference:"revision:project-77:42",creatorStateGeneration:7,creatorStateFingerprint:"a".repeat(64),creatorAuthorityReference:"creator-state:project-77:g7",snapshotReference:"snapshot:project-77:r42:g7",capturedAt:"2026-08-25T22:45:00.000Z",creatorConfirmedContext:[{key:"genre",value:"mystery"}],projectJourney:{stageId:"premise",taskId:"develop-premise"},memoryContext:{projectId:"project-77",resumeNote:"Keep the daughter relationship central."},responseBlueprint:{depth:"guided"},communicationPlan:{tone:"warm"}},serverAuthority={authenticated:true,projectAuthorized:true,principalId:"creator-77",projectId:"project-77"};
-const envelope=buildTurnEnvelopeFromDurableState({creatorMessage:"The lighthouse answers tonight.",state:durable});assert.equal(envelope.domain,MOVIE_MENTOR_TURN_CONTEXT_DOMAIN);assert.equal(envelope.schema,MOVIE_MENTOR_TURN_CONTEXT_SCHEMA);assert.equal(envelope.revision.authoritativeRevision,42);assert.equal(envelope.creatorState.generation,7);
-function spend(){const reservation={authorized:true,reservationId:"runtime-test-reservation",principalId:"creator-77",projectId:"project-77",operation:"movie-mentor-turn",units:1,status:"reserved"};return{reserveTurn:async()=>reservation,readReservation:async()=>({...reservation,rehydrated:true})};}
-function execution({existing=null}={}){const exec={authorized:true,executionId:"exec-77",creatorTurnId:"turn-77",principalId:"creator-77",projectId:"project-77",reservationId:"runtime-test-reservation",requestDigest:"digest",phase:"active",ownerId:"owner-77",leaseGeneration:1,leaseReference:"lease-77",fencingToken:"fence-77",leaseExpiresAt:"2099-01-01T00:00:00.000Z"};let candidate=null;return{findExecutionByCreatorTurn:async()=>existing?{...existing,found:true,authorized:true}:{found:false,authorized:false},openExecution:async()=>exec,assertFence:async()=>exec,acquireExecution:async()=>exec,claimProviderCall:async()=>({authorized:true,dispatchAuthorized:true,providerCallId:"call-1",executionId:"exec-77",slotId:"semantic",task:"movie-mentor-semantic",ownerId:"owner-77",leaseGeneration:1,leaseReference:"lease-77",fencingToken:"fence-77"}),beginProviderDispatch:async()=>({authorized:true,dispatchAuthorized:true,effectState:"unknown"}),assertProviderDispatch:async()=>({authorized:true,dispatchAuthorized:true}),contributeProviderEffectEvidence:async()=>({accepted:true,state:"confirmed"}),stageResultCandidate:async({resultPayload})=>(candidate={candidateReference:"candidate-77",executionId:"exec-77",resultDigest:"candidate-digest-77",resultPayload}),readResultCandidate:async()=>candidate,beginExecutionClosing:async()=>({authorized:true,executionId:"exec-77"}),reconcileExecutionClosure:async()=>({authorized:true,closed:true,currentRealityVerified:true,executionId:"exec-77",closureReference:"closure-77",closureCertificateDigest:"closure-digest-77"}),assertCurrentExecutionClosure:async()=>({authorized:true,closed:true,currentRealityVerified:true}),commitCanonicalResult:async({result})=>({authorized:true,committed:true,resultReference:"result-77",resultDigest:"result-digest-77",executionId:"exec-77",principalId:"creator-77",projectId:"project-77",closureReference:"closure-77",closureCertificateDigest:"closure-digest-77",reservationId:"runtime-test-reservation",resultPayload:result}),readCanonicalResult:async()=>({authorized:true,committed:true,resultReference:"result-77",resultDigest:"result-digest-77",executionId:"exec-77",principalId:"creator-77",projectId:"project-77",closureReference:"closure-77",closureCertificateDigest:"closure-digest-77",reservationId:"runtime-test-reservation",resultPayload:{success:true,text:"Durable replay won."}})};}
-function settlement(){let releaseCalls=0,unboundCalls=0;return{get releaseCalls(){return releaseCalls;},get unboundCalls(){return unboundCalls;},reconcile:async({executionId})=>({authorized:true,settled:true,outcome:"consumed",executionPhase:"settled",executionId,reservationId:"runtime-test-reservation",idempotent:false}),releaseUnclaimed:async({executionId})=>{releaseCalls++;return{authorized:true,released:true,outcome:"released",executionId,reservationId:"runtime-test-reservation",principalId:"creator-77",projectId:"project-77",idempotent:false};},releaseUnbound:async({reservationId,principalId,projectId})=>{unboundCalls++;return{authorized:true,released:true,outcome:"released",reservationId,principalId,projectId,idempotent:false};}};}
-assert.throws(()=>createFencedInferenceOrchestrationDeps({execution:{authorized:true},inferenceExecutionAuthority:{claimProviderCall:async()=>({dispatchAuthorized:true})}}),e=>e.code==="MOVIE_MENTOR_PROVIDER_EFFECT_AUTHORITY_REQUIRED");
-let seenInput=null;const aSettlement=settlement(),result=await runMovieMentorTurn({projectId:"project-77",creatorSessionId:"session-9",creatorTurnId:"turn-77",message:"The lighthouse answers tonight."},{serverAuthority,inferenceSpendAuthority:spend(),inferenceExecutionAuthority:execution(),inferenceSettlementAuthority:aSettlement,createExecutionOwnerId:()=>"owner-77",readAuthoritativeTurnSource:async()=>structuredClone(durable),readAuthoritativeRevision:async()=>({revision:42,reference:durable.revisionAuthorityReference}),readAuthoritativeCreatorState:async()=>({generation:7,fingerprint:durable.creatorStateFingerprint,authorityReference:durable.creatorAuthorityReference,snapshotReference:durable.snapshotReference}),orchestrateTurn:async input=>{seenInput=structuredClone(input);return{success:true,status:"mentor-response-ready",text:"Durable reality won."};}});assert.equal(result.text,"Durable reality won.");assert.equal(result.metadata.canonicalResult.settlement,"consumed");assert.equal(result.metadata.canonicalResult.settlementExecutionPhase,"settled");assert.equal(aSettlement.releaseCalls,0);assert.equal(aSettlement.unboundCalls,0);assert.equal(seenInput.authoritativeTurnContext.domain,MOVIE_MENTOR_TURN_CONTEXT_DOMAIN);
-let replayOrchestrationCalls=0,replayReserveCalls=0,replayStateReads=0;const settled={executionId:"exec-77",creatorTurnId:"turn-77",principalId:"creator-77",projectId:"project-77",reservationId:"runtime-test-reservation",requestDigest:"ignored-by-mock",phase:"settled",ownerId:"old",leaseGeneration:1,leaseReference:"lease",fencingToken:"fence",leaseExpiresAt:"2099-01-01T00:00:00.000Z"},replaySpend=spend();replaySpend.reserveTurn=async()=>{replayReserveCalls++;throw new Error("replay must not reserve");};const replay=await runMovieMentorTurn({projectId:"project-77",creatorSessionId:"session-9",creatorTurnId:"turn-77",message:"The lighthouse answers tonight."},{serverAuthority,inferenceSpendAuthority:replaySpend,inferenceExecutionAuthority:execution({existing:settled}),inferenceSettlementAuthority:settlement(),readAuthoritativeTurnSource:async()=>{replayStateReads++;throw new Error("terminal replay must not read mutable creator state");},orchestrateTurn:async()=>{replayOrchestrationCalls++;throw new Error("replay must not orchestrate");}});assert.equal(replay.text,"Durable replay won.");assert.equal(replay.metadata.canonicalResult.replayedFromDurableResult,true);assert.equal(replay.metadata.canonicalResult.settlementExecutionPhase,"settled");assert.equal(replayReserveCalls,0);assert.equal(replayOrchestrationCalls,0);assert.equal(replayStateReads,0);
-await assert.rejects(()=>runMovieMentorTurn({projectId:"project-77",creatorTurnId:"turn-77",message:"wrong authority"},{serverAuthority:{...serverAuthority,projectId:"project-other"},inferenceSpendAuthority:spend(),inferenceExecutionAuthority:execution(),inferenceSettlementAuthority:settlement(),readAuthoritativeTurnSource:async()=>{throw new Error("must fail before state read");}}),e=>e.code==="MOVIE_MENTOR_INFERENCE_SERVER_PROJECT_CONFLICT");await assert.rejects(()=>runMovieMentorTurn({projectId:"project-77",creatorTurnId:"turn-77",message:"missing auth"},{serverAuthority:{principalId:"creator-77",projectId:"project-77"},inferenceSpendAuthority:spend(),inferenceExecutionAuthority:execution(),inferenceSettlementAuthority:settlement()}),e=>e.code==="MOVIE_MENTOR_INFERENCE_SERVER_AUTHORITY_REQUIRED");
-const failingSettlement=settlement();await assert.rejects(()=>runMovieMentorTurn({projectId:"project-77",creatorTurnId:"turn-77",message:"fail"},{serverAuthority,inferenceSpendAuthority:spend(),inferenceExecutionAuthority:execution(),inferenceSettlementAuthority:failingSettlement,createExecutionOwnerId:()=>"owner-77",readAuthoritativeTurnSource:async()=>structuredClone(durable),orchestrateTurn:async()=>{throw new Error("pre-provider failure");}}),/pre-provider failure/);assert.equal(failingSettlement.releaseCalls,1);const heldSettlement={reconcile:async()=>({authorized:false,settled:false,outcome:"reserved"}),releaseUnclaimed:async()=>({authorized:false,released:false,outcome:"reserved",reason:"provider-call-claims-exist",providerCallsClaimed:1}),releaseUnbound:async()=>({authorized:false,released:false,outcome:"reserved",reason:"reservation-already-bound-to-execution",executionId:"exec-77"})};await assert.rejects(()=>runMovieMentorTurn({projectId:"project-77",creatorTurnId:"turn-77",message:"fail-held"},{serverAuthority,inferenceSpendAuthority:spend(),inferenceExecutionAuthority:execution(),inferenceSettlementAuthority:heldSettlement,createExecutionOwnerId:()=>"owner-77",readAuthoritativeTurnSource:async()=>structuredClone(durable),orchestrateTurn:async()=>{throw new Error("uncertain claim");}}),e=>e.code==="MOVIE_MENTOR_INFERENCE_EXECUTION_UNRESOLVED"&&e.providerCallsClaimed===1);await assert.rejects(()=>runMovieMentorTurn({projectId:"project-77",creatorTurnId:"turn-77",message:"missing-effect-authority"},{serverAuthority,inferenceSpendAuthority:spend(),inferenceExecutionAuthority:{...execution(),assertProviderDispatch:undefined},inferenceSettlementAuthority:settlement(),readAuthoritativeTurnSource:async()=>structuredClone(durable)}),e=>e.code==="MOVIE_MENTOR_INFERENCE_EXECUTION_AUTHORITY_REQUIRED");await assert.rejects(()=>runMovieMentorTurn({projectId:"project-77",creatorTurnId:"turn-77",message:"missing-unbound"},{serverAuthority,inferenceSpendAuthority:spend(),inferenceExecutionAuthority:execution(),inferenceSettlementAuthority:{reconcile:async()=>({}),releaseUnclaimed:async()=>({})},readAuthoritativeTurnSource:async()=>structuredClone(durable)}),e=>e.code==="MOVIE_MENTOR_INFERENCE_SETTLEMENT_RECONCILIATION_AUTHORITY_REQUIRED");
-console.log("Movie Mentor Turn Runtime v2.5 passed: server authority is revalidated, SETTLED terminal replay precedes mutable state, provider dispatch requires UNKNOWN + fresh fence, and creator output requires durable SETTLED debit proof.");
+import {
+  buildTurnEnvelopeFromDurableState,
+  createFencedInferenceOrchestrationDeps,
+  digestCreatorResponsePayload,
+  runMovieMentorTurn,
+} from "../ai/MovieMentorTurnRuntime.js";
+import {
+  MOVIE_MENTOR_TURN_CONTEXT_DOMAIN,
+  MOVIE_MENTOR_TURN_CONTEXT_SCHEMA,
+} from "../ai/MovieMentorTurnContextControl.js";
+
+const durable = {
+  projectId: "project-77",
+  creatorSessionId: "session-9",
+  revision: 42,
+  revisionAuthorityReference: "revision:project-77:42",
+  creatorStateGeneration: 7,
+  creatorStateFingerprint: "a".repeat(64),
+  creatorAuthorityReference: "creator-state:project-77:g7",
+  snapshotReference: "snapshot:project-77:r42:g7",
+  capturedAt: "2026-08-25T22:45:00.000Z",
+  creatorConfirmedContext: [{ key: "genre", value: "mystery" }],
+  projectJourney: { stageId: "premise", taskId: "develop-premise" },
+  memoryContext: { projectId: "project-77", resumeNote: "Keep the daughter relationship central." },
+  responseBlueprint: { depth: "guided" },
+  communicationPlan: { tone: "warm" },
+};
+
+const serverAuthority = {
+  authenticated: true,
+  projectAuthorized: true,
+  principalId: "creator-77",
+  projectId: "project-77",
+};
+
+const livePayload = Object.freeze({
+  success: true,
+  status: "mentor-response-ready",
+  text: "Durable reality won.",
+});
+const replayPayload = Object.freeze({ success: true, text: "Durable replay won." });
+const proofRevision = 7;
+
+const envelope = buildTurnEnvelopeFromDurableState({
+  creatorMessage: "The lighthouse answers tonight.",
+  state: durable,
+});
+assert.equal(envelope.domain, MOVIE_MENTOR_TURN_CONTEXT_DOMAIN);
+assert.equal(envelope.schema, MOVIE_MENTOR_TURN_CONTEXT_SCHEMA);
+assert.equal(envelope.revision.authoritativeRevision, 42);
+assert.equal(envelope.creatorState.generation, 7);
+
+function spend() {
+  const reservation = {
+    authorized: true,
+    reservationId: "runtime-test-reservation",
+    principalId: "creator-77",
+    projectId: "project-77",
+    operation: "movie-mentor-turn",
+    units: 1,
+    status: "reserved",
+  };
+  return {
+    reserveTurn: async () => reservation,
+    readReservation: async () => ({ ...reservation, rehydrated: true }),
+  };
+}
+
+function canonicalProof({ resultPayload, executionRecord, executionPhase = "finalized" }) {
+  return {
+    authorized: true,
+    committed: true,
+    currentRealityVerified: true,
+    candidateLineageVerified: true,
+    resultFinalizationVerified: true,
+    executionPhase,
+    providerEffectRealityRevision: proofRevision,
+    resultReference: "result-77",
+    candidateReference: "candidate-77",
+    executionId: executionRecord.executionId,
+    creatorTurnId: executionRecord.creatorTurnId,
+    principalId: executionRecord.principalId,
+    projectId: executionRecord.projectId,
+    reservationId: executionRecord.reservationId,
+    requestDigest: executionRecord.requestDigest,
+    closureReference: "closure-77",
+    closureCertificateDigest: "closure-digest-77",
+    resultDigest: digestCreatorResponsePayload(resultPayload),
+    resultPayload,
+  };
+}
+
+function execution({ existing = null } = {}) {
+  const exec = {
+    authorized: true,
+    executionId: "exec-77",
+    creatorTurnId: "turn-77",
+    principalId: "creator-77",
+    projectId: "project-77",
+    reservationId: "runtime-test-reservation",
+    requestDigest: "digest",
+    phase: "active",
+    ownerId: "owner-77",
+    leaseGeneration: 1,
+    leaseReference: "lease-77",
+    fencingToken: "fence-77",
+    leaseExpiresAt: "2099-01-01T00:00:00.000Z",
+  };
+  let candidate = null;
+
+  return {
+    findExecutionByCreatorTurn: async () => existing
+      ? { ...existing, found: true, authorized: true }
+      : { found: false, authorized: false },
+    openExecution: async () => exec,
+    assertFence: async () => exec,
+    acquireExecution: async () => exec,
+    claimProviderCall: async () => ({
+      authorized: true,
+      dispatchAuthorized: true,
+      providerCallId: "call-1",
+      executionId: "exec-77",
+      slotId: "semantic",
+      task: "movie-mentor-semantic",
+      ownerId: "owner-77",
+      leaseGeneration: 1,
+      leaseReference: "lease-77",
+      fencingToken: "fence-77",
+    }),
+    beginProviderDispatch: async () => ({
+      authorized: true,
+      dispatchAuthorized: true,
+      effectState: "unknown",
+    }),
+    assertProviderDispatch: async () => ({ authorized: true, dispatchAuthorized: true }),
+    contributeProviderEffectEvidence: async () => ({ accepted: true, state: "confirmed" }),
+    stageResultCandidate: async ({ resultPayload }) => (
+      candidate = {
+        candidateReference: "candidate-77",
+        executionId: "exec-77",
+        resultDigest: digestCreatorResponsePayload(resultPayload),
+        resultPayload,
+      }
+    ),
+    readResultCandidate: async () => candidate,
+    beginExecutionClosing: async () => ({ authorized: true, executionId: "exec-77" }),
+    reconcileExecutionClosure: async () => ({
+      authorized: true,
+      closed: true,
+      currentRealityVerified: true,
+      executionId: "exec-77",
+      phase: "closed",
+      closureReference: "closure-77",
+      closureCertificateDigest: "closure-digest-77",
+      providerEffectRealityRevision: proofRevision,
+    }),
+    assertCurrentExecutionClosure: async () => ({
+      authorized: true,
+      closed: true,
+      currentRealityVerified: true,
+      executionId: "exec-77",
+      phase: "closed",
+      closureReference: "closure-77",
+      closureCertificateDigest: "closure-digest-77",
+      providerEffectRealityRevision: proofRevision,
+    }),
+    commitCanonicalResult: async ({ result }) => canonicalProof({
+      resultPayload: result,
+      executionRecord: exec,
+      executionPhase: "finalized",
+    }),
+    readCanonicalResult: async () => existing
+      ? canonicalProof({
+          resultPayload: replayPayload,
+          executionRecord: existing,
+          executionPhase: "settled",
+        })
+      : { authorized: false, committed: false },
+  };
+}
+
+function settlement({ resultPayload = livePayload, executionRecord = null } = {}) {
+  let releaseCalls = 0;
+  let unboundCalls = 0;
+  const record = executionRecord || {
+    executionId: "exec-77",
+    creatorTurnId: "turn-77",
+    principalId: "creator-77",
+    projectId: "project-77",
+    reservationId: "runtime-test-reservation",
+    requestDigest: "digest",
+  };
+  const canonical = canonicalProof({
+    resultPayload,
+    executionRecord: record,
+    executionPhase: "settled",
+  });
+
+  return {
+    get releaseCalls() {
+      return releaseCalls;
+    },
+    get unboundCalls() {
+      return unboundCalls;
+    },
+    reconcile: async ({ executionId }) => ({
+      authorized: true,
+      settled: true,
+      outcome: "consumed",
+      resultFinalizationVerified: true,
+      executionPhase: "settled",
+      providerEffectRealityRevision: proofRevision,
+      executionId,
+      principalId: canonical.principalId,
+      projectId: canonical.projectId,
+      reservationId: canonical.reservationId,
+      resultReference: canonical.resultReference,
+      resultDigest: canonical.resultDigest,
+      closureCertificateDigest: canonical.closureCertificateDigest,
+      idempotent: false,
+    }),
+    releaseUnclaimed: async ({ executionId }) => {
+      releaseCalls += 1;
+      return {
+        authorized: true,
+        released: true,
+        outcome: "released",
+        executionId,
+        reservationId: "runtime-test-reservation",
+        principalId: "creator-77",
+        projectId: "project-77",
+        idempotent: false,
+      };
+    },
+    releaseUnbound: async ({ reservationId, principalId, projectId }) => {
+      unboundCalls += 1;
+      return {
+        authorized: true,
+        released: true,
+        outcome: "released",
+        reservationId,
+        principalId,
+        projectId,
+        idempotent: false,
+      };
+    },
+  };
+}
+
+assert.throws(
+  () => createFencedInferenceOrchestrationDeps({
+    execution: { authorized: true },
+    inferenceExecutionAuthority: { claimProviderCall: async () => ({ dispatchAuthorized: true }) },
+  }),
+  (error) => error.code === "MOVIE_MENTOR_PROVIDER_EFFECT_AUTHORITY_REQUIRED",
+);
+
+let seenInput = null;
+const aSettlement = settlement({ resultPayload: livePayload });
+const result = await runMovieMentorTurn(
+  {
+    projectId: "project-77",
+    creatorSessionId: "session-9",
+    creatorTurnId: "turn-77",
+    message: "The lighthouse answers tonight.",
+  },
+  {
+    serverAuthority,
+    inferenceSpendAuthority: spend(),
+    inferenceExecutionAuthority: execution(),
+    inferenceSettlementAuthority: aSettlement,
+    createExecutionOwnerId: () => "owner-77",
+    readAuthoritativeTurnSource: async () => structuredClone(durable),
+    readAuthoritativeRevision: async () => ({ revision: 42, reference: durable.revisionAuthorityReference }),
+    readAuthoritativeCreatorState: async () => ({
+      generation: 7,
+      fingerprint: durable.creatorStateFingerprint,
+      authorityReference: durable.creatorAuthorityReference,
+      snapshotReference: durable.snapshotReference,
+    }),
+    orchestrateTurn: async (input) => {
+      seenInput = structuredClone(input);
+      return structuredClone(livePayload);
+    },
+  },
+);
+assert.equal(result.text, "Durable reality won.");
+assert.equal(result.metadata.canonicalResult.settlement, "consumed");
+assert.equal(result.metadata.canonicalResult.settlementExecutionPhase, "settled");
+assert.equal(result.metadata.canonicalResult.currentRealityVerified, true);
+assert.equal(result.metadata.canonicalResult.candidateLineageVerified, true);
+assert.equal(result.metadata.canonicalResult.resultFinalizationVerified, true);
+assert.equal(result.metadata.canonicalResult.creatorResponseAuthorityVerified, true);
+assert.equal(aSettlement.releaseCalls, 0);
+assert.equal(aSettlement.unboundCalls, 0);
+assert.equal(seenInput.authoritativeTurnContext.domain, MOVIE_MENTOR_TURN_CONTEXT_DOMAIN);
+
+let replayOrchestrationCalls = 0;
+let replayReserveCalls = 0;
+let replayStateReads = 0;
+const settled = {
+  executionId: "exec-77",
+  creatorTurnId: "turn-77",
+  principalId: "creator-77",
+  projectId: "project-77",
+  reservationId: "runtime-test-reservation",
+  requestDigest: "ignored-by-mock",
+  phase: "settled",
+  ownerId: "old",
+  leaseGeneration: 1,
+  leaseReference: "lease",
+  fencingToken: "fence",
+  leaseExpiresAt: "2099-01-01T00:00:00.000Z",
+};
+const replaySpend = spend();
+replaySpend.reserveTurn = async () => {
+  replayReserveCalls += 1;
+  throw new Error("replay must not reserve");
+};
+const replay = await runMovieMentorTurn(
+  {
+    projectId: "project-77",
+    creatorSessionId: "session-9",
+    creatorTurnId: "turn-77",
+    message: "The lighthouse answers tonight.",
+  },
+  {
+    serverAuthority,
+    inferenceSpendAuthority: replaySpend,
+    inferenceExecutionAuthority: execution({ existing: settled }),
+    inferenceSettlementAuthority: settlement({ resultPayload: replayPayload, executionRecord: settled }),
+    readAuthoritativeTurnSource: async () => {
+      replayStateReads += 1;
+      throw new Error("terminal replay must not read mutable creator state");
+    },
+    orchestrateTurn: async () => {
+      replayOrchestrationCalls += 1;
+      throw new Error("replay must not orchestrate");
+    },
+  },
+);
+assert.equal(replay.text, "Durable replay won.");
+assert.equal(replay.metadata.canonicalResult.replayedFromDurableResult, true);
+assert.equal(replay.metadata.canonicalResult.settlementExecutionPhase, "settled");
+assert.equal(replay.metadata.canonicalResult.creatorResponseAuthorityVerified, true);
+assert.equal(replayReserveCalls, 0);
+assert.equal(replayOrchestrationCalls, 0);
+assert.equal(replayStateReads, 0);
+
+await assert.rejects(
+  () => runMovieMentorTurn(
+    { projectId: "project-77", creatorTurnId: "turn-77", message: "wrong authority" },
+    {
+      serverAuthority: { ...serverAuthority, projectId: "project-other" },
+      inferenceSpendAuthority: spend(),
+      inferenceExecutionAuthority: execution(),
+      inferenceSettlementAuthority: settlement(),
+      readAuthoritativeTurnSource: async () => {
+        throw new Error("must fail before state read");
+      },
+    },
+  ),
+  (error) => error.code === "MOVIE_MENTOR_INFERENCE_SERVER_PROJECT_CONFLICT",
+);
+
+await assert.rejects(
+  () => runMovieMentorTurn(
+    { projectId: "project-77", creatorTurnId: "turn-77", message: "missing auth" },
+    {
+      serverAuthority: { principalId: "creator-77", projectId: "project-77" },
+      inferenceSpendAuthority: spend(),
+      inferenceExecutionAuthority: execution(),
+      inferenceSettlementAuthority: settlement(),
+    },
+  ),
+  (error) => error.code === "MOVIE_MENTOR_INFERENCE_SERVER_AUTHORITY_REQUIRED",
+);
+
+const failingSettlement = settlement();
+await assert.rejects(
+  () => runMovieMentorTurn(
+    { projectId: "project-77", creatorTurnId: "turn-77", message: "fail" },
+    {
+      serverAuthority,
+      inferenceSpendAuthority: spend(),
+      inferenceExecutionAuthority: execution(),
+      inferenceSettlementAuthority: failingSettlement,
+      createExecutionOwnerId: () => "owner-77",
+      readAuthoritativeTurnSource: async () => structuredClone(durable),
+      orchestrateTurn: async () => {
+        throw new Error("pre-provider failure");
+      },
+    },
+  ),
+  /pre-provider failure/,
+);
+assert.equal(failingSettlement.releaseCalls, 1);
+
+const heldSettlement = {
+  reconcile: async () => ({ authorized: false, settled: false, outcome: "reserved" }),
+  releaseUnclaimed: async () => ({
+    authorized: false,
+    released: false,
+    outcome: "reserved",
+    reason: "provider-call-claims-exist",
+    providerCallsClaimed: 1,
+  }),
+  releaseUnbound: async () => ({
+    authorized: false,
+    released: false,
+    outcome: "reserved",
+    reason: "reservation-already-bound-to-execution",
+    executionId: "exec-77",
+  }),
+};
+await assert.rejects(
+  () => runMovieMentorTurn(
+    { projectId: "project-77", creatorTurnId: "turn-77", message: "fail-held" },
+    {
+      serverAuthority,
+      inferenceSpendAuthority: spend(),
+      inferenceExecutionAuthority: execution(),
+      inferenceSettlementAuthority: heldSettlement,
+      createExecutionOwnerId: () => "owner-77",
+      readAuthoritativeTurnSource: async () => structuredClone(durable),
+      orchestrateTurn: async () => {
+        throw new Error("uncertain claim");
+      },
+    },
+  ),
+  (error) => error.code === "MOVIE_MENTOR_INFERENCE_EXECUTION_UNRESOLVED" && error.providerCallsClaimed === 1,
+);
+
+await assert.rejects(
+  () => runMovieMentorTurn(
+    { projectId: "project-77", creatorTurnId: "turn-77", message: "missing-effect-authority" },
+    {
+      serverAuthority,
+      inferenceSpendAuthority: spend(),
+      inferenceExecutionAuthority: { ...execution(), assertProviderDispatch: undefined },
+      inferenceSettlementAuthority: settlement(),
+      readAuthoritativeTurnSource: async () => structuredClone(durable),
+    },
+  ),
+  (error) => error.code === "MOVIE_MENTOR_INFERENCE_EXECUTION_AUTHORITY_REQUIRED",
+);
+
+await assert.rejects(
+  () => runMovieMentorTurn(
+    { projectId: "project-77", creatorTurnId: "turn-77", message: "missing-unbound" },
+    {
+      serverAuthority,
+      inferenceSpendAuthority: spend(),
+      inferenceExecutionAuthority: execution(),
+      inferenceSettlementAuthority: {
+        reconcile: async () => ({}),
+        releaseUnclaimed: async () => ({}),
+      },
+      readAuthoritativeTurnSource: async () => structuredClone(durable),
+    },
+  ),
+  (error) => error.code === "MOVIE_MENTOR_INFERENCE_SETTLEMENT_RECONCILIATION_AUTHORITY_REQUIRED",
+);
+
+console.log(
+  "Movie Mentor Turn Runtime v2.7 passed: server authority is revalidated, SETTLED terminal replay precedes mutable state, provider dispatch requires UNKNOWN + fresh fence, and creator output requires exact current canonical + settlement proof at the response boundary.",
+);
