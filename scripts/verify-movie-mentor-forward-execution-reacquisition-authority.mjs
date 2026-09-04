@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { createMovieMentorForwardExecutionAuthority } from "../ai/MovieMentorForwardExecutionAuthority.js";
 import { createForwardExecutionRuntimeDeps } from "../ai/MovieMentorForwardExecutionRuntime.js";
 
@@ -33,10 +34,28 @@ assert.equal(reacquired.leaseGeneration,8);
 assert.equal(reacquired.leaseReference,"lease-8");
 assert.equal(reacquired.fencingToken,"fence-8");
 
+// Production-path ownership: the creator gateway must create this capability from the authenticated
+// request universe, select the guarded runtime by default, and pass the capability into that runtime.
+const gatewaySource = fs.readFileSync(new URL("../movieMentorTurn.js", import.meta.url), "utf8");
+assert.match(gatewaySource, /createMovieMentorForwardExecutionAuthority/);
+assert.match(gatewaySource, /runTurn=runMovieMentorTurnWithForwardExecutionAuthority/);
+assert.match(gatewaySource, /forwardExecutionAuthorityFrom=\(req,authorized\)=>createMovieMentorForwardExecutionAuthority\(\{request:req,authorization:authorized\.authority,requestAuthority\}\)/);
+assert.match(gatewaySource, /forwardExecutionAuthority=forwardExecutionAuthorityFrom\(req,authorized\)/);
+assert.match(gatewaySource, /creatorStateConsumptionAuthority,forwardExecutionAuthority,commitCreatorDecision/);
+assert.match(gatewaySource, /forwardExecutionReacquisitionCurrentOwnership:true/);
+assert.match(gatewaySource, /historicalExecutionCannotMintSuccessorAuthority:true/);
+const runtimeSource = fs.readFileSync(new URL("../ai/MovieMentorForwardExecutionRuntime.js", import.meta.url), "utf8");
+const proofIndex = runtimeSource.indexOf("await assertMovieMentorForwardExecutionReacquisitionAuthority");
+const acquireIndex = runtimeSource.indexOf("return base.acquireExecution(input)");
+assert.ok(proofIndex >= 0 && acquireIndex > proofIndex, "fresh creator ownership proof must precede durable lease reacquisition");
+
 console.log("✓ expired ACTIVE execution remains readable history");
 console.log("✓ ownership revocation fails before acquireExecution");
 console.log("✓ revoked ownership leaves generation/reference/fence unchanged");
 console.log("✓ revoked reacquisition produces zero provider claims and zero external effects");
 console.log("✓ current ownership permits exactly the successor lease universe");
+console.log("✓ production gateway creates and passes the server-owned forward execution capability");
+console.log("✓ production gateway defaults to the guarded forward execution runtime");
+console.log("✓ production ordering proves current ownership before durable successor lease mutation");
 console.log("LAW: AN EXPIRED LEASE MAY SURVIVE AS HISTORY. HISTORY MAY NOT MINT ITS SUCCESSOR.");
 console.log("ROUND SEVEN forward execution reacquisition torture: GREEN");
