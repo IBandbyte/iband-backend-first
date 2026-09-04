@@ -1,0 +1,33 @@
+name: Verify Movie Mentor Creator Response Authority
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ai/MovieMentorTurnRuntime.js"
+      - "scripts/verify-movie-mentor-creator-response-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-creator-response-authority.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "ai/MovieMentorTurnRuntime.js"
+      - "scripts/verify-movie-mentor-creator-response-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-creator-response-authority.yml"
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Syntax check creator response authority boundary
+        run: |
+          node --check ai/MovieMentorTurnRuntime.js
+          node --check scripts/verify-movie-mentor-creator-response-authority.mjs
+      - name: Verify creator response owns exact result authority
+        run: node scripts/verify-movie-mentor-creator-response-authority.mjs

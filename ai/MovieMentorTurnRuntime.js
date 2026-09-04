@@ -7,7 +7,7 @@ import { synthesizeMovieMentorResponse } from "./MovieMentorSynthesisEngine.js";
 import { buildCurrentCreatorTruthView } from "./MovieMentorCreatorTruthViewControl.js";
 import { readAuthoritativeTurnSource, readAuthoritativeRevision, readAuthoritativeCreatorState } from "./MovieMentorCreatorStateStore.js";
 
-const MOVIE_MENTOR_TURN_RUNTIME_VERSION = "2.6.0";
+const MOVIE_MENTOR_TURN_RUNTIME_VERSION = "2.7.0";
 const s = (value) => (typeof value === "string" ? value.trim() : "");
 
 function clone(value) {
@@ -39,6 +39,117 @@ function buildRequestDigest({ creatorMessage, projectId, options } = {}) {
     projectId: s(projectId),
     options: clone(options || {}),
   })).digest("hex");
+}
+
+function canonicalize(value) {
+  if (value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map(canonicalize);
+  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalize(value[key])]));
+}
+
+function digestCreatorResponsePayload(value) {
+  return crypto.createHash("sha256").update(JSON.stringify(canonicalize(value))).digest("hex");
+}
+
+function assertCreatorResponseAuthority({ canonical = null, settlement = null, execution = null } = {}) {
+  const canonicalPhase = s(canonical?.executionPhase);
+  if (
+    canonical?.authorized !== true
+    || canonical?.committed !== true
+    || canonical?.currentRealityVerified !== true
+    || canonical?.candidateLineageVerified !== true
+    || canonical?.resultFinalizationVerified !== true
+    || !["finalized", "settled"].includes(canonicalPhase)
+    || !s(canonical?.executionId)
+    || !s(canonical?.creatorTurnId)
+    || !s(canonical?.principalId)
+    || !s(canonical?.projectId)
+    || !s(canonical?.reservationId)
+    || !s(canonical?.requestDigest)
+    || !s(canonical?.resultReference)
+    || !s(canonical?.candidateReference)
+    || !s(canonical?.closureReference)
+    || !s(canonical?.closureCertificateDigest)
+    || !s(canonical?.resultDigest)
+    || canonical?.resultPayload === undefined
+    || !Number.isSafeInteger(canonical?.providerEffectRealityRevision)
+    || canonical.providerEffectRealityRevision < 0
+  ) {
+    throw runtimeError(
+      "MOVIE_MENTOR_CREATOR_RESPONSE_CANONICAL_AUTHORITY_REQUIRED",
+      "Creator-visible result requires current canonical reality, candidate lineage and finalization proof owned at the response boundary.",
+      { retryable: true, executionId: s(canonical?.executionId) || s(execution?.executionId) || null },
+    );
+  }
+
+  if (digestCreatorResponsePayload(canonical.resultPayload) !== s(canonical.resultDigest)) {
+    throw runtimeError(
+      "MOVIE_MENTOR_CREATOR_RESPONSE_DIGEST_INVALID",
+      "Creator-visible result payload does not match the exact canonical result digest.",
+      { retryable: false, executionId: canonical.executionId },
+    );
+  }
+
+  const executionBindingKeys = ["executionId", "creatorTurnId", "principalId", "projectId", "reservationId", "requestDigest"];
+  for (const key of executionBindingKeys) {
+    const expected = s(execution?.[key]);
+    if (expected && s(canonical?.[key]) !== expected) {
+      throw runtimeError(
+        "MOVIE_MENTOR_CREATOR_RESPONSE_EXECUTION_BINDING_INVALID",
+        "Creator-visible canonical result does not bind the exact durable execution universe being resumed.",
+        { retryable: false, field: key, expected, actual: s(canonical?.[key]) || null },
+      );
+    }
+  }
+
+  if (
+    settlement?.authorized !== true
+    || settlement?.settled !== true
+    || settlement?.outcome !== "consumed"
+    || settlement?.resultFinalizationVerified !== true
+    || s(settlement?.executionPhase) !== "settled"
+    || !Number.isSafeInteger(settlement?.providerEffectRealityRevision)
+    || settlement.providerEffectRealityRevision < 0
+  ) {
+    throw runtimeError(
+      "MOVIE_MENTOR_CREATOR_RESPONSE_SETTLEMENT_AUTHORITY_REQUIRED",
+      "Creator-visible result requires complete authoritative SETTLED consume evidence.",
+      { retryable: true, executionId: canonical.executionId },
+    );
+  }
+
+  const settlementBindingKeys = [
+    "executionId",
+    "principalId",
+    "projectId",
+    "reservationId",
+    "resultReference",
+    "resultDigest",
+    "closureCertificateDigest",
+  ];
+  for (const key of settlementBindingKeys) {
+    if (!s(settlement?.[key]) || s(settlement[key]) !== s(canonical[key])) {
+      throw runtimeError(
+        "MOVIE_MENTOR_CREATOR_RESPONSE_BINDING_INVALID",
+        "Creator-visible result requires settlement to bind the exact canonical result universe.",
+        { retryable: false, field: key, canonical: s(canonical[key]) || null, settlement: s(settlement?.[key]) || null },
+      );
+    }
+  }
+
+  if (settlement.providerEffectRealityRevision !== canonical.providerEffectRealityRevision) {
+    throw runtimeError(
+      "MOVIE_MENTOR_CREATOR_RESPONSE_BINDING_INVALID",
+      "Creator-visible result requires settlement to preserve the exact provider-effect reality revision of the canonical result.",
+      {
+        retryable: false,
+        canonicalProviderEffectRealityRevision: canonical.providerEffectRealityRevision,
+        settlementProviderEffectRealityRevision: settlement.providerEffectRealityRevision,
+      },
+    );
+  }
+
+  return true;
 }
 
 function findProviderEvidence(value, seen = new Set()) {
@@ -101,13 +212,18 @@ function buildTurnEnvelopeFromDurableState({ creatorMessage, state } = {}) {
   });
 }
 
-function resultResponse(canonical, settlement, { replayed = false } = {}) {
+function resultResponse(canonical, settlement, { replayed = false, execution = null } = {}) {
+  assertCreatorResponseAuthority({ canonical, settlement, execution });
   return {
     ...clone(canonical.resultPayload),
     metadata: {
       ...(clone(canonical.resultPayload)?.metadata || {}),
       canonicalResult: {
         authorized: true,
+        currentRealityVerified: true,
+        candidateLineageVerified: true,
+        resultFinalizationVerified: true,
+        creatorResponseAuthorityVerified: true,
         resultReference: canonical.resultReference,
         resultDigest: canonical.resultDigest,
         executionId: canonical.executionId,
@@ -115,8 +231,8 @@ function resultResponse(canonical, settlement, { replayed = false } = {}) {
         closureCertificateDigest: canonical.closureCertificateDigest,
         reservationId: canonical.reservationId,
         settlement: "consumed",
-        settlementExecutionPhase: settlement?.executionPhase || null,
-        settlementIdempotent: settlement?.idempotent === true,
+        settlementExecutionPhase: settlement.executionPhase,
+        settlementIdempotent: settlement.idempotent === true,
         replayedFromDurableResult: replayed,
       },
     },
@@ -298,7 +414,7 @@ async function replayTerminalTurn({ existing, inferenceExecutionAuthority, settl
       executionId: existing.executionId, retryable: true,
     });
   }
-  return resultResponse(canonical, settlement, { replayed: true });
+  return resultResponse(canonical, settlement, { replayed: true, execution: existing });
 }
 
 async function recoverStagedResultTurn({ existing, inferenceExecutionAuthority, settlementAuthority } = {}) {
@@ -330,7 +446,7 @@ async function recoverStagedResultTurn({ existing, inferenceExecutionAuthority, 
       executionId: existing.executionId, retryable: true,
     });
   }
-  return resultResponse(canonical, settlement, { replayed: true });
+  return resultResponse(canonical, settlement, { replayed: true, execution: existing });
 }
 
 async function convergeExistingTurn({ existing, inferenceExecutionAuthority, settlementAuthority } = {}) {
@@ -405,7 +521,7 @@ async function releaseFreshUnboundReservation({ reservation, settlementAuthority
     });
   }
   if (release?.authorized !== true || release?.released !== true || release?.outcome !== "released") {
-    throw runtimeError("MOVIE_MENTOR_INFERENCE_EXECUTION_BINDING_UNRESOLVED", "Reservation release was denied because durable execution binding absence was not established; spend remains reserved.", {
+    throw runtimeError("MOVIE_MENTOR_INFERENCE_EXECUTION_BINDING_UNRESOLVED", "Reservation release was denied because durable execution binding absence was not established; spend remains reserved for reconciliation.", {
       cause: error,
       retryable: true,
       reservationId: reservation?.reservationId || null,
@@ -588,12 +704,14 @@ async function runMovieMentorTurn(input = {}, deps = {}) {
       executionId: execution.executionId, reservationId: canonical.reservationId, retryable: true,
     });
   }
-  return resultResponse(canonical, settlement);
+  return resultResponse(canonical, settlement, { execution });
 }
 
 export {
   MOVIE_MENTOR_TURN_RUNTIME_VERSION,
   buildRequestDigest,
+  digestCreatorResponsePayload,
+  assertCreatorResponseAuthority,
   buildTurnEnvelopeFromDurableState,
   findProviderEvidence,
   assertRuntimeServerAuthority,
