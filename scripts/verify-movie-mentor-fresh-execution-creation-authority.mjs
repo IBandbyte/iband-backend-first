@@ -180,7 +180,7 @@ assert.ok(proofIndex >= 0 && createIndex > proofIndex, "the lease component that
 assert.match(leaseSource, /requireCreationAuthority && typeof input\.assertCurrentCreationAuthority !== "function"/);
 assert.match(runtimeSource, /guarded\.openExecution = async \(input = \{\}\) => base\.openExecution\(\{/);
 assert.match(runtimeSource, /assertCurrentCreationAuthority: async \(target = \{\}\) => assertMovieMentorForwardExecutionCreationAuthority/);
-assert.match(productionSource, /createMovieMentorInferenceExecutionLeaseAuthority\(\{store:durableStore,requireCreationAuthority:true\}\)/);
+assert.match(productionSource, /createMovieMentorInferenceExecutionLeaseAuthority\(\{(?=[^}]*store:durableStore)(?=[^}]*requireCreationAuthority:true)[^}]*\}\)/);
 assert.match(productionSource, /freshExecutionCreationAuthorityRequired:true/);
 assert.match(gatewaySource, /runTurn=runMovieMentorTurnWithForwardExecutionAuthority/);
 assert.match(gatewaySource, /forwardExecutionAuthority=forwardExecutionAuthorityFrom\(req,authorized\)/);
