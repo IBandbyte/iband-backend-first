@@ -1,4 +1,4 @@
-const MOVIE_MENTOR_FORWARD_EXECUTION_AUTHORITY_VERSION = "1.1.0";
+const MOVIE_MENTOR_FORWARD_EXECUTION_AUTHORITY_VERSION = "1.2.0";
 const MOVIE_MENTOR_FORWARD_EXECUTION_AUTHORITY_DOMAIN = "iband.movie-mentor.forward-execution-authority";
 const MOVIE_MENTOR_FORWARD_EXECUTION_PROOF_DOMAIN = "iband.movie-mentor.forward-execution-proof";
 const MOVIE_MENTOR_FORWARD_EXECUTION_AUTHORITY_SCHEMA = 1;
@@ -30,6 +30,26 @@ function normalizeCreationTarget({ projectId = null, principalId = null, creator
   return target;
 }
 
+function normalizeProviderCallAdmissionTarget(input = {}) {
+  const target = Object.freeze({
+    projectId: s(input.projectId), principalId: s(input.principalId), creatorTurnId: s(input.creatorTurnId), executionId: s(input.executionId),
+    reservationId: s(input.reservationId), requestDigest: s(input.requestDigest), ownerId: s(input.ownerId), leaseGeneration: n(input.leaseGeneration),
+    leaseReference: s(input.leaseReference), fencingToken: s(input.fencingToken), providerCallId: s(input.providerCallId),
+    slotId: s(input.slotId), task: s(input.task), admittedAt: s(input.admittedAt),
+  });
+  if ([target.projectId, target.principalId, target.creatorTurnId, target.executionId, target.reservationId, target.requestDigest, target.ownerId, target.leaseReference, target.fencingToken, target.providerCallId, target.slotId, target.task, target.admittedAt].some((value) => !value) || target.leaseGeneration === null || target.leaseGeneration < 1) {
+    fail("MOVIE_MENTOR_FORWARD_PROVIDER_CALL_TARGET_REQUIRED", "Provider-call admission requires the exact execution, lease, call and time universe before durable claim.");
+  }
+  return target;
+}
+
+function normalizeProviderEffectUnknownTarget(input = {}) {
+  const base = normalizeProviderCallAdmissionTarget(input);
+  const dispatchUnknownAt = s(input.dispatchUnknownAt);
+  if (!dispatchUnknownAt) fail("MOVIE_MENTOR_FORWARD_PROVIDER_EFFECT_TARGET_REQUIRED", "Provider-effect UNKNOWN requires the exact dispatch-unknown time universe.");
+  return Object.freeze({ ...base, dispatchUnknownAt });
+}
+
 function createMovieMentorForwardExecutionAuthority({ request = null, authorization = null, requestAuthority = null } = {}) {
   if (typeof requestAuthority?.authorize !== "function") fail("MOVIE_MENTOR_FORWARD_EXECUTION_AUTHORITY_REQUIRED", "Forward execution capability requires production creator request authority.");
   const principalId = s(authorization?.principalId), projectId = s(authorization?.projectId);
@@ -50,61 +70,110 @@ function createMovieMentorForwardExecutionAuthority({ request = null, authorizat
     return Object.freeze({ ownershipRef: currentOwnershipRef, ownershipRevision: currentOwnershipRevision });
   }
 
+  function proofFor(target, transition, current) {
+    return Object.freeze({
+      domain: MOVIE_MENTOR_FORWARD_EXECUTION_PROOF_DOMAIN,
+      schema: MOVIE_MENTOR_FORWARD_EXECUTION_AUTHORITY_SCHEMA,
+      authorized: true,
+      currentOwnershipVerified: true,
+      principalId,
+      projectId,
+      ownershipRef: current.ownershipRef,
+      ownershipRevision: current.ownershipRevision,
+      ...target,
+      transition,
+    });
+  }
+
   async function assertCurrentReacquisition(targetInput = {}) {
     const target = normalizeReacquisitionTarget(targetInput);
     if (target.projectId !== projectId) fail("MOVIE_MENTOR_FORWARD_EXECUTION_BINDING_INVALID", "Forward execution capability is bound to a different project.");
     const current = await currentOwnership({ executionId: target.executionId, transition: "execution-reacquisition" });
-    return Object.freeze({
-      domain: MOVIE_MENTOR_FORWARD_EXECUTION_PROOF_DOMAIN, schema: MOVIE_MENTOR_FORWARD_EXECUTION_AUTHORITY_SCHEMA,
-      authorized: true, currentOwnershipVerified: true, principalId, projectId,
-      ownershipRef: current.ownershipRef, ownershipRevision: current.ownershipRevision,
-      creatorTurnId: target.creatorTurnId, executionId: target.executionId,
-      leaseGeneration: target.leaseGeneration, leaseReference: target.leaseReference, fencingToken: target.fencingToken,
-      transition: "execution-reacquisition",
-    });
+    return proofFor(target, "execution-reacquisition", current);
   }
 
   async function assertCurrentCreation(targetInput = {}) {
     const target = normalizeCreationTarget(targetInput);
     if (target.projectId !== projectId || target.principalId !== principalId) fail("MOVIE_MENTOR_FORWARD_EXECUTION_BINDING_INVALID", "Fresh execution creation capability is bound to a different creator/project universe.");
     const current = await currentOwnership({ executionId: target.executionId, transition: "execution-creation" });
-    return Object.freeze({
-      domain: MOVIE_MENTOR_FORWARD_EXECUTION_PROOF_DOMAIN, schema: MOVIE_MENTOR_FORWARD_EXECUTION_AUTHORITY_SCHEMA,
-      authorized: true, currentOwnershipVerified: true, principalId, projectId,
-      ownershipRef: current.ownershipRef, ownershipRevision: current.ownershipRevision,
-      creatorTurnId: target.creatorTurnId, executionId: target.executionId, reservationId: target.reservationId,
-      requestDigest: target.requestDigest, ownerId: target.ownerId, leaseGeneration: 1,
-      leaseReference: target.leaseReference, fencingToken: target.fencingToken,
-      transition: "execution-creation",
-    });
+    return proofFor(target, "execution-creation", current);
   }
 
-  return Object.freeze({ version: MOVIE_MENTOR_FORWARD_EXECUTION_AUTHORITY_VERSION, domain: MOVIE_MENTOR_FORWARD_EXECUTION_AUTHORITY_DOMAIN, schema: MOVIE_MENTOR_FORWARD_EXECUTION_AUTHORITY_SCHEMA, principalId, projectId, assertCurrentReacquisition, assertCurrentCreation });
+  async function assertCurrentProviderCallAdmission(targetInput = {}) {
+    const target = normalizeProviderCallAdmissionTarget(targetInput);
+    if (target.projectId !== projectId || target.principalId !== principalId) fail("MOVIE_MENTOR_FORWARD_EXECUTION_BINDING_INVALID", "Provider-call admission capability is bound to a different creator/project universe.");
+    const current = await currentOwnership({ executionId: target.executionId, transition: "provider-call-admission" });
+    return proofFor(target, "provider-call-admission", current);
+  }
+
+  async function assertCurrentProviderEffectUnknown(targetInput = {}) {
+    const target = normalizeProviderEffectUnknownTarget(targetInput);
+    if (target.projectId !== projectId || target.principalId !== principalId) fail("MOVIE_MENTOR_FORWARD_EXECUTION_BINDING_INVALID", "Provider-effect UNKNOWN capability is bound to a different creator/project universe.");
+    const current = await currentOwnership({ executionId: target.executionId, transition: "provider-effect-unknown" });
+    return proofFor(target, "provider-effect-unknown", current);
+  }
+
+  return Object.freeze({
+    version: MOVIE_MENTOR_FORWARD_EXECUTION_AUTHORITY_VERSION,
+    domain: MOVIE_MENTOR_FORWARD_EXECUTION_AUTHORITY_DOMAIN,
+    schema: MOVIE_MENTOR_FORWARD_EXECUTION_AUTHORITY_SCHEMA,
+    principalId,
+    projectId,
+    assertCurrentReacquisition,
+    assertCurrentCreation,
+    assertCurrentProviderCallAdmission,
+    assertCurrentProviderEffectUnknown,
+  });
+}
+
+async function assertOwnedProof({ authority, target, method, transition, normalize }) {
+  if (authority?.domain !== MOVIE_MENTOR_FORWARD_EXECUTION_AUTHORITY_DOMAIN || authority?.schema !== MOVIE_MENTOR_FORWARD_EXECUTION_AUTHORITY_SCHEMA || typeof authority?.[method] !== "function" || s(authority?.projectId) !== target.projectId || (target.principalId && s(authority?.principalId) !== target.principalId)) {
+    fail("MOVIE_MENTOR_FORWARD_EXECUTION_AUTHORITY_REQUIRED", `Forward execution transition ${transition} requires the exact server-created capability.`);
+  }
+  const proof = await authority[method](target);
+  const normalized = normalize(proof);
+  for (const [key, value] of Object.entries(target)) {
+    if (normalized[key] !== value) fail("MOVIE_MENTOR_FORWARD_EXECUTION_PROOF_INVALID", `Forward execution proof did not bind exact ${transition} field ${key}.`);
+  }
+  if (proof?.domain !== MOVIE_MENTOR_FORWARD_EXECUTION_PROOF_DOMAIN || proof?.schema !== MOVIE_MENTOR_FORWARD_EXECUTION_AUTHORITY_SCHEMA || proof?.authorized !== true || proof?.currentOwnershipVerified !== true || s(proof?.principalId) !== s(authority.principalId) || s(proof?.projectId) !== target.projectId || proof?.transition !== transition) {
+    fail("MOVIE_MENTOR_FORWARD_EXECUTION_PROOF_INVALID", `Forward execution proof did not authorize exact ${transition} transition.`);
+  }
+  return proof;
 }
 
 async function assertMovieMentorForwardExecutionReacquisitionAuthority({ authority = null, ...targetInput } = {}) {
   const target = normalizeReacquisitionTarget(targetInput);
-  if (authority?.domain !== MOVIE_MENTOR_FORWARD_EXECUTION_AUTHORITY_DOMAIN || authority?.schema !== MOVIE_MENTOR_FORWARD_EXECUTION_AUTHORITY_SCHEMA || typeof authority?.assertCurrentReacquisition !== "function" || s(authority?.projectId) !== target.projectId) {
-    fail("MOVIE_MENTOR_FORWARD_EXECUTION_AUTHORITY_REQUIRED", "Execution reacquisition requires the exact server-created forward execution capability.");
-  }
-  const proof = await authority.assertCurrentReacquisition(target);
-  if (proof?.domain !== MOVIE_MENTOR_FORWARD_EXECUTION_PROOF_DOMAIN || proof?.schema !== MOVIE_MENTOR_FORWARD_EXECUTION_AUTHORITY_SCHEMA || proof?.authorized !== true || proof?.currentOwnershipVerified !== true || s(proof?.principalId) !== s(authority.principalId) || s(proof?.projectId) !== target.projectId || s(proof?.creatorTurnId) !== target.creatorTurnId || s(proof?.executionId) !== target.executionId || n(proof?.leaseGeneration) !== target.leaseGeneration || s(proof?.leaseReference) !== target.leaseReference || s(proof?.fencingToken) !== target.fencingToken || proof?.transition !== "execution-reacquisition") {
-    fail("MOVIE_MENTOR_FORWARD_EXECUTION_PROOF_INVALID", "Forward execution proof did not bind the exact historical execution universe being reacquired.");
-  }
-  return proof;
+  return assertOwnedProof({ authority, target, method: "assertCurrentReacquisition", transition: "execution-reacquisition", normalize: normalizeReacquisitionTarget });
 }
 
 async function assertMovieMentorForwardExecutionCreationAuthority({ authority = null, ...targetInput } = {}) {
   const target = normalizeCreationTarget(targetInput);
-  if (authority?.domain !== MOVIE_MENTOR_FORWARD_EXECUTION_AUTHORITY_DOMAIN || authority?.schema !== MOVIE_MENTOR_FORWARD_EXECUTION_AUTHORITY_SCHEMA || typeof authority?.assertCurrentCreation !== "function" || s(authority?.projectId) !== target.projectId || s(authority?.principalId) !== target.principalId) {
-    fail("MOVIE_MENTOR_FORWARD_EXECUTION_AUTHORITY_REQUIRED", "Fresh execution creation requires the exact server-created forward execution capability.");
-  }
-  const proof = await authority.assertCurrentCreation(target);
-  if (proof?.domain !== MOVIE_MENTOR_FORWARD_EXECUTION_PROOF_DOMAIN || proof?.schema !== MOVIE_MENTOR_FORWARD_EXECUTION_AUTHORITY_SCHEMA || proof?.authorized !== true || proof?.currentOwnershipVerified !== true || s(proof?.principalId) !== target.principalId || s(proof?.projectId) !== target.projectId || s(proof?.creatorTurnId) !== target.creatorTurnId || s(proof?.executionId) !== target.executionId || s(proof?.reservationId) !== target.reservationId || s(proof?.requestDigest) !== target.requestDigest || s(proof?.ownerId) !== target.ownerId || n(proof?.leaseGeneration) !== 1 || s(proof?.leaseReference) !== target.leaseReference || s(proof?.fencingToken) !== target.fencingToken || proof?.transition !== "execution-creation") {
-    fail("MOVIE_MENTOR_FORWARD_EXECUTION_PROOF_INVALID", "Forward execution proof did not bind the exact generation-one execution universe being created.");
-  }
-  return proof;
+  return assertOwnedProof({ authority, target, method: "assertCurrentCreation", transition: "execution-creation", normalize: normalizeCreationTarget });
 }
 
-export { MOVIE_MENTOR_FORWARD_EXECUTION_AUTHORITY_VERSION, MOVIE_MENTOR_FORWARD_EXECUTION_AUTHORITY_DOMAIN, MOVIE_MENTOR_FORWARD_EXECUTION_PROOF_DOMAIN, MOVIE_MENTOR_FORWARD_EXECUTION_AUTHORITY_SCHEMA, normalizeReacquisitionTarget, normalizeCreationTarget, createMovieMentorForwardExecutionAuthority, assertMovieMentorForwardExecutionReacquisitionAuthority, assertMovieMentorForwardExecutionCreationAuthority };
+async function assertMovieMentorForwardProviderCallAdmissionAuthority({ authority = null, ...targetInput } = {}) {
+  const target = normalizeProviderCallAdmissionTarget(targetInput);
+  return assertOwnedProof({ authority, target, method: "assertCurrentProviderCallAdmission", transition: "provider-call-admission", normalize: normalizeProviderCallAdmissionTarget });
+}
+
+async function assertMovieMentorForwardProviderEffectUnknownAuthority({ authority = null, ...targetInput } = {}) {
+  const target = normalizeProviderEffectUnknownTarget(targetInput);
+  return assertOwnedProof({ authority, target, method: "assertCurrentProviderEffectUnknown", transition: "provider-effect-unknown", normalize: normalizeProviderEffectUnknownTarget });
+}
+
+export {
+  MOVIE_MENTOR_FORWARD_EXECUTION_AUTHORITY_VERSION,
+  MOVIE_MENTOR_FORWARD_EXECUTION_AUTHORITY_DOMAIN,
+  MOVIE_MENTOR_FORWARD_EXECUTION_PROOF_DOMAIN,
+  MOVIE_MENTOR_FORWARD_EXECUTION_AUTHORITY_SCHEMA,
+  normalizeReacquisitionTarget,
+  normalizeCreationTarget,
+  normalizeProviderCallAdmissionTarget,
+  normalizeProviderEffectUnknownTarget,
+  createMovieMentorForwardExecutionAuthority,
+  assertMovieMentorForwardExecutionReacquisitionAuthority,
+  assertMovieMentorForwardExecutionCreationAuthority,
+  assertMovieMentorForwardProviderCallAdmissionAuthority,
+  assertMovieMentorForwardProviderEffectUnknownAuthority,
+};
 export default createMovieMentorForwardExecutionAuthority;

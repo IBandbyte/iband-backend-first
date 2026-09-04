@@ -2,9 +2,11 @@ import { runMovieMentorTurnWithCreatorStateConsumptionAuthority } from "./MovieM
 import {
   assertMovieMentorForwardExecutionReacquisitionAuthority,
   assertMovieMentorForwardExecutionCreationAuthority,
+  assertMovieMentorForwardProviderCallAdmissionAuthority,
+  assertMovieMentorForwardProviderEffectUnknownAuthority,
 } from "./MovieMentorForwardExecutionAuthority.js";
 
-const MOVIE_MENTOR_FORWARD_EXECUTION_RUNTIME_VERSION = "1.2.0";
+const MOVIE_MENTOR_FORWARD_EXECUTION_RUNTIME_VERSION = "1.3.0";
 const s = (value) => (typeof value === "string" ? value.trim() : "");
 
 function createForwardExecutionRuntimeDeps(deps = {}) {
@@ -15,11 +17,13 @@ function createForwardExecutionRuntimeDeps(deps = {}) {
 
   const historical = new Map();
   const guarded = { ...base };
+
   guarded.findExecutionByCreatorTurn = async (input = {}) => {
     const found = await base.findExecutionByCreatorTurn(input);
     if (found?.found && s(found?.executionId)) historical.set(s(found.executionId), structuredClone(found));
     return found;
   };
+
   if (typeof base.openExecution === "function") {
     if (typeof authority?.assertCurrentCreation !== "function") throw Object.assign(new Error("Fresh execution creation requires server-created current ownership authority."), { code: "MOVIE_MENTOR_FORWARD_EXECUTION_AUTHORITY_REQUIRED" });
     guarded.openExecution = async (input = {}) => base.openExecution({
@@ -27,6 +31,7 @@ function createForwardExecutionRuntimeDeps(deps = {}) {
       assertCurrentCreationAuthority: async (target = {}) => assertMovieMentorForwardExecutionCreationAuthority({ authority, ...target }),
     });
   }
+
   guarded.acquireExecution = async (input = {}) => {
     const executionId = s(input?.executionId);
     const existing = historical.get(executionId);
@@ -42,6 +47,23 @@ function createForwardExecutionRuntimeDeps(deps = {}) {
     });
     return base.acquireExecution(input);
   };
+
+  if (typeof base.claimProviderCall === "function") {
+    if (typeof authority?.assertCurrentProviderCallAdmission !== "function") throw Object.assign(new Error("Provider-call admission requires server-created current ownership authority."), { code: "MOVIE_MENTOR_FORWARD_EXECUTION_AUTHORITY_REQUIRED" });
+    guarded.claimProviderCall = async (input = {}) => base.claimProviderCall({
+      ...input,
+      assertCurrentProviderCallAdmissionAuthority: async (target = {}) => assertMovieMentorForwardProviderCallAdmissionAuthority({ authority, ...target }),
+    });
+  }
+
+  if (typeof base.beginProviderDispatch === "function") {
+    if (typeof authority?.assertCurrentProviderEffectUnknown !== "function") throw Object.assign(new Error("Provider-effect UNKNOWN requires server-created current ownership authority."), { code: "MOVIE_MENTOR_FORWARD_EXECUTION_AUTHORITY_REQUIRED" });
+    guarded.beginProviderDispatch = async (input = {}) => base.beginProviderDispatch({
+      ...input,
+      assertCurrentProviderEffectUnknownAuthority: async (target = {}) => assertMovieMentorForwardProviderEffectUnknownAuthority({ authority, ...target }),
+    });
+  }
+
   return { ...deps, inferenceExecutionAuthority: guarded };
 }
 
