@@ -152,7 +152,12 @@ assert.match(gatewaySource, /commitCreatorDecision\(input,\{\.\.\.deps,creatorSt
 assert.match(gatewaySource, /commitCreatorDecision:commitDecision/);
 assert.match(transitionSource, /await assertMovieMentorCreatorStateMutationAuthority\(/);
 assert.match(transitionSource, /return write\(next,\{expectedRevision:next\.transition\.expectedRevision,creatorStateMutationAuthority:deps\.creatorStateMutationAuthority\}\)/);
-assert.ok(storeSource.indexOf("await assertCreatorStateStoreMutationAuthority") < storeSource.indexOf("await ensureConnection()"), "store must prove current mutation authority before connecting to the irreversible write path");
+const writeBoundaryStart = storeSource.indexOf("async function writeAuthoritativeCreatorState");
+assert.ok(writeBoundaryStart >= 0, "store must expose the authoritative write boundary");
+const writeBoundary = storeSource.slice(writeBoundaryStart);
+const storeProofOffset = writeBoundary.indexOf("await assertCreatorStateStoreMutationAuthority");
+const storeConnectionOffset = writeBoundary.indexOf("await ensureConnection()");
+assert.ok(storeProofOffset >= 0 && storeConnectionOffset >= 0 && storeProofOffset < storeConnectionOffset, "store must prove current mutation authority before connecting to the irreversible write path");
 assert.match(storeSource, /sessionIdentityCannotAuthorizeWrites:true/);
 assert.match(decisionSource, /creatorStateMutationAuthority:deps\.creatorStateMutationAuthority/);
 assert.match(orchestratorSource, /creatorStateMutationAuthority:deps\.creatorStateMutationAuthority/);
