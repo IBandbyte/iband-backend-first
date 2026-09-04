@@ -7,7 +7,7 @@ console.log("5A.25 — creator HTTP response exposure authority torture");
 const canonicalize=value=>value===null||typeof value!=="object"?value:Array.isArray(value)?value.map(canonicalize):Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonicalize(value[key])]));
 const digest=value=>crypto.createHash("sha256").update(JSON.stringify(canonicalize(value))).digest("hex");
 const body={projectId:"project-1",creatorTurnId:"turn-1",message:"Help me shape this scene",options:{mode:"guide"}};
-const authority={authorized:true,principalId:"creator-1",projectId:"project-1",ownershipRef:"ownership:project-1"};
+const authority={authorized:true,principalId:"creator-1",projectId:"project-1",ownershipRef:"ownership:project-1",ownershipRevision:1,authorizationSource:"test-current-project-owner"};
 const payload={success:true,projectId:"project-1",mentorResponse:{text:"Start with the emotional turn."},metadata:{source:"runtime"}};
 const requestDigest=buildRequestDigest({creatorMessage:body.message,projectId:body.projectId,options:body.options});
 const canonicalBase={authorized:true,committed:true,currentRealityVerified:true,candidateLineageVerified:true,resultFinalizationVerified:true,executionPhase:"finalized",executionId:"execution-1",creatorTurnId:"turn-1",principalId:"creator-1",projectId:"project-1",reservationId:"reservation-1",requestDigest,resultReference:"result-1",candidateReference:"candidate-1",closureReference:"closure-1",closureCertificateDigest:"closure-digest-1",resultDigest:digest(payload),resultPayload:structuredClone(payload),providerEffectRealityRevision:7};

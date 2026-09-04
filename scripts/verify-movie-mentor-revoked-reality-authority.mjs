@@ -65,7 +65,6 @@ assert.equal(historical.reservationId,"reservation-history");
 assert.equal("resultPayload" in historical,false,"historical visibility must not smuggle revoked creator-facing payload into an authority-shaped response");
 assert.equal(candidateReads,0);
 
-// Prove the actual Express gateway preserves revocation semantics instead of translating it into a retryable 5xx.
 const noop=async()=>({});
 const executionAuthority={
   findExecutionByCreatorTurn:noop,openExecution:noop,acquireExecution:noop,assertFence:noop,claimProviderCall:noop,
@@ -77,7 +76,7 @@ const spendAuthority={reserveTurn:noop,readReservation:noop};
 const settlementAuthority={reconcile:noop,releaseUnclaimed:noop,releaseUnbound:noop};
 const quarantineError=Object.assign(new Error("durably quarantined"),{code:"MOVIE_MENTOR_INFERENCE_EXECUTION_QUARANTINED",retryable:false,quarantinedFromPhase:"settled"});
 const router=createMovieMentorTurnRouter({
-  requestAuthority:{authorize:async()=>({authorized:true,projectId:"project-gateway",principalId:"creator-gateway",ownershipRef:"owner-ref"})},
+  requestAuthority:{authorize:async()=>({authorized:true,projectId:"project-gateway",principalId:"creator-gateway",ownershipRef:"owner-ref",ownershipRevision:1,authorizationSource:"test-current-project-owner"})},
   inferenceSpendAuthority:spendAuthority,
   inferenceExecutionAuthority:executionAuthority,
   inferenceSettlementAuthority:settlementAuthority,
