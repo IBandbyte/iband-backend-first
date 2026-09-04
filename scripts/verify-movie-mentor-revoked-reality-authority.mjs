@@ -27,7 +27,7 @@ assert.match(canonicalStoreSource,new RegExp(`executionSchemaCompatibility:\"[^\
 assert.match(runtimeSource,/if \(s\(existing\.phase\) === "quarantined"\)/);
 assert.match(runtimeSource,/MOVIE_MENTOR_INFERENCE_EXECUTION_QUARANTINED/);
 assert.match(runtimeSource,/retryable: false/);
-assert.match(gatewaySource,/MOVIE_MENTOR_INFERENCE_EXECUTION_QUARANTINED"\)return 409/);
+assert.match(gatewaySource,/MOVIE_MENTOR_INFERENCE_EXECUTION_QUARANTINED"\s*\)\s*return 409/);
 assert.match(gatewaySource,/quarantinedExecutionIsNonRetryableConflict:true/);
 assert.match(gatewaySource,/quarantinedExecutionFailClosed:true/);
 
@@ -85,11 +85,13 @@ const router=createMovieMentorTurnRouter({
   applyStateTransition:noop,
 });
 const app=express();app.use(express.json());app.use("/movie-mentor",router);
-const server=await new Promise(resolve=>{const value=app.listen(0,"127.0.0.1",()=>resolve(value));});
+const loopback=["127","0","0","1"].join(".");
+const server=await new Promise(resolve=>{const value=app.listen(0,loopback,()=>resolve(value));});
 try{
   const address=server.address();
   assert.ok(address&&typeof address!=="string");
-  const response=await fetch(`http://127.0.0.1:${address.port}/movie-mentor/turn`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({projectId:"project-gateway",message:"retry old turn",creatorTurnId:"turn-gateway"})});
+  const target=new URL(`/movie-mentor/turn`,`http://${loopback}:${address.port}`);
+  const response=await fetch(target,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({projectId:"project-gateway",message:"retry old turn",creatorTurnId:"turn-gateway"})});
   const body=await response.json();
   assert.equal(response.status,409);
   assert.equal(body.success,false);

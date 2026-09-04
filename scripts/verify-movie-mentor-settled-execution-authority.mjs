@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { replayTerminalTurn } from "../ai/MovieMentorTurnRuntime.js";
+import { digestCreatorResponsePayload, replayTerminalTurn } from "../ai/MovieMentorTurnRuntime.js";
 import { inspectMovieMentorInferenceExecution } from "../ai/MovieMentorInferenceExecutionMongoStore.js";
 
 const settlementStore = fs.readFileSync(new URL("../ai/MovieMentorInferenceSettlementMongoStore.js", import.meta.url), "utf8");
@@ -83,17 +83,65 @@ assert.doesNotMatch(legacyWindow, /entitlements\.findOneAndUpdate/, "legacy cons
 assert.match(legacyWindow, /reservations\.updateOne/, "legacy migration must backfill explicit durable debit lineage");
 assert.match(legacyWindow, /executions\.updateOne/, "legacy migration must bind FINALIZED→SETTLED atomically");
 
-const canonical = {authorized:true,committed:true,resultReference:"result-1",resultDigest:"digest-1",executionId:"execution-1",closureReference:"closure-1",closureCertificateDigest:"closure-digest-1",reservationId:"reservation-1",resultPayload:{success:true,text:"durable-settled-replay"}};
-const existing = {found:true,phase:"settled",executionId:"execution-1"};
+const resultPayload={success:true,text:"durable-settled-replay"};
+const resultDigest=digestCreatorResponsePayload(resultPayload);
+const canonical = {
+  authorized:true,
+  committed:true,
+  currentRealityVerified:true,
+  candidateLineageVerified:true,
+  resultFinalizationVerified:true,
+  executionPhase:"settled",
+  providerEffectRealityRevision:4,
+  resultReference:"result-1",
+  candidateReference:"candidate-1",
+  resultDigest,
+  executionId:"execution-1",
+  creatorTurnId:"turn-1",
+  principalId:"creator-1",
+  projectId:"project-1",
+  requestDigest:"request-1",
+  closureReference:"closure-1",
+  closureCertificateDigest:"closure-digest-1",
+  reservationId:"reservation-1",
+  resultPayload,
+};
+const existing = {
+  found:true,
+  phase:"settled",
+  executionId:"execution-1",
+  creatorTurnId:"turn-1",
+  principalId:"creator-1",
+  projectId:"project-1",
+  reservationId:"reservation-1",
+  requestDigest:"request-1",
+};
+const settledConsume={
+  authorized:true,
+  settled:true,
+  outcome:"consumed",
+  resultFinalizationVerified:true,
+  executionPhase:"settled",
+  providerEffectRealityRevision:4,
+  executionId:"execution-1",
+  principalId:"creator-1",
+  projectId:"project-1",
+  reservationId:"reservation-1",
+  resultReference:"result-1",
+  resultDigest,
+  closureCertificateDigest:"closure-digest-1",
+  idempotent:true,
+};
 let providerReads = 0;
 const replay = await replayTerminalTurn({
   existing,
   inferenceExecutionAuthority:{readCanonicalResult:async()=>canonical,claimProviderCall:async()=>{providerReads++;throw new Error("SETTLED replay must never acquire provider authority");}},
-  settlementAuthority:{reconcile:async()=>({authorized:true,settled:true,outcome:"consumed",executionPhase:"settled",idempotent:true})},
+  settlementAuthority:{reconcile:async()=>settledConsume},
 });
 assert.equal(replay.text,"durable-settled-replay");
 assert.equal(replay.metadata.canonicalResult.replayedFromDurableResult,true);
 assert.equal(replay.metadata.canonicalResult.settlementExecutionPhase,"settled");
+assert.equal(replay.metadata.canonicalResult.creatorResponseAuthorityVerified,true);
 assert.equal(providerReads,0);
 let quarantinedProviderReads = 0;
 await assert.rejects(()=>replayTerminalTurn({
@@ -105,8 +153,8 @@ assert.equal(quarantinedProviderReads,0, "replayTerminalTurn itself must not tre
 await assert.rejects(()=>replayTerminalTurn({
   existing,
   inferenceExecutionAuthority:{readCanonicalResult:async()=>canonical},
-  settlementAuthority:{reconcile:async()=>({authorized:true,settled:true,outcome:"consumed"})},
-}), e=>e.code==="MOVIE_MENTOR_INFERENCE_SETTLEMENT_RECONCILIATION_PENDING");
+  settlementAuthority:{reconcile:async()=>({...settledConsume,resultFinalizationVerified:false})},
+}), e=>e.code==="MOVIE_MENTOR_CREATOR_RESPONSE_SETTLEMENT_AUTHORITY_REQUIRED");
 
 console.log("5A.24 SETTLED execution ownership catastrophe gate: GREEN");
 console.log("✓ FINALIZED owns canonical lineage only; creator debit authority is not credited until SETTLED");
@@ -114,7 +162,7 @@ console.log("✓ current schema-6 execution universes can cross settlement/relea
 console.log("✓ fresh consume writes SETTLED barrier -> entitlement debit -> consumed reservation inside one Mongo transaction");
 console.log("✓ explicit reservation debit lineage binds execution + result + candidate + digest");
 console.log("✓ exact legacy FINALIZED+CONSUMED history migrates to SETTLED without a second entitlement debit");
-console.log("✓ SETTLED replay requires executionPhase=settled and cannot reacquire provider authority");
+console.log("✓ SETTLED replay requires current creator-response canonical authority plus exact settled consume binding and cannot reacquire provider authority");
 console.log("✓ late provider evidence remains observable after SETTLED, increments shared reality revision, and can quarantine current closure without recreating execution authority");
 console.log("✓ QUARANTINED preserves historical proof lineage but grants zero replay, settlement or provider authority");
 console.log("LAW: NO PHASE GETS CREDIT FOR A PROOF IT DOESN'T OWN. CURRENT DURABLE SCHEMA MUST CROSS EVERY OWNED PROOF BOUNDARY WITHOUT DOWNGRADE. QUARANTINE PRESERVES HISTORY BUT GRANTS ZERO FORWARD AUTHORITY.");

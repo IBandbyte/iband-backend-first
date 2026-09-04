@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readAuthoritativeTurnSource,writeAuthoritativeCreatorState } from "./MovieMentorCreatorStateStore.js";
+import { assertMovieMentorCreatorStateMutationAuthority } from "./MovieMentorCreatorStateMutationAuthority.js";
 
-const MOVIE_MENTOR_CREATOR_STATE_TRANSITION_VERSION="1.1.0";
+const MOVIE_MENTOR_CREATOR_STATE_TRANSITION_VERSION="1.2.0";
 const ALLOWED_FIELDS=Object.freeze(["creatorConfirmedContext","projectJourney","memoryContext","responseBlueprint","communicationPlan"]);
 function s(v){return typeof v==="string"?v.trim():"";}
 function n(v){return Number.isSafeInteger(v)&&v>=0?v:null;}
@@ -10,7 +11,7 @@ function stable(v){if(Array.isArray(v))return v.map(stable);if(v&&typeof v==="ob
 function digest(v){return createHash("sha256").update(JSON.stringify(stable(v))).digest("hex");}
 function fail(code,message){const e=new Error(message);e.code=code;return e;}
 function identityFrom(input={}){return{projectId:s(input.projectId)||null,creatorSessionId:s(input.creatorSessionId)||null};}
-function assertIdentity(identity){if(!identity.projectId&&!identity.creatorSessionId)throw fail("MOVIE_MENTOR_CREATOR_STATE_IDENTITY_REQUIRED","projectId or creatorSessionId is required for a creator state transition.");}
+function assertIdentity(identity){if(!identity.projectId)throw fail("MOVIE_MENTOR_CREATOR_STATE_PROJECT_REQUIRED","Durable creator-state mutation requires projectId; creatorSessionId may identify historical state but cannot authorize a new write.");}
 function proposedFields(input={}){const proposed=input.state&&typeof input.state==="object"?input.state:{};const out={};for(const key of ALLOWED_FIELDS)if(Object.prototype.hasOwnProperty.call(proposed,key))out[key]=clone(proposed[key]);return out;}
 function assertNoAuthorityInjection(input={}){const proposed=input.state&&typeof input.state==="object"?input.state:{};const forbidden=["revision","revisionAuthorityReference","creatorStateGeneration","creatorStateFingerprint","creatorAuthorityReference","snapshotReference","capturedAt","updatedAt","createdAt","authorityReference","fingerprint","generation"];
  for(const key of forbidden)if(Object.prototype.hasOwnProperty.call(proposed,key)||Object.prototype.hasOwnProperty.call(input,key)&&!["expectedRevision"].includes(key))throw fail("MOVIE_MENTOR_CREATOR_STATE_AUTHORITY_INJECTION","Client may not supply server authority fields.");}
@@ -31,7 +32,9 @@ async function applyMovieMentorCreatorStateTransition(input={},deps={}){
  assertNoAuthorityInjection(input);const identity=identityFrom(input);assertIdentity(identity);transitionSource(input);
  const read=deps.readAuthoritativeTurnSource||readAuthoritativeTurnSource,write=deps.writeAuthoritativeCreatorState||writeAuthoritativeCreatorState;
  let current=null;try{current=await read(identity);}catch(error){if(error?.code!=="MOVIE_MENTOR_CREATOR_STATE_NOT_FOUND")throw error;}
- const next=buildNextState({current,input,identity});return write(next,{expectedRevision:next.transition.expectedRevision});
+ const next=buildNextState({current,input,identity});
+ await assertMovieMentorCreatorStateMutationAuthority({authority:deps.creatorStateMutationAuthority,projectId:next.projectId,source:next.transition.source,expectedRevision:next.transition.expectedRevision,revision:next.revision,creatorStateGeneration:next.creatorStateGeneration,creatorStateFingerprint:next.creatorStateFingerprint});
+ return write(next,{expectedRevision:next.transition.expectedRevision,creatorStateMutationAuthority:deps.creatorStateMutationAuthority});
 }
 
 export{MOVIE_MENTOR_CREATOR_STATE_TRANSITION_VERSION,ALLOWED_FIELDS,buildNextState,applyMovieMentorCreatorStateTransition};

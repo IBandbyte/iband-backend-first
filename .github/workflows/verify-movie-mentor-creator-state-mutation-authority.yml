@@ -1,0 +1,28 @@
+name: Verify Movie Mentor Creator State Mutation Authority
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Check creator state mutation authority syntax
+        run: >-
+          node --check ai/MovieMentorCreatorStateMutationAuthority.js &&
+          node --check ai/MovieMentorCreatorStateStore.js &&
+          node --check ai/MovieMentorCreatorStateTransition.js &&
+          node --check ai/MovieMentorCreatorDecisionAuthority.js &&
+          node --check ai/MovieMentorTurnOrchestrator.js &&
+          node --check movieMentorTurn.js &&
+          node --check scripts/verify-movie-mentor-creator-state-mutation-authority.mjs
+      - name: Verify creator state mutation current ownership authority
+        run: node scripts/verify-movie-mentor-creator-state-mutation-authority.mjs
