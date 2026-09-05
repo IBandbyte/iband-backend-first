@@ -5,14 +5,18 @@ on:
   pull_request:
     paths:
       - "ai/MovieMentorJourneyRecoveryPublicationBoundary.js"
+      - "ai/MovieMentorJourneyRecoveryPublicationWriteAuthority.js"
       - "ai/MovieMentorJourneyRecoveryTransition.js"
+      - "ai/MovieMentorJourneyRecoveryStore.js"
       - "scripts/verify-movie-mentor-journey-recovery-publication-write-authority.mjs"
       - ".github/workflows/verify-movie-mentor-journey-recovery-publication-write-authority.yml"
   push:
     branches: [main]
     paths:
       - "ai/MovieMentorJourneyRecoveryPublicationBoundary.js"
+      - "ai/MovieMentorJourneyRecoveryPublicationWriteAuthority.js"
       - "ai/MovieMentorJourneyRecoveryTransition.js"
+      - "ai/MovieMentorJourneyRecoveryStore.js"
       - "scripts/verify-movie-mentor-journey-recovery-publication-write-authority.mjs"
       - ".github/workflows/verify-movie-mentor-journey-recovery-publication-write-authority.yml"
 
@@ -31,7 +35,9 @@ jobs:
       - name: Check Journey recovery publication write authority syntax
         run: |
           node --check ai/MovieMentorJourneyRecoveryPublicationBoundary.js
+          node --check ai/MovieMentorJourneyRecoveryPublicationWriteAuthority.js
           node --check ai/MovieMentorJourneyRecoveryTransition.js
+          node --check ai/MovieMentorJourneyRecoveryStore.js
           node --check scripts/verify-movie-mentor-journey-recovery-publication-write-authority.mjs
       - name: Verify Journey recovery publication write authority
         run: node scripts/verify-movie-mentor-journey-recovery-publication-write-authority.mjs
