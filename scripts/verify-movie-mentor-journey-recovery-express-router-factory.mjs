@@ -62,6 +62,7 @@ let requestAuthorityArgs = null;
 let publicationArgs = null;
 let publishCalls = 0;
 let publicationInput = null;
+let exposureAuthorizeCalls = 0;
 
 const verifyCredential = async () => {
   verifierCalls += 1;
@@ -75,7 +76,17 @@ const router = createMovieMentorJourneyRecoveryExpressRouter(
     expectedAudience: "  iband.movie-mentor  ",
     createRequestAuthority: (args) => {
       requestAuthorityArgs = args;
-      return Object.freeze({ authorize: async () => ({ authorized: true }) });
+      return Object.freeze({
+        authorize: async ({ projectId }) => {
+          exposureAuthorizeCalls += 1;
+          return Object.freeze({
+            authorized: true,
+            principalId: "principal-owner",
+            projectId,
+            ownershipRef: `ownership:${projectId}`,
+          });
+        },
+      });
     },
     createPublicationBoundary: (args) => {
       publicationArgs = args;
@@ -132,6 +143,7 @@ await withServer(router, async (origin) => {
   assert.equal(body.success, true);
   assert.equal(body.projectId, "route-project-7");
   assert.equal(publishCalls, 1);
+  assert.equal(exposureAuthorizeCalls, 1);
   assert.equal(publicationInput.projectId, "route-project-7");
   assert.equal(publicationInput.request.headers.authorization, "Bearer externally-verifiable-token");
   assert.equal(publicationInput.expectedRecoveryRevision, 0);
@@ -203,6 +215,7 @@ await withServer(router, async (origin) => {
 
 console.log("✓ verifier, issuer and audience are mandatory factory inputs");
 console.log("✓ router construction never performs credential verification");
+console.log("✓ successful HTTP exposure re-earns current project ownership authority");
 console.log("✓ route-selected :projectId is forwarded separately from the body");
 console.log("✓ body projectId injection is rejected before publication");
 console.log("✓ forged body identity/admin claims acquire no router authority");
