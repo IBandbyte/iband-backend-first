@@ -4,7 +4,7 @@ import { createMovieMentorJourneyRecoveryRequestAuthority } from "./MovieMentorJ
 import { createMovieMentorJourneyRecoveryPublicationBoundary } from "./MovieMentorJourneyRecoveryPublicationBoundary.js";
 import { createMovieMentorJourneyRecoveryHttpTransportAdapter } from "./MovieMentorJourneyRecoveryHttpTransportAdapter.js";
 
-const MOVIE_MENTOR_JOURNEY_RECOVERY_EXPRESS_ROUTER_FACTORY_VERSION = "1.0.0";
+const MOVIE_MENTOR_JOURNEY_RECOVERY_EXPRESS_ROUTER_FACTORY_VERSION = "1.1.0";
 
 function cleanString(value) {
   return typeof value === "string" ? value.trim() : "";
@@ -27,6 +27,17 @@ function internalFailure() {
   });
 }
 
+function forbiddenExposure() {
+  return Object.freeze({
+    statusCode: 403,
+    body: Object.freeze({
+      success: false,
+      code: "MOVIE_MENTOR_RECOVERY_FORBIDDEN",
+      message: "Recovery publication is not authorized.",
+    }),
+  });
+}
+
 /**
  * 3C.5E.4B — Recovery Express Router Factory
  *
@@ -37,6 +48,10 @@ function internalFailure() {
  * Route-local project identity comes only from req.params.projectId. The body
  * is never consulted to choose a project and is passed unchanged to the
  * certified HTTP transport adapter, which rejects body projectId injection.
+ *
+ * A successful durable recovery publication does not itself authorize later
+ * creator-facing HTTP exposure. Immediately before a successful response is
+ * emitted, this boundary re-earns current request/project ownership authority.
  */
 function createMovieMentorJourneyRecoveryExpressRouter({
   verifyCredential = null,
@@ -138,14 +153,31 @@ function createMovieMentorJourneyRecoveryExpressRouter({
   }
 
   router.post("/:projectId/recovery", async (req, res) => {
+    const projectId = cleanString(req?.params?.projectId) || null;
     let transport;
     try {
-      transport = await httpAdapter.handle({
-        request: req,
-        projectId: cleanString(req?.params?.projectId) || null,
-      });
+      transport = await httpAdapter.handle({ request: req, projectId });
     } catch {
       transport = internalFailure();
+    }
+
+    if (transport?.statusCode === 200 && transport?.body?.success === true) {
+      try {
+        const exposureAuthorization = await requestAuthority.authorize({
+          request: req,
+          projectId,
+        });
+        if (
+          exposureAuthorization?.authorized !== true ||
+          cleanString(exposureAuthorization.projectId) !== projectId ||
+          !cleanString(exposureAuthorization.principalId) ||
+          !cleanString(exposureAuthorization.ownershipRef)
+        ) {
+          transport = forbiddenExposure();
+        }
+      } catch {
+        transport = forbiddenExposure();
+      }
     }
 
     const statusCode = Number.isInteger(transport?.statusCode)
