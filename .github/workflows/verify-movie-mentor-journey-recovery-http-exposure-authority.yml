@@ -1,0 +1,37 @@
+name: Verify Movie Mentor Journey Recovery HTTP Exposure Authority
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "ai/MovieMentorJourneyRecoveryExpressRouterFactory.js"
+      - "ai/MovieMentorJourneyRecoveryHttpTransportAdapter.js"
+      - "ai/MovieMentorJourneyRecoveryPublicationBoundary.js"
+      - "scripts/verify-movie-mentor-journey-recovery-http-exposure-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-journey-recovery-http-exposure-authority.yml"
+  push:
+    branches: [main]
+    paths:
+      - "ai/MovieMentorJourneyRecoveryExpressRouterFactory.js"
+      - "ai/MovieMentorJourneyRecoveryHttpTransportAdapter.js"
+      - "ai/MovieMentorJourneyRecoveryPublicationBoundary.js"
+      - "scripts/verify-movie-mentor-journey-recovery-http-exposure-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-journey-recovery-http-exposure-authority.yml"
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Check Journey recovery HTTP exposure authority syntax
+        run: |
+          node --check ai/MovieMentorJourneyRecoveryExpressRouterFactory.js
+          node --check ai/MovieMentorJourneyRecoveryHttpTransportAdapter.js
+          node --check scripts/verify-movie-mentor-journey-recovery-http-exposure-authority.mjs
+      - name: Verify Journey recovery HTTP exposure authority
+        run: node scripts/verify-movie-mentor-journey-recovery-http-exposure-authority.mjs
