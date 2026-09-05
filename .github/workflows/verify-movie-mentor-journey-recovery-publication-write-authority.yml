@@ -1,0 +1,43 @@
+name: Verify Movie Mentor Journey Recovery Publication Write Authority
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "ai/MovieMentorJourneyRecoveryPublicationBoundary.js"
+      - "ai/MovieMentorJourneyRecoveryPublicationWriteAuthority.js"
+      - "ai/MovieMentorJourneyRecoveryTransition.js"
+      - "ai/MovieMentorJourneyRecoveryStore.js"
+      - "scripts/verify-movie-mentor-journey-recovery-publication-write-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-journey-recovery-publication-write-authority.yml"
+  push:
+    branches: [main]
+    paths:
+      - "ai/MovieMentorJourneyRecoveryPublicationBoundary.js"
+      - "ai/MovieMentorJourneyRecoveryPublicationWriteAuthority.js"
+      - "ai/MovieMentorJourneyRecoveryTransition.js"
+      - "ai/MovieMentorJourneyRecoveryStore.js"
+      - "scripts/verify-movie-mentor-journey-recovery-publication-write-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-journey-recovery-publication-write-authority.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Check Journey recovery publication write authority syntax
+        run: |
+          node --check ai/MovieMentorJourneyRecoveryPublicationBoundary.js
+          node --check ai/MovieMentorJourneyRecoveryPublicationWriteAuthority.js
+          node --check ai/MovieMentorJourneyRecoveryTransition.js
+          node --check ai/MovieMentorJourneyRecoveryStore.js
+          node --check scripts/verify-movie-mentor-journey-recovery-publication-write-authority.mjs
+      - name: Verify Journey recovery publication write authority
+        run: node scripts/verify-movie-mentor-journey-recovery-publication-write-authority.mjs
