@@ -1,0 +1,23 @@
+name: Verify Movie Mentor Journey Recovery Publication Write Authority
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Verify Journey recovery publication write authority
+        run: node scripts/verify-movie-mentor-journey-recovery-publication-write-authority.mjs
