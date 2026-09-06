@@ -1,0 +1,26 @@
+name: Verify Movie Mentor Post-Commit Creator State Result Candidate Authority
+
+on:
+  pull_request:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "ai/MovieMentorCreatorStateConsumptionRuntime.js"
+      - "ai/MovieMentorCreatorDecisionAuthority.js"
+      - "ai/MovieMentorTurnRuntime.js"
+      - "scripts/verify-movie-mentor-post-commit-creator-state-result-candidate-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-post-commit-creator-state-result-candidate-authority.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Syntax check creator-state consumption runtime
+        run: node --check ai/MovieMentorCreatorStateConsumptionRuntime.js
+      - name: Verify post-commit creator-state result-candidate authority
+        run: node scripts/verify-movie-mentor-post-commit-creator-state-result-candidate-authority.mjs
