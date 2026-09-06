@@ -21,6 +21,8 @@ const requestAuthority={
 const recovered=Object.freeze({
   recoveryStatus:"committed-after-ack-loss",
   projectId:"project-1",
+  principalId:"creator-1",
+  ownershipRef:"ownership:project-1",
   recoveryRevision:8,
   recoveryGeneration:8,
   recoveryReference:"recovery-8",
@@ -53,7 +55,7 @@ const router=createMovieMentorJourneyRecoveryExpressRouter({
       assert.equal(publicationCompleted,true);
       assert.equal(ackLossReconciled,true);
       ownershipCurrent=false;
-      return {statusCode:200,body:{success:true,status:publication.recoveryStatus,projectId:publication.projectId,recoveryRevision:publication.recoveryRevision,recoveryGeneration:publication.recoveryGeneration,lineageId:publication.lineageId,authorityGeneration:publication.authorityGeneration,progressionRevision:publication.progressionRevision,envelopeFingerprint:publication.envelopeFingerprint,capturedAt:publication.capturedAt}};
+      return {statusCode:200,authorityBinding:{principalId:publication.principalId,projectId:publication.projectId,ownershipRef:publication.ownershipRef},body:{success:true,status:publication.recoveryStatus,projectId:publication.projectId,recoveryRevision:publication.recoveryRevision,recoveryGeneration:publication.recoveryGeneration,lineageId:publication.lineageId,authorityGeneration:publication.authorityGeneration,progressionRevision:publication.progressionRevision,envelopeFingerprint:publication.envelopeFingerprint,capturedAt:publication.capturedAt}};
     }
   })
 });
