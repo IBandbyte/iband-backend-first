@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { createMovieMentorResultCandidateMongoStore } from "../ai/MovieMentorResultCandidateMongoStore.js";
 import { createMovieMentorCanonicalResultAuthority } from "../ai/MovieMentorCanonicalResultAuthority.js";
+import { MOVIE_MENTOR_CREATOR_STATE_CONSUMPTION_PROOF_DOMAIN, MOVIE_MENTOR_CREATOR_STATE_CONSUMPTION_SCHEMA } from "../ai/MovieMentorCreatorStateConsumptionAuthority.js";
 
 const execution = Object.freeze({
   authorized:true,
@@ -17,6 +18,22 @@ const execution = Object.freeze({
   leaseReference:"lease-time",
   fencingToken:"fence-time"
 });
+const creatorStateConsumptionProof=Object.freeze({
+  domain:MOVIE_MENTOR_CREATOR_STATE_CONSUMPTION_PROOF_DOMAIN,
+  schema:MOVIE_MENTOR_CREATOR_STATE_CONSUMPTION_SCHEMA,
+  authorized:true,
+  currentOwnershipVerified:true,
+  principalId:execution.principalId,
+  projectId:execution.projectId,
+  ownershipRef:"ownership-time",
+  ownershipRevision:1,
+  stage:"result-candidate",
+  revision:2,
+  creatorStateGeneration:2,
+  creatorStateFingerprint:"creator-state-time",
+  executionId:execution.executionId,
+  providerCallId:null,
+});
 
 const candidateModel = {
   findOne(){ return { lean(){ return { exec:async()=>null }; } }; },
@@ -29,7 +46,7 @@ const candidateStore = createMovieMentorResultCandidateMongoStore({
   randomId:()=>"candidate-time"
 });
 await assert.rejects(
-  ()=>candidateStore.stageCandidate({execution,resultPayload:{text:"result"}}),
+  ()=>candidateStore.stageCandidate({execution,resultPayload:{text:"result"},creatorStateConsumptionProof}),
   error=>error.code==="MOVIE_MENTOR_RESULT_CANDIDATE_TIME_INVALID"
 );
 
