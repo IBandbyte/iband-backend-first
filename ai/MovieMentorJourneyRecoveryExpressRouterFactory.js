@@ -4,7 +4,7 @@ import { createMovieMentorJourneyRecoveryRequestAuthority } from "./MovieMentorJ
 import { createMovieMentorJourneyRecoveryPublicationBoundary } from "./MovieMentorJourneyRecoveryPublicationBoundary.js";
 import { createMovieMentorJourneyRecoveryHttpTransportAdapter } from "./MovieMentorJourneyRecoveryHttpTransportAdapter.js";
 
-const MOVIE_MENTOR_JOURNEY_RECOVERY_EXPRESS_ROUTER_FACTORY_VERSION = "1.1.0";
+const MOVIE_MENTOR_JOURNEY_RECOVERY_EXPRESS_ROUTER_FACTORY_VERSION = "1.2.0";
 
 function cleanString(value) {
   return typeof value === "string" ? value.trim() : "";
@@ -51,7 +51,9 @@ function forbiddenExposure() {
  *
  * A successful durable recovery publication does not itself authorize later
  * creator-facing HTTP exposure. Immediately before a successful response is
- * emitted, this boundary re-earns current request/project ownership authority.
+ * emitted, this boundary re-earns current request/project ownership authority
+ * and requires it to match the exact principal/project/ownership universe that
+ * earned the published result.
  */
 function createMovieMentorJourneyRecoveryExpressRouter({
   verifyCredential = null,
@@ -163,17 +165,29 @@ function createMovieMentorJourneyRecoveryExpressRouter({
 
     if (transport?.statusCode === 200 && transport?.body?.success === true) {
       try {
-        const exposureAuthorization = await requestAuthority.authorize({
-          request: req,
-          projectId,
-        });
+        const binding = transport?.authorityBinding;
+        const boundPrincipalId = cleanString(binding?.principalId);
+        const boundProjectId = cleanString(binding?.projectId);
+        const boundOwnershipRef = cleanString(binding?.ownershipRef);
         if (
-          exposureAuthorization?.authorized !== true ||
-          cleanString(exposureAuthorization.projectId) !== projectId ||
-          !cleanString(exposureAuthorization.principalId) ||
-          !cleanString(exposureAuthorization.ownershipRef)
+          !boundPrincipalId ||
+          boundProjectId !== projectId ||
+          !boundOwnershipRef
         ) {
           transport = forbiddenExposure();
+        } else {
+          const exposureAuthorization = await requestAuthority.authorize({
+            request: req,
+            projectId,
+          });
+          if (
+            exposureAuthorization?.authorized !== true ||
+            cleanString(exposureAuthorization.projectId) !== boundProjectId ||
+            cleanString(exposureAuthorization.principalId) !== boundPrincipalId ||
+            cleanString(exposureAuthorization.ownershipRef) !== boundOwnershipRef
+          ) {
+            transport = forbiddenExposure();
+          }
         }
       } catch {
         transport = forbiddenExposure();

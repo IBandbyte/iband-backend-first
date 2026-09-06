@@ -22,7 +22,7 @@ async function run({revokeAfterPublication=false}={}){
   const publicationBoundary={
     async publish(){
       publicationCompleted=true;
-      return {recoveryStatus:"created",projectId:"project-1",recoveryRevision:1,recoveryGeneration:1,lineageId:"lineage-1",authorityGeneration:4,progressionRevision:2,envelopeFingerprint:"env-fp",capturedAt:"2026-09-05T00:00:00.000Z"};
+      return {recoveryStatus:"created",projectId:"project-1",principalId:"creator-1",ownershipRef:"ownership-A",recoveryRevision:1,recoveryGeneration:1,lineageId:"lineage-1",authorityGeneration:4,progressionRevision:2,envelopeFingerprint:"env-fp",capturedAt:"2026-09-05T00:00:00.000Z"};
     }
   };
   const router=createMovieMentorJourneyRecoveryExpressRouter({
@@ -33,7 +33,7 @@ async function run({revokeAfterPublication=false}={}){
       async handle({request,projectId}){
         const publication=await publicationBoundary.publish({request,projectId,expectedRecoveryRevision:0,envelope:{}});
         if(revokeAfterPublication && publicationCompleted) ownershipCurrent=false;
-        return {statusCode:200,body:{success:true,projectId:publication.projectId,recoveryRevision:publication.recoveryRevision}};
+        return {statusCode:200,authorityBinding:{principalId:publication.principalId,projectId:publication.projectId,ownershipRef:publication.ownershipRef},body:{success:true,projectId:publication.projectId,recoveryRevision:publication.recoveryRevision}};
       }
     })
   });

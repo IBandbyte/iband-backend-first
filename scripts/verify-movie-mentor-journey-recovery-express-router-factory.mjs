@@ -97,6 +97,8 @@ const router = createMovieMentorJourneyRecoveryExpressRouter(
           return Object.freeze({
             recoveryStatus: "created",
             projectId: input.projectId,
+            principalId: "principal-owner",
+            ownershipRef: `ownership:${input.projectId}`,
             recoveryRevision: 1,
             recoveryGeneration: 1,
             lineageId: "lineage-1",
@@ -215,7 +217,7 @@ await withServer(router, async (origin) => {
 
 console.log("✓ verifier, issuer and audience are mandatory factory inputs");
 console.log("✓ router construction never performs credential verification");
-console.log("✓ successful HTTP exposure re-earns current project ownership authority");
+console.log("✓ successful HTTP exposure re-earns exact current principal/project ownership authority");
 console.log("✓ route-selected :projectId is forwarded separately from the body");
 console.log("✓ body projectId injection is rejected before publication");
 console.log("✓ forged body identity/admin claims acquire no router authority");

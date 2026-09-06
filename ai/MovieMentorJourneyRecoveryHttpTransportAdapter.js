@@ -1,6 +1,6 @@
 import { createMovieMentorJourneyRecoveryPublicationBoundary } from "./MovieMentorJourneyRecoveryPublicationBoundary.js";
 
-const MOVIE_MENTOR_JOURNEY_RECOVERY_HTTP_TRANSPORT_ADAPTER_VERSION = "1.0.0";
+const MOVIE_MENTOR_JOURNEY_RECOVERY_HTTP_TRANSPORT_ADAPTER_VERSION = "1.1.0";
 
 function cleanString(value) {
   return typeof value === "string" ? value.trim() : "";
@@ -11,6 +11,40 @@ function publicError(statusCode, code, message) {
     statusCode,
     body: Object.freeze({ success: false, code, message }),
   });
+}
+
+function successTransport(publication) {
+  const principalId = cleanString(publication?.principalId);
+  const projectId = cleanString(publication?.projectId);
+  const ownershipRef = cleanString(publication?.ownershipRef);
+
+  const transport = {
+    statusCode: 200,
+    body: Object.freeze({
+      success: true,
+      status: publication.recoveryStatus,
+      projectId: publication.projectId,
+      recoveryRevision: publication.recoveryRevision,
+      recoveryGeneration: publication.recoveryGeneration,
+      lineageId: publication.lineageId,
+      authorityGeneration: publication.authorityGeneration,
+      progressionRevision: publication.progressionRevision,
+      envelopeFingerprint: publication.envelopeFingerprint,
+      capturedAt: publication.capturedAt,
+    }),
+  };
+
+  // Internal-only provenance for the final Express exposure boundary. It is
+  // deliberately non-enumerable so it cannot accidentally join the public
+  // JSON payload if the transport object is stringified or spread casually.
+  Object.defineProperty(transport, "authorityBinding", {
+    value: Object.freeze({ principalId, projectId, ownershipRef }),
+    enumerable: false,
+    configurable: false,
+    writable: false,
+  });
+
+  return Object.freeze(transport);
 }
 
 function classifyError(error) {
@@ -108,21 +142,7 @@ function createMovieMentorJourneyRecoveryHttpTransportAdapter({
         envelope: body.envelope,
       });
 
-      return Object.freeze({
-        statusCode: 200,
-        body: Object.freeze({
-          success: true,
-          status: publication.recoveryStatus,
-          projectId: publication.projectId,
-          recoveryRevision: publication.recoveryRevision,
-          recoveryGeneration: publication.recoveryGeneration,
-          lineageId: publication.lineageId,
-          authorityGeneration: publication.authorityGeneration,
-          progressionRevision: publication.progressionRevision,
-          envelopeFingerprint: publication.envelopeFingerprint,
-          capturedAt: publication.capturedAt,
-        }),
-      });
+      return successTransport(publication);
     } catch (error) {
       return classifyError(error);
     }
