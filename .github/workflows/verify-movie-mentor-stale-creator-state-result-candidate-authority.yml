@@ -1,0 +1,43 @@
+name: Verify Movie Mentor Stale Creator State Result Candidate Authority
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "ai/MovieMentorCreatorStateConsumptionAuthority.js"
+      - "ai/MovieMentorCreatorStateConsumptionRuntime.js"
+      - "ai/MovieMentorCreatorStateStore.js"
+      - "ai/MovieMentorTurnRuntime.js"
+      - "scripts/verify-movie-mentor-stale-creator-state-result-candidate-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-stale-creator-state-result-candidate-authority.yml"
+  push:
+    branches: [main]
+    paths:
+      - "ai/MovieMentorCreatorStateConsumptionAuthority.js"
+      - "ai/MovieMentorCreatorStateConsumptionRuntime.js"
+      - "ai/MovieMentorCreatorStateStore.js"
+      - "ai/MovieMentorTurnRuntime.js"
+      - "scripts/verify-movie-mentor-stale-creator-state-result-candidate-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-stale-creator-state-result-candidate-authority.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Check stale creator-state result-candidate authority syntax
+        run: |
+          node --check ai/MovieMentorCreatorStateConsumptionAuthority.js
+          node --check ai/MovieMentorCreatorStateConsumptionRuntime.js
+          node --check ai/MovieMentorCreatorStateStore.js
+          node --check ai/MovieMentorTurnRuntime.js
+          node --check scripts/verify-movie-mentor-stale-creator-state-result-candidate-authority.mjs
+      - name: Verify stale creator-state result-candidate authority
+        run: node scripts/verify-movie-mentor-stale-creator-state-result-candidate-authority.mjs

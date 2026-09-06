@@ -2,7 +2,7 @@ import { runMovieMentorTurn } from "./MovieMentorTurnRuntime.js";
 import { readAuthoritativeTurnSource } from "./MovieMentorCreatorStateStore.js";
 import { assertMovieMentorCreatorStateConsumptionAuthority } from "./MovieMentorCreatorStateConsumptionAuthority.js";
 
-const MOVIE_MENTOR_CREATOR_STATE_CONSUMPTION_RUNTIME_VERSION = "1.1.0";
+const MOVIE_MENTOR_CREATOR_STATE_CONSUMPTION_RUNTIME_VERSION = "1.2.0";
 
 function s(value) { return typeof value === "string" ? value.trim() : ""; }
 function n(value) { return Number.isSafeInteger(value) && value >= 0 ? value : null; }
@@ -41,6 +41,29 @@ function providerDispatchUniverse({ providerCall = null, current = null } = {}) 
   return { executionId, providerCallId };
 }
 
+function resultCandidateUniverse({ execution = null, candidate = null } = {}) {
+  const executionId = s(execution?.executionId || candidate?.executionId);
+  if (!executionId) {
+    fail("MOVIE_MENTOR_CREATOR_STATE_CONSUMPTION_RESULT_BINDING_REQUIRED", "Current creator-state consumption proof must bind the exact execution before a result becomes durable recovery reality.");
+  }
+  return { executionId };
+}
+
+function staleState(stage, promoted, current) {
+  fail(
+    "MOVIE_MENTOR_CREATOR_STATE_CONSUMPTION_STALE",
+    `${stage === "result-candidate" ? "Result-candidate staging" : "Provider dispatch"} cannot consume a creator-state universe that is no longer the current durable project state.`,
+    {
+      stage,
+      projectId: promoted.projectId,
+      promotedRevision: promoted.revision,
+      currentRevision: current.revision,
+      promotedCreatorStateGeneration: promoted.creatorStateGeneration,
+      currentCreatorStateGeneration: current.creatorStateGeneration,
+    },
+  );
+}
+
 function createCreatorStateConsumptionRuntimeDeps(deps = {}) {
   const authority = deps.creatorStateConsumptionAuthority;
   if (typeof authority?.assertCurrentConsumption !== "function") {
@@ -71,6 +94,19 @@ function createCreatorStateConsumptionRuntimeDeps(deps = {}) {
     return state;
   };
 
+  async function requireTrackedCurrentState(stage) {
+    if (!liveStateUniverse) {
+      fail(
+        "MOVIE_MENTOR_CREATOR_STATE_CONSUMPTION_STATE_PROOF_REQUIRED",
+        `${stage === "result-candidate" ? "Result-candidate staging" : "Provider dispatch"} cannot consume creator context before an exact current durable state universe has crossed the live-turn boundary.`,
+      );
+    }
+    const latestState = await baseRead({ projectId: liveStateUniverse.projectId });
+    const latestStateUniverse = stateUniverseFrom(latestState);
+    if (!sameStateUniverse(latestStateUniverse, liveStateUniverse)) staleState(stage, liveStateUniverse, latestStateUniverse);
+    return latestStateUniverse;
+  }
+
   const guardedExecutionAuthority = new Proxy(baseExecutionAuthority, {
     get(target, property, receiver) {
       if (property === "assertProviderDispatch") {
@@ -78,26 +114,7 @@ function createCreatorStateConsumptionRuntimeDeps(deps = {}) {
           const method = Reflect.get(target, property, receiver);
           const current = await method.call(target, args);
           if (current?.dispatchAuthorized !== true) return current;
-          if (!liveStateUniverse) {
-            fail("MOVIE_MENTOR_CREATOR_STATE_CONSUMPTION_STATE_PROOF_REQUIRED", "Provider dispatch cannot consume creator context before an exact current durable state universe has crossed the live-turn boundary.");
-          }
-
-          const latestState = await baseRead({ projectId: liveStateUniverse.projectId });
-          const latestStateUniverse = stateUniverseFrom(latestState);
-          if (!sameStateUniverse(latestStateUniverse, liveStateUniverse)) {
-            fail(
-              "MOVIE_MENTOR_CREATOR_STATE_CONSUMPTION_STALE",
-              "Provider dispatch cannot consume a creator-state universe that is no longer the current durable project state.",
-              {
-                projectId: liveStateUniverse.projectId,
-                promotedRevision: liveStateUniverse.revision,
-                currentRevision: latestStateUniverse.revision,
-                promotedCreatorStateGeneration: liveStateUniverse.creatorStateGeneration,
-                currentCreatorStateGeneration: latestStateUniverse.creatorStateGeneration,
-              },
-            );
-          }
-
+          const latestStateUniverse = await requireTrackedCurrentState("provider-dispatch");
           const dispatchUniverse = providerDispatchUniverse({ providerCall: args?.providerCall, current });
           await assertMovieMentorCreatorStateConsumptionAuthority({
             authority,
@@ -106,6 +123,23 @@ function createCreatorStateConsumptionRuntimeDeps(deps = {}) {
             stage: "provider-dispatch",
           });
           return current;
+        };
+      }
+      if (property === "stageResultCandidate") {
+        return async (args = {}) => {
+          const method = Reflect.get(target, property, receiver);
+          if (typeof method !== "function") {
+            fail("MOVIE_MENTOR_RESULT_CANDIDATE_AUTHORITY_REQUIRED", "Creator-state consumption runtime requires durable result-candidate staging authority.");
+          }
+          const latestStateUniverse = await requireTrackedCurrentState("result-candidate");
+          const resultUniverse = resultCandidateUniverse({ execution: args?.execution });
+          await assertMovieMentorCreatorStateConsumptionAuthority({
+            authority,
+            ...latestStateUniverse,
+            ...resultUniverse,
+            stage: "result-candidate",
+          });
+          return method.call(target, args);
         };
       }
       const value = Reflect.get(target, property, receiver);
@@ -129,6 +163,7 @@ export {
   stateUniverseFrom,
   sameStateUniverse,
   providerDispatchUniverse,
+  resultCandidateUniverse,
   createCreatorStateConsumptionRuntimeDeps,
   runMovieMentorTurnWithCreatorStateConsumptionAuthority,
 };
