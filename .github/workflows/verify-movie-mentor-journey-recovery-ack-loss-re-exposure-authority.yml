@@ -1,0 +1,38 @@
+name: Verify Movie Mentor Journey Recovery ACK-Loss Re-Exposure Authority
+
+on:
+  push:
+    paths:
+      - "ai/MovieMentorJourneyRecoveryExpressRouterFactory.js"
+      - "ai/MovieMentorJourneyRecoveryHttpTransportAdapter.js"
+      - "ai/MovieMentorJourneyRecoveryPublicationBoundary.js"
+      - "ai/MovieMentorJourneyRecoveryTransition.js"
+      - "scripts/verify-movie-mentor-journey-recovery-ack-loss-re-exposure-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-journey-recovery-ack-loss-re-exposure-authority.yml"
+  pull_request:
+    paths:
+      - "ai/MovieMentorJourneyRecoveryExpressRouterFactory.js"
+      - "ai/MovieMentorJourneyRecoveryHttpTransportAdapter.js"
+      - "ai/MovieMentorJourneyRecoveryPublicationBoundary.js"
+      - "ai/MovieMentorJourneyRecoveryTransition.js"
+      - "scripts/verify-movie-mentor-journey-recovery-ack-loss-re-exposure-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-journey-recovery-ack-loss-re-exposure-authority.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Syntax check ACK-loss re-exposure verifier
+        run: node --check scripts/verify-movie-mentor-journey-recovery-ack-loss-re-exposure-authority.mjs
+      - name: Torture ACK-loss historical reconciliation re-exposure authority
+        run: node scripts/verify-movie-mentor-journey-recovery-ack-loss-re-exposure-authority.mjs
