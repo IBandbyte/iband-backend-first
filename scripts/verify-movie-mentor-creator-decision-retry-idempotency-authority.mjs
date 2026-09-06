@@ -4,6 +4,7 @@ import {
   commitCreatorDecision,
 } from "../ai/MovieMentorCreatorDecisionAuthority.js";
 import { applyMovieMentorCreatorStateTransition } from "../ai/MovieMentorCreatorStateTransition.js";
+import { bindCreatorDecisionCommitToTurn } from "../ai/MovieMentorCreatorStateConsumptionRuntime.js";
 
 console.log("ROUND SEVEN — creator-decision retry idempotency authority torture");
 
@@ -74,66 +75,67 @@ const creatorStateMutationAuthority = Object.freeze({
   },
 });
 
-function candidateForSameLogicalTurn() {
+const commitDeps = {
+  readAuthoritativeTurnSource: read,
+  applyMovieMentorCreatorStateTransition,
+  writeAuthoritativeCreatorState: write,
+  creatorStateMutationAuthority,
+};
+
+function unboundCandidate() {
   const built = buildCreatorDecisionCandidate({
     creatorMessage,
     semanticIntelligence,
     projectId,
     actorRole: "creator",
-    creatorTurnId,
   });
   assert.equal(built.status, "candidate");
+  assert.equal(built.candidate.creatorTurnId, null, "orchestrator-era candidate may begin unbound; runtime commit boundary must bind the stable turn");
   return built.candidate;
 }
 
-const firstCandidate = candidateForSameLogicalTurn();
-const first = await commitCreatorDecision(
+const productionCommit = bindCreatorDecisionCommitToTurn(
+  { creatorTurnId },
+  { commitCreatorDecision },
+);
+
+const firstCandidate = unboundCandidate();
+const first = await productionCommit(
   {
     candidate: firstCandidate,
     expectedRevision: durable.revision,
     projectId,
     creatorSessionId,
-    creatorTurnId,
   },
-  {
-    readAuthoritativeTurnSource: read,
-    applyMovieMentorCreatorStateTransition,
-    writeAuthoritativeCreatorState: write,
-    creatorStateMutationAuthority,
-  },
+  commitDeps,
 );
 
 assert.equal(first.status, "committed");
+assert.equal(first.idempotent, false);
+assert.equal(first.candidate.creatorTurnId, creatorTurnId);
+assert.equal(first.committedContext.creatorTurnId, creatorTurnId);
 assert.equal(durable.revision, 8);
 assert.equal(durable.creatorConfirmedContext.filter((item) => item?.current === true).length, 1);
-console.log("✓ first delivery of the stable creator turn commits exactly one creator decision");
+console.log("✓ production runtime commit boundary binds the stable creatorTurnId before the first durable decision write");
 
 // Production retry sequence under test:
 // 1. explicit creator decision commits during orchestration;
 // 2. later result-candidate staging / acknowledgement fails;
 // 3. transport retries the SAME stable creatorTurnId;
 // 4. orchestration reaches the same explicit creator decision again.
-// The retry must recover/reuse the first durable decision instead of creating a
-// second authority event merely because the response did not finish.
-const retryCandidate = candidateForSameLogicalTurn();
+const retryCandidate = unboundCandidate();
 const beforeRetryRevision = durable.revision;
 const beforeRetryGeneration = durable.creatorStateGeneration;
 const beforeRetryDecisionIds = durable.creatorConfirmedContext.map((item) => item?.decisionId).filter(Boolean);
 
-const retried = await commitCreatorDecision(
+const retried = await productionCommit(
   {
     candidate: retryCandidate,
     expectedRevision: durable.revision,
     projectId,
     creatorSessionId,
-    creatorTurnId,
   },
-  {
-    readAuthoritativeTurnSource: read,
-    applyMovieMentorCreatorStateTransition,
-    writeAuthoritativeCreatorState: write,
-    creatorStateMutationAuthority,
-  },
+  commitDeps,
 );
 
 assert.equal(
@@ -141,6 +143,7 @@ assert.equal(
   true,
   "retrying the same stable creatorTurnId must return the already-committed creator decision as idempotent durable reality",
 );
+assert.equal(retried?.recovered, true);
 assert.equal(
   durable.revision,
   beforeRetryRevision,
@@ -156,7 +159,37 @@ assert.deepEqual(
   beforeRetryDecisionIds,
   "same-turn retry must not manufacture a second creator-decision authority event",
 );
+console.log("✓ result-delivery retry recovers the exact first durable decision with zero second mutation");
 
-console.log("✓ result-delivery retry cannot duplicate an already committed explicit creator decision");
+const conflictingSemantic = {
+  continuationReferences: [
+    {
+      status: "resolved",
+      expression: "that",
+      type: "prior-mentor-proposal",
+      resolvedValue: { recommendationId: "B", choice: "rooftop escape" },
+      source: "project-memory",
+    },
+  ],
+  understoodContext: [],
+};
+const conflicting = buildCreatorDecisionCandidate({
+  creatorMessage,
+  semanticIntelligence: conflictingSemantic,
+  projectId,
+  actorRole: "creator",
+}).candidate;
+await assert.rejects(
+  () => productionCommit(
+    { candidate: conflicting, expectedRevision: durable.revision, projectId, creatorSessionId },
+    commitDeps,
+  ),
+  (error) => error?.code === "MOVIE_MENTOR_CREATOR_DECISION_TURN_CONFLICT",
+  "a stable creatorTurnId may recover its exact prior act, but may not mutate into a different decision on retry",
+);
+assert.equal(durable.revision, beforeRetryRevision);
+console.log("✓ same stable turn with changed meaning fails closed instead of overwriting retry lineage");
+
 console.log("LAW: RESPONSE FAILURE MAY JUSTIFY RETRY. IT MAY NOT TURN ONE CREATOR ACT INTO TWO DURABLE DECISIONS.");
+console.log("LAW: A STABLE CREATOR TURN MAY RECOVER ITS DECISION. IT MAY NOT CHANGE ITS DECISION IN RETRY CLOTHING.");
 console.log("ROUND SEVEN creator-decision retry idempotency authority torture: GREEN");
