@@ -1,6 +1,7 @@
 name: Verify Movie Mentor Creator Decision Retry Idempotency Authority
 
 on:
+  workflow_dispatch:
   pull_request:
     paths:
       - "ai/MovieMentorCreatorDecisionAuthority.js"
@@ -11,10 +12,8 @@ on:
       - "ai/MovieMentorCreatorStateConsumptionRuntime.js"
       - "scripts/verify-movie-mentor-creator-decision-retry-idempotency-authority.mjs"
       - ".github/workflows/verify-movie-mentor-creator-decision-retry-idempotency-authority.yml"
-  workflow_dispatch:
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
       - "ai/MovieMentorCreatorDecisionAuthority.js"
       - "ai/MovieMentorCreatorStateTransition.js"
@@ -25,21 +24,25 @@ on:
       - "scripts/verify-movie-mentor-creator-decision-retry-idempotency-authority.mjs"
       - ".github/workflows/verify-movie-mentor-creator-decision-retry-idempotency-authority.yml"
 
+permissions:
+  contents: read
+
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Install dependencies
-        run: npm ci
-      - name: Syntax check creator decision authority
-        run: node --check ai/MovieMentorCreatorDecisionAuthority.js
-      - name: Syntax check creator state transition
-        run: node --check ai/MovieMentorCreatorStateTransition.js
-      - name: Syntax check verifier
-        run: node --check scripts/verify-movie-mentor-creator-decision-retry-idempotency-authority.mjs
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Check creator-decision retry idempotency authority syntax
+        run: |
+          node --check ai/MovieMentorCreatorDecisionAuthority.js
+          node --check ai/MovieMentorCreatorStateTransition.js
+          node --check ai/MovieMentorCreatorStateStore.js
+          node --check ai/MovieMentorTurnOrchestrator.js
+          node --check ai/MovieMentorTurnRuntime.js
+          node --check scripts/verify-movie-mentor-creator-decision-retry-idempotency-authority.mjs
       - name: Verify same-turn creator-decision retry idempotency
         run: node scripts/verify-movie-mentor-creator-decision-retry-idempotency-authority.mjs
