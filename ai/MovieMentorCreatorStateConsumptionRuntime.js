@@ -2,7 +2,7 @@ import { runMovieMentorTurn } from "./MovieMentorTurnRuntime.js";
 import { readAuthoritativeTurnSource } from "./MovieMentorCreatorStateStore.js";
 import { assertMovieMentorCreatorStateConsumptionAuthority } from "./MovieMentorCreatorStateConsumptionAuthority.js";
 
-const MOVIE_MENTOR_CREATOR_STATE_CONSUMPTION_RUNTIME_VERSION = "1.2.0";
+const MOVIE_MENTOR_CREATOR_STATE_CONSUMPTION_RUNTIME_VERSION = "1.3.0";
 
 function s(value) { return typeof value === "string" ? value.trim() : ""; }
 function n(value) { return Number.isSafeInteger(value) && value >= 0 ? value : null; }
@@ -133,13 +133,13 @@ function createCreatorStateConsumptionRuntimeDeps(deps = {}) {
           }
           const latestStateUniverse = await requireTrackedCurrentState("result-candidate");
           const resultUniverse = resultCandidateUniverse({ execution: args?.execution });
-          await assertMovieMentorCreatorStateConsumptionAuthority({
+          const creatorStateConsumptionProof = await assertMovieMentorCreatorStateConsumptionAuthority({
             authority,
             ...latestStateUniverse,
             ...resultUniverse,
             stage: "result-candidate",
           });
-          return method.call(target, args);
+          return method.call(target, { ...args, creatorStateConsumptionProof });
         };
       }
       const value = Reflect.get(target, property, receiver);
