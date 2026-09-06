@@ -1,8 +1,9 @@
 import { runMovieMentorTurn } from "./MovieMentorTurnRuntime.js";
 import { readAuthoritativeTurnSource } from "./MovieMentorCreatorStateStore.js";
+import { commitCreatorDecision } from "./MovieMentorCreatorDecisionAuthority.js";
 import { assertMovieMentorCreatorStateConsumptionAuthority } from "./MovieMentorCreatorStateConsumptionAuthority.js";
 
-const MOVIE_MENTOR_CREATOR_STATE_CONSUMPTION_RUNTIME_VERSION = "1.3.0";
+const MOVIE_MENTOR_CREATOR_STATE_CONSUMPTION_RUNTIME_VERSION = "1.4.0";
 
 function s(value) { return typeof value === "string" ? value.trim() : ""; }
 function n(value) { return Number.isSafeInteger(value) && value >= 0 ? value : null; }
@@ -154,8 +155,24 @@ function createCreatorStateConsumptionRuntimeDeps(deps = {}) {
   });
 }
 
+function bindCreatorDecisionCommitToTurn(input = {}, deps = {}) {
+  const creatorTurnId = s(input?.creatorTurnId);
+  if (!creatorTurnId) {
+    fail("MOVIE_MENTOR_CREATOR_TURN_ID_REQUIRED", "Live creator-state consumption requires the stable creatorTurnId that owns any creator-decision mutation.");
+  }
+  const baseCommit = deps.commitCreatorDecision || commitCreatorDecision;
+  if (typeof baseCommit !== "function") {
+    fail("MOVIE_MENTOR_CREATOR_DECISION_AUTHORITY_REQUIRED", "Live creator-state consumption requires creator-decision commit authority.");
+  }
+  return async (args = {}, commitDeps = {}) => baseCommit({ ...args, creatorTurnId }, commitDeps);
+}
+
 async function runMovieMentorTurnWithCreatorStateConsumptionAuthority(input = {}, deps = {}) {
-  return runMovieMentorTurn(input, createCreatorStateConsumptionRuntimeDeps(deps));
+  const turnBoundDeps = {
+    ...deps,
+    commitCreatorDecision: bindCreatorDecisionCommitToTurn(input, deps),
+  };
+  return runMovieMentorTurn(input, createCreatorStateConsumptionRuntimeDeps(turnBoundDeps));
 }
 
 export {
@@ -165,6 +182,7 @@ export {
   providerDispatchUniverse,
   resultCandidateUniverse,
   createCreatorStateConsumptionRuntimeDeps,
+  bindCreatorDecisionCommitToTurn,
   runMovieMentorTurnWithCreatorStateConsumptionAuthority,
 };
 export default runMovieMentorTurnWithCreatorStateConsumptionAuthority;
