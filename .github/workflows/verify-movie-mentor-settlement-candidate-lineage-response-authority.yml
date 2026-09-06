@@ -2,6 +2,7 @@ name: Verify Movie Mentor Settlement Candidate Lineage Response Authority
 
 on:
   push:
+    branches: [main]
     paths:
       - 'ai/MovieMentorTurnRuntime.js'
       - 'ai/MovieMentorInferenceSettlementReconciliationAuthority.js'
@@ -9,6 +10,7 @@ on:
       - 'scripts/verify-movie-mentor-settlement-candidate-lineage-response-authority.mjs'
       - '.github/workflows/verify-movie-mentor-settlement-candidate-lineage-response-authority.yml'
   pull_request:
+    branches: [main]
     paths:
       - 'ai/MovieMentorTurnRuntime.js'
       - 'ai/MovieMentorInferenceSettlementReconciliationAuthority.js'
@@ -20,11 +22,17 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-      - run: npm ci
-      - run: node scripts/verify-movie-mentor-settlement-candidate-lineage-response-authority.mjs
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Syntax check settlement candidate-lineage response authority
+        run: |
+          node --check ai/MovieMentorTurnRuntime.js
+          node --check ai/MovieMentorInferenceSettlementReconciliationAuthority.js
+          node --check scripts/verify-movie-mentor-settlement-candidate-lineage-response-authority.mjs
+      - name: Verify exact settlement candidate lineage reaches creator response
+        run: node scripts/verify-movie-mentor-settlement-candidate-lineage-response-authority.mjs
