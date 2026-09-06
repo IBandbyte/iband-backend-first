@@ -1,5 +1,6 @@
-const MOVIE_MENTOR_JOURNEY_RECOVERY_AUTHORIZATION_VERSION="1.0.0";
+const MOVIE_MENTOR_JOURNEY_RECOVERY_AUTHORIZATION_VERSION="1.1.0";
 function cleanString(v){return typeof v==="string"?v.trim():"";}
+function validOwnershipRevision(v){return Number.isSafeInteger(v)&&v>=1;}
 function fail(code,message,extras={}){const e=new Error(message);e.code=code;Object.assign(e,extras);throw e;}
 async function authorizeMovieMentorJourneyRecoveryRequest({principal=null,projectId=null,authorizeProject=null}={}){
   const pid=cleanString(projectId);
@@ -19,11 +20,17 @@ async function authorizeMovieMentorJourneyRecoveryRequest({principal=null,projec
   if(resolvedProjectId!==pid){
     fail("MOVIE_MENTOR_JOURNEY_RECOVERY_AUTHORIZATION_PROJECT_CONFLICT","Authorization resolver returned a different project identity.");
   }
+  const ownershipRef=cleanString(decision.ownershipRef);
+  const ownershipRevision=decision.ownershipRevision;
+  if(!ownershipRef||!validOwnershipRevision(ownershipRevision)){
+    fail("MOVIE_MENTOR_JOURNEY_RECOVERY_AUTHORIZATION_PROVENANCE_INVALID","Project authorization did not return complete ownership provenance.",{principalId,projectId:pid});
+  }
   return Object.freeze({
     authorized:true,
     principalId,
     projectId:pid,
-    ownershipRef:cleanString(decision.ownershipRef)||null,
+    ownershipRef,
+    ownershipRevision,
     authorizationSource:cleanString(decision.authorizationSource)||"deterministic-project-authorization",
   });
 }

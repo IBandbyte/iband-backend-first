@@ -1,6 +1,6 @@
 import { createMovieMentorJourneyRecoveryPublicationBoundary } from "./MovieMentorJourneyRecoveryPublicationBoundary.js";
 
-const MOVIE_MENTOR_JOURNEY_RECOVERY_HTTP_TRANSPORT_ADAPTER_VERSION = "1.1.0";
+const MOVIE_MENTOR_JOURNEY_RECOVERY_HTTP_TRANSPORT_ADAPTER_VERSION = "1.2.0";
 
 function cleanString(value) {
   return typeof value === "string" ? value.trim() : "";
@@ -17,6 +17,9 @@ function successTransport(publication) {
   const principalId = cleanString(publication?.principalId);
   const projectId = cleanString(publication?.projectId);
   const ownershipRef = cleanString(publication?.ownershipRef);
+  const ownershipRevision = Number.isSafeInteger(publication?.ownershipRevision) && publication.ownershipRevision >= 1
+    ? publication.ownershipRevision
+    : null;
 
   const transport = {
     statusCode: 200,
@@ -38,7 +41,7 @@ function successTransport(publication) {
   // deliberately non-enumerable so it cannot accidentally join the public
   // JSON payload if the transport object is stringified or spread casually.
   Object.defineProperty(transport, "authorityBinding", {
-    value: Object.freeze({ principalId, projectId, ownershipRef }),
+    value: Object.freeze({ principalId, projectId, ownershipRef, ownershipRevision }),
     enumerable: false,
     configurable: false,
     writable: false,
@@ -65,6 +68,7 @@ function classifyError(error) {
   if ([
     "MOVIE_MENTOR_JOURNEY_RECOVERY_NOT_AUTHORIZED",
     "MOVIE_MENTOR_JOURNEY_RECOVERY_PUBLICATION_AUTHORIZATION_INVALID",
+    "MOVIE_MENTOR_JOURNEY_RECOVERY_AUTHORIZATION_PROVENANCE_INVALID",
   ].includes(code)) {
     return publicError(403, "MOVIE_MENTOR_RECOVERY_FORBIDDEN", "Recovery publication is not authorized.");
   }
@@ -120,7 +124,6 @@ function createMovieMentorJourneyRecoveryHttpTransportAdapter({
       return publicError(400, "MOVIE_MENTOR_RECOVERY_INVALID_REQUEST", "Recovery request is invalid.");
     }
 
-    // projectId is selected by the eventual server route, never by untrusted body data.
     if (Object.prototype.hasOwnProperty.call(body, "projectId")) {
       return publicError(400, "MOVIE_MENTOR_RECOVERY_INVALID_REQUEST", "Recovery request is invalid.");
     }

@@ -4,10 +4,14 @@ import { createMovieMentorJourneyRecoveryRequestAuthority } from "./MovieMentorJ
 import { createMovieMentorJourneyRecoveryPublicationBoundary } from "./MovieMentorJourneyRecoveryPublicationBoundary.js";
 import { createMovieMentorJourneyRecoveryHttpTransportAdapter } from "./MovieMentorJourneyRecoveryHttpTransportAdapter.js";
 
-const MOVIE_MENTOR_JOURNEY_RECOVERY_EXPRESS_ROUTER_FACTORY_VERSION = "1.2.0";
+const MOVIE_MENTOR_JOURNEY_RECOVERY_EXPRESS_ROUTER_FACTORY_VERSION = "1.3.0";
 
 function cleanString(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function validOwnershipRevision(value) {
+  return Number.isSafeInteger(value) && value >= 1;
 }
 
 function fail(code, message) {
@@ -52,8 +56,8 @@ function forbiddenExposure() {
  * A successful durable recovery publication does not itself authorize later
  * creator-facing HTTP exposure. Immediately before a successful response is
  * emitted, this boundary re-earns current request/project ownership authority
- * and requires it to match the exact principal/project/ownership universe that
- * earned the published result.
+ * and requires principal/project/reference/revision to match the exact
+ * authority generation that earned the published result.
  */
 function createMovieMentorJourneyRecoveryExpressRouter({
   verifyCredential = null,
@@ -169,10 +173,12 @@ function createMovieMentorJourneyRecoveryExpressRouter({
         const boundPrincipalId = cleanString(binding?.principalId);
         const boundProjectId = cleanString(binding?.projectId);
         const boundOwnershipRef = cleanString(binding?.ownershipRef);
+        const boundOwnershipRevision = binding?.ownershipRevision;
         if (
           !boundPrincipalId ||
           boundProjectId !== projectId ||
-          !boundOwnershipRef
+          !boundOwnershipRef ||
+          !validOwnershipRevision(boundOwnershipRevision)
         ) {
           transport = forbiddenExposure();
         } else {
@@ -184,7 +190,8 @@ function createMovieMentorJourneyRecoveryExpressRouter({
             exposureAuthorization?.authorized !== true ||
             cleanString(exposureAuthorization.projectId) !== boundProjectId ||
             cleanString(exposureAuthorization.principalId) !== boundPrincipalId ||
-            cleanString(exposureAuthorization.ownershipRef) !== boundOwnershipRef
+            cleanString(exposureAuthorization.ownershipRef) !== boundOwnershipRef ||
+            exposureAuthorization.ownershipRevision !== boundOwnershipRevision
           ) {
             transport = forbiddenExposure();
           }
