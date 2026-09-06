@@ -1,0 +1,45 @@
+name: Verify Movie Mentor Creator Decision Retry Idempotency Authority
+
+on:
+  pull_request:
+    paths:
+      - "ai/MovieMentorCreatorDecisionAuthority.js"
+      - "ai/MovieMentorCreatorStateTransition.js"
+      - "ai/MovieMentorCreatorStateStore.js"
+      - "ai/MovieMentorTurnOrchestrator.js"
+      - "ai/MovieMentorTurnRuntime.js"
+      - "ai/MovieMentorCreatorStateConsumptionRuntime.js"
+      - "scripts/verify-movie-mentor-creator-decision-retry-idempotency-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-creator-decision-retry-idempotency-authority.yml"
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "ai/MovieMentorCreatorDecisionAuthority.js"
+      - "ai/MovieMentorCreatorStateTransition.js"
+      - "ai/MovieMentorCreatorStateStore.js"
+      - "ai/MovieMentorTurnOrchestrator.js"
+      - "ai/MovieMentorTurnRuntime.js"
+      - "ai/MovieMentorCreatorStateConsumptionRuntime.js"
+      - "scripts/verify-movie-mentor-creator-decision-retry-idempotency-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-creator-decision-retry-idempotency-authority.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm ci
+      - name: Syntax check creator decision authority
+        run: node --check ai/MovieMentorCreatorDecisionAuthority.js
+      - name: Syntax check creator state transition
+        run: node --check ai/MovieMentorCreatorStateTransition.js
+      - name: Syntax check verifier
+        run: node --check scripts/verify-movie-mentor-creator-decision-retry-idempotency-authority.mjs
+      - name: Verify same-turn creator-decision retry idempotency
+        run: node scripts/verify-movie-mentor-creator-decision-retry-idempotency-authority.mjs
