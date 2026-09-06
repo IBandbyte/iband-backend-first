@@ -2,7 +2,7 @@ import { runMovieMentorTurn } from "./MovieMentorTurnRuntime.js";
 import { readAuthoritativeTurnSource } from "./MovieMentorCreatorStateStore.js";
 import { assertMovieMentorCreatorStateConsumptionAuthority } from "./MovieMentorCreatorStateConsumptionAuthority.js";
 
-const MOVIE_MENTOR_CREATOR_STATE_CONSUMPTION_RUNTIME_VERSION = "1.0.0";
+const MOVIE_MENTOR_CREATOR_STATE_CONSUMPTION_RUNTIME_VERSION = "1.1.0";
 
 function s(value) { return typeof value === "string" ? value.trim() : ""; }
 function n(value) { return Number.isSafeInteger(value) && value >= 0 ? value : null; }
@@ -19,6 +19,17 @@ function stateUniverseFrom(state = {}) {
     fail("MOVIE_MENTOR_CREATOR_STATE_CONSUMPTION_STATE_PROOF_REQUIRED", "Live creator-state consumption requires an exact durable project, revision, generation and fingerprint universe.");
   }
   return universe;
+}
+
+function sameStateUniverse(left = null, right = null) {
+  return Boolean(
+    left &&
+    right &&
+    left.projectId === right.projectId &&
+    left.revision === right.revision &&
+    left.creatorStateGeneration === right.creatorStateGeneration &&
+    left.creatorStateFingerprint === right.creatorStateFingerprint
+  );
 }
 
 function providerDispatchUniverse({ providerCall = null, current = null } = {}) {
@@ -70,10 +81,27 @@ function createCreatorStateConsumptionRuntimeDeps(deps = {}) {
           if (!liveStateUniverse) {
             fail("MOVIE_MENTOR_CREATOR_STATE_CONSUMPTION_STATE_PROOF_REQUIRED", "Provider dispatch cannot consume creator context before an exact current durable state universe has crossed the live-turn boundary.");
           }
+
+          const latestState = await baseRead({ projectId: liveStateUniverse.projectId });
+          const latestStateUniverse = stateUniverseFrom(latestState);
+          if (!sameStateUniverse(latestStateUniverse, liveStateUniverse)) {
+            fail(
+              "MOVIE_MENTOR_CREATOR_STATE_CONSUMPTION_STALE",
+              "Provider dispatch cannot consume a creator-state universe that is no longer the current durable project state.",
+              {
+                projectId: liveStateUniverse.projectId,
+                promotedRevision: liveStateUniverse.revision,
+                currentRevision: latestStateUniverse.revision,
+                promotedCreatorStateGeneration: liveStateUniverse.creatorStateGeneration,
+                currentCreatorStateGeneration: latestStateUniverse.creatorStateGeneration,
+              },
+            );
+          }
+
           const dispatchUniverse = providerDispatchUniverse({ providerCall: args?.providerCall, current });
           await assertMovieMentorCreatorStateConsumptionAuthority({
             authority,
-            ...liveStateUniverse,
+            ...latestStateUniverse,
             ...dispatchUniverse,
             stage: "provider-dispatch",
           });
@@ -99,6 +127,7 @@ async function runMovieMentorTurnWithCreatorStateConsumptionAuthority(input = {}
 export {
   MOVIE_MENTOR_CREATOR_STATE_CONSUMPTION_RUNTIME_VERSION,
   stateUniverseFrom,
+  sameStateUniverse,
   providerDispatchUniverse,
   createCreatorStateConsumptionRuntimeDeps,
   runMovieMentorTurnWithCreatorStateConsumptionAuthority,
