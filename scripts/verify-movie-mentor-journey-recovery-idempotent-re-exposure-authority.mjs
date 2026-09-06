@@ -3,109 +3,22 @@ import { createMovieMentorJourneyRecoveryExpressRouter } from "../ai/MovieMentor
 
 console.log("5A.29 — Journey recovery idempotent historical re-exposure authority torture");
 
-function makeRouter() {
-  let postHandler = null;
-  return {
-    post(path, handler) {
-      assert.equal(path, "/:projectId/recovery");
-      postHandler = handler;
-    },
-    handler() {
-      assert.equal(typeof postHandler, "function");
-      return postHandler;
-    },
-  };
+function makeResponse(){return{statusCode:200,body:null,exposures:0,forbidden:0,status(code){this.statusCode=code;return this;},json(body){this.body=body;if(body?.success===true)this.exposures+=1;if(this.statusCode===403&&body?.success===false)this.forbidden+=1;return this;}};}
+
+async function run({revokeAfterIdempotentResolution=false}={}){
+ let ownershipCurrent=true,idempotentResolved=false,authorizeCalls=0;
+ const requestAuthority={async authorize(){authorizeCalls+=1;return ownershipCurrent?{authorized:true,principalId:"creator-1",projectId:"project-1",ownershipRef:"ownership-A",ownershipRevision:7,authenticationSource:"torture",authorizationSource:"torture"}:{authorized:false,principalId:"creator-1",projectId:"project-1"};}};
+ const publicationBoundary={async publish(){idempotentResolved=true;return{recoveryStatus:"idempotent",projectId:"project-1",recoveryRevision:7,recoveryGeneration:7,recoveryReference:"recovery-7",recoveryFingerprint:"recovery-fp-7",lineageId:"lineage-1",authorityGeneration:11,progressionRevision:19,envelopeFingerprint:"fingerprint-existing-checkpoint",capturedAt:"2026-09-05T23:00:00.000Z"};}};
+ const router=createMovieMentorJourneyRecoveryExpressRouter({
+  verifyCredential:async()=>({}),expectedIssuer:"issuer",expectedAudience:"audience",
+  createRequestAuthority:()=>requestAuthority,
+  createPublicationBoundary:()=>publicationBoundary,
+  createHttpAdapter:({publicationBoundary})=>({async handle({request,projectId}){const publication=await publicationBoundary.publish({request,projectId,expectedRecoveryRevision:7,envelope:{}});assert.equal(publication.recoveryStatus,"idempotent","torture must exercise historical idempotent recovery resolution");if(revokeAfterIdempotentResolution&&idempotentResolved)ownershipCurrent=false;return{statusCode:200,body:{success:true,status:publication.recoveryStatus,projectId:publication.projectId,recoveryRevision:publication.recoveryRevision,recoveryGeneration:publication.recoveryGeneration}};}})
+ });
+ const layer=router.stack.find(entry=>entry.route?.path==="/:projectId/recovery");assert.ok(layer,"recovery route must exist");const res=makeResponse();await layer.route.stack[0].handle({params:{projectId:"project-1"},body:{expectedRecoveryRevision:7,envelope:{}},headers:{authorization:"Bearer token"}},res);return{res,authorizeCalls};
 }
 
-async function runCase({ revokeBeforeExposure }) {
-  const router = makeRouter();
-  let ownershipCurrent = true;
-  let authorizeCalls = 0;
-  let successfulExposures = 0;
-  let forbiddenExposures = 0;
-
-  const requestAuthority = Object.freeze({
-    async authorize({ projectId }) {
-      authorizeCalls += 1;
-      if (!ownershipCurrent) return Object.freeze({ authorized: false, reason: "ownership-revoked" });
-      return Object.freeze({
-        authorized: true,
-        principalId: "principal-owner",
-        projectId,
-        ownershipRef: `ownership:${projectId}`,
-      });
-    },
-  });
-
-  const httpAdapter = Object.freeze({
-    async handle({ projectId }) {
-      // This represents a fully valid historical checkpoint returned by the
-      // recovery transition's idempotent path. No durable mutation occurs.
-      const transport = Object.freeze({
-        statusCode: 200,
-        body: Object.freeze({
-          success: true,
-          status: "idempotent",
-          projectId,
-          recoveryRevision: 7,
-          recoveryGeneration: 7,
-          lineageId: "lineage-1",
-          authorityGeneration: 11,
-          progressionRevision: 19,
-          envelopeFingerprint: "fingerprint-existing-checkpoint",
-          capturedAt: "2026-09-05T23:00:00.000Z",
-        }),
-      });
-      if (revokeBeforeExposure) ownershipCurrent = false;
-      return transport;
-    },
-  });
-
-  const express = {
-    Router() {
-      return router;
-    },
-  };
-
-  const built = createMovieMentorJourneyRecoveryExpressRouter({
-    express,
-    verifyCredential: async () => ({ authenticated: true, principalId: "principal-owner" }),
-    requestAuthority,
-    publicationBoundary: Object.freeze({ publish: async () => { throw new Error("not used by injected adapter"); } }),
-    httpAdapter,
-  });
-
-  const req = {
-    params: { projectId: "project-1" },
-    body: { expectedRecoveryRevision: 7, envelope: {} },
-  };
-  const res = {
-    status(code) {
-      this.statusCode = code;
-      return this;
-    },
-    json(body) {
-      if (this.statusCode === 200 && body?.success === true) successfulExposures += 1;
-      if (this.statusCode === 403 && body?.success === false) forbiddenExposures += 1;
-      return body;
-    },
-  };
-
-  await built.handler()(req, res);
-  return { authorizeCalls, successfulExposures, forbiddenExposures, statusCode: res.statusCode };
-}
-
-const current = await runCase({ revokeBeforeExposure: false });
-assert.equal(current.successfulExposures, 1, "current ownership must allow the valid idempotent recovery result to be exposed");
-assert.equal(current.statusCode, 200);
-assert.equal(current.authorizeCalls, 1, "successful idempotent HTTP exposure must ask current request authority exactly once at the final router boundary");
-console.log("✓ valid idempotent recovery remains exposable while current ownership survives");
-
-const revoked = await runCase({ revokeBeforeExposure: true });
-assert.equal(revoked.successfulExposures, 0, "ownership revoked after idempotent historical recovery resolution but before HTTP emission must expose zero successful recovery responses");
-assert.equal(revoked.statusCode, 403, "revoked idempotent historical recovery exposure must fail closed");
-assert.equal(revoked.forbiddenExposures, 1, "revoked idempotent historical recovery must emit the sanitized forbidden response");
-assert.equal(revoked.authorizeCalls, 1, "idempotent history must independently re-earn current ownership at exposure");
-console.log("✓ idempotent historical recovery cannot borrow old ownership authority for later creator-facing exposure");
-
-console.log("\nJourney recovery idempotent historical re-exposure authority torture passed.");
+{const{res,authorizeCalls}=await run({revokeAfterIdempotentResolution:false});assert.equal(res.exposures,1,"current ownership must allow exactly one valid idempotent recovery exposure");assert.equal(res.statusCode,200);assert.equal(authorizeCalls,1,"successful idempotent exposure must ask current request authority at the final router boundary");console.log("✓ valid idempotent recovery remains exposable while current ownership survives");}
+{const{res,authorizeCalls}=await run({revokeAfterIdempotentResolution:true});assert.equal(res.exposures,0,"ownership revoked after idempotent historical recovery resolution but before HTTP emission must expose zero successful recovery responses");assert.equal(res.statusCode,403,"revoked idempotent historical recovery exposure must fail closed");assert.equal(res.forbidden,1,"revoked idempotent historical recovery must emit the sanitized forbidden response");assert.equal(authorizeCalls,1,"idempotent history must independently re-earn current ownership at exposure");console.log("✓ idempotent historical recovery cannot borrow old ownership authority for later creator-facing exposure");}
+console.log("PASS Journey recovery idempotent historical re-exposure authority torture.");
+console.log("LAW: idempotent history may preserve recovery reality; current ownership must independently authorize creator-facing re-exposure.");
