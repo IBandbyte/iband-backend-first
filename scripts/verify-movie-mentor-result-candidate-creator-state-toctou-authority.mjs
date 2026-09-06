@@ -135,7 +135,7 @@ assert.match(candidateSource, /creatorStateGeneration/);
 assert.match(candidateSource, /creatorStateFingerprint/);
 assert.match(candidateSource, /legacySchemaAuthority:false/);
 assert.match(compositionSource, /creatorStateConsumptionProof/);
-assert.match(compositionSource, /resultCandidateCurrentCreatorStateAtomicFenceRequired:true/);
+assert.match(compositionSource, /resultCandidateCurrentCreatorStateAtomicFenceRequired:fullExecutionAuthority===true/);
 console.log("✓ exact creator-state proof crosses runtime -> production composition -> candidate store");
 console.log("✓ candidate transaction owns a write barrier on the current creator-state document before persistence");
 console.log("✓ schema-1 historical candidates cannot silently inherit schema-2 atomic creator-state authority");
