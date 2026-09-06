@@ -1,0 +1,46 @@
+name: Verify Movie Mentor Result Candidate Creator State TOCTOU Authority
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "ai/MovieMentorCreatorStateConsumptionAuthority.js"
+      - "ai/MovieMentorCreatorStateConsumptionRuntime.js"
+      - "ai/MovieMentorCreatorStateStore.js"
+      - "ai/MovieMentorProductionInferenceExecutionComposition.js"
+      - "ai/MovieMentorResultCandidateMongoStore.js"
+      - "scripts/verify-movie-mentor-result-candidate-creator-state-toctou-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-result-candidate-creator-state-toctou-authority.yml"
+  push:
+    branches: [main]
+    paths:
+      - "ai/MovieMentorCreatorStateConsumptionAuthority.js"
+      - "ai/MovieMentorCreatorStateConsumptionRuntime.js"
+      - "ai/MovieMentorCreatorStateStore.js"
+      - "ai/MovieMentorProductionInferenceExecutionComposition.js"
+      - "ai/MovieMentorResultCandidateMongoStore.js"
+      - "scripts/verify-movie-mentor-result-candidate-creator-state-toctou-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-result-candidate-creator-state-toctou-authority.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Check result-candidate creator-state TOCTOU authority syntax
+        run: |
+          node --check ai/MovieMentorCreatorStateConsumptionAuthority.js
+          node --check ai/MovieMentorCreatorStateConsumptionRuntime.js
+          node --check ai/MovieMentorCreatorStateStore.js
+          node --check ai/MovieMentorProductionInferenceExecutionComposition.js
+          node --check ai/MovieMentorResultCandidateMongoStore.js
+          node --check scripts/verify-movie-mentor-result-candidate-creator-state-toctou-authority.mjs
+      - name: Verify result-candidate creator-state TOCTOU authority
+        run: node scripts/verify-movie-mentor-result-candidate-creator-state-toctou-authority.mjs
