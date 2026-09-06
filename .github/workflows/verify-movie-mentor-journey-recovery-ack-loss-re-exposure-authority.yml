@@ -27,6 +27,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install backend dependencies
+        run: npm install --no-audit --no-fund --ignore-scripts
       - name: Syntax check ACK-loss re-exposure verifier
         run: node --check scripts/verify-movie-mentor-journey-recovery-ack-loss-re-exposure-authority.mjs
       - name: Torture ACK-loss historical reconciliation re-exposure authority
