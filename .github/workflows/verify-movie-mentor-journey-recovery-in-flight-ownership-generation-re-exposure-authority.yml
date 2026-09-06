@@ -1,0 +1,49 @@
+name: Verify Movie Mentor Journey Recovery In-Flight Ownership Generation Re-Exposure Authority
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "ai/MovieMentorJourneyRecoveryAuthorizationBoundary.js"
+      - "ai/MovieMentorJourneyRecoveryRequestAuthority.js"
+      - "ai/MovieMentorJourneyRecoveryPublicationWriteAuthority.js"
+      - "ai/MovieMentorJourneyRecoveryPublicationBoundary.js"
+      - "ai/MovieMentorJourneyRecoveryHttpTransportAdapter.js"
+      - "ai/MovieMentorJourneyRecoveryExpressRouterFactory.js"
+      - "scripts/verify-movie-mentor-journey-recovery-in-flight-ownership-generation-re-exposure-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-journey-recovery-in-flight-ownership-generation-re-exposure-authority.yml"
+  push:
+    branches: [main]
+    paths:
+      - "ai/MovieMentorJourneyRecoveryAuthorizationBoundary.js"
+      - "ai/MovieMentorJourneyRecoveryRequestAuthority.js"
+      - "ai/MovieMentorJourneyRecoveryPublicationWriteAuthority.js"
+      - "ai/MovieMentorJourneyRecoveryPublicationBoundary.js"
+      - "ai/MovieMentorJourneyRecoveryHttpTransportAdapter.js"
+      - "ai/MovieMentorJourneyRecoveryExpressRouterFactory.js"
+      - "scripts/verify-movie-mentor-journey-recovery-in-flight-ownership-generation-re-exposure-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-journey-recovery-in-flight-ownership-generation-re-exposure-authority.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Check ownership generation re-exposure authority syntax
+        run: |
+          node --check ai/MovieMentorJourneyRecoveryAuthorizationBoundary.js
+          node --check ai/MovieMentorJourneyRecoveryRequestAuthority.js
+          node --check ai/MovieMentorJourneyRecoveryPublicationWriteAuthority.js
+          node --check ai/MovieMentorJourneyRecoveryPublicationBoundary.js
+          node --check ai/MovieMentorJourneyRecoveryHttpTransportAdapter.js
+          node --check ai/MovieMentorJourneyRecoveryExpressRouterFactory.js
+          node --check scripts/verify-movie-mentor-journey-recovery-in-flight-ownership-generation-re-exposure-authority.mjs
+      - name: Verify ownership generation re-exposure authority
+        run: node scripts/verify-movie-mentor-journey-recovery-in-flight-ownership-generation-re-exposure-authority.mjs

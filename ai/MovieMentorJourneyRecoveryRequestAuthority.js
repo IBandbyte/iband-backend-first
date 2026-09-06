@@ -2,7 +2,7 @@ import { deriveMovieMentorPrincipal } from "./MovieMentorDeterministicPrincipalA
 import { authorizeMovieMentorJourneyRecoveryRequest } from "./MovieMentorJourneyRecoveryAuthorizationBoundary.js";
 import { createMovieMentorProjectOwnershipAuthority } from "./MovieMentorProjectOwnershipRegistry.js";
 
-const MOVIE_MENTOR_JOURNEY_RECOVERY_REQUEST_AUTHORITY_VERSION = "1.0.0";
+const MOVIE_MENTOR_JOURNEY_RECOVERY_REQUEST_AUTHORITY_VERSION = "1.1.0";
 
 function cleanString(value) {
   return typeof value === "string" ? value.trim() : "";
@@ -60,6 +60,7 @@ function createMovieMentorJourneyRecoveryRequestAuthority({
       principalId: authorization.principalId,
       projectId: authorization.projectId,
       ownershipRef: authorization.ownershipRef,
+      ownershipRevision: authorization.ownershipRevision,
       authenticationSource: principal.authenticationSource,
       authorizationSource: authorization.authorizationSource,
     });

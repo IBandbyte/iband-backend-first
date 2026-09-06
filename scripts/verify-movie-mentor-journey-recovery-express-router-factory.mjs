@@ -36,26 +36,11 @@ async function withServer(router, run) {
 
 console.log("3C.5E.4B — recovery Express router factory torture");
 
-expectCode(
-  () => createMovieMentorJourneyRecoveryExpressRouter(base({ verifyCredential: null })),
-  "MOVIE_MENTOR_JOURNEY_RECOVERY_EXPRESS_VERIFIER_REQUIRED",
-);
-expectCode(
-  () => createMovieMentorJourneyRecoveryExpressRouter(base({ verifyCredential: "secret" })),
-  "MOVIE_MENTOR_JOURNEY_RECOVERY_EXPRESS_VERIFIER_REQUIRED",
-);
-expectCode(
-  () => createMovieMentorJourneyRecoveryExpressRouter(base({ expectedIssuer: " " })),
-  "MOVIE_MENTOR_JOURNEY_RECOVERY_EXPRESS_ISSUER_REQUIRED",
-);
-expectCode(
-  () => createMovieMentorJourneyRecoveryExpressRouter(base({ expectedAudience: " " })),
-  "MOVIE_MENTOR_JOURNEY_RECOVERY_EXPRESS_AUDIENCE_REQUIRED",
-);
-expectCode(
-  () => createMovieMentorJourneyRecoveryExpressRouter(base({ routerFactory: null })),
-  "MOVIE_MENTOR_JOURNEY_RECOVERY_EXPRESS_ROUTER_FACTORY_REQUIRED",
-);
+expectCode(() => createMovieMentorJourneyRecoveryExpressRouter(base({ verifyCredential: null })), "MOVIE_MENTOR_JOURNEY_RECOVERY_EXPRESS_VERIFIER_REQUIRED");
+expectCode(() => createMovieMentorJourneyRecoveryExpressRouter(base({ verifyCredential: "secret" })), "MOVIE_MENTOR_JOURNEY_RECOVERY_EXPRESS_VERIFIER_REQUIRED");
+expectCode(() => createMovieMentorJourneyRecoveryExpressRouter(base({ expectedIssuer: " " })), "MOVIE_MENTOR_JOURNEY_RECOVERY_EXPRESS_ISSUER_REQUIRED");
+expectCode(() => createMovieMentorJourneyRecoveryExpressRouter(base({ expectedAudience: " " })), "MOVIE_MENTOR_JOURNEY_RECOVERY_EXPRESS_AUDIENCE_REQUIRED");
+expectCode(() => createMovieMentorJourneyRecoveryExpressRouter(base({ routerFactory: null })), "MOVIE_MENTOR_JOURNEY_RECOVERY_EXPRESS_ROUTER_FACTORY_REQUIRED");
 
 let verifierCalls = 0;
 let requestAuthorityArgs = null;
@@ -84,6 +69,7 @@ const router = createMovieMentorJourneyRecoveryExpressRouter(
             principalId: "principal-owner",
             projectId,
             ownershipRef: `ownership:${projectId}`,
+            ownershipRevision: 7,
           });
         },
       });
@@ -99,6 +85,7 @@ const router = createMovieMentorJourneyRecoveryExpressRouter(
             projectId: input.projectId,
             principalId: "principal-owner",
             ownershipRef: `ownership:${input.projectId}`,
+            ownershipRevision: 7,
             recoveryRevision: 1,
             recoveryGeneration: 1,
             lineageId: "lineage-1",
@@ -122,24 +109,11 @@ assert.equal(requestAuthorityArgs.expectedAudience, "iband.movie-mentor");
 assert.equal(publicationArgs.requestAuthority.authorize instanceof Function, true);
 
 await withServer(router, async (origin) => {
-  const response = await fetch(
-    `${origin}/api/movie-mentor-recovery/route-project-7/recovery`,
-    {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: "Bearer externally-verifiable-token",
-      },
-      body: JSON.stringify({
-        expectedRecoveryRevision: 0,
-        envelope: { domain: "test-envelope" },
-        principalId: "forged-owner",
-        admin: true,
-        trustMeBro: true,
-      }),
-    },
-  );
-
+  const response = await fetch(`${origin}/api/movie-mentor-recovery/route-project-7/recovery`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: "Bearer externally-verifiable-token" },
+    body: JSON.stringify({ expectedRecoveryRevision: 0, envelope: { domain: "test-envelope" }, principalId: "forged-owner", admin: true, trustMeBro: true }),
+  });
   assert.equal(response.status, 200);
   const body = await response.json();
   assert.equal(body.success, true);
@@ -152,60 +126,39 @@ await withServer(router, async (origin) => {
   assert.deepEqual(publicationInput.envelope, { domain: "test-envelope" });
 });
 
-// The route parameter remains the only router-selected project identity. The
-// real 3C.5E.3 adapter independently rejects body projectId before publication.
 await withServer(router, async (origin) => {
   const before = publishCalls;
-  const response = await fetch(
-    `${origin}/api/movie-mentor-recovery/route-project-8/recovery`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        projectId: "body-project-attacker",
-        expectedRecoveryRevision: 0,
-        envelope: { domain: "perfect-looking-envelope" },
-      }),
-    },
-  );
-
+  const response = await fetch(`${origin}/api/movie-mentor-recovery/route-project-8/recovery`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ projectId: "body-project-attacker", expectedRecoveryRevision: 0, envelope: { domain: "perfect-looking-envelope" } }),
+  });
   assert.equal(response.status, 400);
   const body = await response.json();
   assert.equal(body.code, "MOVIE_MENTOR_RECOVERY_INVALID_REQUEST");
   assert.equal(publishCalls, before, "body project injection must never reach publication");
 });
 
-// Unexpected adapter exceptions are converted to a generic response and do not
-// expose internal messages or stack text through Express.
 const throwingRouter = createMovieMentorJourneyRecoveryExpressRouter(
   base({
     createRequestAuthority: () => ({ authorize: async () => ({ authorized: true }) }),
     createPublicationBoundary: () => ({ publish: async () => ({}) }),
-    createHttpAdapter: () => ({
-      handle: async () => {
-        throw new Error("database password=zorg and secret stack trace");
-      },
-    }),
+    createHttpAdapter: () => ({ handle: async () => { throw new Error("database password=zorg and secret stack trace"); } }),
   }),
 );
 
 await withServer(throwingRouter, async (origin) => {
-  const response = await fetch(
-    `${origin}/api/movie-mentor-recovery/route-project-9/recovery`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ expectedRecoveryRevision: 0, envelope: {} }),
-    },
-  );
+  const response = await fetch(`${origin}/api/movie-mentor-recovery/route-project-9/recovery`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ expectedRecoveryRevision: 0, envelope: {} }),
+  });
   assert.equal(response.status, 500);
   const text = await response.text();
   assert.match(text, /MOVIE_MENTOR_RECOVERY_INTERNAL_ERROR/);
   assert.doesNotMatch(text, /password|zorg|stack trace/i);
 });
 
-// The factory returns an unmounted router; unrelated application paths do not
-// magically become recovery endpoints.
 await withServer(router, async (origin) => {
   const response = await fetch(`${origin}/api/not-recovery/route-project-7/recovery`, {
     method: "POST",
@@ -217,7 +170,7 @@ await withServer(router, async (origin) => {
 
 console.log("✓ verifier, issuer and audience are mandatory factory inputs");
 console.log("✓ router construction never performs credential verification");
-console.log("✓ successful HTTP exposure re-earns exact current principal/project ownership authority");
+console.log("✓ successful HTTP exposure re-earns exact current principal/project/reference/revision authority");
 console.log("✓ route-selected :projectId is forwarded separately from the body");
 console.log("✓ body projectId injection is rejected before publication");
 console.log("✓ forged body identity/admin claims acquire no router authority");
