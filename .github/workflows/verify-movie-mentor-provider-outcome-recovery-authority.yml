@@ -4,7 +4,9 @@ on:
   pull_request:
     paths:
       - "ai/MovieMentorProviderOutcomeRecoveryAuthority.js"
+      - "ai/MovieMentorProviderRecoveryAdapter.js"
       - "ai/MovieMentorProviderOperationAuthority.js"
+      - "ai/MovieMentorProviderTargetAuthority.js"
       - "ai/MovieMentorProviderEffectAuthority.js"
       - "ai/MovieMentorInferenceExecutionLeaseAuthority.js"
       - "ai/MovieMentorProductionInferenceExecutionComposition.js"
@@ -15,7 +17,9 @@ on:
     branches: [main]
     paths:
       - "ai/MovieMentorProviderOutcomeRecoveryAuthority.js"
+      - "ai/MovieMentorProviderRecoveryAdapter.js"
       - "ai/MovieMentorProviderOperationAuthority.js"
+      - "ai/MovieMentorProviderTargetAuthority.js"
       - "ai/MovieMentorProviderEffectAuthority.js"
       - "ai/MovieMentorInferenceExecutionLeaseAuthority.js"
       - "ai/MovieMentorProductionInferenceExecutionComposition.js"
@@ -35,12 +39,14 @@ jobs:
       - run: npm install --no-audit --no-fund --ignore-scripts
       - name: Check provider outcome recovery authority syntax
         run: |
+          node --check ai/MovieMentorProviderOutcomeRecoveryAuthority.js
+          node --check ai/MovieMentorProviderRecoveryAdapter.js
           node --check ai/MovieMentorProviderOperationAuthority.js
+          node --check ai/MovieMentorProviderTargetAuthority.js
           node --check ai/MovieMentorProviderEffectAuthority.js
           node --check ai/MovieMentorInferenceExecutionLeaseAuthority.js
           node --check ai/MovieMentorProductionInferenceExecutionComposition.js
           node --check ai/StructuredAIProviderClient.js
           node --check scripts/verify-movie-mentor-provider-outcome-recovery-authority.mjs
-          if [ -f ai/MovieMentorProviderOutcomeRecoveryAuthority.js ]; then node --check ai/MovieMentorProviderOutcomeRecoveryAuthority.js; fi
       - name: Verify provider outcome recovery authority
         run: node scripts/verify-movie-mentor-provider-outcome-recovery-authority.mjs
