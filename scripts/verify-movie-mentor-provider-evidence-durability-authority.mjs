@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createFencedInferenceOrchestrationDeps } from "../ai/MovieMentorTurnRuntime.js";
+import { createMovieMentorProviderEffectAuthority } from "../ai/MovieMentorProviderEffectAuthority.js";
 
 const providerCall = Object.freeze({
   authorized: true,
@@ -22,15 +23,30 @@ const providerCall = Object.freeze({
 
 let providerExecutions = 0;
 let evidenceAttempts = 0;
+let effectReality = null;
+const effectStore = {
+  async readEffect(providerCallId) {
+    return providerCallId === providerCall.providerCallId ? effectReality : null;
+  },
+  async beginUnknown(binding) {
+    effectReality = Object.freeze({ ...structuredClone(binding), state: "unknown", evidence: [] });
+    return effectReality;
+  },
+  async appendEvidence() {
+    evidenceAttempts += 1;
+    return null;
+  },
+};
+const effectAuthority = createMovieMentorProviderEffectAuthority({
+  store: effectStore,
+  now: () => new Date("2026-09-07T00:00:01.000Z"),
+});
 const authority = {
   async claimProviderCall() { return providerCall; },
   async bindProviderReconstructionInput() { return { authorized: true, inputBound: true }; },
-  async beginProviderDispatch() { return { authorized: true, dispatchAuthorized: true, effectState: "unknown" }; },
+  beginProviderDispatch: ({ providerCall: call }) => effectAuthority.beginDispatch({ providerCall: call }),
   async assertProviderDispatch() { return { authorized: true, dispatchAuthorized: true }; },
-  async contributeProviderEffectEvidence() {
-    evidenceAttempts += 1;
-    return { accepted: false, reason: "provider-effect-evidence-not-durable" };
-  },
+  contributeProviderEffectEvidence: (evidence) => effectAuthority.contributeEvidence(evidence),
 };
 
 const fenced = createFencedInferenceOrchestrationDeps({
@@ -50,10 +66,11 @@ const fenced = createFencedInferenceOrchestrationDeps({
 await assert.rejects(
   () => fenced.interpretSemantics({ proof: true }),
   (error) => error?.code === "MOVIE_MENTOR_PROVIDER_EFFECT_EVIDENCE_NOT_DURABLE",
-  "A known provider response must not return result authority when its effect identity failed to become durable.",
+  "A known provider response must fail closed when the real effect authority cannot make its identity durable.",
 );
 
 assert.equal(providerExecutions, 1, "the provider response must already have happened");
-assert.equal(evidenceAttempts, 1, "the runtime must attempt to persist the known provider effect exactly once");
+assert.equal(evidenceAttempts, 1, "the real effect authority must attempt durable evidence persistence exactly once");
+assert.equal(effectReality.state, "unknown", "failed evidence persistence must never counterfeit CONFIRMED reality");
 
 console.log("Movie Mentor provider evidence durability authority verified.");
