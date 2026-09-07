@@ -1,0 +1,86 @@
+name: Cleanup Movie Mentor Provider Operation Source Shape
+
+on:
+  push:
+    branches:
+      - round-seven-provider-operation-network-identity-authority
+    paths:
+      - ".github/workflows/cleanup-movie-mentor-provider-operation-source-shape.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Restore clean source shape and reapply proven behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=e3fe87bf32f2dbb180e1e8293373b7b171dc5909
+          git show "$BASE:ai/MovieMentorTurnRuntime.js" > ai/MovieMentorTurnRuntime.js
+          git show "$BASE:ai/MovieMentorSpecialistExecutor.js" > ai/MovieMentorSpecialistExecutor.js
+          git show "$BASE:ai/MovieMentorContinuityAgent.js" > ai/MovieMentorContinuityAgent.js
+          node <<'NODE'
+          const fs = require('fs');
+          function edit(path, replacements) {
+            let text = fs.readFileSync(path, 'utf8');
+            for (const [before, after] of replacements) {
+              if (!text.includes(before)) throw new Error(`Missing cleanup anchor in ${path}: ${before.slice(0, 100)}`);
+              text = text.replace(before, after);
+            }
+            fs.writeFileSync(path, text);
+          }
+
+          edit('ai/MovieMentorTurnRuntime.js', [
+            ['const MOVIE_MENTOR_TURN_RUNTIME_VERSION = "2.8.0";', 'const MOVIE_MENTOR_TURN_RUNTIME_VERSION = "2.9.0";'],
+            [
+`    try {
+      const result = await providerFunction();`,
+`    const providerOperation = Object.freeze({
+      providerOperationId: s(decision.providerCallId),
+      executionId: s(decision.executionId),
+      slotId: s(decision.slotId || slotId),
+      task: s(decision.task || task),
+    });
+    if (!providerOperation.providerOperationId || !providerOperation.executionId || !providerOperation.slotId || !providerOperation.task) {
+      throw runtimeError(
+        "MOVIE_MENTOR_PROVIDER_OPERATION_IDENTITY_REQUIRED",
+        "Provider dispatch requires the exact durable provider-call identity before the irreversible network boundary.",
+        { providerCallId: s(decision?.providerCallId) || null },
+      );
+    }
+
+    try {
+      const result = await providerFunction({ providerOperation });`
+            ],
+            ['return invoke("semantic", "movie-mentor-semantic", () => interpret(input));', 'return invoke("semantic", "movie-mentor-semantic", (context) => interpret(input, context));'],
+            ['const result = await invoke(agentId, `movie-mentor-specialist:${agentId}`, () => executeWorkOrder(clone(workOrder), deps.specialistDeps || {}));', 'const result = await invoke(agentId, `movie-mentor-specialist:${agentId}`, (context) => executeWorkOrder(clone(workOrder), { ...(deps.specialistDeps || {}), ...context }));'],
+            ['return invoke("synthesis", "movie-mentor-synthesis", () => synthesize(input));', 'return invoke("synthesis", "movie-mentor-synthesis", (context) => synthesize(input, context));'],
+          ]);
+
+          edit('ai/MovieMentorSpecialistExecutor.js', [
+            ['const MOVIE_MENTOR_SPECIALIST_EXECUTOR_VERSION = "1.5.0";', 'const MOVIE_MENTOR_SPECIALIST_EXECUTOR_VERSION = "1.6.0";'],
+            ['const result=await executeContinuity(continuityWorkOrder);', 'const result=await executeContinuity(continuityWorkOrder,{providerOperation:deps.providerOperation});'],
+            ['metadata:{specialistExecutorVersion:MOVIE_MENTOR_SPECIALIST_EXECUTOR_VERSION,contractVersion:SPECIALIST_CONTRACT_VERSION}});', 'metadata:{specialistExecutorVersion:MOVIE_MENTOR_SPECIALIST_EXECUTOR_VERSION,contractVersion:SPECIALIST_CONTRACT_VERSION},providerOperation:deps.providerOperation});'],
+          ]);
+
+          edit('ai/MovieMentorContinuityAgent.js', [
+            ['const MOVIE_MENTOR_CONTINUITY_AGENT_VERSION="2.1.1";', 'const MOVIE_MENTOR_CONTINUITY_AGENT_VERSION="2.2.0";'],
+            ['async function executeMovieMentorContinuityAgent(w={}){', 'async function executeMovieMentorContinuityAgent(w={},context={}){'],
+            ['metadata:{continuityAgentVersion:MOVIE_MENTOR_CONTINUITY_AGENT_VERSION,continuityContractVersion:CONTINUITY_CONTRACT_VERSION,creatorTruthDominates:true,derivedContinuityIsNotCanon:true,reusableDerivedContinuityIsNotCanon:true}});', 'metadata:{continuityAgentVersion:MOVIE_MENTOR_CONTINUITY_AGENT_VERSION,continuityContractVersion:CONTINUITY_CONTRACT_VERSION,creatorTruthDominates:true,derivedContinuityIsNotCanon:true,reusableDerivedContinuityIsNotCanon:true},providerOperation:context?.providerOperation});'],
+          ]);
+          NODE
+          node --check ai/MovieMentorTurnRuntime.js
+          node --check ai/MovieMentorSpecialistExecutor.js
+          node --check ai/MovieMentorContinuityAgent.js
+          git rm .github/workflows/cleanup-movie-mentor-provider-operation-source-shape.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ai/MovieMentorTurnRuntime.js ai/MovieMentorSpecialistExecutor.js ai/MovieMentorContinuityAgent.js
+          git commit -m "Restore clean provider operation authority source shape"
+          git push origin HEAD:round-seven-provider-operation-network-identity-authority
