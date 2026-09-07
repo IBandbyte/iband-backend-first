@@ -1,0 +1,31 @@
+name: Verify Movie Mentor Legacy Canonical Candidate Finalization Authority
+
+on:
+  pull_request:
+    paths:
+      - "ai/MovieMentorCanonicalResultMongoStore.js"
+      - "scripts/verify-movie-mentor-legacy-canonical-candidate-finalization-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-legacy-canonical-candidate-finalization-authority.yml"
+  push:
+    branches: [main]
+    paths:
+      - "ai/MovieMentorCanonicalResultMongoStore.js"
+      - "scripts/verify-movie-mentor-legacy-canonical-candidate-finalization-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-legacy-canonical-candidate-finalization-authority.yml"
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Check legacy canonical candidate finalization authority syntax
+        run: |
+          node --check ai/MovieMentorCanonicalResultMongoStore.js
+          node --check scripts/verify-movie-mentor-legacy-canonical-candidate-finalization-authority.mjs
+      - name: Verify legacy canonical candidate finalization authority
+        run: node scripts/verify-movie-mentor-legacy-canonical-candidate-finalization-authority.mjs
