@@ -8,10 +8,13 @@ on:
       - "ai/MovieMentorInferenceExecutionMongoStore.js"
       - "ai/MovieMentorProviderEffectAuthority.js"
       - "ai/MovieMentorProviderEffectMongoStore.js"
+      - "ai/MovieMentorProviderOperationAuthority.js"
+      - "ai/MovieMentorProviderOperationMongoStore.js"
+      - "ai/MovieMentorProviderTargetAuthority.js"
+      - "ai/MovieMentorProductionInferenceExecutionComposition.js"
       - "ai/MovieMentorInferenceExecutionClosureAuthority.js"
       - "ai/StructuredAIProviderClient.js"
       - "ai/MovieMentorSemanticInterpreter.js"
-      - "ai/MovieMentorProviderTargetAuthority.js"
       - "scripts/verify-movie-mentor-provider-recovery-identity-authority.mjs"
       - ".github/workflows/verify-movie-mentor-provider-recovery-identity-authority.yml"
   push:
@@ -22,10 +25,13 @@ on:
       - "ai/MovieMentorInferenceExecutionMongoStore.js"
       - "ai/MovieMentorProviderEffectAuthority.js"
       - "ai/MovieMentorProviderEffectMongoStore.js"
+      - "ai/MovieMentorProviderOperationAuthority.js"
+      - "ai/MovieMentorProviderOperationMongoStore.js"
+      - "ai/MovieMentorProviderTargetAuthority.js"
+      - "ai/MovieMentorProductionInferenceExecutionComposition.js"
       - "ai/MovieMentorInferenceExecutionClosureAuthority.js"
       - "ai/StructuredAIProviderClient.js"
       - "ai/MovieMentorSemanticInterpreter.js"
-      - "ai/MovieMentorProviderTargetAuthority.js"
       - "scripts/verify-movie-mentor-provider-recovery-identity-authority.mjs"
       - ".github/workflows/verify-movie-mentor-provider-recovery-identity-authority.yml"
   workflow_dispatch:
@@ -46,10 +52,13 @@ jobs:
           node --check ai/MovieMentorInferenceExecutionMongoStore.js
           node --check ai/MovieMentorProviderEffectAuthority.js
           node --check ai/MovieMentorProviderEffectMongoStore.js
+          node --check ai/MovieMentorProviderOperationAuthority.js
+          node --check ai/MovieMentorProviderOperationMongoStore.js
+          node --check ai/MovieMentorProviderTargetAuthority.js
+          node --check ai/MovieMentorProductionInferenceExecutionComposition.js
           node --check ai/MovieMentorInferenceExecutionClosureAuthority.js
           node --check ai/StructuredAIProviderClient.js
           node --check ai/MovieMentorSemanticInterpreter.js
-          if [ -f ai/MovieMentorProviderTargetAuthority.js ]; then node --check ai/MovieMentorProviderTargetAuthority.js; fi
           node --check scripts/verify-movie-mentor-provider-recovery-identity-authority.mjs
       - name: Verify provider recovery identity authority
         run: node scripts/verify-movie-mentor-provider-recovery-identity-authority.mjs
