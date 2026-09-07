@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createMovieMentorProviderOperationAuthority } from "../ai/MovieMentorProviderOperationAuthority.js";
+import { describeCurrentMovieMentorProviderTarget } from "../ai/MovieMentorProviderTargetAuthority.js";
 import { resolveHistoricalReconstructionInput } from "../ai/MovieMentorRecoveredProviderResultAuthority.js";
 
 console.log("Movie Mentor provider reconstruction-input integrity authority court");
@@ -33,12 +34,7 @@ const store = {
 const authority = createMovieMentorProviderOperationAuthority({
   store,
   now: () => new Date("2032-01-01T00:00:00.000Z"),
-  resolveCurrentTarget: () => ({
-    provider: "openai",
-    adapter: "openai-responses",
-    routeFingerprint: "route-fixture",
-    recoveryMode: "known-response-id-retrieval",
-  }),
+  resolveCurrentTarget: () => describeCurrentMovieMentorProviderTarget({ env: {} }),
 });
 
 const providerCall = Object.freeze({
