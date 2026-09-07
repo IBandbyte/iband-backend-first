@@ -1,0 +1,33 @@
+name: Verify Movie Mentor Settlement Current Candidate Schema Authority
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ai/MovieMentorInferenceSettlementMongoStore.js"
+      - "ai/MovieMentorResultCandidateMongoStore.js"
+      - "scripts/verify-movie-mentor-settlement-current-candidate-schema-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-settlement-current-candidate-schema-authority.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "ai/MovieMentorInferenceSettlementMongoStore.js"
+      - "ai/MovieMentorResultCandidateMongoStore.js"
+      - "scripts/verify-movie-mentor-settlement-current-candidate-schema-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-settlement-current-candidate-schema-authority.yml"
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Check settlement candidate schema authority syntax
+        run: node --check scripts/verify-movie-mentor-settlement-current-candidate-schema-authority.mjs
+      - name: Verify settlement current candidate schema authority
+        run: node scripts/verify-movie-mentor-settlement-current-candidate-schema-authority.mjs
