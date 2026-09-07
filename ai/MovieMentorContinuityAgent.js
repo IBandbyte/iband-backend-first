@@ -7,7 +7,7 @@ import {
   buildContinuityConsequenceEnvelope,
 } from "./MovieMentorContinuityConsequenceAuthority.js";
 
-const MOVIE_MENTOR_CONTINUITY_AGENT_VERSION="2.1.1";
+const MOVIE_MENTOR_CONTINUITY_AGENT_VERSION="2.2.0";
 const CONTINUITY_CONTRACT_VERSION="2.1.1";
 const CONTINUITY_AGENT_ID="continuity";
 const CONTINUITY_AUTHORITY="mentor-provisional";
@@ -65,10 +65,10 @@ function validateAndBuildContribution(c={},w={}){
  if(!issues.length){try{envelope=buildContinuityConsequenceEnvelope({creatorConfirmedContext:truth,constraints,conflicts:a(c.continuityConflicts),unresolvedQuestions:a(c.unresolvedContinuityQuestions)});}catch(e){issues.push(...(a(e?.validationIssues).length?a(e.validationIssues):[e?.code||"continuity_envelope_invalid"]));}}
  return{valid:!issues.length,issues,contribution:{agentId:CONTINUITY_AGENT_ID,derivedConstraints:constraints,newlyDerivedConstraints:fresh,continuityConflicts:a(c.continuityConflicts),unresolvedContinuityQuestions:a(c.unresolvedContinuityQuestions),provisionalSuggestions:a(c.provisionalSuggestions),continuityConsequenceEnvelope:envelope,reusableDerivedContinuityConsumed:clone(a(w?.input?.reusableDerivedContinuity)),confidence:Number(c.confidence||0),provenance:{...(c.provenance||{}),source:"movie-mentor-continuity-agent",contractVersion:CONTINUITY_CONTRACT_VERSION},authority:CONTINUITY_AUTHORITY,derivedAuthority:DERIVED_CONTINUITY_AUTHORITY,creatorFacing:false,mayAdvanceJourney:false,mayOverwriteCreatorTruth:false,mayCreateCanon:false,mayPromoteInferenceToCanon:false,requiresMentorSynthesis:true}};
 }
-async function executeMovieMentorContinuityAgent(w={}){
+async function executeMovieMentorContinuityAgent(w={},context={}){
  const pre=validateContinuityWorkOrder(w);
  if(!pre.valid){const e=new Error("Continuity Agent work order failed current-creator authority preflight.");e.code="CONTINUITY_WORK_ORDER_INVALID";e.validationIssues=pre.issues;throw e;}
- const raw=await executeStructuredAI({task:"movie-mentor-specialist:continuity",systemInstructions:CONTINUITY_INSTRUCTIONS,input:{agentId:CONTINUITY_AGENT_ID,purpose:w?.purpose||null,creatorMessage:w?.input?.creatorMessage||null,semanticIntelligence:clone(w?.input?.semanticIntelligence||{}),currentCreatorTruth:clone(w?.input?.currentCreatorTruth||[]),reusableDerivedContinuity:clone(w?.input?.reusableDerivedContinuity||[]),projectJourney:clone(w?.input?.projectJourney||null),memoryContext:clone(w?.input?.memoryContext||null),currentScene:clone(w?.input?.currentScene||null),previousScenes:clone(w?.input?.previousScenes||[])},schema:CONTINUITY_OUTPUT_SCHEMA,schemaName:"movie_mentor_continuity_contribution",metadata:{continuityAgentVersion:MOVIE_MENTOR_CONTINUITY_AGENT_VERSION,continuityContractVersion:CONTINUITY_CONTRACT_VERSION,creatorTruthDominates:true,derivedContinuityIsNotCanon:true,reusableDerivedContinuityIsNotCanon:true}});
+ const raw=await executeStructuredAI({task:"movie-mentor-specialist:continuity",systemInstructions:CONTINUITY_INSTRUCTIONS,input:{agentId:CONTINUITY_AGENT_ID,purpose:w?.purpose||null,creatorMessage:w?.input?.creatorMessage||null,semanticIntelligence:clone(w?.input?.semanticIntelligence||{}),currentCreatorTruth:clone(w?.input?.currentCreatorTruth||[]),reusableDerivedContinuity:clone(w?.input?.reusableDerivedContinuity||[]),projectJourney:clone(w?.input?.projectJourney||null),memoryContext:clone(w?.input?.memoryContext||null),currentScene:clone(w?.input?.currentScene||null),previousScenes:clone(w?.input?.previousScenes||[])},schema:CONTINUITY_OUTPUT_SCHEMA,schemaName:"movie_mentor_continuity_contribution",metadata:{continuityAgentVersion:MOVIE_MENTOR_CONTINUITY_AGENT_VERSION,continuityContractVersion:CONTINUITY_CONTRACT_VERSION,creatorTruthDominates:true,derivedContinuityIsNotCanon:true,reusableDerivedContinuityIsNotCanon:true},providerOperation:context?.providerOperation});
  if(!raw?.structured){const e=new Error("Continuity Agent provider did not return structured intelligence.");e.code="CONTINUITY_STRUCTURED_OUTPUT_INVALID";throw e;}
  raw.structured.provenance={source:"movie-mentor-continuity-agent",model:raw?.metadata?.model||null,contractVersion:CONTINUITY_CONTRACT_VERSION};
  const v=validateAndBuildContribution(raw.structured,w);

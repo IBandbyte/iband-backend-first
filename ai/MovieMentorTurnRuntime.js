@@ -7,7 +7,7 @@ import { synthesizeMovieMentorResponse } from "./MovieMentorSynthesisEngine.js";
 import { buildCurrentCreatorTruthView } from "./MovieMentorCreatorTruthViewControl.js";
 import { readAuthoritativeTurnSource, readAuthoritativeRevision, readAuthoritativeCreatorState } from "./MovieMentorCreatorStateStore.js";
 
-const MOVIE_MENTOR_TURN_RUNTIME_VERSION = "2.8.0";
+const MOVIE_MENTOR_TURN_RUNTIME_VERSION = "2.9.0";
 const s = (value) => (typeof value === "string" ? value.trim() : "");
 
 function clone(value) {
@@ -280,8 +280,22 @@ function createFencedInferenceOrchestrationDeps({ execution, inferenceExecutionA
       });
     }
 
+    const providerOperation = Object.freeze({
+      providerOperationId: s(decision.providerCallId),
+      executionId: s(decision.executionId),
+      slotId: s(decision.slotId || slotId),
+      task: s(decision.task || task),
+    });
+    if (!providerOperation.providerOperationId || !providerOperation.executionId || !providerOperation.slotId || !providerOperation.task) {
+      throw runtimeError(
+        "MOVIE_MENTOR_PROVIDER_OPERATION_IDENTITY_REQUIRED",
+        "Provider dispatch requires the exact durable provider-call identity before the irreversible network boundary.",
+        { providerCallId: s(decision?.providerCallId) || null },
+      );
+    }
+
     try {
-      const result = await providerFunction();
+      const result = await providerFunction({ providerOperation });
       const evidence = findProviderEvidence(result);
       if (evidence) {
         await inferenceExecutionAuthority.contributeProviderEffectEvidence({
@@ -310,7 +324,7 @@ function createFencedInferenceOrchestrationDeps({ execution, inferenceExecutionA
 
   return Object.freeze({
     async interpretSemantics(input) {
-      return invoke("semantic", "movie-mentor-semantic", () => interpret(input));
+      return invoke("semantic", "movie-mentor-semantic", (context) => interpret(input, context));
     },
     async executeSpecialistPlan(plan = {}) {
       const contributions = [], skipped = [], failures = [], metadata = [];
@@ -321,7 +335,7 @@ function createFencedInferenceOrchestrationDeps({ execution, inferenceExecutionA
           continue;
         }
         try {
-          const result = await invoke(agentId, `movie-mentor-specialist:${agentId}`, () => executeWorkOrder(clone(workOrder), deps.specialistDeps || {}));
+          const result = await invoke(agentId, `movie-mentor-specialist:${agentId}`, (context) => executeWorkOrder(clone(workOrder), { ...(deps.specialistDeps || {}), ...context }));
           contributions.push(result.contribution);
           metadata.push({ agentId, metadata: clone(result.metadata || null) });
         } catch (error) {
@@ -352,7 +366,7 @@ function createFencedInferenceOrchestrationDeps({ execution, inferenceExecutionA
       };
     },
     async synthesizeResponse(input) {
-      return invoke("synthesis", "movie-mentor-synthesis", () => synthesize(input));
+      return invoke("synthesis", "movie-mentor-synthesis", (context) => synthesize(input, context));
     },
   });
 }
