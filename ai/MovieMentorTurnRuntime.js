@@ -603,8 +603,7 @@ async function runMovieMentorTurn(input = {}, deps = {}) {
     && typeof inferenceExecutionAuthority?.claimProviderCall === "function"
     && typeof inferenceExecutionAuthority?.beginProviderDispatch === "function"
     && typeof inferenceExecutionAuthority?.assertProviderDispatch === "function"
-    && typeof inferenceExecutionAuthority?.contributeProviderEffectEvidence === "function"
-    && typeof inferenceExecutionAuthority?.recoverProviderOutcome === "function";
+    && typeof inferenceExecutionAuthority?.contributeProviderEffectEvidence === "function";
   const closureEnabled = executionEnabled
     && typeof inferenceExecutionAuthority?.beginExecutionClosing === "function"
     && typeof inferenceExecutionAuthority?.reconcileExecutionClosure === "function";
@@ -619,7 +618,7 @@ async function runMovieMentorTurn(input = {}, deps = {}) {
     && typeof settlementAuthority?.releaseUnclaimed === "function"
     && typeof settlementAuthority?.releaseUnbound === "function";
 
-  if (!executionEnabled) throw runtimeError("MOVIE_MENTOR_INFERENCE_EXECUTION_AUTHORITY_REQUIRED", "Paid Movie Mentor inference cannot run without complete durable creator-turn convergence, lease fencing, provider-effect dispatch and same-operation recovery authority.");
+  if (!executionEnabled) throw runtimeError("MOVIE_MENTOR_INFERENCE_EXECUTION_AUTHORITY_REQUIRED", "Paid Movie Mentor inference cannot run without complete durable creator-turn convergence, lease fencing and provider-effect dispatch authority.");
   if (!closureEnabled) throw runtimeError("MOVIE_MENTOR_INFERENCE_EXECUTION_CLOSURE_AUTHORITY_REQUIRED", "Paid Movie Mentor inference cannot run without durable closure authority.");
   if (!candidateEnabled) throw runtimeError("MOVIE_MENTOR_RESULT_CANDIDATE_AUTHORITY_REQUIRED", "Paid Movie Mentor inference cannot run without durable pre-closure result staging authority.");
   if (!resultEnabled) throw runtimeError("MOVIE_MENTOR_CANONICAL_RESULT_AUTHORITY_REQUIRED", "Paid Movie Mentor inference cannot run without durable canonical result authority.");
