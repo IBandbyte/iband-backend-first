@@ -1,4 +1,4 @@
-const VERSION = "1.0.0";
+const VERSION = "1.1.0";
 const DOMAIN = "iband.movie-mentor.recovered-provider-result-authority";
 
 function text(value) {
@@ -7,6 +7,11 @@ function text(value) {
 
 function freeze(value) {
   return Object.freeze(value);
+}
+
+function clone(value) {
+  if (value === undefined) return undefined;
+  try { return JSON.parse(JSON.stringify(value)); } catch { return value; }
 }
 
 function fail(code, message, extras = {}) {
@@ -127,6 +132,40 @@ function assertRecoveredOutcomeBinding({ recovery, historical } = {}) {
   });
 }
 
+async function resolveHistoricalReconstructionInput({ historical, currentInput, readProviderOperation } = {}) {
+  if (typeof readProviderOperation !== "function") {
+    if (historical?.task === "movie-mentor-specialist:continuity") {
+      fail(
+        "CONTINUITY_RECOVERY_INPUT_AUTHORITY_REQUIRED",
+        "Continuity recovery requires durable historical provider-input authority.",
+        { retryable: true, providerCallId: historical?.providerCallId || null },
+      );
+    }
+    return currentInput;
+  }
+  const operation = await readProviderOperation(historical.providerCallId);
+  if (
+    operation?.authorized === true
+    && text(operation.providerCallId) === historical.providerCallId
+    && text(operation.executionId) === historical.executionId
+    && text(operation.slotId) === historical.slotId
+    && text(operation.task) === historical.task
+    && text(operation.reconstructionInputDigest)
+    && operation.reconstructionInput !== undefined
+    && operation.reconstructionInput !== null
+  ) {
+    return clone(operation.reconstructionInput);
+  }
+  if (historical.task === "movie-mentor-specialist:continuity") {
+    fail(
+      "CONTINUITY_RECOVERY_INPUT_AUTHORITY_REQUIRED",
+      "Continuity recovery requires the exact immutable historical provider-input universe.",
+      { retryable: true, providerCallId: historical.providerCallId },
+    );
+  }
+  return currentInput;
+}
+
 async function recoverPreviouslyAdmittedProviderResult({
   decision = null,
   execution = null,
@@ -134,6 +173,7 @@ async function recoverPreviouslyAdmittedProviderResult({
   task = null,
   input = null,
   recoverProviderOutcome = null,
+  readProviderOperation = null,
   reconstructRecoveredResult = null,
 } = {}) {
   if (typeof recoverProviderOutcome !== "function") {
@@ -150,6 +190,7 @@ async function recoverPreviouslyAdmittedProviderResult({
   }
 
   const historical = assertExactHistoricalBinding({ decision, execution, slotId, task });
+  const historicalInput = await resolveHistoricalReconstructionInput({ historical, currentInput: input, readProviderOperation });
   const recovery = await recoverProviderOutcome({
     providerCallId: historical.providerCallId,
     recoveryAuthority: execution,
@@ -163,7 +204,7 @@ async function recoverPreviouslyAdmittedProviderResult({
   });
 
   const reconstructed = await reconstructRecoveredResult({
-    input,
+    input: historicalInput,
     providerOperation,
     recoveredProviderResponse: bound.recoveredProviderResponse,
     recovery: freeze({ ...recovery }),
@@ -184,6 +225,7 @@ export {
   normalizeHistoricalProviderCall,
   assertExactHistoricalBinding,
   assertRecoveredOutcomeBinding,
+  resolveHistoricalReconstructionInput,
   recoverPreviouslyAdmittedProviderResult,
 };
 
