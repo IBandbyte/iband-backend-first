@@ -39,6 +39,7 @@ jobs:
           node --check ai/MovieMentorRecoveredSemanticResult.js &&
           node --check ai/MovieMentorRecoveredStructuredResult.js &&
           node --check ai/MovieMentorRecoveredTaskResult.js &&
+          node --check scripts/verify-movie-mentor-provider-effect-reality.mjs &&
           node --check scripts/verify-movie-mentor-provider-recovery-identity-authority.mjs &&
           node --check scripts/verify-movie-mentor-provider-outcome-recovery-authority.mjs &&
           node --check scripts/verify-movie-mentor-provider-outcome-recovery-lease-authority.mjs &&
@@ -97,6 +98,8 @@ jobs:
         run: npm run verify:movie-mentor-project-session-continuity
       - name: Verify Movie Mentor durable creator state round trip
         run: npm run verify:movie-mentor-durable-round-trip
+      - name: Verify Movie Mentor provider effect reality authority
+        run: node scripts/verify-movie-mentor-provider-effect-reality.mjs
       - name: Verify Movie Mentor provider recovery identity authority
         run: node scripts/verify-movie-mentor-provider-recovery-identity-authority.mjs
       - name: Verify Movie Mentor provider outcome recovery authority
