@@ -38,6 +38,7 @@ assert.match(closureAuthority, /\["closed","finalized","settled"\]/);
 assert.match(canonicalAuthority, /\['finalized','settled'\]/);
 assert.match(runtime, /\["closed", "finalized", "settled"\]/);
 assert.match(runtime, /executionPhase !== "settled"/);
+assert.match(runtime, /settlementBindingKeys[\s\S]*"candidateReference"/);
 assert.match(runtime, /MOVIE_MENTOR_INFERENCE_EXECUTION_QUARANTINED/);
 assert.match(runtime, /quarantinedFromPhase: s\(existing\.quarantinedFromPhase\) \|\| null/);
 assert.match(gateway, /settledExecutionAuthorityRequired:true/);
@@ -128,6 +129,7 @@ const settledConsume={
   projectId:"project-1",
   reservationId:"reservation-1",
   resultReference:"result-1",
+  candidateReference:"candidate-1",
   resultDigest,
   closureCertificateDigest:"closure-digest-1",
   idempotent:true,
@@ -162,7 +164,7 @@ console.log("✓ current schema-6 execution universes can cross settlement/relea
 console.log("✓ fresh consume writes SETTLED barrier -> entitlement debit -> consumed reservation inside one Mongo transaction");
 console.log("✓ explicit reservation debit lineage binds execution + result + candidate + digest");
 console.log("✓ exact legacy FINALIZED+CONSUMED history migrates to SETTLED without a second entitlement debit");
-console.log("✓ SETTLED replay requires current creator-response canonical authority plus exact settled consume binding and cannot reacquire provider authority");
+console.log("✓ SETTLED replay requires current creator-response canonical authority plus exact settled candidate/result consume binding and cannot reacquire provider authority");
 console.log("✓ late provider evidence remains observable after SETTLED, increments shared reality revision, and can quarantine current closure without recreating execution authority");
 console.log("✓ QUARANTINED preserves historical proof lineage but grants zero replay, settlement or provider authority");
 console.log("LAW: NO PHASE GETS CREDIT FOR A PROOF IT DOESN'T OWN. CURRENT DURABLE SCHEMA MUST CROSS EVERY OWNED PROOF BOUNDARY WITHOUT DOWNGRADE. QUARANTINE PRESERVES HISTORY BUT GRANTS ZERO FORWARD AUTHORITY.");
