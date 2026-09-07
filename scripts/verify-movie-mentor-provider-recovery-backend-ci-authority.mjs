@@ -16,6 +16,7 @@ const requiredSyntaxOwners = [
   "ai/MovieMentorProductionInferenceExecutionComposition.js",
   "scripts/verify-movie-mentor-provider-recovery-identity-authority.mjs",
   "scripts/verify-movie-mentor-provider-outcome-recovery-authority.mjs",
+  "scripts/verify-movie-mentor-provider-outcome-recovery-lease-authority.mjs",
 ];
 
 for (const owner of requiredSyntaxOwners) {
@@ -36,8 +37,13 @@ assert.match(
   /node scripts\/verify-movie-mentor-provider-outcome-recovery-authority\.mjs/,
   "Backend CI must execute the provider outcome recovery behavioral court",
 );
+assert.match(
+  workflow,
+  /node scripts\/verify-movie-mentor-provider-outcome-recovery-lease-authority\.mjs/,
+  "Backend CI must execute the provider outcome recovery current-lease behavioral court",
+);
 
-console.log("✓ Backend CI owns syntax proof for provider recovery production modules");
-console.log("✓ Backend CI executes provider recovery identity and outcome behavioral courts");
+console.log("✓ Backend CI owns syntax proof for provider recovery production modules and courts");
+console.log("✓ Backend CI executes provider recovery identity, outcome, and current-lease behavioral courts");
 console.log("LAW: BACKEND CI MAY NOT CERTIFY PRODUCTION CODE IT DOES NOT ACTUALLY INSPECT.");
 console.log("Movie Mentor provider recovery Backend CI authority gate: GREEN");
