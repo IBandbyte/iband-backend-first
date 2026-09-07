@@ -12,6 +12,8 @@ on:
       - "ai/MovieMentorProductionInferenceExecutionComposition.js"
       - "ai/StructuredAIProviderClient.js"
       - "scripts/verify-movie-mentor-provider-outcome-recovery-authority.mjs"
+      - "scripts/verify-movie-mentor-provider-recovery-backend-ci-authority.mjs"
+      - ".github/workflows/ci-backend.yml"
       - ".github/workflows/verify-movie-mentor-provider-outcome-recovery-authority.yml"
   push:
     branches: [main]
@@ -25,6 +27,8 @@ on:
       - "ai/MovieMentorProductionInferenceExecutionComposition.js"
       - "ai/StructuredAIProviderClient.js"
       - "scripts/verify-movie-mentor-provider-outcome-recovery-authority.mjs"
+      - "scripts/verify-movie-mentor-provider-recovery-backend-ci-authority.mjs"
+      - ".github/workflows/ci-backend.yml"
       - ".github/workflows/verify-movie-mentor-provider-outcome-recovery-authority.yml"
   workflow_dispatch:
 
@@ -48,5 +52,8 @@ jobs:
           node --check ai/MovieMentorProductionInferenceExecutionComposition.js
           node --check ai/StructuredAIProviderClient.js
           node --check scripts/verify-movie-mentor-provider-outcome-recovery-authority.mjs
+          node --check scripts/verify-movie-mentor-provider-recovery-backend-ci-authority.mjs
       - name: Verify provider outcome recovery authority
         run: node scripts/verify-movie-mentor-provider-outcome-recovery-authority.mjs
+      - name: Verify provider recovery Backend CI authority
+        run: node scripts/verify-movie-mentor-provider-recovery-backend-ci-authority.mjs
