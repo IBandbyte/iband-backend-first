@@ -1,0 +1,39 @@
+name: Verify Movie Mentor Recovered Result Reconstruction Authority
+
+on:
+  pull_request:
+    paths:
+      - "ai/MovieMentorTurnRuntime.js"
+      - "ai/MovieMentorSemanticInterpreter.js"
+      - "ai/StructuredAIProviderClient.js"
+      - "ai/MovieMentorSpecialistExecutor.js"
+      - "ai/MovieMentorSynthesisEngine.js"
+      - "scripts/verify-movie-mentor-recovered-result-reconstruction-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-recovered-result-reconstruction-authority.yml"
+  push:
+    branches: [main]
+    paths:
+      - "ai/MovieMentorTurnRuntime.js"
+      - "ai/MovieMentorSemanticInterpreter.js"
+      - "ai/StructuredAIProviderClient.js"
+      - "ai/MovieMentorSpecialistExecutor.js"
+      - "ai/MovieMentorSynthesisEngine.js"
+      - "scripts/verify-movie-mentor-recovered-result-reconstruction-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-recovered-result-reconstruction-authority.yml"
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Check recovered-result reconstruction authority syntax
+        run: |
+          node --check ai/MovieMentorTurnRuntime.js
+          node --check scripts/verify-movie-mentor-recovered-result-reconstruction-authority.mjs
+      - name: Verify recovered-result reconstruction authority
+        run: node scripts/verify-movie-mentor-recovered-result-reconstruction-authority.mjs
