@@ -9,6 +9,8 @@ on:
       - ".github/workflows/ci-backend.yml"
       - "scripts/verify-movie-mentor-specialist-provider-evidence-authority.mjs"
       - "ai/MovieMentorSpecialistExecutor.js"
+      - "ai/MovieMentorContinuityAgent.js"
+      - "ai/MovieMentorSynthesisEngine.js"
       - "ai/MovieMentorTurnRuntime.js"
       - "ai/StructuredAIProviderClient.js"
   push:
@@ -18,6 +20,8 @@ on:
       - ".github/workflows/ci-backend.yml"
       - "scripts/verify-movie-mentor-specialist-provider-evidence-authority.mjs"
       - "ai/MovieMentorSpecialistExecutor.js"
+      - "ai/MovieMentorContinuityAgent.js"
+      - "ai/MovieMentorSynthesisEngine.js"
       - "ai/MovieMentorTurnRuntime.js"
       - "ai/StructuredAIProviderClient.js"
 
@@ -31,10 +35,12 @@ jobs:
         with:
           node-version: "20"
       - run: npm install --no-audit --no-fund --ignore-scripts
-      - name: Check specialist provider-effect evidence authority syntax
+      - name: Check post-provider domain-rejection evidence authority syntax
         run: |
           node --check ai/MovieMentorSpecialistExecutor.js
+          node --check ai/MovieMentorContinuityAgent.js
+          node --check ai/MovieMentorSynthesisEngine.js
           node --check ai/MovieMentorTurnRuntime.js
           node --check scripts/verify-movie-mentor-specialist-provider-evidence-authority.mjs
-      - name: Verify specialist provider-effect evidence authority
+      - name: Verify post-provider domain-rejection evidence authority
         run: node scripts/verify-movie-mentor-specialist-provider-evidence-authority.mjs
