@@ -27,6 +27,16 @@ function routeFingerprint(provider, url) {
   return crypto.createHash("sha256").update(`${provider}|${parsed.toString()}`).digest("hex");
 }
 
+function canonicalize(value) {
+  if (value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map(canonicalize);
+  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalize(value[key])]));
+}
+
+function digest(value) {
+  return crypto.createHash("sha256").update(JSON.stringify(canonicalize(value))).digest("hex");
+}
+
 function clone(value) {
   return value == null ? value : structuredClone(value);
 }
@@ -64,8 +74,22 @@ try {
     async bindOperation(input) {
       const existing = operationRows.get(input.providerCallId);
       if (existing) return clone(existing);
-      operationRows.set(input.providerCallId, clone(input));
-      return clone(input);
+      const row = clone(input);
+      operationRows.set(input.providerCallId, row);
+      return clone(row);
+    },
+    async bindReconstructionInput(input) {
+      const existing = operationRows.get(input.providerCallId);
+      assert.ok(existing, "provider operation identity must exist before its reconstruction input can bind");
+      if (existing.reconstructionInputDigest) return clone(existing);
+      const row = {
+        ...existing,
+        reconstructionInputDigest: input.reconstructionInputDigest,
+        reconstructionInput: clone(input.reconstructionInput),
+        reconstructionInputBoundAt: input.boundAt,
+      };
+      operationRows.set(input.providerCallId, row);
+      return clone(row);
     },
   };
 
@@ -73,10 +97,10 @@ try {
   const providerEffectAuthority = {
     async beginDispatch({ providerCall }) {
       effectBeginCount += 1;
-      assert.ok(
-        operationRows.has(providerCall.providerCallId),
-        "durable provider target identity must exist before UNKNOWN is created",
-      );
+      const row = operationRows.get(providerCall.providerCallId);
+      assert.ok(row, "durable provider target identity must exist before UNKNOWN is created");
+      assert.ok(row.reconstructionInputDigest, "durable historical task input must exist before UNKNOWN is created");
+      assert.ok(row.reconstructionInput !== undefined && row.reconstructionInput !== null, "historical task input payload must survive before UNKNOWN");
       return { authorized: true, dispatchAuthorized: true, effectState: "unknown" };
     },
     async contributeEvidence() {
@@ -120,6 +144,7 @@ try {
     async claimProviderCall() {
       return providerCall;
     },
+    bindProviderReconstructionInput: operationAuthority.bindReconstructionInput,
     beginProviderDispatch: boundaryAuthority.beginProviderDispatch,
     assertProviderDispatch: boundaryAuthority.assertProviderDispatch,
     contributeProviderEffectEvidence: providerEffectAuthority.contributeEvidence,
@@ -136,48 +161,40 @@ try {
     }), { status: 200, headers: { "Content-Type": "application/json" } });
   };
 
+  const semanticInput = {
+    message: "A lighthouse sends messages from a missing daughter.",
+    context: { creatorConfirmedContext: [] },
+  };
   const fenced = createFencedInferenceOrchestrationDeps({
     execution: { authorized: true },
     inferenceExecutionAuthority: runtimeAuthority,
   });
 
-  const result = await fenced.interpretSemantics({
-    message: "A lighthouse sends messages from a missing daughter.",
-    context: { creatorConfirmedContext: [] },
-  });
+  const result = await fenced.interpretSemantics(semanticInput);
 
   assert.equal(result.structured.movieJourneyIntelligence.readyToAdvance, true);
   assert.equal(socketOpened, true, "verifier must reach the real OpenAI-shaped network boundary after durable recovery identity is established");
   assert.equal(effectBeginCount, 1);
 
   const durableOperation = await operationAuthority.readOperation(providerCall.providerCallId);
-  assert.deepEqual(
-    durableOperation.providerTarget,
-    expectedTarget,
-    "historical provider operation must durably preserve the exact secret-free provider target that owned it",
-  );
-  assert.equal(
-    JSON.stringify(durableOperation).includes("transient_secret"),
-    false,
-    "durable provider recovery identity must not persist URL query credentials or transient secrets",
-  );
+  assert.deepEqual(durableOperation.providerTarget, expectedTarget, "historical provider operation must durably preserve the exact secret-free provider target that owned it");
+  assert.equal(durableOperation.reconstructionInputDigest, digest(semanticInput), "exact semantic input must be immutably digested before UNKNOWN");
+  assert.deepEqual(durableOperation.reconstructionInput, semanticInput, "exact semantic input must survive with the historical provider operation");
+  assert.equal(JSON.stringify(durableOperation).includes("transient_secret"), false, "durable provider recovery identity must not persist URL query credentials or transient secrets");
 
   process.env.IBAND_AI_BASE_URL = "https://different-provider-route.example.test/v1/responses";
   const changedTargetDecision = await boundaryAuthority.assertProviderDispatch({ providerCall });
   assert.equal(changedTargetDecision.dispatchAuthorized, false);
   assert.equal(changedTargetDecision.reason, "provider-target-no-longer-current");
-  assert.deepEqual(
-    (await operationAuthority.readOperation(providerCall.providerCallId)).providerTarget,
-    expectedTarget,
-    "current configuration changes must not rewrite historical provider recovery identity",
-  );
+  assert.deepEqual((await operationAuthority.readOperation(providerCall.providerCallId)).providerTarget, expectedTarget, "current configuration changes must not rewrite historical provider recovery identity");
 
   console.log("✓ live provider dispatch binds immutable durable-safe provider target identity before UNKNOWN");
-  console.log("✓ the real OpenAI-shaped socket opens only after operation identity + UNKNOWN + lease authority agree");
+  console.log("✓ exact historical task input is durably bound before UNKNOWN and survives with the provider operation");
+  console.log("✓ the real OpenAI-shaped socket opens only after target identity + historical input + UNKNOWN + lease authority agree");
   console.log("✓ historical provider target survives configuration change and current config cannot impersonate it");
   console.log("✓ provider route identity excludes URL query credentials and transient secrets");
   console.log("LAW: CURRENT PROVIDER CONFIGURATION MAY NOT IMPERSONATE THE HISTORICAL PROVIDER OPERATION.");
-  console.log("LAW: RECOVERY AUTHORITY REQUIRES DURABLE PROVIDER TARGET IDENTITY BEFORE THE IRREVERSIBLE BOUNDARY.");
+  console.log("LAW: RECOVERY AUTHORITY REQUIRES DURABLE PROVIDER TARGET IDENTITY AND EXACT HISTORICAL TASK INPUT BEFORE THE IRREVERSIBLE BOUNDARY.");
   console.log("Movie Mentor provider recovery identity authority gate: GREEN");
 } finally {
   restoreEnvironment();
