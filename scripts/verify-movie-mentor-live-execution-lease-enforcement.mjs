@@ -34,7 +34,7 @@ const store={
 const authority=createMovieMentorInferenceExecutionLeaseAuthority({store,now:()=>new Date(clock),leaseMs:1000,maxProviderCalls:2,randomId:()=>`id-${++id}`});
 const binding={creatorTurnId:"turn-1",principalId:"creator-1",projectId:"project-1",reservationId:"reservation-1",requestDigest:"digest-1",ownerId:"worker-A",maxProviderCalls:2};
 
-console.log("5A.24 Round Seven — execution owner-proof mount torture");
+console.log("5A.24 Round Eight — execution owner-proof plus historical-input mount torture");
 
 const g1=await authority.openExecution(binding);
 assert.equal(g1.authorized,true);assert.equal(g1.leaseGeneration,1);
@@ -103,8 +103,8 @@ const slots=[], executed=[],dispatches=[],evidence=[],inputBindings=[];
 const fakeExecution={authorized:true,executionId:"execution-live",ownerId:"owner-live",leaseGeneration:7,leaseReference:"lease-7",fencingToken:"fence-7"};
 const fakeAuthority={
   async claimProviderCall({slotId,task}){slots.push(slotId);return{authorized:true,dispatchAuthorized:true,providerCallId:`call-${slotId}`,slotId,task,executionId:"execution-live",ownerId:"owner-live",leaseGeneration:7,leaseReference:"lease-7",fencingToken:"fence-7"};},
-  async bindProviderReconstructionInput({providerCall,reconstructionInput}){inputBindings.push(providerCall.slotId);return{authorized:true,inputBound:true,providerCallId:providerCall.providerCallId,reconstructionInput:clone(reconstructionInput)};},
-  async beginProviderDispatch({providerCall}){dispatches.push(`begin:${providerCall.slotId}`);return{authorized:true,dispatchAuthorized:true,providerCallId:providerCall.providerCallId};},
+  async bindProviderReconstructionInput({providerCall,reconstructionInput}){inputBindings.push(providerCall.slotId);dispatches.push(`bind:${providerCall.slotId}`);return{authorized:true,inputBound:true,providerCallId:providerCall.providerCallId,reconstructionInput:clone(reconstructionInput)};},
+  async beginProviderDispatch({providerCall}){dispatches.push(`begin:${providerCall.slotId}`);assert.ok(inputBindings.includes(providerCall.slotId),`${providerCall.slotId} input must be bound before UNKNOWN`);return{authorized:true,dispatchAuthorized:true,providerCallId:providerCall.providerCallId};},
   async assertProviderDispatch({providerCall}){dispatches.push(`assert:${providerCall.slotId}`);return{authorized:true,dispatchAuthorized:true,providerCallId:providerCall.providerCallId};},
   async contributeProviderEffectEvidence(input){evidence.push(input);return{authorized:true,recorded:true};},
 };
@@ -120,19 +120,20 @@ const fenced=createFencedInferenceOrchestrationDeps({
 });
 await fenced.interpretSemantics({});
 const planResult=await fenced.executeSpecialistPlan({workOrders:[{agentId:"story"},{agentId:"character"},{agentId:"continuity"}]});
-assert.equal(planResult.status,"completed");
+assert.equal(planResult.status,"completed",JSON.stringify(planResult.failures));
 await fenced.synthesizeResponse({});
 assert.deepEqual(slots,["semantic","story","character","continuity","synthesis"]);
 assert.deepEqual(executed,["semantic","story","character","continuity","synthesis"]);
-assert.deepEqual(inputBindings,["continuity"],"Continuity must bind historical reconstruction input before UNKNOWN while other lease-only fixtures remain unchanged");
-assert.deepEqual(dispatches,["begin:semantic","assert:semantic","begin:story","assert:story","begin:character","assert:character","begin:continuity","assert:continuity","begin:synthesis","assert:synthesis"]);
+assert.deepEqual(inputBindings,["semantic","story","character","continuity","synthesis"],"every recoverable provider slot must bind its exact historical reconstruction input before UNKNOWN");
+assert.deepEqual(dispatches,["bind:semantic","begin:semantic","assert:semantic","bind:story","begin:story","assert:story","bind:character","begin:character","assert:character","bind:continuity","begin:continuity","assert:continuity","bind:synthesis","begin:synthesis","assert:synthesis"]);
 assert.equal(evidence.length,0);
 
-let escaped=false;
+let escaped=false,deniedBindings=0;
 const denied=createFencedInferenceOrchestrationDeps({
   execution:fakeExecution,
   inferenceExecutionAuthority:{
     async claimProviderCall(){return{authorized:false,dispatchAuthorized:false,reason:"execution-lease-fenced"};},
+    async bindProviderReconstructionInput(){deniedBindings+=1;throw new Error("must not bind historical input after denied claim");},
     async beginProviderDispatch(){throw new Error("must not reach dispatch-begin after denied claim");},
     async assertProviderDispatch(){throw new Error("must not reach dispatch-fence after denied claim");},
     async contributeProviderEffectEvidence(){throw new Error("must not record evidence after denied claim");},
@@ -140,7 +141,7 @@ const denied=createFencedInferenceOrchestrationDeps({
   deps:{interpretSemantics:async()=>{escaped=true;return{};}},
 });
 await assert.rejects(()=>denied.interpretSemantics({}),error=>error.code==="MOVIE_MENTOR_INFERENCE_PROVIDER_CALL_NOT_AUTHORIZED");
-assert.equal(escaped,false);
+assert.equal(escaped,false);assert.equal(deniedBindings,0);
 
 console.log("✓ provider-call claim is durable and slot-bounded");
 console.log("✓ duplicate logical slot cannot mint second dispatch authority");
@@ -149,8 +150,9 @@ console.log("✓ provider-call budget is enforced at admission");
 console.log("✓ externally injected execution/provider-effect/canonical-result/result-candidate stores receive zero production provenance credit regardless of method shape or self-attested capability strings");
 console.log("✓ production execution composition may mint owner proof only from stores it constructs through its production store factories");
 console.log("✓ server consumes the exact production execution owner proof before creator router construction; readiness plus method shape cannot mount the route");
-console.log("✓ Semantic, Story, Character, Continuity and Synthesis cross claim → durable UNKNOWN → current dispatch fence before provider invocation; Continuity additionally binds historical input before UNKNOWN");
+console.log("✓ Semantic, Story, Character, Continuity and Synthesis each cross claim → durable historical-input bind → durable UNKNOWN → current dispatch fence before provider invocation");
 console.log("✓ denied claim prevents historical-input binding, UNKNOWN creation, dispatch fencing and provider invocation");
 console.log("LAW: PRODUCTION-OWNED DURABLE STORES → PRODUCTION EXECUTION COMPOSITION OWNS ONE STABLE PROOF → SERVER CONSUMES THAT EXACT OWNER PROOF → ROUTE");
 console.log("LAW: READY + METHOD SHAPE + SELF-ATTESTED STATUS IS NOT PRODUCTION AUTHORITY. PROOF DOES NOT TELEPORT.");
-console.log("5A.24 Round Seven torture: GREEN");
+console.log("LAW: NO RECOVERABLE PROVIDER SLOT MAY CROSS UNKNOWN WITHOUT ITS EXACT TASK INPUT ALREADY DURABLE.");
+console.log("5A.24 Round Eight torture: GREEN");
