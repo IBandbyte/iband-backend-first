@@ -8,7 +8,12 @@ on:
       - "ai/MovieMentorContinuityAgent.js"
       - "ai/MovieMentorProviderOperationAuthority.js"
       - "ai/MovieMentorProviderOperationMongoStore.js"
+      - "ai/MovieMentorProductionInferenceExecutionComposition.js"
+      - "ai/MovieMentorRecoveredProviderResultAuthority.js"
+      - "ai/MovieMentorRecoveredTaskResult.js"
       - "scripts/verify-movie-mentor-continuity-historical-input-authority.mjs"
+      - "scripts/verify-movie-mentor-continuity-historical-input-backend-ci-authority.mjs"
+      - ".github/workflows/ci-backend.yml"
       - ".github/workflows/verify-movie-mentor-continuity-historical-input-authority.yml"
   push:
     branches: [main]
@@ -18,7 +23,12 @@ on:
       - "ai/MovieMentorContinuityAgent.js"
       - "ai/MovieMentorProviderOperationAuthority.js"
       - "ai/MovieMentorProviderOperationMongoStore.js"
+      - "ai/MovieMentorProductionInferenceExecutionComposition.js"
+      - "ai/MovieMentorRecoveredProviderResultAuthority.js"
+      - "ai/MovieMentorRecoveredTaskResult.js"
       - "scripts/verify-movie-mentor-continuity-historical-input-authority.mjs"
+      - "scripts/verify-movie-mentor-continuity-historical-input-backend-ci-authority.mjs"
+      - ".github/workflows/ci-backend.yml"
       - ".github/workflows/verify-movie-mentor-continuity-historical-input-authority.yml"
   workflow_dispatch:
 
@@ -38,6 +48,12 @@ jobs:
           node --check ai/MovieMentorContinuityAgent.js
           node --check ai/MovieMentorProviderOperationAuthority.js
           node --check ai/MovieMentorProviderOperationMongoStore.js
+          node --check ai/MovieMentorProductionInferenceExecutionComposition.js
+          node --check ai/MovieMentorRecoveredProviderResultAuthority.js
+          node --check ai/MovieMentorRecoveredTaskResult.js
           node --check scripts/verify-movie-mentor-continuity-historical-input-authority.mjs
+          node --check scripts/verify-movie-mentor-continuity-historical-input-backend-ci-authority.mjs
       - name: Verify Continuity historical-input authority
         run: node scripts/verify-movie-mentor-continuity-historical-input-authority.mjs
+      - name: Verify Continuity historical-input Backend CI authority
+        run: node scripts/verify-movie-mentor-continuity-historical-input-backend-ci-authority.mjs
