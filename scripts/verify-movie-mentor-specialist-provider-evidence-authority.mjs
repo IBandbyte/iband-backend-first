@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { createFencedInferenceOrchestrationDeps } from "../ai/MovieMentorTurnRuntime.js";
+import { buildContinuationObedienceEnvelope } from "../ai/MovieMentorContinuationObedienceControl.js";
+import { DERIVED_CONTINUITY_AUTHORITY } from "../ai/MovieMentorContinuityConsequenceAuthority.js";
 
-console.log("Movie Mentor specialist provider-effect evidence authority court");
+console.log("Movie Mentor post-provider domain-rejection evidence authority court");
 
 const previousEnv = {
   provider: process.env.IBAND_AI_PROVIDER,
@@ -16,76 +18,112 @@ process.env.IBAND_AI_MODEL = "gpt-test";
 process.env.IBAND_AI_BASE_URL = "https://provider.invalid/v1/responses";
 process.env.IBAND_AI_API_KEY = "test-key";
 
-const responseId = "resp-specialist-domain-invalid";
-const invalidButSchemaValidContribution = Object.freeze({
-  agentId: "story",
-  observations: [],
-  provisionalSuggestions: [],
-  risksAndConflicts: [],
-  creatorConfirmedDependencies: [
-    { key: "villain.name", value: "Mara" },
-  ],
-  continuationObedienceClaims: [],
-  confidence: 0.8,
-  provenance: {
-    source: "provider",
-    model: "gpt-test",
-    contractVersion: "provider-contract",
+const responses = [
+  {
+    id: "resp-specialist-domain-invalid",
+    structured: {
+      agentId: "story",
+      observations: [],
+      provisionalSuggestions: [],
+      risksAndConflicts: [],
+      creatorConfirmedDependencies: [{ key: "villain.name", value: "Mara" }],
+      continuationObedienceClaims: [],
+      confidence: 0.8,
+      provenance: { source: "provider", model: "gpt-test", contractVersion: "provider-contract" },
+    },
   },
-});
-
-globalThis.fetch = async () => new Response(JSON.stringify({
-  id: responseId,
-  model: "gpt-test",
-  output_text: JSON.stringify(invalidButSchemaValidContribution),
-  usage: { total_tokens: 1 },
-}), {
-  status: 200,
-  headers: { "Content-Type": "application/json" },
-});
+  {
+    id: "resp-continuity-domain-invalid",
+    structured: {
+      agentId: "continuity",
+      derivedConstraints: [{
+        category: "timeline",
+        key: "hero.age",
+        value: "40",
+        reason: "Derived from an unproven dependency.",
+        confidence: 0.9,
+        dependencies: [{ key: "hero.birthYear", value: "1992" }],
+      }],
+      continuityConflicts: [],
+      unresolvedContinuityQuestions: [],
+      provisionalSuggestions: [],
+      confidence: 0.9,
+      provenance: { source: "provider", model: "gpt-test", contractVersion: "provider-contract" },
+    },
+  },
+  {
+    id: "resp-synthesis-domain-invalid",
+    structured: {
+      text: "Continue with the established choice.",
+      usedContributionAgentIds: [],
+      deferredContributionAgentIds: [],
+      continuationObedienceClaims: [],
+      conflictsHandled: [],
+      confidence: 0.9,
+      provenance: { source: "provider", model: "gpt-test", contractVersion: "provider-contract" },
+    },
+  },
+];
+let responseIndex = 0;
+globalThis.fetch = async () => {
+  const next = responses[responseIndex++];
+  assert.ok(next, "each admitted provider task must consume exactly one fake provider response");
+  return new Response(JSON.stringify({
+    id: next.id,
+    model: "gpt-test",
+    output_text: JSON.stringify(next.structured),
+    usage: { total_tokens: 1 },
+  }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+};
 
 const execution = Object.freeze({
   authorized: true,
-  executionId: "execution-specialist-evidence",
-});
-
-const providerCall = Object.freeze({
-  authorized: true,
-  dispatchAuthorized: true,
-  projectId: "project-specialist-evidence",
-  principalId: "creator-specialist-evidence",
-  creatorTurnId: "turn-specialist-evidence",
-  reservationId: "reservation-specialist-evidence",
-  requestDigest: "request-specialist-evidence",
-  providerCallId: "provider-call-specialist-evidence",
-  executionId: execution.executionId,
-  slotId: "story",
-  task: "movie-mentor-specialist:story",
-  ownerId: "worker-specialist-evidence",
-  leaseGeneration: 1,
-  leaseReference: "lease-specialist-evidence",
-  fencingToken: "fence-specialist-evidence",
-  admittedAt: "2032-01-01T00:00:00.000Z",
+  executionId: "execution-post-provider-evidence",
 });
 
 const contributedEvidence = [];
+const calls = new Map();
+function providerCall(slotId, task) {
+  const key = `${slotId}:${task}`;
+  if (!calls.has(key)) {
+    calls.set(key, Object.freeze({
+      authorized: true,
+      dispatchAuthorized: true,
+      projectId: "project-post-provider-evidence",
+      principalId: "creator-post-provider-evidence",
+      creatorTurnId: "turn-post-provider-evidence",
+      reservationId: "reservation-post-provider-evidence",
+      requestDigest: "request-post-provider-evidence",
+      providerCallId: `provider-call-${slotId}-post-provider-evidence`,
+      executionId: execution.executionId,
+      slotId,
+      task,
+      ownerId: "worker-post-provider-evidence",
+      leaseGeneration: 1,
+      leaseReference: "lease-post-provider-evidence",
+      fencingToken: "fence-post-provider-evidence",
+      admittedAt: "2032-01-01T00:00:00.000Z",
+    }));
+  }
+  return calls.get(key);
+}
+
 const authority = Object.freeze({
   async claimProviderCall({ slotId, task }) {
-    assert.equal(slotId, providerCall.slotId);
-    assert.equal(task, providerCall.task);
-    return providerCall;
+    return providerCall(slotId, task);
   },
   async bindProviderReconstructionInput({ providerCall: call, reconstructionInput }) {
-    assert.equal(call.providerCallId, providerCall.providerCallId);
-    assert.equal(reconstructionInput.agentId, "story");
+    assert.equal(call.executionId, execution.executionId);
+    assert.notEqual(reconstructionInput, undefined);
     return Object.freeze({ authorized: true, inputBound: true, providerCallId: call.providerCallId });
   },
   async beginProviderDispatch({ providerCall: call }) {
-    assert.equal(call.providerCallId, providerCall.providerCallId);
     return Object.freeze({ dispatchAuthorized: true, providerCallId: call.providerCallId });
   },
   async assertProviderDispatch({ providerCall: call }) {
-    assert.equal(call.providerCallId, providerCall.providerCallId);
     return Object.freeze({ dispatchAuthorized: true, providerCallId: call.providerCallId });
   },
   async contributeProviderEffectEvidence(evidence) {
@@ -94,7 +132,7 @@ const authority = Object.freeze({
   },
 });
 
-const workOrder = Object.freeze({
+const storyWorkOrder = Object.freeze({
   agentId: "story",
   creatorFacing: false,
   mayAdvanceJourney: false,
@@ -106,12 +144,55 @@ const workOrder = Object.freeze({
     taskId: "task-1",
     creatorMessage: "Keep the hero focused on getting home.",
     semanticIntelligence: Object.freeze({}),
-    creatorConfirmedContext: Object.freeze([
-      Object.freeze({ key: "hero.name", value: "Ari" }),
-    ]),
+    creatorConfirmedContext: Object.freeze([Object.freeze({ key: "hero.name", value: "Ari" })]),
     projectJourney: null,
     continuationObedienceEnvelope: Object.freeze({ references: [], requiredReferenceIds: [] }),
   }),
+});
+
+const continuityWorkOrder = Object.freeze({
+  agentId: "continuity",
+  creatorFacing: false,
+  mayAdvanceJourney: false,
+  mayOverwriteCreatorTruth: false,
+  mayCreateCanon: false,
+  authority: "mentor-provisional",
+  purpose: "prove post-provider Continuity validation preserves effect identity",
+  input: Object.freeze({
+    creatorMessage: "Keep the timeline consistent.",
+    semanticIntelligence: Object.freeze({}),
+    currentCreatorTruth: Object.freeze([]),
+    reusableDerivedContinuity: Object.freeze([]),
+    projectJourney: null,
+    memoryContext: null,
+    currentScene: null,
+    previousScenes: Object.freeze([]),
+    stageId: "stage-1",
+    taskId: "task-continuity",
+  }),
+});
+
+const continuationEnvelope = buildContinuationObedienceEnvelope({
+  continuationReferences: [{
+    status: "resolved",
+    referenceId: "reference-1",
+    expression: "the blue door",
+    resolvedValue: "the creator-confirmed blue door",
+    material: true,
+  }],
+});
+const synthesisInput = Object.freeze({
+  creatorMessage: "Continue from the blue door choice.",
+  creatorConfirmedContext: Object.freeze([]),
+  semanticIntelligence: Object.freeze({ clarificationNeeded: [] }),
+  contributions: Object.freeze([]),
+  continuityConsequenceEnvelope: Object.freeze({
+    status: "consistent",
+    requiresClarification: false,
+    authority: DERIVED_CONTINUITY_AUTHORITY,
+    constraints: Object.freeze([]),
+  }),
+  continuationObedienceEnvelope: Object.freeze(continuationEnvelope),
 });
 
 try {
@@ -120,28 +201,56 @@ try {
     inferenceExecutionAuthority: authority,
   });
 
-  const result = await fenced.executeSpecialistPlan({ workOrders: [workOrder] });
+  const story = await fenced.executeSpecialistPlan({ workOrders: [storyWorkOrder] });
+  assert.equal(story.status, "partial", "domain-invalid Story output must still fail local authority validation");
+  assert.equal(story.failures.length, 1);
+  assert.equal(story.failures[0].code, "SPECIALIST_CONTRIBUTION_INVALID");
+  assert.equal(story.contributions.length, 0);
 
-  assert.equal(result.status, "partial", "domain-invalid specialist output must still fail local authority validation");
-  assert.equal(result.failures.length, 1);
-  assert.equal(result.failures[0].code, "SPECIALIST_CONTRIBUTION_INVALID");
-  assert.equal(result.contributions.length, 0);
-  assert.deepEqual(
-    contributedEvidence,
-    [{
-      providerCallId: providerCall.providerCallId,
-      externalEffectId: responseId,
-      provider: "openai",
-      source: "provider-error-evidence",
-    }],
-    "known provider response identity must survive post-provider specialist authority rejection into durable effect evidence",
+  const continuity = await fenced.executeSpecialistPlan({ workOrders: [continuityWorkOrder] });
+  assert.equal(continuity.status, "partial", "domain-invalid Continuity output must still fail local authority validation");
+  assert.equal(continuity.failures.length, 1);
+  assert.equal(continuity.failures[0].code, "CONTINUITY_CONTRIBUTION_INVALID");
+  assert.equal(continuity.contributions.length, 0);
+
+  await assert.rejects(
+    () => fenced.synthesizeResponse(synthesisInput),
+    (error) => error?.code === "MENTOR_SYNTHESIS_CONTINUATION_OBEDIENCE_FAILED",
+    "domain-invalid Synthesis output must still fail local continuation-obedience authority",
   );
 
-  console.log("✓ provider response may lose result authority without losing provider-effect identity");
-  console.log("✓ schema-valid but domain-invalid specialist output remains rejected");
-  console.log("✓ post-provider specialist authority failure contributes the exact known response ID");
-  console.log("LAW: LOCAL SPECIALIST REJECTION MAY REVOKE RESULT AUTHORITY. IT MAY NOT ERASE PROVIDER-EFFECT EVIDENCE.");
-  console.log("Movie Mentor specialist provider-effect evidence authority: GREEN");
+  assert.equal(responseIndex, 3, "the court must exercise exactly three irreversible provider responses");
+  assert.deepEqual(
+    contributedEvidence,
+    [
+      {
+        providerCallId: "provider-call-story-post-provider-evidence",
+        externalEffectId: "resp-specialist-domain-invalid",
+        provider: "openai",
+        source: "provider-error-evidence",
+      },
+      {
+        providerCallId: "provider-call-continuity-post-provider-evidence",
+        externalEffectId: "resp-continuity-domain-invalid",
+        provider: "openai",
+        source: "provider-error-evidence",
+      },
+      {
+        providerCallId: "provider-call-synthesis-post-provider-evidence",
+        externalEffectId: "resp-synthesis-domain-invalid",
+        provider: "openai",
+        source: "provider-error-evidence",
+      },
+    ],
+    "every known provider response identity must survive higher-layer Movie Mentor authority rejection into durable effect evidence",
+  );
+
+  console.log("✓ Story/Character-class domain rejection preserves the exact known provider response ID");
+  console.log("✓ Continuity domain rejection preserves the exact known provider response ID");
+  console.log("✓ Synthesis continuation-obedience rejection preserves the exact known provider response ID");
+  console.log("✓ all three invalid local results remain rejected while provider-effect evidence survives");
+  console.log("LAW: LOCAL DOMAIN REJECTION MAY REVOKE RESULT AUTHORITY. IT MAY NOT ERASE A KNOWN PROVIDER EFFECT.");
+  console.log("Movie Mentor post-provider domain-rejection evidence authority: GREEN");
 } finally {
   globalThis.fetch = previousFetch;
   if (previousEnv.provider === undefined) delete process.env.IBAND_AI_PROVIDER; else process.env.IBAND_AI_PROVIDER = previousEnv.provider;
