@@ -4,12 +4,14 @@ import { createMovieMentorProviderEffectMongoStore, getMovieMentorProviderEffect
 import { createMovieMentorProviderEffectAuthority } from "./MovieMentorProviderEffectAuthority.js";
 import { createMovieMentorProviderOperationMongoStore, getMovieMentorProviderOperationMongoStoreStatus } from "./MovieMentorProviderOperationMongoStore.js";
 import { createMovieMentorProviderOperationAuthority, createMovieMentorProviderOperationBoundaryAuthority } from "./MovieMentorProviderOperationAuthority.js";
+import { createMovieMentorProviderOutcomeRecoveryAuthority } from "./MovieMentorProviderOutcomeRecoveryAuthority.js";
+import { retrieveMovieMentorProviderResponse } from "./MovieMentorProviderRecoveryAdapter.js";
 import { createMovieMentorInferenceExecutionClosureAuthority } from "./MovieMentorInferenceExecutionClosureAuthority.js";
 import { createMovieMentorCanonicalResultMongoStore, getMovieMentorCanonicalResultMongoStoreStatus } from "./MovieMentorCanonicalResultMongoStore.js";
 import { createMovieMentorCanonicalResultAuthority } from "./MovieMentorCanonicalResultAuthority.js";
 import { createMovieMentorResultCandidateMongoStore, getMovieMentorResultCandidateMongoStoreStatus, MOVIE_MENTOR_RESULT_CANDIDATE_CREATOR_STATE_ATOMIC_FENCE } from "./MovieMentorResultCandidateMongoStore.js";
 
-const VERSION="1.16.0";
+const VERSION="1.17.0";
 const DOMAIN="iband.movie-mentor.production-inference-execution-composition";
 const EXECUTION_CAS="reservation-binding-active-closure-frozen-universe-provider-reality-revision-finalized-result-binding-and-atomic-abort";
 const EFFECT_SERIALIZATION="execution-providerEffectRealityRevision";
@@ -42,6 +44,8 @@ function ownedComposition({reason,authority,storeStatus,effectStoreStatus=null,o
     providerEffectStoreProvenanceRequired:fullExecutionAuthority===true,
     providerOperationStoreProvenanceRequired:fullExecutionAuthority===true,
     providerOperationTargetImmutableBeforeUnknownRequired:fullExecutionAuthority===true,
+    providerOutcomeRecoveryAuthorityRequired:fullExecutionAuthority===true,
+    providerOutcomeRecoveryNeverImpliesRedispatch:true,
     canonicalResultStoreProvenanceRequired:fullExecutionAuthority===true,
     resultCandidateStoreProvenanceRequired:fullExecutionAuthority===true,
     resultCandidateCurrentCreatorStateAtomicFenceRequired:fullExecutionAuthority===true,
@@ -98,6 +102,11 @@ function createMovieMentorProductionInferenceExecutionComposition({store=null,ef
       providerEffectAuthority,
       providerOperationAuthority,
     });
+    const providerOutcomeRecoveryAuthority=createMovieMentorProviderOutcomeRecoveryAuthority({
+      readProviderOperation:providerOperationAuthority.readOperation,
+      readProviderEffectReality:providerEffectAuthority.readReality,
+      recoverProviderResponse:retrieveMovieMentorProviderResponse,
+    });
     const closureAuthority=createMovieMentorInferenceExecutionClosureAuthority({store:durableStore,effectStore:durableEffectStore});
 
     const resultStatus=getMovieMentorCanonicalResultMongoStoreStatus();
@@ -135,6 +144,7 @@ function createMovieMentorProductionInferenceExecutionComposition({store=null,ef
       contributeProviderEffectEvidence:providerEffectAuthority.contributeEvidence,
       readProviderEffectReality:providerEffectAuthority.readReality,
       readProviderOperation:providerOperationAuthority.readOperation,
+      recoverProviderOutcome:providerOutcomeRecoveryAuthority.reconcile,
       ...closureCapabilities,
       stageResultCandidate,
       readResultCandidate:durableCandidateStore.readByExecution,
@@ -142,7 +152,7 @@ function createMovieMentorProductionInferenceExecutionComposition({store=null,ef
       readCanonicalResult:resultAuthority.readResult,
     });
     return ownedComposition({
-      reason:"durable-inference-execution-provider-operation-target-provider-effect-closure-atomic-finalized-result-candidate-lineage-current-creator-state-atomic-fence-current-reality-and-result-authority-composed",
+      reason:"durable-inference-execution-provider-operation-target-provider-outcome-recovery-provider-effect-closure-atomic-finalized-result-candidate-lineage-current-creator-state-atomic-fence-current-reality-and-result-authority-composed",
       authority,
       storeStatus:status,
       effectStoreStatus:effectStatus,
