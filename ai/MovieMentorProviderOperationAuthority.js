@@ -5,7 +5,7 @@ import {
   sameMovieMentorProviderTarget,
 } from "./MovieMentorProviderTargetAuthority.js";
 
-const VERSION = "1.2.0";
+const VERSION = "1.3.0";
 const DOMAIN = "iband.movie-mentor.provider-operation-authority";
 
 function text(value) {
@@ -76,7 +76,54 @@ function sameBinding(record, binding) {
     && text(record?.task) === binding.task;
 }
 
+function assertReconstructionInputIntegrity(record = {}) {
+  const providerCallId = text(record?.providerCallId) || null;
+  const recordedDigest = text(record?.reconstructionInputDigest);
+  const hasPayload = record?.reconstructionInput !== undefined;
+
+  if (!recordedDigest) {
+    if (hasPayload && record.reconstructionInput !== null) {
+      fail(
+        "MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_INTEGRITY_INVALID",
+        "Provider operation carries reconstruction input bytes without an immutable reconstruction-input digest.",
+        { providerCallId, recordedDigest: null, observedDigest: null },
+      );
+    }
+    return freeze({ inputBound: false, recordedDigest: null, observedDigest: null });
+  }
+
+  if (!hasPayload) {
+    fail(
+      "MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_INTEGRITY_INVALID",
+      "Provider operation carries a reconstruction-input digest without the reconstruction input bytes it claims to bind.",
+      { providerCallId, recordedDigest, observedDigest: null },
+    );
+  }
+
+  let observedDigest;
+  try {
+    observedDigest = digest(record.reconstructionInput);
+  } catch {
+    fail(
+      "MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_INTEGRITY_INVALID",
+      "Provider operation reconstruction input cannot be canonically digested.",
+      { providerCallId, recordedDigest, observedDigest: null },
+    );
+  }
+
+  if (observedDigest !== recordedDigest) {
+    fail(
+      "MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_INTEGRITY_INVALID",
+      "Provider operation reconstruction input no longer reproduces its immutable recorded digest.",
+      { providerCallId, recordedDigest, observedDigest },
+    );
+  }
+
+  return freeze({ inputBound: true, recordedDigest, observedDigest });
+}
+
 function operationEvidence(record, extras = {}) {
+  const inputIntegrity = assertReconstructionInputIntegrity(record);
   return freeze({
     authorized: true,
     domain: DOMAIN,
@@ -87,9 +134,10 @@ function operationEvidence(record, extras = {}) {
     task: text(record.task),
     providerTarget: normalizeMovieMentorProviderTarget(record.providerTarget),
     boundAt: instant(record.boundAt).toISOString(),
-    reconstructionInputDigest: text(record.reconstructionInputDigest) || null,
-    reconstructionInput: record.reconstructionInputDigest ? clone(record.reconstructionInput) : null,
+    reconstructionInputDigest: inputIntegrity.recordedDigest,
+    reconstructionInput: inputIntegrity.inputBound ? clone(record.reconstructionInput) : null,
     reconstructionInputBoundAt: record.reconstructionInputBoundAt ? instant(record.reconstructionInputBoundAt).toISOString() : null,
+    reconstructionInputIntegrityVerified: inputIntegrity.inputBound,
     ...extras,
   });
 }
