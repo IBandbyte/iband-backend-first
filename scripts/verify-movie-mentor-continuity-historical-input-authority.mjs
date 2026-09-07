@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createFencedInferenceOrchestrationDeps } from "../ai/MovieMentorTurnRuntime.js";
+import { createDerivedContinuityConstraint } from "../ai/MovieMentorContinuityConsequenceAuthority.js";
 
 const generationOne = Object.freeze({
   authorized: true,
@@ -33,8 +34,29 @@ const call = Object.freeze({
   fencingToken: generationOne.fencingToken,
 });
 
-const cacheA = Object.freeze([{ constraintId: "constraint-a", category: "location", key: "hero.location", value: "harbour", reason: "established", confidence: 1, dependencies: [] }]);
-const cacheB = Object.freeze([{ constraintId: "constraint-b", category: "location", key: "hero.location", value: "tower", reason: "later cache", confidence: 1, dependencies: [] }]);
+const currentCreatorTruth = Object.freeze([
+  Object.freeze({ key: "story.setting", value: "coastal-town", current: true, authority: "creator", confidenceSource: "creator-confirmed" }),
+]);
+const cacheA = Object.freeze([
+  Object.freeze(createDerivedContinuityConstraint({
+    category: "location",
+    key: "hero.location",
+    value: "harbour",
+    reason: "Established from the creator-confirmed coastal setting.",
+    confidence: 1,
+    dependencies: [{ key: "story.setting", value: "coastal-town" }],
+  }, currentCreatorTruth)),
+]);
+const cacheB = Object.freeze([
+  Object.freeze(createDerivedContinuityConstraint({
+    category: "location",
+    key: "hero.location",
+    value: "tower",
+    reason: "A later derived-cache interpretation of the same creator-confirmed setting.",
+    confidence: 1,
+    dependencies: [{ key: "story.setting", value: "coastal-town" }],
+  }, currentCreatorTruth)),
+]);
 
 let durableHistoricalInput = null;
 let bindInputCalls = 0;
@@ -155,7 +177,7 @@ const workOrder = Object.freeze({
   input: Object.freeze({
     creatorMessage: "Keep her at the harbour.",
     semanticIntelligence: {},
-    currentCreatorTruth: [],
+    currentCreatorTruth,
     projectJourney: null,
     memoryContext: null,
     currentScene: null,
@@ -209,7 +231,7 @@ const specialistDeps = {
       creatorStateGeneration: 7,
       creatorStateFingerprint: "fingerprint-seven",
       snapshotReference: "snapshot-four",
-      creatorConfirmedContext: [],
+      creatorConfirmedContext: structuredClone(currentCreatorTruth),
     });
   },
 };
@@ -220,7 +242,7 @@ const firstFenced = createFencedInferenceOrchestrationDeps({
   deps: { specialistDeps },
 });
 const first = await firstFenced.executeSpecialistPlan({ workOrders: [workOrder] });
-assert.equal(first.status, "completed");
+assert.equal(first.status, "completed", JSON.stringify(first.failures));
 assert.equal(bindInputCalls, 1);
 assert.equal(beginUnknownCalls, 1);
 assert.equal(liveContinuityCalls, 1);
@@ -241,7 +263,7 @@ const secondFenced = createFencedInferenceOrchestrationDeps({
   deps: { specialistDeps },
 });
 const recovered = await secondFenced.executeSpecialistPlan({ workOrders: [workOrder] });
-assert.equal(recovered.status, "completed", "current generation must reconstruct the same historical Continuity result");
+assert.equal(recovered.status, "completed", JSON.stringify(recovered.failures));
 assert.equal(bindInputCalls, 1, "takeover must not bind a second input universe");
 assert.equal(beginUnknownCalls, 1, "takeover must not reopen UNKNOWN or creative dispatch");
 assert.equal(liveContinuityCalls, 1, "takeover must make zero second live Continuity/provider calls");
