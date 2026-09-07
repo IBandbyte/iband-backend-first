@@ -1,4 +1,4 @@
-import { executeStructuredAI } from "./StructuredAIProviderClient.js";
+import { attachProviderEffectEvidence, executeStructuredAI } from "./StructuredAIProviderClient.js";
 import { assertObedienceClaims } from "./MovieMentorContinuationObedienceControl.js";
 import { assertCurrentCreatorTruthOnly, buildCurrentCreatorTruthView } from "./MovieMentorCreatorTruthViewControl.js";
 import { createContinuityWorkOrder, executeMovieMentorContinuityAgent } from "./MovieMentorContinuityAgent.js";
@@ -6,12 +6,18 @@ import { createContinuityDerivedCacheRecord } from "./MovieMentorContinuityDeriv
 import { readReusableContinuityDerivedCache, writeContinuityDerivedCache } from "./MovieMentorContinuityDerivedCacheStore.js";
 import { readAuthoritativeTurnSource } from "./MovieMentorCreatorStateStore.js";
 
-const MOVIE_MENTOR_SPECIALIST_EXECUTOR_VERSION = "1.7.0";
+const MOVIE_MENTOR_SPECIALIST_EXECUTOR_VERSION = "1.8.0";
 const SPECIALIST_CONTRACT_VERSION = "1.5.0";
 const LIVE_AGENT_IDS = new Set(["story", "character", "continuity"]);
 function cleanString(value) { return typeof value === "string" ? value.trim() : ""; }
 function asArray(value) { return Array.isArray(value) ? value : []; }
 function cloneValue(value) { if (value === undefined) return undefined; try { return JSON.parse(JSON.stringify(value)); } catch { return value; } }
+function rethrowWithProviderEvidence(error, raw = null) {
+  throw attachProviderEffectEvidence(error, {
+    provider: raw?.metadata?.provider,
+    responseId: raw?.metadata?.responseId,
+  });
+}
 
 const CONTRIBUTION_ITEM_SCHEMA = { type: "object", additionalProperties: false, properties: { key: { type: ["string", "null"] }, value: { type: ["string", "null"] }, reason: { type: ["string", "null"] }, confidence: { type: "number", minimum: 0, maximum: 1 } }, required: ["key", "value", "reason", "confidence"] };
 const OBEDIENCE_CLAIM_SCHEMA = { type: "object", additionalProperties: false, properties: { referenceId: { type: "string" }, status: { type: "string", enum: ["obeyed", "not-applicable"] }, resolvedValueDigest: { type: ["string", "null"] }, reason: { type: ["string", "null"] } }, required: ["referenceId", "status", "resolvedValueDigest", "reason"] };
@@ -135,11 +141,15 @@ async function executeMovieMentorSpecialistWorkOrder(workOrder = {}, deps = {}) 
   if (!preflight.valid) { const error = new Error("Specialist work order failed iBand authority preflight."); error.code = "SPECIALIST_WORK_ORDER_INVALID"; error.validationIssues = preflight.issues; throw error; }
   if (preflight.agentId === "continuity") return executeContinuityWorkOrder(workOrder, deps);
   const raw = await executeStructuredAI({ task: `movie-mentor-specialist:${preflight.agentId}`, systemInstructions: AGENT_INSTRUCTIONS[preflight.agentId], input: { agentId: preflight.agentId, purpose: workOrder?.purpose || null, stageId: workOrder?.input?.stageId || null, taskId: workOrder?.input?.taskId || null, creatorMessage: workOrder?.input?.creatorMessage || null, semanticIntelligence: cloneValue(workOrder?.input?.semanticIntelligence || {}), creatorConfirmedContext: cloneValue(workOrder?.input?.creatorConfirmedContext || []), projectJourney: cloneValue(workOrder?.input?.projectJourney || null), continuationObedienceEnvelope: cloneValue(workOrder?.input?.continuationObedienceEnvelope || null) }, schema: createSpecialistContributionSchema(preflight.agentId), schemaName: `movie_mentor_${preflight.agentId}_contribution`, metadata: { specialistExecutorVersion: MOVIE_MENTOR_SPECIALIST_EXECUTOR_VERSION, contractVersion: SPECIALIST_CONTRACT_VERSION }, providerOperation: deps.providerOperation });
-  if (!raw?.structured) { const error = new Error("Specialist provider did not return structured contribution."); error.code = "SPECIALIST_STRUCTURED_OUTPUT_INVALID"; throw error; }
-  raw.structured.provenance = { source: "movie-mentor-specialist-agent", model: raw?.metadata?.model || null, contractVersion: SPECIALIST_CONTRACT_VERSION };
-  const validation = validateContribution(raw.structured, workOrder);
-  if (!validation.valid) { const error = new Error("Specialist contribution failed iBand authority validation."); error.code = "SPECIALIST_CONTRIBUTION_INVALID"; error.validationIssues = validation.issues; throw error; }
-  return { success: true, contribution: validation.contribution, usage: raw.usage || null, metadata: { ...(raw.metadata || {}), specialistExecutorVersion: MOVIE_MENTOR_SPECIALIST_EXECUTOR_VERSION, specialistContractVersion: SPECIALIST_CONTRACT_VERSION } };
+  try {
+    if (!raw?.structured) { const error = new Error("Specialist provider did not return structured contribution."); error.code = "SPECIALIST_STRUCTURED_OUTPUT_INVALID"; throw error; }
+    raw.structured.provenance = { source: "movie-mentor-specialist-agent", model: raw?.metadata?.model || null, contractVersion: SPECIALIST_CONTRACT_VERSION };
+    const validation = validateContribution(raw.structured, workOrder);
+    if (!validation.valid) { const error = new Error("Specialist contribution failed iBand authority validation."); error.code = "SPECIALIST_CONTRIBUTION_INVALID"; error.validationIssues = validation.issues; throw error; }
+    return { success: true, contribution: validation.contribution, usage: raw.usage || null, metadata: { ...(raw.metadata || {}), specialistExecutorVersion: MOVIE_MENTOR_SPECIALIST_EXECUTOR_VERSION, specialistContractVersion: SPECIALIST_CONTRACT_VERSION } };
+  } catch (error) {
+    rethrowWithProviderEvidence(error, raw);
+  }
 }
 
 async function executeMovieMentorSpecialistPlan(plan = {}, deps = {}) {

@@ -1,4 +1,4 @@
-import { executeStructuredAI } from "./StructuredAIProviderClient.js";
+import { attachProviderEffectEvidence, executeStructuredAI } from "./StructuredAIProviderClient.js";
 import { assertCurrentCreatorTruthOnly } from "./MovieMentorCreatorTruthViewControl.js";
 import {
   DERIVED_CONTINUITY_AUTHORITY,
@@ -7,7 +7,7 @@ import {
   buildContinuityConsequenceEnvelope,
 } from "./MovieMentorContinuityConsequenceAuthority.js";
 
-const MOVIE_MENTOR_CONTINUITY_AGENT_VERSION="2.2.0";
+const MOVIE_MENTOR_CONTINUITY_AGENT_VERSION="2.3.0";
 const CONTINUITY_CONTRACT_VERSION="2.1.1";
 const CONTINUITY_AGENT_ID="continuity";
 const CONTINUITY_AUTHORITY="mentor-provisional";
@@ -69,11 +69,15 @@ async function executeMovieMentorContinuityAgent(w={},context={}){
  const pre=validateContinuityWorkOrder(w);
  if(!pre.valid){const e=new Error("Continuity Agent work order failed current-creator authority preflight.");e.code="CONTINUITY_WORK_ORDER_INVALID";e.validationIssues=pre.issues;throw e;}
  const raw=await executeStructuredAI({task:"movie-mentor-specialist:continuity",systemInstructions:CONTINUITY_INSTRUCTIONS,input:{agentId:CONTINUITY_AGENT_ID,purpose:w?.purpose||null,creatorMessage:w?.input?.creatorMessage||null,semanticIntelligence:clone(w?.input?.semanticIntelligence||{}),currentCreatorTruth:clone(w?.input?.currentCreatorTruth||[]),reusableDerivedContinuity:clone(w?.input?.reusableDerivedContinuity||[]),projectJourney:clone(w?.input?.projectJourney||null),memoryContext:clone(w?.input?.memoryContext||null),currentScene:clone(w?.input?.currentScene||null),previousScenes:clone(w?.input?.previousScenes||[])},schema:CONTINUITY_OUTPUT_SCHEMA,schemaName:"movie_mentor_continuity_contribution",metadata:{continuityAgentVersion:MOVIE_MENTOR_CONTINUITY_AGENT_VERSION,continuityContractVersion:CONTINUITY_CONTRACT_VERSION,creatorTruthDominates:true,derivedContinuityIsNotCanon:true,reusableDerivedContinuityIsNotCanon:true},providerOperation:context?.providerOperation});
- if(!raw?.structured){const e=new Error("Continuity Agent provider did not return structured intelligence.");e.code="CONTINUITY_STRUCTURED_OUTPUT_INVALID";throw e;}
- raw.structured.provenance={source:"movie-mentor-continuity-agent",model:raw?.metadata?.model||null,contractVersion:CONTINUITY_CONTRACT_VERSION};
- const v=validateAndBuildContribution(raw.structured,w);
- if(!v.valid){const e=new Error("Continuity Agent contribution failed authority validation.");e.code="CONTINUITY_CONTRIBUTION_INVALID";e.validationIssues=v.issues;throw e;}
- return{success:true,contribution:v.contribution,usage:raw.usage||null,metadata:{...(raw.metadata||{}),continuityAgentVersion:MOVIE_MENTOR_CONTINUITY_AGENT_VERSION,continuityContractVersion:CONTINUITY_CONTRACT_VERSION,reusableDerivedContinuityCount:a(w?.input?.reusableDerivedContinuity).length}};
+ try{
+  if(!raw?.structured){const e=new Error("Continuity Agent provider did not return structured intelligence.");e.code="CONTINUITY_STRUCTURED_OUTPUT_INVALID";throw e;}
+  raw.structured.provenance={source:"movie-mentor-continuity-agent",model:raw?.metadata?.model||null,contractVersion:CONTINUITY_CONTRACT_VERSION};
+  const v=validateAndBuildContribution(raw.structured,w);
+  if(!v.valid){const e=new Error("Continuity Agent contribution failed authority validation.");e.code="CONTINUITY_CONTRIBUTION_INVALID";e.validationIssues=v.issues;throw e;}
+  return{success:true,contribution:v.contribution,usage:raw.usage||null,metadata:{...(raw.metadata||{}),continuityAgentVersion:MOVIE_MENTOR_CONTINUITY_AGENT_VERSION,continuityContractVersion:CONTINUITY_CONTRACT_VERSION,reusableDerivedContinuityCount:a(w?.input?.reusableDerivedContinuity).length}};
+ }catch(error){
+  throw attachProviderEffectEvidence(error,{provider:raw?.metadata?.provider,responseId:raw?.metadata?.responseId});
+ }
 }
 function getContinuityAgentManifest(){return{id:CONTINUITY_AGENT_ID,name:"Movie Mentor Continuity Agent",version:MOVIE_MENTOR_CONTINUITY_AGENT_VERSION,contractVersion:CONTINUITY_CONTRACT_VERSION,status:"live-cache-aware",authority:CONTINUITY_AUTHORITY,derivedAuthority:DERIVED_CONTINUITY_AUTHORITY,creatorFacing:false,restrictions:["current-creator-truth-only","cannot-create-canon","derived-continuity-is-not-creator-confirmed","cached-derived-continuity-is-not-canon","cannot-overwrite-creator-truth","cannot-advance-journey","cannot-speak-directly-to-creator","cannot-resolve-ambiguity-by-invention"]};}
 export{MOVIE_MENTOR_CONTINUITY_AGENT_VERSION,CONTINUITY_CONTRACT_VERSION,CONTINUITY_AGENT_ID,CONTINUITY_AUTHORITY,CONTINUITY_CATEGORIES,CONTINUITY_OUTPUT_SCHEMA,validateReusableDerivedContinuity,mergeValidatedConstraints,validateContinuityWorkOrder,createContinuityWorkOrder,validateAndBuildContribution,executeMovieMentorContinuityAgent,getContinuityAgentManifest};

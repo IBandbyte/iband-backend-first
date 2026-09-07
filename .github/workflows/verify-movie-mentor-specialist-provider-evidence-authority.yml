@@ -1,0 +1,46 @@
+name: Verify Movie Mentor Specialist Provider Evidence Authority
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/verify-movie-mentor-specialist-provider-evidence-authority.yml"
+      - ".github/workflows/ci-backend.yml"
+      - "scripts/verify-movie-mentor-specialist-provider-evidence-authority.mjs"
+      - "ai/MovieMentorSpecialistExecutor.js"
+      - "ai/MovieMentorContinuityAgent.js"
+      - "ai/MovieMentorSynthesisEngine.js"
+      - "ai/MovieMentorTurnRuntime.js"
+      - "ai/StructuredAIProviderClient.js"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/verify-movie-mentor-specialist-provider-evidence-authority.yml"
+      - ".github/workflows/ci-backend.yml"
+      - "scripts/verify-movie-mentor-specialist-provider-evidence-authority.mjs"
+      - "ai/MovieMentorSpecialistExecutor.js"
+      - "ai/MovieMentorContinuityAgent.js"
+      - "ai/MovieMentorSynthesisEngine.js"
+      - "ai/MovieMentorTurnRuntime.js"
+      - "ai/StructuredAIProviderClient.js"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Check post-provider domain-rejection evidence authority syntax
+        run: |
+          node --check ai/MovieMentorSpecialistExecutor.js
+          node --check ai/MovieMentorContinuityAgent.js
+          node --check ai/MovieMentorSynthesisEngine.js
+          node --check ai/MovieMentorTurnRuntime.js
+          node --check scripts/verify-movie-mentor-specialist-provider-evidence-authority.mjs
+      - name: Verify post-provider domain-rejection evidence authority
+        run: node scripts/verify-movie-mentor-specialist-provider-evidence-authority.mjs
