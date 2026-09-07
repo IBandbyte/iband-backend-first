@@ -47,6 +47,8 @@ jobs:
           node --check scripts/verify-movie-mentor-recovered-result-reconstruction-authority.mjs &&
           node --check scripts/verify-movie-mentor-provider-reconstruction-input-integrity-authority.mjs &&
           node --check scripts/verify-movie-mentor-provider-operation-input-integrity-authority.mjs &&
+          node --check scripts/verify-movie-mentor-specialist-provider-evidence-authority.mjs &&
+          node --check scripts/verify-movie-mentor-specialist-provider-evidence-backend-ci-authority.mjs &&
           node --check scripts/verify-movie-mentor-continuity-historical-input-authority.mjs &&
           node --check scripts/verify-movie-mentor-continuity-historical-input-backend-ci-authority.mjs &&
           node --check scripts/verify-movie-mentor-live-execution-lease-enforcement.mjs &&
@@ -91,6 +93,10 @@ jobs:
         run: npm run verify:movie-mentor-specialists
       - name: Verify Movie Mentor synthesis authority and safety
         run: npm run verify:movie-mentor-synthesis
+      - name: Verify Movie Mentor post-provider domain-rejection evidence authority
+        run: node scripts/verify-movie-mentor-specialist-provider-evidence-authority.mjs
+      - name: Verify Movie Mentor post-provider evidence Backend CI authority
+        run: node scripts/verify-movie-mentor-specialist-provider-evidence-backend-ci-authority.mjs
       - name: Verify Movie Mentor canonical turn wiring
         run: npm run verify:movie-mentor-turn
       - name: Verify Movie Mentor durable creator state turn runtime
