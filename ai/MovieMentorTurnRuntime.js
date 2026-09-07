@@ -10,7 +10,7 @@ import { recoverPreviouslyAdmittedProviderResult } from "./MovieMentorRecoveredP
 import { reconstructRecoveredMovieMentorSemanticResult } from "./MovieMentorRecoveredSemanticResult.js";
 import { reconstructRecoveredMovieMentorSpecialistResult, reconstructRecoveredMovieMentorSynthesisResult } from "./MovieMentorRecoveredTaskResult.js";
 
-const MOVIE_MENTOR_TURN_RUNTIME_VERSION = "2.12.0";
+const MOVIE_MENTOR_TURN_RUNTIME_VERSION = "2.13.0";
 const s = (value) => (typeof value === "string" ? value.trim() : "");
 
 function clone(value) {
@@ -264,7 +264,7 @@ function createFencedInferenceOrchestrationDeps({ execution, inferenceExecutionA
     {
       input = null,
       reconstructRecoveredResult = null,
-      bindReconstructionInput = false,
+      bindReconstructionInput = true,
       prepareFreshInput = null,
     } = {},
   ) => {
@@ -297,8 +297,8 @@ function createFencedInferenceOrchestrationDeps({ execution, inferenceExecutionA
       if (typeof inferenceExecutionAuthority?.bindProviderReconstructionInput !== "function") {
         throw runtimeError(
           "MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_AUTHORITY_REQUIRED",
-          "Continuity provider dispatch requires durable historical reconstruction-input authority before UNKNOWN.",
-          { providerCallId: decision.providerCallId, slotId },
+          "Provider dispatch requires durable historical task-input authority before UNKNOWN.",
+          { providerCallId: decision.providerCallId, slotId, task },
         );
       }
       const inputBinding = await inferenceExecutionAuthority.bindProviderReconstructionInput({
@@ -308,8 +308,8 @@ function createFencedInferenceOrchestrationDeps({ execution, inferenceExecutionA
       if (inputBinding?.authorized !== true || inputBinding?.inputBound !== true) {
         throw runtimeError(
           "MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_NOT_AUTHORIZED",
-          "Continuity provider input did not become durably bound before UNKNOWN.",
-          { providerCallId: decision.providerCallId, slotId },
+          "Provider task input did not become durably bound before UNKNOWN.",
+          { providerCallId: decision.providerCallId, slotId, task },
         );
       }
     }
@@ -399,7 +399,7 @@ function createFencedInferenceOrchestrationDeps({ execution, inferenceExecutionA
             {
               input: clone(workOrder),
               reconstructRecoveredResult: reconstructSpecialist,
-              bindReconstructionInput: agentId === "continuity",
+              bindReconstructionInput: true,
               prepareFreshInput: agentId === "continuity"
                 ? () => prepareContinuity(clone(workOrder), { ...(deps.specialistDeps || {}) })
                 : null,
@@ -428,7 +428,7 @@ function createFencedInferenceOrchestrationDeps({ execution, inferenceExecutionA
           providerCallsRequireDurableExecutionClaim: true,
           providerDispatchRequiresDurableUnknown: true,
           providerDispatchRequiresCurrentExecutionFence: true,
-          continuityHistoricalInputRequiresDurablePreUnknownBinding: true,
+          providerHistoricalInputRequiresDurablePreUnknownBinding: true,
           continuityHistoricalRecoveryNeverReadsCurrentCache: true,
           creatorTruthDominates: true,
           specialistsRemainProvisional: true,
