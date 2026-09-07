@@ -21,56 +21,106 @@ const providerCall = Object.freeze({
   admittedAt: "2026-09-07T00:00:00.000Z",
 });
 
-let providerExecutions = 0;
-let evidenceAttempts = 0;
-let effectReality = null;
-const effectStore = {
-  async readEffect(providerCallId) {
-    return providerCallId === providerCall.providerCallId ? effectReality : null;
-  },
-  async beginUnknown(binding) {
-    effectReality = Object.freeze({ ...structuredClone(binding), state: "unknown", evidence: [] });
-    return effectReality;
-  },
-  async appendEvidence() {
-    evidenceAttempts += 1;
-    return null;
-  },
-};
-const effectAuthority = createMovieMentorProviderEffectAuthority({
-  store: effectStore,
-  now: () => new Date("2026-09-07T00:00:01.000Z"),
-});
-const authority = {
-  async claimProviderCall() { return providerCall; },
-  async bindProviderReconstructionInput() { return { authorized: true, inputBound: true }; },
-  beginProviderDispatch: ({ providerCall: call }) => effectAuthority.beginDispatch({ providerCall: call }),
-  async assertProviderDispatch() { return { authorized: true, dispatchAuthorized: true }; },
-  contributeProviderEffectEvidence: (evidence) => effectAuthority.contributeEvidence(evidence),
-};
+function unknownReality(binding = providerCall) {
+  return Object.freeze({
+    ...structuredClone(binding),
+    state: "unknown",
+    evidence: Object.freeze([]),
+    dispatchUnknownAt: "2026-09-07T00:00:00.500Z",
+  });
+}
 
-const fenced = createFencedInferenceOrchestrationDeps({
-  execution: Object.freeze({ authorized: true, executionId: providerCall.executionId }),
-  inferenceExecutionAuthority: authority,
-  deps: {
-    interpretSemantics: async () => {
-      providerExecutions += 1;
-      return Object.freeze({
-        structured: Object.freeze({ movieJourneyIntelligence: Object.freeze({ proof: true }) }),
-        metadata: Object.freeze({ provider: "openai", responseId: "resp-evidence-known-but-not-durable" }),
-      });
+async function runRuntimeCase({ appendEvidence }) {
+  let providerExecutions = 0;
+  let evidenceAttempts = 0;
+  let effectReality = null;
+  const effectStore = {
+    async readEffect(providerCallId) {
+      return providerCallId === providerCall.providerCallId ? effectReality : null;
     },
+    async beginUnknown(binding) {
+      effectReality = unknownReality(binding);
+      return effectReality;
+    },
+    async appendEvidence(input) {
+      evidenceAttempts += 1;
+      return appendEvidence({ input, getReality: () => effectReality, setReality: (value) => { effectReality = value; } });
+    },
+  };
+  const effectAuthority = createMovieMentorProviderEffectAuthority({
+    store: effectStore,
+    now: () => new Date("2026-09-07T00:00:01.000Z"),
+  });
+  const authority = {
+    async claimProviderCall() { return providerCall; },
+    async bindProviderReconstructionInput() { return { authorized: true, inputBound: true }; },
+    beginProviderDispatch: ({ providerCall: call }) => effectAuthority.beginDispatch({ providerCall: call }),
+    async assertProviderDispatch() { return { authorized: true, dispatchAuthorized: true }; },
+    contributeProviderEffectEvidence: (evidence) => effectAuthority.contributeEvidence(evidence),
+  };
+  const fenced = createFencedInferenceOrchestrationDeps({
+    execution: Object.freeze({ authorized: true, executionId: providerCall.executionId }),
+    inferenceExecutionAuthority: authority,
+    deps: {
+      interpretSemantics: async () => {
+        providerExecutions += 1;
+        return Object.freeze({
+          structured: Object.freeze({ movieJourneyIntelligence: Object.freeze({ proof: true }) }),
+          metadata: Object.freeze({ provider: "openai", responseId: "resp-evidence-known-but-not-durable" }),
+        });
+      },
+    },
+  });
+  return { fenced, stats: () => ({ providerExecutions, evidenceAttempts, effectReality }) };
+}
+
+const nullWrite = await runRuntimeCase({ appendEvidence: async () => null });
+await assert.rejects(
+  () => nullWrite.fenced.interpretSemantics({ proof: true }),
+  (error) => error?.code === "MOVIE_MENTOR_PROVIDER_EFFECT_EVIDENCE_NOT_DURABLE",
+  "A known provider response must fail closed when appendEvidence returns no durable reality.",
+);
+assert.equal(nullWrite.stats().providerExecutions, 1, "the provider response must already have happened");
+assert.equal(nullWrite.stats().evidenceAttempts, 1, "durable evidence persistence must be attempted exactly once");
+assert.equal(nullWrite.stats().effectReality.state, "unknown", "failed persistence must never counterfeit CONFIRMED reality");
+
+const thrownWrite = await runRuntimeCase({
+  appendEvidence: async () => {
+    const error = new Error("simulated durable write failure");
+    error.code = "SIMULATED_PROVIDER_EFFECT_WRITE_FAILURE";
+    throw error;
   },
 });
-
 await assert.rejects(
-  () => fenced.interpretSemantics({ proof: true }),
+  () => thrownWrite.fenced.interpretSemantics({ proof: true }),
   (error) => error?.code === "MOVIE_MENTOR_PROVIDER_EFFECT_EVIDENCE_NOT_DURABLE",
-  "A known provider response must fail closed when the real effect authority cannot make its identity durable.",
+  "A failed evidence write followed by a reread of the still-UNKNOWN row must not counterfeit durable contribution.",
 );
+assert.equal(thrownWrite.stats().providerExecutions, 1, "the provider response must not be replayed after evidence-write failure");
+assert.equal(thrownWrite.stats().evidenceAttempts, 1, "the failed durable write must not be silently retried by result authority");
+assert.equal(thrownWrite.stats().effectReality.state, "unknown", "rereading the pre-existing UNKNOWN row is not a commit receipt");
 
-assert.equal(providerExecutions, 1, "the provider response must already have happened");
-assert.equal(evidenceAttempts, 1, "the real effect authority must attempt durable evidence persistence exactly once");
-assert.equal(effectReality.state, "unknown", "failed evidence persistence must never counterfeit CONFIRMED reality");
+const durableWrite = await runRuntimeCase({
+  appendEvidence: async ({ input, getReality, setReality }) => {
+    const before = getReality();
+    const after = Object.freeze({
+      ...structuredClone(before),
+      state: "confirmed",
+      evidence: Object.freeze([Object.freeze({
+        externalEffectId: input.externalEffectId,
+        provider: input.provider,
+        observedAt: input.observedAt,
+        source: input.source,
+      })]),
+    });
+    setReality(after);
+    return after;
+  },
+});
+const result = await durableWrite.fenced.interpretSemantics({ proof: true });
+assert.equal(result.metadata.responseId, "resp-evidence-known-but-not-durable", "a genuinely durable provider response may retain result authority");
+assert.equal(durableWrite.stats().effectReality.state, "confirmed", "successful evidence persistence must establish confirmed durable reality");
+assert.deepEqual(durableWrite.stats().effectReality.evidence.map((item) => item.externalEffectId), ["resp-evidence-known-but-not-durable"]);
 
 console.log("Movie Mentor provider evidence durability authority verified.");
+console.log("LAW: A REREAD IS A COMMIT RECEIPT ONLY WHEN IT CONTAINS THE EXACT EVIDENCE BEING AUTHORIZED.");
