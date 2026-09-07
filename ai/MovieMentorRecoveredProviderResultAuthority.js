@@ -1,4 +1,4 @@
-const VERSION = "1.1.1";
+const VERSION = "1.2.0";
 const DOMAIN = "iband.movie-mentor.recovered-provider-result-authority";
 
 function text(value) {
@@ -132,17 +132,23 @@ function assertRecoveredOutcomeBinding({ recovery, historical } = {}) {
   });
 }
 
+function historicalInputRequired(historical = {}) {
+  fail(
+    "MOVIE_MENTOR_PROVIDER_RECOVERY_INPUT_AUTHORITY_REQUIRED",
+    "Recovered provider bytes require the exact immutable historical task-input universe that the provider operation answered.",
+    {
+      retryable: true,
+      providerCallId: text(historical?.providerCallId) || null,
+      executionId: text(historical?.executionId) || null,
+      slotId: text(historical?.slotId) || null,
+      task: text(historical?.task) || null,
+    },
+  );
+}
+
 async function resolveHistoricalReconstructionInput({ historical, currentInput, readProviderOperation } = {}) {
-  if (typeof readProviderOperation !== "function") {
-    if (historical?.task === "movie-mentor-specialist:continuity") {
-      fail(
-        "CONTINUITY_RECOVERY_INPUT_AUTHORITY_REQUIRED",
-        "Continuity recovery requires durable historical provider-input authority.",
-        { retryable: true, providerCallId: historical?.providerCallId || null },
-      );
-    }
-    return currentInput;
-  }
+  if (typeof readProviderOperation !== "function") historicalInputRequired(historical);
+
   const operation = await readProviderOperation(historical.providerCallId);
   if (
     operation?.authorized === true
@@ -156,14 +162,8 @@ async function resolveHistoricalReconstructionInput({ historical, currentInput, 
   ) {
     return clone(operation.reconstructionInput);
   }
-  if (historical.task === "movie-mentor-specialist:continuity") {
-    fail(
-      "CONTINUITY_RECOVERY_INPUT_AUTHORITY_REQUIRED",
-      "Continuity recovery requires the exact immutable historical provider-input universe.",
-      { retryable: true, providerCallId: historical.providerCallId },
-    );
-  }
-  return currentInput;
+
+  historicalInputRequired(historical);
 }
 
 async function recoverPreviouslyAdmittedProviderResult({
