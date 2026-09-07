@@ -45,6 +45,7 @@ jobs:
           node --check scripts/verify-movie-mentor-provider-outcome-recovery-authority.mjs &&
           node --check scripts/verify-movie-mentor-provider-outcome-recovery-lease-authority.mjs &&
           node --check scripts/verify-movie-mentor-recovered-result-reconstruction-authority.mjs &&
+          node --check scripts/verify-movie-mentor-provider-reconstruction-input-integrity-authority.mjs &&
           node --check scripts/verify-movie-mentor-continuity-historical-input-authority.mjs &&
           node --check scripts/verify-movie-mentor-continuity-historical-input-backend-ci-authority.mjs &&
           node --check scripts/verify-movie-mentor-live-execution-lease-enforcement.mjs &&
@@ -109,6 +110,8 @@ jobs:
         run: node scripts/verify-movie-mentor-provider-outcome-recovery-lease-authority.mjs
       - name: Verify Movie Mentor recovered-result reconstruction authority
         run: node scripts/verify-movie-mentor-recovered-result-reconstruction-authority.mjs
+      - name: Verify Movie Mentor provider reconstruction-input integrity authority
+        run: node scripts/verify-movie-mentor-provider-reconstruction-input-integrity-authority.mjs
       - name: Verify Movie Mentor Continuity historical-input authority
         run: node scripts/verify-movie-mentor-continuity-historical-input-authority.mjs
       - name: Verify Movie Mentor Continuity historical-input Backend CI authority

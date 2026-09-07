@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { digestMovieMentorProviderReconstructionInput } from "../ai/MovieMentorProviderOperationAuthority.js";
 import { resolveHistoricalReconstructionInput } from "../ai/MovieMentorRecoveredProviderResultAuthority.js";
 
 console.log("Movie Mentor provider historical-input authority court");
@@ -28,7 +29,6 @@ async function expectMissingHistoricalInputRejected(task, slotId) {
         executionId: operation.executionId,
         slotId: operation.slotId,
         task: operation.task,
-        // Historical operation identity survived, but the exact input universe did not.
         reconstructionInputDigest: null,
         reconstructionInput: null,
       }),
@@ -38,7 +38,6 @@ async function expectMissingHistoricalInputRejected(task, slotId) {
   );
 }
 
-// A properly bound historical input must outrank a different current universe.
 const semantic = historical("movie-mentor-semantic", "semantic");
 const resolved = await resolveHistoricalReconstructionInput({
   historical: semantic,
@@ -49,14 +48,13 @@ const resolved = await resolveHistoricalReconstructionInput({
     executionId: semantic.executionId,
     slotId: semantic.slotId,
     task: semantic.task,
-    reconstructionInputDigest: "digest-historical-a",
+    reconstructionInputDigest: digestMovieMentorProviderReconstructionInput(historicalInput),
     reconstructionInput: historicalInput,
   }),
 });
 assert.deepEqual(resolved, historicalInput, "durable historical input must outrank today's reconstructed input universe");
 assert.notDeepEqual(resolved, currentInput);
 
-// Every recoverable creative task must own the same historical-input prerequisite.
 await expectMissingHistoricalInputRejected("movie-mentor-semantic", "semantic");
 await expectMissingHistoricalInputRejected("movie-mentor-specialist:story", "story");
 await expectMissingHistoricalInputRejected("movie-mentor-specialist:character", "character");

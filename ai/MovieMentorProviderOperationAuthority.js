@@ -5,7 +5,7 @@ import {
   sameMovieMentorProviderTarget,
 } from "./MovieMentorProviderTargetAuthority.js";
 
-const VERSION = "1.1.0";
+const VERSION = "1.2.0";
 const DOMAIN = "iband.movie-mentor.provider-operation-authority";
 
 function text(value) {
@@ -240,6 +240,7 @@ function createMovieMentorProviderOperationBoundaryAuthority({
 export {
   VERSION as MOVIE_MENTOR_PROVIDER_OPERATION_AUTHORITY_VERSION,
   DOMAIN as MOVIE_MENTOR_PROVIDER_OPERATION_AUTHORITY_DOMAIN,
+  digest as digestMovieMentorProviderReconstructionInput,
   createMovieMentorProviderOperationAuthority,
   createMovieMentorProviderOperationBoundaryAuthority,
 };
