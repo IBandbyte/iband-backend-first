@@ -19,6 +19,7 @@ let reconstructionCalls = 0;
 let beginDispatchCalls = 0;
 let assertDispatchCalls = 0;
 
+const semanticHistoricalInput = Object.freeze({ message: "same creator turn" });
 const recoveredProviderResponse = Object.freeze({
   id: "resp_same_operation",
   model: "gpt-test",
@@ -61,6 +62,18 @@ const authority = {
     throw new Error("duplicate provider dispatch must never be asserted");
   },
   async contributeProviderEffectEvidence() {},
+  async readProviderOperation(providerCallId) {
+    assert.equal(providerCallId, "provider-call-semantic-one");
+    return Object.freeze({
+      authorized: true,
+      providerCallId,
+      executionId: execution.executionId,
+      slotId: "semantic",
+      task: "movie-mentor-semantic",
+      reconstructionInputDigest: "semantic-historical-input-digest",
+      reconstructionInput: semanticHistoricalInput,
+    });
+  },
   async recoverProviderOutcome({ providerCallId, recoveryAuthority } = {}) {
     recoveryCalls += 1;
     assert.equal(providerCallId, "provider-call-semantic-one");
@@ -93,12 +106,13 @@ const fenced = createFencedInferenceOrchestrationDeps({
     },
     async reconstructRecoveredSemanticResult(input) {
       reconstructionCalls += 1;
+      assert.deepEqual(input.input, semanticHistoricalInput, "semantic reconstruction must receive the frozen historical input, not today's caller input");
       return reconstructRecoveredMovieMentorSemanticResult(input);
     },
   },
 });
 
-const recovered = await fenced.interpretSemantics({ message: "same creator turn" });
+const recovered = await fenced.interpretSemantics({ message: "different current creator turn" });
 assert.equal(recovered?.metadata?.recoveredFromHistoricalProviderOperation, true);
 assert.equal(recovered?.metadata?.localAuthorityRevalidated, true);
 assert.equal(recovered?.metadata?.responseId, "resp_same_operation");
@@ -158,7 +172,7 @@ const invalidFenced = createFencedInferenceOrchestrationDeps({
 });
 
 await assert.rejects(
-  () => invalidFenced.interpretSemantics({ message: "same creator turn" }),
+  () => invalidFenced.interpretSemantics({ message: "current universe must not matter" }),
   (error) => error?.code === "SEMANTIC_INTELLIGENCE_INVALID",
   "provider recovery success must not manufacture local semantic result authority",
 );
@@ -242,7 +256,7 @@ await assert.rejects(
 );
 assert.equal(wrongBindingRecoveryCalls, 0);
 
-function historicalAuthority({ slotId, task, providerCallId, response }) {
+function historicalAuthority({ slotId, task, providerCallId, response, historicalInput = null }) {
   let recoveries = 0;
   const value = {
     async claimProviderCall({ slotId: requestedSlot, task: requestedTask } = {}) {
@@ -264,6 +278,18 @@ function historicalAuthority({ slotId, task, providerCallId, response }) {
     async beginProviderDispatch() { throw new Error("historical slot must not reopen dispatch"); },
     async assertProviderDispatch() { throw new Error("historical slot must not regain POST authority"); },
     async contributeProviderEffectEvidence() {},
+    async readProviderOperation(requestedId) {
+      assert.equal(requestedId, providerCallId);
+      return Object.freeze({
+        authorized: true,
+        providerCallId,
+        executionId: execution.executionId,
+        slotId,
+        task,
+        reconstructionInputDigest: historicalInput ? `${providerCallId}-input-digest` : null,
+        reconstructionInput: historicalInput,
+      });
+    },
     async recoverProviderOutcome({ providerCallId: requestedId, recoveryAuthority } = {}) {
       recoveries += 1;
       assert.equal(requestedId, providerCallId);
@@ -322,6 +348,7 @@ const storyAuthority = historicalAuthority({
   task: "movie-mentor-specialist:story",
   providerCallId: "provider-call-story-one",
   response: storyResponse,
+  historicalInput: storyWorkOrder,
 });
 let storyPosts = 0;
 const storyFenced = createFencedInferenceOrchestrationDeps({
@@ -334,7 +361,7 @@ const storyFenced = createFencedInferenceOrchestrationDeps({
     },
   },
 });
-const storyPlan = await storyFenced.executeSpecialistPlan({ workOrders: [storyWorkOrder] });
+const storyPlan = await storyFenced.executeSpecialistPlan({ workOrders: [{ ...storyWorkOrder, purpose: "CURRENT-B MUST NOT WIN" }] });
 assert.equal(storyPlan.status, "completed");
 assert.equal(storyPlan.contributions.length, 1);
 assert.equal(storyPlan.contributions[0].agentId, "story");
@@ -374,6 +401,7 @@ const synthesisAuthority = historicalAuthority({
   task: "movie-mentor-synthesis",
   providerCallId: "provider-call-synthesis-one",
   response: synthesisResponse,
+  historicalInput: synthesisInput,
 });
 let synthesisPosts = 0;
 const synthesisFenced = createFencedInferenceOrchestrationDeps({
@@ -386,7 +414,7 @@ const synthesisFenced = createFencedInferenceOrchestrationDeps({
     },
   },
 });
-const synthesis = await synthesisFenced.synthesizeResponse(synthesisInput);
+const synthesis = await synthesisFenced.synthesizeResponse({ ...synthesisInput, creatorMessage: "CURRENT-B MUST NOT WIN" });
 assert.equal(synthesis.success, true);
 assert.equal(synthesis.text, "Recovered same synthesis.");
 assert.equal(synthesis.metadata.localAuthorityRevalidated, true);
@@ -403,6 +431,7 @@ const continuityAuthority = historicalAuthority({
   task: "movie-mentor-specialist:continuity",
   providerCallId: "provider-call-continuity-one",
   response: continuityResponse,
+  historicalInput: null,
 });
 let continuityPosts = 0;
 const continuityFenced = createFencedInferenceOrchestrationDeps({
@@ -428,8 +457,8 @@ const continuityPlan = await continuityFenced.executeSpecialistPlan({
 });
 assert.equal(continuityPlan.status, "partial");
 assert.equal(continuityPlan.contributions.length, 0);
-assert.equal(continuityPlan.failures[0]?.code, "CONTINUITY_RECOVERY_INPUT_AUTHORITY_REQUIRED");
+assert.equal(continuityPlan.failures[0]?.code, "MOVIE_MENTOR_PROVIDER_RECOVERY_INPUT_AUTHORITY_REQUIRED");
 assert.equal(continuityPosts, 0, "continuity must never POST a duplicate operation");
-assert.equal(continuityAuthority.recoveries, 1, "continuity may retrieve same historical response but cannot reconstruct authority yet");
+assert.equal(continuityAuthority.recoveries, 1, "continuity may retrieve same historical response but missing historical input still yields zero result authority");
 
 console.log("Movie Mentor recovered-result reconstruction authority verifier passed.");
