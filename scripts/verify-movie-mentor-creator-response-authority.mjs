@@ -61,6 +61,7 @@ const settlement = Object.freeze({
   projectId: canonical.projectId,
   reservationId: canonical.reservationId,
   resultReference: canonical.resultReference,
+  candidateReference: canonical.candidateReference,
   resultDigest: canonical.resultDigest,
   closureCertificateDigest: canonical.closureCertificateDigest,
   idempotent: true,
@@ -84,6 +85,7 @@ assert.throws(
 
 for (const [key, value] of [
   ["resultReference", "other-result"],
+  ["candidateReference", "other-candidate"],
   ["resultDigest", "other-digest"],
   ["reservationId", "other-reservation"],
   ["closureCertificateDigest", "other-closure"],
@@ -130,12 +132,12 @@ await assert.rejects(
 );
 
 const source = fs.readFileSync(new URL("../ai/MovieMentorTurnRuntime.js", import.meta.url), "utf8");
-for (const proof of ["currentRealityVerified", "candidateLineageVerified", "resultFinalizationVerified", "MOVIE_MENTOR_CREATOR_RESPONSE_DIGEST_INVALID", "MOVIE_MENTOR_CREATOR_RESPONSE_BINDING_INVALID", "MOVIE_MENTOR_CREATOR_RESPONSE_EXECUTION_BINDING_INVALID"]) {
+for (const proof of ["currentRealityVerified", "candidateLineageVerified", "candidateReference", "resultFinalizationVerified", "MOVIE_MENTOR_CREATOR_RESPONSE_DIGEST_INVALID", "MOVIE_MENTOR_CREATOR_RESPONSE_BINDING_INVALID", "MOVIE_MENTOR_CREATOR_RESPONSE_EXECUTION_BINDING_INVALID"]) {
   assert.match(source, new RegExp(proof));
 }
 assert.match(source, /assertCreatorResponseAuthority\(\{ canonical, settlement, execution/);
 assert.match(source, /resultResponse\(canonical, settlement, \{ replayed: true, execution: existing \}\)/);
 assert.match(source, /resultResponse\(canonical, settlement, \{ execution \}\)/);
 
-console.log("✅ Movie Mentor creator response authority verified: current canonical proof + local digest + exact execution/settlement binding are required before creator-visible replay or response.");
+console.log("✅ Movie Mentor creator response authority verified: current canonical proof + local digest + exact execution/settlement/candidate-lineage binding are required before creator-visible replay or response.");
 console.log("🧭 Law: NO COMPONENT GETS CREDIT FOR ITS NEIGHBOUR'S PROOF. THE CREATOR-RESPONSE BOUNDARY PROVES THE EXACT RESULT UNIVERSE IT EXPOSES.");
