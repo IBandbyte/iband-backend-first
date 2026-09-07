@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createFencedInferenceOrchestrationDeps } from "../ai/MovieMentorTurnRuntime.js";
 import { createDerivedContinuityConstraint } from "../ai/MovieMentorContinuityConsequenceAuthority.js";
+import { digestMovieMentorProviderReconstructionInput } from "../ai/MovieMentorProviderOperationAuthority.js";
 
 const generationOne = Object.freeze({
   authorized: true,
@@ -142,7 +143,7 @@ const authority = {
       executionId: call.executionId,
       slotId: call.slotId,
       task: call.task,
-      reconstructionInputDigest: "historical-input-digest-a",
+      reconstructionInputDigest: digestMovieMentorProviderReconstructionInput(durableHistoricalInput),
       reconstructionInput: structuredClone(durableHistoricalInput),
     });
   },
@@ -254,7 +255,6 @@ assert.equal(beginUnknownCalls, 1);
 assert.equal(liveContinuityCalls, 1);
 assert.deepEqual(durableHistoricalInput?.input?.reusableDerivedContinuity, cacheA);
 
-// Generation one dies. Current cache drifts after the provider operation already answered cache A.
 activeCache = cacheB;
 takeover = true;
 assert.deepEqual(
