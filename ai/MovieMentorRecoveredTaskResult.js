@@ -6,6 +6,14 @@ import {
   validateContribution,
 } from "./MovieMentorSpecialistExecutor.js";
 import {
+  MOVIE_MENTOR_CONTINUITY_AGENT_VERSION,
+  CONTINUITY_CONTRACT_VERSION,
+  CONTINUITY_OUTPUT_SCHEMA,
+  createContinuityWorkOrder,
+  validateContinuityWorkOrder,
+  validateAndBuildContribution,
+} from "./MovieMentorContinuityAgent.js";
+import {
   MOVIE_MENTOR_SYNTHESIS_VERSION,
   MENTOR_SYNTHESIS_CONTRACT_VERSION,
   createSynthesisSchema,
@@ -14,7 +22,7 @@ import {
 import { assertObedienceClaims } from "./MovieMentorContinuationObedienceControl.js";
 import { reconstructRecoveredStructuredAI } from "./MovieMentorRecoveredStructuredResult.js";
 
-const VERSION = "1.0.0";
+const VERSION = "1.1.0";
 const DOMAIN = "iband.movie-mentor.recovered-task-result";
 
 function text(value) {
@@ -37,6 +45,85 @@ function fail(code, message, extras = {}) {
   throw error;
 }
 
+function reconstructRecoveredContinuityResult({ workOrder, providerOperation, recoveredProviderResponse, recovery } = {}) {
+  if (workOrder?.input?.continuityHistoricalInputAuthority?.prepared !== true) {
+    fail(
+      "CONTINUITY_RECOVERY_INPUT_AUTHORITY_REQUIRED",
+      "Recovered Continuity bytes require the exact historical cache-derived input prepared before UNKNOWN.",
+      { retryable: true },
+    );
+  }
+
+  const continuityWorkOrder = createContinuityWorkOrder({
+    creatorMessage: workOrder?.input?.creatorMessage,
+    semanticIntelligence: clone(workOrder?.input?.semanticIntelligence || {}),
+    currentCreatorTruth: clone(workOrder?.input?.currentCreatorTruth || []),
+    reusableDerivedContinuity: clone(workOrder?.input?.reusableDerivedContinuity || []),
+    projectJourney: clone(workOrder?.input?.projectJourney || null),
+    memoryContext: clone(workOrder?.input?.memoryContext || null),
+    currentScene: clone(workOrder?.input?.currentScene || null),
+    previousScenes: clone(workOrder?.input?.previousScenes || []),
+    stageId: workOrder?.input?.stageId,
+    taskId: workOrder?.input?.taskId,
+    metadata: {
+      turnContextAuthority: clone(workOrder?.input?.turnContextAuthority || null),
+      historicalRecoveryInputBound: true,
+    },
+  });
+  const preflight = validateContinuityWorkOrder(continuityWorkOrder);
+  if (!preflight.valid) {
+    fail("CONTINUITY_WORK_ORDER_INVALID", "Recovered Continuity historical work order failed the original authority preflight.", {
+      validationIssues: preflight.issues,
+    });
+  }
+
+  const raw = reconstructRecoveredStructuredAI({
+    recoveredProviderResponse,
+    providerOperation,
+    task: "movie-mentor-specialist:continuity",
+    schema: CONTINUITY_OUTPUT_SCHEMA,
+    metadata: {
+      continuityAgentVersion: MOVIE_MENTOR_CONTINUITY_AGENT_VERSION,
+      continuityContractVersion: CONTINUITY_CONTRACT_VERSION,
+      creatorTruthDominates: true,
+      derivedContinuityIsNotCanon: true,
+      reusableDerivedContinuityIsNotCanon: true,
+    },
+  });
+  if (!raw?.structured) {
+    fail("CONTINUITY_STRUCTURED_OUTPUT_INVALID", "Recovered Continuity response did not return structured intelligence.");
+  }
+
+  raw.structured.provenance = {
+    source: "movie-mentor-continuity-agent",
+    model: raw?.metadata?.model || null,
+    contractVersion: CONTINUITY_CONTRACT_VERSION,
+  };
+  const validation = validateAndBuildContribution(raw.structured, continuityWorkOrder);
+  if (!validation.valid) {
+    fail("CONTINUITY_CONTRIBUTION_INVALID", "Recovered Continuity contribution failed the original authority validation.", {
+      validationIssues: validation.issues,
+    });
+  }
+
+  return Object.freeze({
+    success: true,
+    contribution: validation.contribution,
+    usage: raw.usage || null,
+    metadata: Object.freeze({
+      ...(raw.metadata || {}),
+      continuityAgentVersion: MOVIE_MENTOR_CONTINUITY_AGENT_VERSION,
+      continuityContractVersion: CONTINUITY_CONTRACT_VERSION,
+      reusableDerivedContinuityCount: array(continuityWorkOrder?.input?.reusableDerivedContinuity).length,
+      localAuthorityRevalidated: true,
+      recoveredFromHistoricalProviderOperation: true,
+      historicalContinuityInputReused: true,
+      recoveryOwnerId: text(recovery?.recoveryOwnerId) || null,
+      recoveryLeaseGeneration: Number.isSafeInteger(recovery?.recoveryLeaseGeneration) ? recovery.recoveryLeaseGeneration : null,
+    }),
+  });
+}
+
 function reconstructRecoveredMovieMentorSpecialistResult({
   input: workOrder = {},
   providerOperation = null,
@@ -50,11 +137,7 @@ function reconstructRecoveredMovieMentorSpecialistResult({
     });
   }
   if (preflight.agentId === "continuity") {
-    fail(
-      "CONTINUITY_RECOVERY_INPUT_AUTHORITY_REQUIRED",
-      "Continuity recovery requires the exact historical derived-cache input universe to be durably bound before reconstruction can be authorized.",
-      { retryable: true },
-    );
+    return reconstructRecoveredContinuityResult({ workOrder, providerOperation, recoveredProviderResponse, recovery });
   }
 
   const task = `movie-mentor-specialist:${preflight.agentId}`;
@@ -196,6 +279,7 @@ function reconstructRecoveredMovieMentorSynthesisResult({
 export {
   VERSION as MOVIE_MENTOR_RECOVERED_TASK_RESULT_VERSION,
   DOMAIN as MOVIE_MENTOR_RECOVERED_TASK_RESULT_DOMAIN,
+  reconstructRecoveredContinuityResult,
   reconstructRecoveredMovieMentorSpecialistResult,
   reconstructRecoveredMovieMentorSynthesisResult,
 };
