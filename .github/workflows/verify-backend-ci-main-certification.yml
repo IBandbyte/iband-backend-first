@@ -1,0 +1,18 @@
+name: Verify Backend CI Main Certification
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/ci-backend.yml"
+      - ".github/workflows/verify-backend-ci-main-certification.yml"
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend-ci:
+    uses: ./.github/workflows/ci-backend.yml
