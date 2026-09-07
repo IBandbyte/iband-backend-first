@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import { normalizeMovieMentorProviderTarget } from "./MovieMentorProviderTargetAuthority.js";
 
-const VERSION = "1.0.0";
+const VERSION = "1.1.0";
 const DOMAIN = "iband.movie-mentor.provider-operation-reality";
 const SCHEMA = 1;
 const COLLECTION = "movie_mentor_provider_operation_reality";
@@ -14,6 +14,11 @@ function text(value) {
 
 function plain(value) {
   return value && typeof value.toObject === "function" ? value.toObject() : value;
+}
+
+function clone(value) {
+  if (value === undefined) return undefined;
+  try { return JSON.parse(JSON.stringify(value)); } catch { return value; }
 }
 
 function iso(value) {
@@ -49,6 +54,9 @@ function getModel() {
     task: { type: String, required: true, immutable: true, trim: true },
     providerTarget: { type: providerTargetSchema, required: true, immutable: true },
     boundAt: { type: Date, required: true, immutable: true },
+    reconstructionInputDigest: { type: String, default: null, immutable: true, trim: true },
+    reconstructionInput: { type: mongoose.Schema.Types.Mixed, default: null, immutable: true },
+    reconstructionInputBoundAt: { type: Date, default: null, immutable: true },
   }, { collection: COLLECTION, timestamps: true, strict: true, minimize: false });
   schema.index({ providerCallId: 1 }, { unique: true });
   schema.index({ executionId: 1, slotId: 1 });
@@ -89,6 +97,11 @@ function normalize(record) {
   ) {
     fail("MOVIE_MENTOR_PROVIDER_OPERATION_RECORD_INVALID", "Durable provider operation identity is malformed.");
   }
+  const reconstructionInputDigest = text(value.reconstructionInputDigest) || null;
+  const reconstructionInputBoundAt = value.reconstructionInputBoundAt ? iso(value.reconstructionInputBoundAt) : null;
+  if ((reconstructionInputDigest && !reconstructionInputBoundAt) || (!reconstructionInputDigest && reconstructionInputBoundAt)) {
+    fail("MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_RECORD_INVALID", "Durable provider reconstruction input provenance is malformed.");
+  }
   return Object.freeze({
     providerCallId: text(value.providerCallId),
     executionId: text(value.executionId),
@@ -96,6 +109,9 @@ function normalize(record) {
     task: text(value.task),
     providerTarget: normalizeMovieMentorProviderTarget(value.providerTarget),
     boundAt: iso(value.boundAt),
+    reconstructionInputDigest,
+    reconstructionInput: reconstructionInputDigest ? clone(value.reconstructionInput) : null,
+    reconstructionInputBoundAt,
   });
 }
 
@@ -151,7 +167,48 @@ function createMovieMentorProviderOperationMongoStore({ mongoModel = null, conne
     }
   }
 
-  return Object.freeze({ readOperation, bindOperation });
+  async function bindReconstructionInput({ providerCallId, executionId, slotId, task, reconstructionInputDigest, reconstructionInput, boundAt } = {}) {
+    await ready();
+    const callId = text(providerCallId);
+    const digest = text(reconstructionInputDigest);
+    const timestamp = new Date(boundAt);
+    if (!callId || !text(executionId) || !text(slotId) || !text(task) || !digest || reconstructionInput === undefined || Number.isNaN(timestamp.getTime())) {
+      fail("MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_BINDING_INVALID", "Provider reconstruction input requires complete immutable call, digest, payload and time provenance.");
+    }
+    const identity = { providerCallId: callId, executionId: text(executionId), slotId: text(slotId), task: text(task) };
+    const existing = await readOperation(callId);
+    if (!existing || !sameIdentity(existing, identity)) {
+      fail("MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_OPERATION_INVALID", "Provider reconstruction input may bind only to the exact durable provider operation universe.");
+    }
+    if (existing.reconstructionInputDigest) return existing;
+
+    const result = await storeModel().updateOne(
+      {
+        providerCallId: callId,
+        executionId: identity.executionId,
+        slotId: identity.slotId,
+        task: identity.task,
+        $or: [
+          { reconstructionInputDigest: null },
+          { reconstructionInputDigest: { $exists: false } },
+        ],
+      },
+      {
+        $set: {
+          reconstructionInputDigest: digest,
+          reconstructionInput: clone(reconstructionInput),
+          reconstructionInputBoundAt: timestamp,
+        },
+      },
+    ).exec();
+    const durable = await readOperation(callId);
+    if (!durable?.reconstructionInputDigest) {
+      fail("MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_NOT_DURABLE", "Provider reconstruction input did not become durable.", { modifiedCount: result?.modifiedCount ?? null });
+    }
+    return durable;
+  }
+
+  return Object.freeze({ readOperation, bindOperation, bindReconstructionInput });
 }
 
 function getMovieMentorProviderOperationMongoStoreStatus() {
@@ -164,6 +221,8 @@ function getMovieMentorProviderOperationMongoStoreStatus() {
     configured,
     durable: configured,
     immutableProviderTarget: true,
+    immutableReconstructionInput: true,
+    reconstructionInputBoundBeforeUnknownCapable: true,
     recoveryIdentity: "provider-adapter-route-fingerprint-recovery-mode",
   });
 }
