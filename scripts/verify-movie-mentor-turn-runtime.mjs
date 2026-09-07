@@ -216,6 +216,7 @@ function settlement({ resultPayload = livePayload, executionRecord = null } = {}
       projectId: canonical.projectId,
       reservationId: canonical.reservationId,
       resultReference: canonical.resultReference,
+      candidateReference: canonical.candidateReference,
       resultDigest: canonical.resultDigest,
       closureCertificateDigest: canonical.closureCertificateDigest,
       idempotent: false,
@@ -464,5 +465,5 @@ await assert.rejects(
 );
 
 console.log(
-  "Movie Mentor Turn Runtime v2.7 passed: server authority is revalidated, SETTLED terminal replay precedes mutable state, provider dispatch requires UNKNOWN + fresh fence, and creator output requires exact current canonical + settlement proof at the response boundary.",
+  "Movie Mentor Turn Runtime v2.8 passed: server authority is revalidated, SETTLED terminal replay precedes mutable state, provider dispatch requires UNKNOWN + fresh fence, and creator output requires exact current canonical candidate lineage + settlement proof at the response boundary.",
 );
