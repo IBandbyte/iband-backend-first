@@ -6,76 +6,151 @@ import { createContinuityDerivedCacheRecord } from "./MovieMentorContinuityDeriv
 import { readReusableContinuityDerivedCache, writeContinuityDerivedCache } from "./MovieMentorContinuityDerivedCacheStore.js";
 import { readAuthoritativeTurnSource } from "./MovieMentorCreatorStateStore.js";
 
-const MOVIE_MENTOR_SPECIALIST_EXECUTOR_VERSION = "1.6.0";
+const MOVIE_MENTOR_SPECIALIST_EXECUTOR_VERSION = "1.7.0";
 const SPECIALIST_CONTRACT_VERSION = "1.5.0";
-const LIVE_AGENT_IDS = new Set(["story","character","continuity"]);
-function cleanString(value){return typeof value === "string" ? value.trim():"";}
-function asArray(value){return Array.isArray(value)?value:[];}
-function cloneValue(value){if(value===undefined)return undefined;try{return JSON.parse(JSON.stringify(value));}catch{return value;}}
+const LIVE_AGENT_IDS = new Set(["story", "character", "continuity"]);
+function cleanString(value) { return typeof value === "string" ? value.trim() : ""; }
+function asArray(value) { return Array.isArray(value) ? value : []; }
+function cloneValue(value) { if (value === undefined) return undefined; try { return JSON.parse(JSON.stringify(value)); } catch { return value; } }
 
-const CONTRIBUTION_ITEM_SCHEMA={type:"object",additionalProperties:false,properties:{key:{type:["string","null"]},value:{type:["string","null"]},reason:{type:["string","null"]},confidence:{type:"number",minimum:0,maximum:1}},required:["key","value","reason","confidence"]};
-const OBEDIENCE_CLAIM_SCHEMA={type:"object",additionalProperties:false,properties:{referenceId:{type:"string"},status:{type:"string",enum:["obeyed","not-applicable"]},resolvedValueDigest:{type:["string","null"]},reason:{type:["string","null"]}},required:["referenceId","status","resolvedValueDigest","reason"]};
-function createSpecialistContributionSchema(agentId){return {type:"object",additionalProperties:false,properties:{agentId:{type:"string",enum:[agentId]},observations:{type:"array",items:CONTRIBUTION_ITEM_SCHEMA},provisionalSuggestions:{type:"array",items:CONTRIBUTION_ITEM_SCHEMA},risksAndConflicts:{type:"array",items:CONTRIBUTION_ITEM_SCHEMA},creatorConfirmedDependencies:{type:"array",items:{type:"object",additionalProperties:false,properties:{key:{type:"string"},value:{type:["string","null"]}},required:["key","value"]}},continuationObedienceClaims:{type:"array",items:OBEDIENCE_CLAIM_SCHEMA},confidence:{type:"number",minimum:0,maximum:1},provenance:{type:"object",additionalProperties:false,properties:{source:{type:"string"},model:{type:["string","null"]},contractVersion:{type:"string"}},required:["source","model","contractVersion"]}},required:["agentId","observations","provisionalSuggestions","risksAndConflicts","creatorConfirmedDependencies","continuationObedienceClaims","confidence","provenance"]};}
-const SPECIALIST_CONTRIBUTION_SCHEMA=createSpecialistContributionSchema("story");
-const BASE_RULES=`You are an internal iBand Movie Mentor specialist. You never speak directly to the creator. You provide advisory intelligence for Mentor synthesis only. Creator-confirmed truth is authoritative and cannot be overwritten. Only CURRENT creator decisions may appear in creatorConfirmedContext; superseded decisions are history and must never be treated as live truth. Validated semantic intelligence is immutable meaning for this turn. If continuationObedienceEnvelope contains references, you MUST NOT reinterpret them. For every supplied continuation reference, return one continuationObedienceClaims record using the exact referenceId. Use status=obeyed with the exact resolvedValueDigest when your contribution relies on or discusses that reference. Use status=not-applicable only when genuinely irrelevant. creatorConfirmedDependencies may contain ONLY exact key/value pairs copied from creatorConfirmedContext. Do not advance CreatorJourneyEngine. All suggestions remain provisional.`;
-const AGENT_INSTRUCTIONS={story:`${BASE_RULES}\nYour specialty is story structure, dramatic direction, stakes, premise coherence and narrative possibilities.`,character:`${BASE_RULES}\nYour specialty is character goals, relationships, arcs, motivation, emotional logic and character-driven conflict.`};
+const CONTRIBUTION_ITEM_SCHEMA = { type: "object", additionalProperties: false, properties: { key: { type: ["string", "null"] }, value: { type: ["string", "null"] }, reason: { type: ["string", "null"] }, confidence: { type: "number", minimum: 0, maximum: 1 } }, required: ["key", "value", "reason", "confidence"] };
+const OBEDIENCE_CLAIM_SCHEMA = { type: "object", additionalProperties: false, properties: { referenceId: { type: "string" }, status: { type: "string", enum: ["obeyed", "not-applicable"] }, resolvedValueDigest: { type: ["string", "null"] }, reason: { type: ["string", "null"] } }, required: ["referenceId", "status", "resolvedValueDigest", "reason"] };
+function createSpecialistContributionSchema(agentId) { return { type: "object", additionalProperties: false, properties: { agentId: { type: "string", enum: [agentId] }, observations: { type: "array", items: CONTRIBUTION_ITEM_SCHEMA }, provisionalSuggestions: { type: "array", items: CONTRIBUTION_ITEM_SCHEMA }, risksAndConflicts: { type: "array", items: CONTRIBUTION_ITEM_SCHEMA }, creatorConfirmedDependencies: { type: "array", items: { type: "object", additionalProperties: false, properties: { key: { type: "string" }, value: { type: ["string", "null"] } }, required: ["key", "value"] } }, continuationObedienceClaims: { type: "array", items: OBEDIENCE_CLAIM_SCHEMA }, confidence: { type: "number", minimum: 0, maximum: 1 }, provenance: { type: "object", additionalProperties: false, properties: { source: { type: "string" }, model: { type: ["string", "null"] }, contractVersion: { type: "string" } }, required: ["source", "model", "contractVersion"] } }, required: ["agentId", "observations", "provisionalSuggestions", "risksAndConflicts", "creatorConfirmedDependencies", "continuationObedienceClaims", "confidence", "provenance"] }; }
+const SPECIALIST_CONTRIBUTION_SCHEMA = createSpecialistContributionSchema("story");
+const BASE_RULES = `You are an internal iBand Movie Mentor specialist. You never speak directly to the creator. You provide advisory intelligence for Mentor synthesis only. Creator-confirmed truth is authoritative and cannot be overwritten. Only CURRENT creator decisions may appear in creatorConfirmedContext; superseded decisions are history and must never be treated as live truth. Validated semantic intelligence is immutable meaning for this turn. If continuationObedienceEnvelope contains references, you MUST NOT reinterpret them. For every supplied continuation reference, return one continuationObedienceClaims record using the exact referenceId. Use status=obeyed with the exact resolvedValueDigest when your contribution relies on or discusses that reference. Use status=not-applicable only when genuinely irrelevant. creatorConfirmedDependencies may contain ONLY exact key/value pairs copied from creatorConfirmedContext. Do not advance CreatorJourneyEngine. All suggestions remain provisional.`;
+const AGENT_INSTRUCTIONS = { story: `${BASE_RULES}\nYour specialty is story structure, dramatic direction, stakes, premise coherence and narrative possibilities.`, character: `${BASE_RULES}\nYour specialty is character goals, relationships, arcs, motivation, emotional logic and character-driven conflict.` };
 
-function validateWorkOrder(workOrder){const agentId=cleanString(workOrder?.agentId);const issues=[];if(!LIVE_AGENT_IDS.has(agentId))issues.push("agent_not_live");if(workOrder?.creatorFacing!==false)issues.push("creator_facing_forbidden");if(workOrder?.mayAdvanceJourney!==false)issues.push("journey_advance_forbidden");if(workOrder?.mayOverwriteCreatorTruth!==false)issues.push("creator_truth_overwrite_forbidden");if(workOrder?.authority!=="mentor-provisional")issues.push("specialist_authority_must_be_mentor_provisional");try{assertCurrentCreatorTruthOnly(agentId==="continuity"?(workOrder?.input?.currentCreatorTruth||[]):(workOrder?.input?.creatorConfirmedContext||[]));}catch(error){issues.push(...asArray(error?.validationIssues));}if(agentId==="continuity"&&workOrder?.mayCreateCanon!==false)issues.push("continuity_canon_creation_forbidden");return {valid:issues.length===0,issues,agentId};}
-function validateContribution(candidate,workOrder){const issues=[];if(!candidate||typeof candidate!=="object")return {valid:false,issues:["missing_structured_contribution"],contribution:null};if(cleanString(candidate.agentId)!==cleanString(workOrder.agentId))issues.push("agent_identity_mismatch");const creatorTruth=new Map(asArray(workOrder?.input?.creatorConfirmedContext).filter(i=>cleanString(i?.key)).map(i=>[cleanString(i.key),String(i.value??"")]));for(const dep of asArray(candidate.creatorConfirmedDependencies)){const key=cleanString(dep?.key);if(!key||!creatorTruth.has(key)||String(dep?.value??"")!==creatorTruth.get(key))issues.push(`creator_dependency_not_confirmed:${key||"missing"}`);}try{assertObedienceClaims(candidate.continuationObedienceClaims,workOrder?.input?.continuationObedienceEnvelope||{references:[],requiredReferenceIds:[]},{allowNotApplicable:true,requireAll:true});}catch(error){issues.push(...asArray(error?.validationIssues));}return {valid:issues.length===0,issues,contribution:{agentId:cleanString(candidate.agentId),observations:asArray(candidate.observations),provisionalSuggestions:asArray(candidate.provisionalSuggestions),risksAndConflicts:asArray(candidate.risksAndConflicts),creatorConfirmedDependencies:asArray(candidate.creatorConfirmedDependencies),continuationObedienceClaims:asArray(candidate.continuationObedienceClaims),confidence:Number(candidate.confidence||0),provenance:{...(candidate.provenance||{}),source:"movie-mentor-specialist-agent",contractVersion:SPECIALIST_CONTRACT_VERSION},authority:"mentor-provisional",creatorFacing:false,mayAdvanceJourney:false,mayOverwriteCreatorTruth:false,requiresMentorSynthesis:true}};}
+function validateWorkOrder(workOrder) {
+  const agentId = cleanString(workOrder?.agentId);
+  const issues = [];
+  if (!LIVE_AGENT_IDS.has(agentId)) issues.push("agent_not_live");
+  if (workOrder?.creatorFacing !== false) issues.push("creator_facing_forbidden");
+  if (workOrder?.mayAdvanceJourney !== false) issues.push("journey_advance_forbidden");
+  if (workOrder?.mayOverwriteCreatorTruth !== false) issues.push("creator_truth_overwrite_forbidden");
+  if (workOrder?.authority !== "mentor-provisional") issues.push("specialist_authority_must_be_mentor_provisional");
+  try { assertCurrentCreatorTruthOnly(agentId === "continuity" ? (workOrder?.input?.currentCreatorTruth || []) : (workOrder?.input?.creatorConfirmedContext || [])); } catch (error) { issues.push(...asArray(error?.validationIssues)); }
+  if (agentId === "continuity" && workOrder?.mayCreateCanon !== false) issues.push("continuity_canon_creation_forbidden");
+  return { valid: issues.length === 0, issues, agentId };
+}
 
-function continuityAuthorityState(input={}){
- const turn=input?.turnContextAuthority||{},creatorState=turn?.creatorState||{};
- const projectId=cleanString(input?.projectId);
- const revision=Number.isSafeInteger(turn?.revision)&&turn.revision>=0?turn.revision:null;
- const generation=Number.isSafeInteger(creatorState?.generation)&&creatorState.generation>=0?creatorState.generation:null;
- const fingerprint=cleanString(creatorState?.fingerprint),snapshotReference=cleanString(turn?.snapshotReference);
- if(!projectId||revision===null||generation===null||!fingerprint||!snapshotReference)return null;
- return{projectId,revision,creatorStateGeneration:generation,creatorStateFingerprint:fingerprint,snapshotReference};
+function validateContribution(candidate, workOrder) {
+  const issues = [];
+  if (!candidate || typeof candidate !== "object") return { valid: false, issues: ["missing_structured_contribution"], contribution: null };
+  if (cleanString(candidate.agentId) !== cleanString(workOrder.agentId)) issues.push("agent_identity_mismatch");
+  const creatorTruth = new Map(asArray(workOrder?.input?.creatorConfirmedContext).filter((i) => cleanString(i?.key)).map((i) => [cleanString(i.key), String(i.value ?? "")]));
+  for (const dep of asArray(candidate.creatorConfirmedDependencies)) {
+    const key = cleanString(dep?.key);
+    if (!key || !creatorTruth.has(key) || String(dep?.value ?? "") !== creatorTruth.get(key)) issues.push(`creator_dependency_not_confirmed:${key || "missing"}`);
+  }
+  try { assertObedienceClaims(candidate.continuationObedienceClaims, workOrder?.input?.continuationObedienceEnvelope || { references: [], requiredReferenceIds: [] }, { allowNotApplicable: true, requireAll: true }); } catch (error) { issues.push(...asArray(error?.validationIssues)); }
+  return { valid: issues.length === 0, issues, contribution: { agentId: cleanString(candidate.agentId), observations: asArray(candidate.observations), provisionalSuggestions: asArray(candidate.provisionalSuggestions), risksAndConflicts: asArray(candidate.risksAndConflicts), creatorConfirmedDependencies: asArray(candidate.creatorConfirmedDependencies), continuationObedienceClaims: asArray(candidate.continuationObedienceClaims), confidence: Number(candidate.confidence || 0), provenance: { ...(candidate.provenance || {}), source: "movie-mentor-specialist-agent", contractVersion: SPECIALIST_CONTRACT_VERSION }, authority: "mentor-provisional", creatorFacing: false, mayAdvanceJourney: false, mayOverwriteCreatorTruth: false, requiresMentorSynthesis: true } };
 }
-function durableAuthorityState(state={}){
- const projectId=cleanString(state?.projectId),revision=Number.isSafeInteger(state?.revision)&&state.revision>=0?state.revision:null,generation=Number.isSafeInteger(state?.creatorStateGeneration)&&state.creatorStateGeneration>=0?state.creatorStateGeneration:null,fingerprint=cleanString(state?.creatorStateFingerprint),snapshotReference=cleanString(state?.snapshotReference);
- if(!projectId||revision===null||generation===null||!fingerprint||!snapshotReference)return null;
- return{projectId,revision,creatorStateGeneration:generation,creatorStateFingerprint:fingerprint,snapshotReference};
+
+function continuityAuthorityState(input = {}) {
+  const turn = input?.turnContextAuthority || {}, creatorState = turn?.creatorState || {};
+  const projectId = cleanString(input?.projectId);
+  const revision = Number.isSafeInteger(turn?.revision) && turn.revision >= 0 ? turn.revision : null;
+  const generation = Number.isSafeInteger(creatorState?.generation) && creatorState.generation >= 0 ? creatorState.generation : null;
+  const fingerprint = cleanString(creatorState?.fingerprint), snapshotReference = cleanString(turn?.snapshotReference);
+  if (!projectId || revision === null || generation === null || !fingerprint || !snapshotReference) return null;
+  return { projectId, revision, creatorStateGeneration: generation, creatorStateFingerprint: fingerprint, snapshotReference };
 }
-function sameContinuityAuthority(left,right){return !!left&&!!right&&left.projectId===right.projectId&&left.revision===right.revision&&left.creatorStateGeneration===right.creatorStateGeneration&&left.creatorStateFingerprint===right.creatorStateFingerprint&&left.snapshotReference===right.snapshotReference;}
-function mergeDerivedConstraints(...groups){
- const byId=new Map();
- for(const constraint of groups.flatMap(group=>asArray(group))){const id=cleanString(constraint?.constraintId);if(id)byId.set(id,cloneValue(constraint));}
- return[...byId.values()];
+
+function durableAuthorityState(state = {}) {
+  const projectId = cleanString(state?.projectId), revision = Number.isSafeInteger(state?.revision) && state.revision >= 0 ? state.revision : null, generation = Number.isSafeInteger(state?.creatorStateGeneration) && state.creatorStateGeneration >= 0 ? state.creatorStateGeneration : null, fingerprint = cleanString(state?.creatorStateFingerprint), snapshotReference = cleanString(state?.snapshotReference);
+  if (!projectId || revision === null || generation === null || !fingerprint || !snapshotReference) return null;
+  return { projectId, revision, creatorStateGeneration: generation, creatorStateFingerprint: fingerprint, snapshotReference };
 }
-async function executeContinuityWorkOrder(workOrder,deps={}){
- const input=workOrder?.input||{},truth=input.currentCreatorTruth||[],currentState=continuityAuthorityState(input);
- const readCache=deps.readReusableContinuityDerivedCache||readReusableContinuityDerivedCache;
- const writeCache=deps.writeContinuityDerivedCache||writeContinuityDerivedCache;
- const createCache=deps.createContinuityDerivedCacheRecord||createContinuityDerivedCacheRecord;
- const executeContinuity=deps.executeContinuityAgent||executeMovieMentorContinuityAgent;
- const readLatestCreatorState=deps.readAuthoritativeTurnSource||readAuthoritativeTurnSource;
- let cacheRead={hit:false,stale:false,constraints:[],record:null,reasons:["continuity_cache_authority_unavailable"]};
- if(currentState){try{cacheRead=await readCache(cloneValue(currentState),cloneValue(truth));}catch(error){cacheRead={hit:false,stale:false,constraints:[],record:null,reasons:[error?.code||"continuity_cache_read_unavailable"]};}}
- const reusable=cacheRead?.hit===true?asArray(cacheRead.constraints):[];
- const continuityWorkOrder=createContinuityWorkOrder({creatorMessage:input.creatorMessage,semanticIntelligence:input.semanticIntelligence,currentCreatorTruth:truth,reusableDerivedContinuity:reusable,projectJourney:input.projectJourney,memoryContext:input.memoryContext,currentScene:input.currentScene,previousScenes:input.previousScenes||[],stageId:input.stageId,taskId:input.taskId,metadata:{turnContextAuthority:cloneValue(input.turnContextAuthority||null),cacheRead:{hit:cacheRead?.hit===true,stale:cacheRead?.stale===true,reasons:cloneValue(cacheRead?.reasons||[])}}});
- const result=await executeContinuity(continuityWorkOrder,{providerOperation:deps.providerOperation});
- let cacheWrite={status:"bypassed",reason:"continuity_cache_authority_unavailable"};
- if(currentState){
-  const combined=mergeDerivedConstraints(reusable,result?.contribution?.derivedConstraints||[]);
-  if(combined.length){
-   try{
-    const latest=await readLatestCreatorState({projectId:currentState.projectId});
-    const latestState=durableAuthorityState(latest);
-    if(!sameContinuityAuthority(currentState,latestState)){
-     cacheWrite={status:"not-written",reason:"continuity_cache_creator_authority_changed_during_inference"};
-    }else{
-     const latestTruth=buildCurrentCreatorTruthView(latest?.creatorConfirmedContext||[]);
-     const record=createCache({sourceState:cloneValue(latestState),creatorConfirmedContext:cloneValue(latestTruth),constraints:combined});
-     await writeCache(record,cloneValue(latestState),cloneValue(latestTruth));
-     cacheWrite={status:"written",cacheKey:record.cacheKey,constraintCount:combined.length};
-    }
-   }catch(error){cacheWrite={status:"not-written",reason:error?.code||"continuity_cache_write_authority_unavailable",validationIssues:cloneValue(error?.validationIssues||error?.reasons||[])};}
-  }else cacheWrite={status:"bypassed",reason:"no-derived-constraints"};
- }
- return{...result,metadata:{...(result?.metadata||{}),continuityCache:{read:{hit:cacheRead?.hit===true,stale:cacheRead?.stale===true,reasons:cloneValue(cacheRead?.reasons||[]),constraintCount:reusable.length},write:cacheWrite,creatorStateMutation:false,canonical:false,writeRequiresFreshCreatorAuthority:true}}};
+
+function sameContinuityAuthority(left, right) { return !!left && !!right && left.projectId === right.projectId && left.revision === right.revision && left.creatorStateGeneration === right.creatorStateGeneration && left.creatorStateFingerprint === right.creatorStateFingerprint && left.snapshotReference === right.snapshotReference; }
+function mergeDerivedConstraints(...groups) { const byId = new Map(); for (const constraint of groups.flatMap((group) => asArray(group))) { const id = cleanString(constraint?.constraintId); if (id) byId.set(id, cloneValue(constraint)); } return [...byId.values()]; }
+
+async function prepareContinuityHistoricalInput(workOrder, deps = {}) {
+  const preflight = validateWorkOrder(workOrder);
+  if (!preflight.valid || preflight.agentId !== "continuity") {
+    const error = new Error("Continuity historical input preparation requires a valid Continuity work order.");
+    error.code = "CONTINUITY_HISTORICAL_INPUT_WORK_ORDER_INVALID";
+    error.validationIssues = preflight.issues;
+    throw error;
+  }
+  const input = workOrder?.input || {};
+  const truth = input.currentCreatorTruth || [];
+  const currentState = continuityAuthorityState(input);
+  const readCache = deps.readReusableContinuityDerivedCache || readReusableContinuityDerivedCache;
+  let cacheRead = { hit: false, stale: false, constraints: [], record: null, reasons: ["continuity_cache_authority_unavailable"] };
+  if (currentState) {
+    try { cacheRead = await readCache(cloneValue(currentState), cloneValue(truth)); }
+    catch (error) { cacheRead = { hit: false, stale: false, constraints: [], record: null, reasons: [error?.code || "continuity_cache_read_unavailable"] }; }
+  }
+  const reusable = cacheRead?.hit === true ? asArray(cacheRead.constraints) : [];
+  return Object.freeze({
+    ...cloneValue(workOrder),
+    input: Object.freeze({
+      ...cloneValue(input),
+      reusableDerivedContinuity: cloneValue(reusable),
+      continuityHistoricalInputAuthority: Object.freeze({
+        prepared: true,
+        sourceState: cloneValue(currentState),
+        cacheRead: Object.freeze({ hit: cacheRead?.hit === true, stale: cacheRead?.stale === true, reasons: cloneValue(cacheRead?.reasons || []) }),
+      }),
+    }),
+  });
 }
-async function executeMovieMentorSpecialistWorkOrder(workOrder={},deps={}){const preflight=validateWorkOrder(workOrder);if(!preflight.valid){const error=new Error("Specialist work order failed iBand authority preflight.");error.code="SPECIALIST_WORK_ORDER_INVALID";error.validationIssues=preflight.issues;throw error;}if(preflight.agentId==="continuity")return executeContinuityWorkOrder(workOrder,deps);const raw=await executeStructuredAI({task:`movie-mentor-specialist:${preflight.agentId}`,systemInstructions:AGENT_INSTRUCTIONS[preflight.agentId],input:{agentId:preflight.agentId,purpose:workOrder?.purpose||null,stageId:workOrder?.input?.stageId||null,taskId:workOrder?.input?.taskId||null,creatorMessage:workOrder?.input?.creatorMessage||null,semanticIntelligence:cloneValue(workOrder?.input?.semanticIntelligence||{}),creatorConfirmedContext:cloneValue(workOrder?.input?.creatorConfirmedContext||[]),projectJourney:cloneValue(workOrder?.input?.projectJourney||null),continuationObedienceEnvelope:cloneValue(workOrder?.input?.continuationObedienceEnvelope||null)},schema:createSpecialistContributionSchema(preflight.agentId),schemaName:`movie_mentor_${preflight.agentId}_contribution`,metadata:{specialistExecutorVersion:MOVIE_MENTOR_SPECIALIST_EXECUTOR_VERSION,contractVersion:SPECIALIST_CONTRACT_VERSION},providerOperation:deps.providerOperation});if(!raw?.structured){const error=new Error("Specialist provider did not return structured contribution.");error.code="SPECIALIST_STRUCTURED_OUTPUT_INVALID";throw error;}raw.structured.provenance={source:"movie-mentor-specialist-agent",model:raw?.metadata?.model||null,contractVersion:SPECIALIST_CONTRACT_VERSION};const validation=validateContribution(raw.structured,workOrder);if(!validation.valid){const error=new Error("Specialist contribution failed iBand authority validation.");error.code="SPECIALIST_CONTRIBUTION_INVALID";error.validationIssues=validation.issues;throw error;}return {success:true,contribution:validation.contribution,usage:raw.usage||null,metadata:{...(raw.metadata||{}),specialistExecutorVersion:MOVIE_MENTOR_SPECIALIST_EXECUTOR_VERSION,specialistContractVersion:SPECIALIST_CONTRACT_VERSION}};}
-async function executeMovieMentorSpecialistPlan(plan={},deps={}){const contributions=[],skipped=[],failures=[],metadata=[];for(const workOrder of asArray(plan?.workOrders)){if(!LIVE_AGENT_IDS.has(cleanString(workOrder?.agentId))){skipped.push({agentId:workOrder?.agentId||null,reason:"agent-not-live-yet"});continue;}try{const result=await executeMovieMentorSpecialistWorkOrder(workOrder,deps);contributions.push(result.contribution);metadata.push({agentId:workOrder.agentId,metadata:cloneValue(result.metadata||null)});}catch(error){failures.push({agentId:workOrder?.agentId||null,code:error?.code||"SPECIALIST_EXECUTION_FAILED",message:error instanceof Error?error.message:"Specialist execution failed.",validationIssues:asArray(error?.validationIssues)});}}return {version:MOVIE_MENTOR_SPECIALIST_EXECUTOR_VERSION,contractVersion:SPECIALIST_CONTRACT_VERSION,status:failures.length?"partial":"completed",contributions,skipped,failures,metadata,authority:{creatorTruthDominates:true,currentCreatorDecisionsOnly:true,validatedSemanticsImmutable:true,continuityDerivedTruthIsNotCanon:true,continuityCacheIsNonCanonical:true,continuityCacheNeverMutatesCreatorState:true,continuityCacheWritesRequireFreshCreatorAuthority:true,contributionsAreMentorProvisional:true,specialistsMayAdvanceJourney:false,specialistsMaySpeakDirectlyToCreator:false,mentorMustSynthesize:true},liveAgents:[...LIVE_AGENT_IDS],extensionAgents:["scene","cinematography","sound-music","production"]};}
-export {MOVIE_MENTOR_SPECIALIST_EXECUTOR_VERSION,SPECIALIST_CONTRACT_VERSION,SPECIALIST_CONTRIBUTION_SCHEMA,OBEDIENCE_CLAIM_SCHEMA,createSpecialistContributionSchema,LIVE_AGENT_IDS,validateWorkOrder,validateContribution,continuityAuthorityState,durableAuthorityState,sameContinuityAuthority,mergeDerivedConstraints,executeContinuityWorkOrder,executeMovieMentorSpecialistWorkOrder,executeMovieMentorSpecialistPlan};
+
+async function executeContinuityWorkOrder(workOrder, deps = {}) {
+  const input = workOrder?.input || {}, truth = input.currentCreatorTruth || [], currentState = continuityAuthorityState(input);
+  const writeCache = deps.writeContinuityDerivedCache || writeContinuityDerivedCache;
+  const createCache = deps.createContinuityDerivedCacheRecord || createContinuityDerivedCacheRecord;
+  const executeContinuity = deps.executeContinuityAgent || executeMovieMentorContinuityAgent;
+  const readLatestCreatorState = deps.readAuthoritativeTurnSource || readAuthoritativeTurnSource;
+  let prepared = workOrder;
+  if (input?.continuityHistoricalInputAuthority?.prepared !== true) prepared = await prepareContinuityHistoricalInput(workOrder, deps);
+  const preparedInput = prepared?.input || {};
+  const reusable = asArray(preparedInput.reusableDerivedContinuity);
+  const cacheAuthority = preparedInput.continuityHistoricalInputAuthority || {};
+  const continuityWorkOrder = createContinuityWorkOrder({ creatorMessage: preparedInput.creatorMessage, semanticIntelligence: preparedInput.semanticIntelligence, currentCreatorTruth: truth, reusableDerivedContinuity: reusable, projectJourney: preparedInput.projectJourney, memoryContext: preparedInput.memoryContext, currentScene: preparedInput.currentScene, previousScenes: preparedInput.previousScenes || [], stageId: preparedInput.stageId, taskId: preparedInput.taskId, metadata: { turnContextAuthority: cloneValue(preparedInput.turnContextAuthority || null), cacheRead: cloneValue(cacheAuthority.cacheRead || { hit: false, stale: false, reasons: [] }), historicalInputPrepared: true } });
+  const result = await executeContinuity(continuityWorkOrder, { providerOperation: deps.providerOperation });
+  let cacheWrite = { status: "bypassed", reason: "continuity_cache_authority_unavailable" };
+  if (currentState) {
+    const combined = mergeDerivedConstraints(reusable, result?.contribution?.derivedConstraints || []);
+    if (combined.length) {
+      try {
+        const latest = await readLatestCreatorState({ projectId: currentState.projectId });
+        const latestState = durableAuthorityState(latest);
+        if (!sameContinuityAuthority(currentState, latestState)) cacheWrite = { status: "not-written", reason: "continuity_cache_creator_authority_changed_during_inference" };
+        else {
+          const latestTruth = buildCurrentCreatorTruthView(latest?.creatorConfirmedContext || []);
+          const record = createCache({ sourceState: cloneValue(latestState), creatorConfirmedContext: cloneValue(latestTruth), constraints: combined });
+          await writeCache(record, cloneValue(latestState), cloneValue(latestTruth));
+          cacheWrite = { status: "written", cacheKey: record.cacheKey, constraintCount: combined.length };
+        }
+      } catch (error) { cacheWrite = { status: "not-written", reason: error?.code || "continuity_cache_write_authority_unavailable", validationIssues: cloneValue(error?.validationIssues || error?.reasons || []) }; }
+    } else cacheWrite = { status: "bypassed", reason: "no-derived-constraints" };
+  }
+  return { ...result, metadata: { ...(result?.metadata || {}), continuityCache: { read: { hit: cacheAuthority?.cacheRead?.hit === true, stale: cacheAuthority?.cacheRead?.stale === true, reasons: cloneValue(cacheAuthority?.cacheRead?.reasons || []), constraintCount: reusable.length }, write: cacheWrite, creatorStateMutation: false, canonical: false, writeRequiresFreshCreatorAuthority: true, historicalProviderInputPrepared: true } } };
+}
+
+async function executeMovieMentorSpecialistWorkOrder(workOrder = {}, deps = {}) {
+  const preflight = validateWorkOrder(workOrder);
+  if (!preflight.valid) { const error = new Error("Specialist work order failed iBand authority preflight."); error.code = "SPECIALIST_WORK_ORDER_INVALID"; error.validationIssues = preflight.issues; throw error; }
+  if (preflight.agentId === "continuity") return executeContinuityWorkOrder(workOrder, deps);
+  const raw = await executeStructuredAI({ task: `movie-mentor-specialist:${preflight.agentId}`, systemInstructions: AGENT_INSTRUCTIONS[preflight.agentId], input: { agentId: preflight.agentId, purpose: workOrder?.purpose || null, stageId: workOrder?.input?.stageId || null, taskId: workOrder?.input?.taskId || null, creatorMessage: workOrder?.input?.creatorMessage || null, semanticIntelligence: cloneValue(workOrder?.input?.semanticIntelligence || {}), creatorConfirmedContext: cloneValue(workOrder?.input?.creatorConfirmedContext || []), projectJourney: cloneValue(workOrder?.input?.projectJourney || null), continuationObedienceEnvelope: cloneValue(workOrder?.input?.continuationObedienceEnvelope || null) }, schema: createSpecialistContributionSchema(preflight.agentId), schemaName: `movie_mentor_${preflight.agentId}_contribution`, metadata: { specialistExecutorVersion: MOVIE_MENTOR_SPECIALIST_EXECUTOR_VERSION, contractVersion: SPECIALIST_CONTRACT_VERSION }, providerOperation: deps.providerOperation });
+  if (!raw?.structured) { const error = new Error("Specialist provider did not return structured contribution."); error.code = "SPECIALIST_STRUCTURED_OUTPUT_INVALID"; throw error; }
+  raw.structured.provenance = { source: "movie-mentor-specialist-agent", model: raw?.metadata?.model || null, contractVersion: SPECIALIST_CONTRACT_VERSION };
+  const validation = validateContribution(raw.structured, workOrder);
+  if (!validation.valid) { const error = new Error("Specialist contribution failed iBand authority validation."); error.code = "SPECIALIST_CONTRIBUTION_INVALID"; error.validationIssues = validation.issues; throw error; }
+  return { success: true, contribution: validation.contribution, usage: raw.usage || null, metadata: { ...(raw.metadata || {}), specialistExecutorVersion: MOVIE_MENTOR_SPECIALIST_EXECUTOR_VERSION, specialistContractVersion: SPECIALIST_CONTRACT_VERSION } };
+}
+
+async function executeMovieMentorSpecialistPlan(plan = {}, deps = {}) {
+  const contributions = [], skipped = [], failures = [], metadata = [];
+  for (const workOrder of asArray(plan?.workOrders)) {
+    if (!LIVE_AGENT_IDS.has(cleanString(workOrder?.agentId))) { skipped.push({ agentId: workOrder?.agentId || null, reason: "agent-not-live-yet" }); continue; }
+    try { const result = await executeMovieMentorSpecialistWorkOrder(workOrder, deps); contributions.push(result.contribution); metadata.push({ agentId: workOrder.agentId, metadata: cloneValue(result.metadata || null) }); }
+    catch (error) { failures.push({ agentId: workOrder?.agentId || null, code: error?.code || "SPECIALIST_EXECUTION_FAILED", message: error instanceof Error ? error.message : "Specialist execution failed.", validationIssues: asArray(error?.validationIssues) }); }
+  }
+  return { version: MOVIE_MENTOR_SPECIALIST_EXECUTOR_VERSION, contractVersion: SPECIALIST_CONTRACT_VERSION, status: failures.length ? "partial" : "completed", contributions, skipped, failures, metadata, authority: { creatorTruthDominates: true, currentCreatorDecisionsOnly: true, validatedSemanticsImmutable: true, continuityDerivedTruthIsNotCanon: true, continuityCacheIsNonCanonical: true, continuityCacheNeverMutatesCreatorState: true, continuityCacheWritesRequireFreshCreatorAuthority: true, contributionsAreMentorProvisional: true, specialistsMayAdvanceJourney: false, specialistsMaySpeakDirectlyToCreator: false, mentorMustSynthesize: true }, liveAgents: [...LIVE_AGENT_IDS], extensionAgents: ["scene", "cinematography", "sound-music", "production"] };
+}
+
+export { MOVIE_MENTOR_SPECIALIST_EXECUTOR_VERSION, SPECIALIST_CONTRACT_VERSION, SPECIALIST_CONTRIBUTION_SCHEMA, OBEDIENCE_CLAIM_SCHEMA, createSpecialistContributionSchema, LIVE_AGENT_IDS, validateWorkOrder, validateContribution, continuityAuthorityState, durableAuthorityState, sameContinuityAuthority, mergeDerivedConstraints, prepareContinuityHistoricalInput, executeContinuityWorkOrder, executeMovieMentorSpecialistWorkOrder, executeMovieMentorSpecialistPlan };
 export default executeMovieMentorSpecialistPlan;

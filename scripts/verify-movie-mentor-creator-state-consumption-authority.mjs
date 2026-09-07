@@ -201,7 +201,7 @@ assert.match(gatewaySource, /runMovieMentorTurnWithForwardExecutionAuthority/);
 assert.match(runtimeSource, /const state = await baseRead\(identity\);[\s\S]*stage: "state-promotion"[\s\S]*liveStateUniverse = universe;[\s\S]*return state;/);
 assert.match(runtimeSource, /const current = await method\.call\(target, args\);[\s\S]*stage: "provider-dispatch"[\s\S]*return current;/);
 assert.match(coreRuntimeSource, /const state = await readSource\(identity\);\s*const envelope = buildTurnEnvelopeFromDurableState/);
-assert.match(coreRuntimeSource, /const current = await inferenceExecutionAuthority\.assertProviderDispatch\(\{ providerCall: decision \}\);[\s\S]*const providerOperation = Object\.freeze\([\s\S]*const result = await providerFunction\(\{ providerOperation \}\);/);
+assert.match(coreRuntimeSource, /const current = await inferenceExecutionAuthority\.assertProviderDispatch\(\{ providerCall: decision \}\);[\s\S]*const providerOperation = Object\.freeze\([\s\S]*const result = await providerFunction\(\{ providerOperation \}(?:, effectiveInput)?\);/);
 assert.ok(coreRuntimeSource.indexOf("convergeExistingTurn") < coreRuntimeSource.indexOf("const state = await readSource(identity)"), "terminal convergence must remain before mutable creator-state consumption");
 
 console.log("PASS — current ownership is independently required when durable creator state enters the live turn and again after the execution fence before provider dispatch.");

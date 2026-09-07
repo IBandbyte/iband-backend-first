@@ -1,10 +1,11 @@
+import crypto from "node:crypto";
 import {
   describeCurrentMovieMentorProviderTarget,
   normalizeMovieMentorProviderTarget,
   sameMovieMentorProviderTarget,
 } from "./MovieMentorProviderTargetAuthority.js";
 
-const VERSION = "1.0.0";
+const VERSION = "1.1.0";
 const DOMAIN = "iband.movie-mentor.provider-operation-authority";
 
 function text(value) {
@@ -13,6 +14,21 @@ function text(value) {
 
 function freeze(value) {
   return Object.freeze(value);
+}
+
+function clone(value) {
+  if (value === undefined) return undefined;
+  try { return JSON.parse(JSON.stringify(value)); } catch { return value; }
+}
+
+function canonicalize(value) {
+  if (value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map(canonicalize);
+  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalize(value[key])]));
+}
+
+function digest(value) {
+  return crypto.createHash("sha256").update(JSON.stringify(canonicalize(value))).digest("hex");
 }
 
 function fail(code, message, extras = {}) {
@@ -71,6 +87,9 @@ function operationEvidence(record, extras = {}) {
     task: text(record.task),
     providerTarget: normalizeMovieMentorProviderTarget(record.providerTarget),
     boundAt: instant(record.boundAt).toISOString(),
+    reconstructionInputDigest: text(record.reconstructionInputDigest) || null,
+    reconstructionInput: record.reconstructionInputDigest ? clone(record.reconstructionInput) : null,
+    reconstructionInputBoundAt: record.reconstructionInputBoundAt ? instant(record.reconstructionInputBoundAt).toISOString() : null,
     ...extras,
   });
 }
@@ -114,6 +133,37 @@ function createMovieMentorProviderOperationAuthority({
     return operationEvidence(durable, { bound: true });
   }
 
+  async function bindReconstructionInput({ providerCall = null, reconstructionInput = undefined } = {}) {
+    if (typeof store?.bindReconstructionInput !== "function") {
+      fail("MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_STORE_REQUIRED", "Provider reconstruction input requires durable immutable input-binding capability.");
+    }
+    const binding = bindingFromProviderCall(providerCall);
+    if (reconstructionInput === undefined) {
+      fail("MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_REQUIRED", "Provider reconstruction input must exist before UNKNOWN may begin.");
+    }
+    const operation = await bindOperation({ providerCall });
+    const inputDigest = digest(reconstructionInput);
+    const durable = await store.bindReconstructionInput({
+      ...binding,
+      reconstructionInputDigest: inputDigest,
+      reconstructionInput: clone(reconstructionInput),
+      boundAt: instant(now()).toISOString(),
+    });
+    if (!sameBinding(durable, binding)) {
+      fail("MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_IDENTITY_CONFLICT", "Provider reconstruction input is bound to a different provider-call universe.");
+    }
+    if (text(durable.reconstructionInputDigest) !== inputDigest) {
+      fail("MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_CONFLICT", "Provider operation is already bound to a different historical reconstruction input.", {
+        providerCallId: binding.providerCallId,
+      });
+    }
+    return operationEvidence(durable, {
+      bound: true,
+      inputBound: true,
+      providerOperationIdentity: operation,
+    });
+  }
+
   async function readOperation(providerCallId) {
     const callId = text(providerCallId);
     if (!callId) return null;
@@ -144,7 +194,7 @@ function createMovieMentorProviderOperationAuthority({
     return operationEvidence(durable, { dispatchAuthorized: true, currentTargetVerified: true });
   }
 
-  return freeze({ bindOperation, readOperation, assertCurrentTarget });
+  return freeze({ bindOperation, bindReconstructionInput, readOperation, assertCurrentTarget });
 }
 
 function createMovieMentorProviderOperationBoundaryAuthority({
