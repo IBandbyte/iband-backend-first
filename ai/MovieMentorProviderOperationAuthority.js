@@ -99,8 +99,8 @@ function createMovieMentorProviderOperationAuthority({
   now = () => new Date(),
   resolveCurrentTarget = () => describeCurrentMovieMentorProviderTarget(),
 } = {}) {
-  if (typeof store?.readOperation !== "function" || typeof store?.bindOperation !== "function" || typeof store?.bindReconstructionInput !== "function") {
-    fail("MOVIE_MENTOR_PROVIDER_OPERATION_STORE_REQUIRED", "Provider operation authority requires a durable immutable operation identity and reconstruction-input store.");
+  if (typeof store?.readOperation !== "function" || typeof store?.bindOperation !== "function") {
+    fail("MOVIE_MENTOR_PROVIDER_OPERATION_STORE_REQUIRED", "Provider operation authority requires a durable immutable operation identity store.");
   }
   if (typeof resolveCurrentTarget !== "function") {
     fail("MOVIE_MENTOR_PROVIDER_OPERATION_TARGET_RESOLVER_REQUIRED", "Provider operation authority requires a current provider target resolver.");
@@ -134,6 +134,9 @@ function createMovieMentorProviderOperationAuthority({
   }
 
   async function bindReconstructionInput({ providerCall = null, reconstructionInput = undefined } = {}) {
+    if (typeof store?.bindReconstructionInput !== "function") {
+      fail("MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_STORE_REQUIRED", "Provider reconstruction input requires durable immutable input-binding capability.");
+    }
     const binding = bindingFromProviderCall(providerCall);
     if (reconstructionInput === undefined) {
       fail("MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_REQUIRED", "Provider reconstruction input must exist before UNKNOWN may begin.");
