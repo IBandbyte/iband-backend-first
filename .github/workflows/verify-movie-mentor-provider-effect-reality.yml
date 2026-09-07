@@ -2,10 +2,26 @@ name: Verify Movie Mentor Provider Effect Reality
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/verify-movie-mentor-provider-effect-reality.yml"
+      - ".github/workflows/ci-backend.yml"
+      - ".github/workflows/verify-movie-mentor-creator-production-authorization.yml"
+      - "scripts/verify-movie-mentor-provider-effect-reality.mjs"
+      - "scripts/verify-movie-mentor-creator-production-authorization.mjs"
+      - "scripts/verify-movie-mentor-round-four-certification-anchor.mjs"
+      - "ai/MovieMentorProviderEffectMongoStore.js"
+      - "ai/MovieMentorProviderEffectAuthority.js"
+      - "ai/MovieMentorProductionInferenceExecutionComposition.js"
+      - "ai/MovieMentorTurnRuntime.js"
+      - "movieMentorTurn.js"
+      - "server.js"
   push:
     branches: [main]
     paths:
       - ".github/workflows/verify-movie-mentor-provider-effect-reality.yml"
+      - ".github/workflows/ci-backend.yml"
       - ".github/workflows/verify-movie-mentor-creator-production-authorization.yml"
       - "scripts/verify-movie-mentor-provider-effect-reality.mjs"
       - "scripts/verify-movie-mentor-creator-production-authorization.mjs"
