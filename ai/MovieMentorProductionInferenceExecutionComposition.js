@@ -11,7 +11,7 @@ import { createMovieMentorCanonicalResultMongoStore, getMovieMentorCanonicalResu
 import { createMovieMentorCanonicalResultAuthority } from "./MovieMentorCanonicalResultAuthority.js";
 import { createMovieMentorResultCandidateMongoStore, getMovieMentorResultCandidateMongoStoreStatus, MOVIE_MENTOR_RESULT_CANDIDATE_CREATOR_STATE_ATOMIC_FENCE } from "./MovieMentorResultCandidateMongoStore.js";
 
-const VERSION="1.17.0";
+const VERSION="1.18.0";
 const DOMAIN="iband.movie-mentor.production-inference-execution-composition";
 const EXECUTION_CAS="reservation-binding-active-closure-frozen-universe-provider-reality-revision-finalized-result-binding-and-atomic-abort";
 const EFFECT_SERIALIZATION="execution-providerEffectRealityRevision";
@@ -45,6 +45,7 @@ function ownedComposition({reason,authority,storeStatus,effectStoreStatus=null,o
     providerOperationStoreProvenanceRequired:fullExecutionAuthority===true,
     providerOperationTargetImmutableBeforeUnknownRequired:fullExecutionAuthority===true,
     providerOutcomeRecoveryAuthorityRequired:fullExecutionAuthority===true,
+    providerOutcomeRecoveryCurrentExecutionAuthorityRequired:fullExecutionAuthority===true,
     providerOutcomeRecoveryNeverImpliesRedispatch:true,
     canonicalResultStoreProvenanceRequired:fullExecutionAuthority===true,
     resultCandidateStoreProvenanceRequired:fullExecutionAuthority===true,
@@ -106,6 +107,35 @@ function createMovieMentorProductionInferenceExecutionComposition({store=null,ef
       readProviderOperation:providerOperationAuthority.readOperation,
       readProviderEffectReality:providerEffectAuthority.readReality,
       recoverProviderResponse:retrieveMovieMentorProviderResponse,
+      requireRecoveryAuthority:true,
+      assertCurrentRecoveryAuthority:async({operation,recoveryAuthority}={})=>{
+        const current=await leaseAuthority.assertFence(recoveryAuthority);
+        if(current?.authorized!==true||current?.executionAuthorized!==true){
+          return Object.freeze({
+            authorized:false,
+            currentRecoveryAuthorityVerified:false,
+            reason:current?.reason||"execution-recovery-fenced",
+          });
+        }
+        if(current.executionId!==operation?.executionId){
+          return Object.freeze({
+            authorized:false,
+            currentRecoveryAuthorityVerified:false,
+            reason:"execution-recovery-binding-conflict",
+          });
+        }
+        return Object.freeze({
+          authorized:true,
+          currentRecoveryAuthorityVerified:true,
+          transition:"provider-outcome-recovery",
+          executionId:current.executionId,
+          providerCallId:operation.providerCallId,
+          ownerId:current.ownerId,
+          leaseGeneration:current.leaseGeneration,
+          leaseReference:current.leaseReference,
+          fencingToken:current.fencingToken,
+        });
+      },
     });
     const closureAuthority=createMovieMentorInferenceExecutionClosureAuthority({store:durableStore,effectStore:durableEffectStore});
 
@@ -152,7 +182,7 @@ function createMovieMentorProductionInferenceExecutionComposition({store=null,ef
       readCanonicalResult:resultAuthority.readResult,
     });
     return ownedComposition({
-      reason:"durable-inference-execution-provider-operation-target-provider-outcome-recovery-provider-effect-closure-atomic-finalized-result-candidate-lineage-current-creator-state-atomic-fence-current-reality-and-result-authority-composed",
+      reason:"durable-inference-execution-provider-operation-target-current-lease-provider-outcome-recovery-provider-effect-closure-atomic-finalized-result-candidate-lineage-current-creator-state-atomic-fence-current-reality-and-result-authority-composed",
       authority,
       storeStatus:status,
       effectStoreStatus:effectStatus,
