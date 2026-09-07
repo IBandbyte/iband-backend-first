@@ -1,4 +1,4 @@
-const VERSION = "1.1.0";
+const VERSION = "1.1.1";
 const DOMAIN = "iband.movie-mentor.recovered-provider-result-authority";
 
 function text(value) {
@@ -190,12 +190,12 @@ async function recoverPreviouslyAdmittedProviderResult({
   }
 
   const historical = assertExactHistoricalBinding({ decision, execution, slotId, task });
-  const historicalInput = await resolveHistoricalReconstructionInput({ historical, currentInput: input, readProviderOperation });
   const recovery = await recoverProviderOutcome({
     providerCallId: historical.providerCallId,
     recoveryAuthority: execution,
   });
   const bound = assertRecoveredOutcomeBinding({ recovery, historical });
+  const historicalInput = await resolveHistoricalReconstructionInput({ historical, currentInput: input, readProviderOperation });
   const providerOperation = freeze({
     providerOperationId: historical.providerCallId,
     executionId: historical.executionId,
