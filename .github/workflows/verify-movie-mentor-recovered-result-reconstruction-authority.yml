@@ -4,21 +4,31 @@ on:
   pull_request:
     paths:
       - "ai/MovieMentorTurnRuntime.js"
+      - "ai/MovieMentorRecoveredProviderResultAuthority.js"
+      - "ai/MovieMentorRecoveredSemanticResult.js"
+      - "ai/MovieMentorRecoveredStructuredResult.js"
+      - "ai/MovieMentorRecoveredTaskResult.js"
       - "ai/MovieMentorSemanticInterpreter.js"
       - "ai/StructuredAIProviderClient.js"
       - "ai/MovieMentorSpecialistExecutor.js"
       - "ai/MovieMentorSynthesisEngine.js"
       - "scripts/verify-movie-mentor-recovered-result-reconstruction-authority.mjs"
+      - ".github/workflows/ci-backend.yml"
       - ".github/workflows/verify-movie-mentor-recovered-result-reconstruction-authority.yml"
   push:
     branches: [main]
     paths:
       - "ai/MovieMentorTurnRuntime.js"
+      - "ai/MovieMentorRecoveredProviderResultAuthority.js"
+      - "ai/MovieMentorRecoveredSemanticResult.js"
+      - "ai/MovieMentorRecoveredStructuredResult.js"
+      - "ai/MovieMentorRecoveredTaskResult.js"
       - "ai/MovieMentorSemanticInterpreter.js"
       - "ai/StructuredAIProviderClient.js"
       - "ai/MovieMentorSpecialistExecutor.js"
       - "ai/MovieMentorSynthesisEngine.js"
       - "scripts/verify-movie-mentor-recovered-result-reconstruction-authority.mjs"
+      - ".github/workflows/ci-backend.yml"
       - ".github/workflows/verify-movie-mentor-recovered-result-reconstruction-authority.yml"
   workflow_dispatch:
 
@@ -34,6 +44,10 @@ jobs:
       - name: Check recovered-result reconstruction authority syntax
         run: |
           node --check ai/MovieMentorTurnRuntime.js
+          node --check ai/MovieMentorRecoveredProviderResultAuthority.js
+          node --check ai/MovieMentorRecoveredSemanticResult.js
+          node --check ai/MovieMentorRecoveredStructuredResult.js
+          node --check ai/MovieMentorRecoveredTaskResult.js
           node --check scripts/verify-movie-mentor-recovered-result-reconstruction-authority.mjs
       - name: Verify recovered-result reconstruction authority
         run: node scripts/verify-movie-mentor-recovered-result-reconstruction-authority.mjs
