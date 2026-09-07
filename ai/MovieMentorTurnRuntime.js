@@ -10,7 +10,7 @@ import { recoverPreviouslyAdmittedProviderResult } from "./MovieMentorRecoveredP
 import { reconstructRecoveredMovieMentorSemanticResult } from "./MovieMentorRecoveredSemanticResult.js";
 import { reconstructRecoveredMovieMentorSpecialistResult, reconstructRecoveredMovieMentorSynthesisResult } from "./MovieMentorRecoveredTaskResult.js";
 
-const MOVIE_MENTOR_TURN_RUNTIME_VERSION = "2.11.0";
+const MOVIE_MENTOR_TURN_RUNTIME_VERSION = "2.12.0";
 const s = (value) => (typeof value === "string" ? value.trim() : "");
 
 function clone(value) {
@@ -257,7 +257,17 @@ function createFencedInferenceOrchestrationDeps({ execution, inferenceExecutionA
     );
   }
 
-  const invoke = async (slotId, task, providerFunction, { input = null, reconstructRecoveredResult = null, bindReconstructionInput = false } = {}) => {
+  const invoke = async (
+    slotId,
+    task,
+    providerFunction,
+    {
+      input = null,
+      reconstructRecoveredResult = null,
+      bindReconstructionInput = false,
+      prepareFreshInput = null,
+    } = {},
+  ) => {
     const decision = await inferenceExecutionAuthority.claimProviderCall({ execution, slotId, task });
     if (decision?.dispatchAuthorized !== true) {
       if (decision?.reason === "provider-call-slot-already-admitted") {
@@ -279,6 +289,10 @@ function createFencedInferenceOrchestrationDeps({ execution, inferenceExecutionA
     }
     onClaim?.(decision);
 
+    const effectiveInput = typeof prepareFreshInput === "function"
+      ? await prepareFreshInput()
+      : input;
+
     if (bindReconstructionInput) {
       if (typeof inferenceExecutionAuthority?.bindProviderReconstructionInput !== "function") {
         throw runtimeError(
@@ -289,7 +303,7 @@ function createFencedInferenceOrchestrationDeps({ execution, inferenceExecutionA
       }
       const inputBinding = await inferenceExecutionAuthority.bindProviderReconstructionInput({
         providerCall: decision,
-        reconstructionInput: clone(input),
+        reconstructionInput: clone(effectiveInput),
       });
       if (inputBinding?.authorized !== true || inputBinding?.inputBound !== true) {
         throw runtimeError(
@@ -331,7 +345,7 @@ function createFencedInferenceOrchestrationDeps({ execution, inferenceExecutionA
     }
 
     try {
-      const result = await providerFunction({ providerOperation });
+      const result = await providerFunction({ providerOperation }, effectiveInput);
       const evidence = findProviderEvidence(result);
       if (evidence) {
         await inferenceExecutionAuthority.contributeProviderEffectEvidence({
@@ -378,17 +392,17 @@ function createFencedInferenceOrchestrationDeps({ execution, inferenceExecutionA
           continue;
         }
         try {
-          const preparedWorkOrder = agentId === "continuity"
-            ? await prepareContinuity(clone(workOrder), { ...(deps.specialistDeps || {}) })
-            : clone(workOrder);
           const result = await invoke(
             agentId,
             `movie-mentor-specialist:${agentId}`,
-            (context) => executeWorkOrder(clone(preparedWorkOrder), { ...(deps.specialistDeps || {}), ...context }),
+            (context, effectiveInput) => executeWorkOrder(clone(effectiveInput), { ...(deps.specialistDeps || {}), ...context }),
             {
-              input: clone(preparedWorkOrder),
+              input: clone(workOrder),
               reconstructRecoveredResult: reconstructSpecialist,
               bindReconstructionInput: agentId === "continuity",
+              prepareFreshInput: agentId === "continuity"
+                ? () => prepareContinuity(clone(workOrder), { ...(deps.specialistDeps || {}) })
+                : null,
             },
           );
           contributions.push(result.contribution);
@@ -415,6 +429,7 @@ function createFencedInferenceOrchestrationDeps({ execution, inferenceExecutionA
           providerDispatchRequiresDurableUnknown: true,
           providerDispatchRequiresCurrentExecutionFence: true,
           continuityHistoricalInputRequiresDurablePreUnknownBinding: true,
+          continuityHistoricalRecoveryNeverReadsCurrentCache: true,
           creatorTruthDominates: true,
           specialistsRemainProvisional: true,
         },
