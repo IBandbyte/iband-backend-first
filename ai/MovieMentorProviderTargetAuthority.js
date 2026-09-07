@@ -1,8 +1,25 @@
 import crypto from "node:crypto";
 
-const VERSION = "1.0.0";
+const VERSION = "1.1.0";
 const DOMAIN = "iband.movie-mentor.provider-target-authority";
 const RECOVERY_MODES = Object.freeze(["known-response-id-retrieval", "none"]);
+const CREDENTIAL_QUERY_KEYS = Object.freeze(new Set([
+  "apikey",
+  "key",
+  "token",
+  "accesstoken",
+  "authorization",
+  "auth",
+  "signature",
+  "sig",
+  "secret",
+  "clientsecret",
+  "password",
+  "pwd",
+  "credential",
+  "credentials",
+  "transientsecret",
+]));
 
 function text(value) {
   return typeof value === "string" ? value.trim() : "";
@@ -19,6 +36,14 @@ function fail(code, message, extras = {}) {
   throw error;
 }
 
+function normalizedQueryKey(value) {
+  return text(value).toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function credentialLikeQueryKey(value) {
+  return CREDENTIAL_QUERY_KEYS.has(normalizedQueryKey(value));
+}
+
 function sanitizeProviderRoute(value) {
   const raw = text(value);
   if (!raw) fail("MOVIE_MENTOR_PROVIDER_TARGET_ROUTE_REQUIRED", "Provider target identity requires a configured provider route.");
@@ -31,10 +56,21 @@ function sanitizeProviderRoute(value) {
   if (!/^https?:$/.test(parsed.protocol)) {
     fail("MOVIE_MENTOR_PROVIDER_TARGET_ROUTE_INVALID", "Provider target route must use HTTP or HTTPS.");
   }
+
   parsed.username = "";
   parsed.password = "";
-  parsed.search = "";
   parsed.hash = "";
+
+  const semanticQuery = Array.from(parsed.searchParams.entries())
+    .filter(([key]) => !credentialLikeQueryKey(key))
+    .sort(([leftKey, leftValue], [rightKey, rightValue]) => {
+      const keyOrder = leftKey.localeCompare(rightKey);
+      return keyOrder !== 0 ? keyOrder : leftValue.localeCompare(rightValue);
+    });
+
+  parsed.search = "";
+  for (const [key, queryValue] of semanticQuery) parsed.searchParams.append(key, queryValue);
+
   return parsed.toString();
 }
 
