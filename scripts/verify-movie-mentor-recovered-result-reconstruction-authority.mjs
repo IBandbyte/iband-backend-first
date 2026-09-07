@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createFencedInferenceOrchestrationDeps } from "../ai/MovieMentorTurnRuntime.js";
 import { reconstructRecoveredMovieMentorSemanticResult } from "../ai/MovieMentorRecoveredSemanticResult.js";
 import { DERIVED_CONTINUITY_AUTHORITY } from "../ai/MovieMentorContinuityConsequenceAuthority.js";
+import { digestMovieMentorProviderReconstructionInput } from "../ai/MovieMentorProviderOperationAuthority.js";
 
 const execution = Object.freeze({
   authorized: true,
@@ -70,7 +71,7 @@ const authority = {
       executionId: execution.executionId,
       slotId: "semantic",
       task: "movie-mentor-semantic",
-      reconstructionInputDigest: "semantic-historical-input-digest",
+      reconstructionInputDigest: digestMovieMentorProviderReconstructionInput(semanticHistoricalInput),
       reconstructionInput: semanticHistoricalInput,
     });
   },
@@ -286,7 +287,7 @@ function historicalAuthority({ slotId, task, providerCallId, response, historica
         executionId: execution.executionId,
         slotId,
         task,
-        reconstructionInputDigest: historicalInput ? `${providerCallId}-input-digest` : null,
+        reconstructionInputDigest: historicalInput ? digestMovieMentorProviderReconstructionInput(historicalInput) : null,
         reconstructionInput: historicalInput,
       });
     },
