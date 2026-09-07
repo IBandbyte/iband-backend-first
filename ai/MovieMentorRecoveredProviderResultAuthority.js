@@ -1,4 +1,6 @@
-const VERSION = "1.2.0";
+import { digestMovieMentorProviderReconstructionInput } from "./MovieMentorProviderOperationAuthority.js";
+
+const VERSION = "1.3.0";
 const DOMAIN = "iband.movie-mentor.recovered-provider-result-authority";
 
 function text(value) {
@@ -146,6 +148,22 @@ function historicalInputRequired(historical = {}) {
   );
 }
 
+function historicalInputIntegrityInvalid(historical = {}, recordedDigest = null, observedDigest = null) {
+  fail(
+    "MOVIE_MENTOR_PROVIDER_RECOVERY_INPUT_INTEGRITY_INVALID",
+    "Historical provider reconstruction input no longer reproduces its immutable recorded digest.",
+    {
+      retryable: false,
+      providerCallId: text(historical?.providerCallId) || null,
+      executionId: text(historical?.executionId) || null,
+      slotId: text(historical?.slotId) || null,
+      task: text(historical?.task) || null,
+      recordedDigest: text(recordedDigest) || null,
+      observedDigest: text(observedDigest) || null,
+    },
+  );
+}
+
 async function resolveHistoricalReconstructionInput({ historical, currentInput, readProviderOperation } = {}) {
   if (typeof readProviderOperation !== "function") historicalInputRequired(historical);
 
@@ -160,6 +178,11 @@ async function resolveHistoricalReconstructionInput({ historical, currentInput, 
     && operation.reconstructionInput !== undefined
     && operation.reconstructionInput !== null
   ) {
+    const recordedDigest = text(operation.reconstructionInputDigest);
+    const observedDigest = digestMovieMentorProviderReconstructionInput(operation.reconstructionInput);
+    if (recordedDigest !== observedDigest) {
+      historicalInputIntegrityInvalid(historical, recordedDigest, observedDigest);
+    }
     return clone(operation.reconstructionInput);
   }
 
