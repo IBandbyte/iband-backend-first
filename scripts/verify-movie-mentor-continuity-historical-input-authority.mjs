@@ -63,6 +63,7 @@ let bindInputCalls = 0;
 let beginUnknownCalls = 0;
 let liveContinuityCalls = 0;
 let recoveryCalls = 0;
+let cacheReadCalls = 0;
 let activeCache = cacheA;
 let takeover = false;
 
@@ -195,6 +196,10 @@ const workOrder = Object.freeze({
 
 const specialistDeps = {
   async readReusableContinuityDerivedCache() {
+    cacheReadCalls += 1;
+    if (takeover) {
+      assert.fail("historical Continuity recovery must never consult the mutable current derived cache");
+    }
     return Object.freeze({ hit: true, stale: false, constraints: structuredClone(activeCache), record: null, reasons: [] });
   },
   async executeContinuityAgent(preparedWorkOrder) {
@@ -243,6 +248,7 @@ const firstFenced = createFencedInferenceOrchestrationDeps({
 });
 const first = await firstFenced.executeSpecialistPlan({ workOrders: [workOrder] });
 assert.equal(first.status, "completed", JSON.stringify(first.failures));
+assert.equal(cacheReadCalls, 1, "fresh Continuity may read current cache exactly once to build its historical input");
 assert.equal(bindInputCalls, 1);
 assert.equal(beginUnknownCalls, 1);
 assert.equal(liveContinuityCalls, 1);
@@ -264,6 +270,7 @@ const secondFenced = createFencedInferenceOrchestrationDeps({
 });
 const recovered = await secondFenced.executeSpecialistPlan({ workOrders: [workOrder] });
 assert.equal(recovered.status, "completed", JSON.stringify(recovered.failures));
+assert.equal(cacheReadCalls, 1, "takeover recovery must make zero reads of current cache B");
 assert.equal(bindInputCalls, 1, "takeover must not bind a second input universe");
 assert.equal(beginUnknownCalls, 1, "takeover must not reopen UNKNOWN or creative dispatch");
 assert.equal(liveContinuityCalls, 1, "takeover must make zero second live Continuity/provider calls");
