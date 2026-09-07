@@ -6,8 +6,11 @@ import { executeMovieMentorSpecialistWorkOrder, LIVE_AGENT_IDS, MOVIE_MENTOR_SPE
 import { synthesizeMovieMentorResponse } from "./MovieMentorSynthesisEngine.js";
 import { buildCurrentCreatorTruthView } from "./MovieMentorCreatorTruthViewControl.js";
 import { readAuthoritativeTurnSource, readAuthoritativeRevision, readAuthoritativeCreatorState } from "./MovieMentorCreatorStateStore.js";
+import { recoverPreviouslyAdmittedProviderResult } from "./MovieMentorRecoveredProviderResultAuthority.js";
+import { reconstructRecoveredMovieMentorSemanticResult } from "./MovieMentorRecoveredSemanticResult.js";
+import { reconstructRecoveredMovieMentorSpecialistResult, reconstructRecoveredMovieMentorSynthesisResult } from "./MovieMentorRecoveredTaskResult.js";
 
-const MOVIE_MENTOR_TURN_RUNTIME_VERSION = "2.9.0";
+const MOVIE_MENTOR_TURN_RUNTIME_VERSION = "2.10.0";
 const s = (value) => (typeof value === "string" ? value.trim() : "");
 
 function clone(value) {
@@ -254,9 +257,20 @@ function createFencedInferenceOrchestrationDeps({ execution, inferenceExecutionA
     );
   }
 
-  const invoke = async (slotId, task, providerFunction) => {
+  const invoke = async (slotId, task, providerFunction, { input = null, reconstructRecoveredResult = null } = {}) => {
     const decision = await inferenceExecutionAuthority.claimProviderCall({ execution, slotId, task });
     if (decision?.dispatchAuthorized !== true) {
+      if (decision?.reason === "provider-call-slot-already-admitted") {
+        return recoverPreviouslyAdmittedProviderResult({
+          decision,
+          execution,
+          slotId,
+          task,
+          input,
+          recoverProviderOutcome: inferenceExecutionAuthority?.recoverProviderOutcome,
+          reconstructRecoveredResult,
+        });
+      }
       throw runtimeError("MOVIE_MENTOR_INFERENCE_PROVIDER_CALL_NOT_AUTHORIZED", "Provider call was not admitted under the current durable execution lease.", {
         reason: decision?.reason || "provider-call-not-authorized",
         slotId,
@@ -321,10 +335,16 @@ function createFencedInferenceOrchestrationDeps({ execution, inferenceExecutionA
   const interpret = deps.interpretSemantics || interpretMovieMentorSemantics;
   const synthesize = deps.synthesizeResponse || synthesizeMovieMentorResponse;
   const executeWorkOrder = deps.executeSpecialistWorkOrder || executeMovieMentorSpecialistWorkOrder;
+  const reconstructSemantic = deps.reconstructRecoveredSemanticResult || reconstructRecoveredMovieMentorSemanticResult;
+  const reconstructSpecialist = deps.reconstructRecoveredSpecialistResult || reconstructRecoveredMovieMentorSpecialistResult;
+  const reconstructSynthesis = deps.reconstructRecoveredSynthesisResult || reconstructRecoveredMovieMentorSynthesisResult;
 
   return Object.freeze({
     async interpretSemantics(input) {
-      return invoke("semantic", "movie-mentor-semantic", (context) => interpret(input, context));
+      return invoke("semantic", "movie-mentor-semantic", (context) => interpret(input, context), {
+        input,
+        reconstructRecoveredResult: reconstructSemantic,
+      });
     },
     async executeSpecialistPlan(plan = {}) {
       const contributions = [], skipped = [], failures = [], metadata = [];
@@ -335,7 +355,12 @@ function createFencedInferenceOrchestrationDeps({ execution, inferenceExecutionA
           continue;
         }
         try {
-          const result = await invoke(agentId, `movie-mentor-specialist:${agentId}`, (context) => executeWorkOrder(clone(workOrder), { ...(deps.specialistDeps || {}), ...context }));
+          const result = await invoke(
+            agentId,
+            `movie-mentor-specialist:${agentId}`,
+            (context) => executeWorkOrder(clone(workOrder), { ...(deps.specialistDeps || {}), ...context }),
+            { input: clone(workOrder), reconstructRecoveredResult: reconstructSpecialist },
+          );
           contributions.push(result.contribution);
           metadata.push({ agentId, metadata: clone(result.metadata || null) });
         } catch (error) {
@@ -366,7 +391,10 @@ function createFencedInferenceOrchestrationDeps({ execution, inferenceExecutionA
       };
     },
     async synthesizeResponse(input) {
-      return invoke("synthesis", "movie-mentor-synthesis", (context) => synthesize(input, context));
+      return invoke("synthesis", "movie-mentor-synthesis", (context) => synthesize(input, context), {
+        input,
+        reconstructRecoveredResult: reconstructSynthesis,
+      });
     },
   });
 }
@@ -575,7 +603,8 @@ async function runMovieMentorTurn(input = {}, deps = {}) {
     && typeof inferenceExecutionAuthority?.claimProviderCall === "function"
     && typeof inferenceExecutionAuthority?.beginProviderDispatch === "function"
     && typeof inferenceExecutionAuthority?.assertProviderDispatch === "function"
-    && typeof inferenceExecutionAuthority?.contributeProviderEffectEvidence === "function";
+    && typeof inferenceExecutionAuthority?.contributeProviderEffectEvidence === "function"
+    && typeof inferenceExecutionAuthority?.recoverProviderOutcome === "function";
   const closureEnabled = executionEnabled
     && typeof inferenceExecutionAuthority?.beginExecutionClosing === "function"
     && typeof inferenceExecutionAuthority?.reconcileExecutionClosure === "function";
@@ -590,7 +619,7 @@ async function runMovieMentorTurn(input = {}, deps = {}) {
     && typeof settlementAuthority?.releaseUnclaimed === "function"
     && typeof settlementAuthority?.releaseUnbound === "function";
 
-  if (!executionEnabled) throw runtimeError("MOVIE_MENTOR_INFERENCE_EXECUTION_AUTHORITY_REQUIRED", "Paid Movie Mentor inference cannot run without complete durable creator-turn convergence, lease fencing and provider-effect dispatch authority.");
+  if (!executionEnabled) throw runtimeError("MOVIE_MENTOR_INFERENCE_EXECUTION_AUTHORITY_REQUIRED", "Paid Movie Mentor inference cannot run without complete durable creator-turn convergence, lease fencing, provider-effect dispatch and same-operation recovery authority.");
   if (!closureEnabled) throw runtimeError("MOVIE_MENTOR_INFERENCE_EXECUTION_CLOSURE_AUTHORITY_REQUIRED", "Paid Movie Mentor inference cannot run without durable closure authority.");
   if (!candidateEnabled) throw runtimeError("MOVIE_MENTOR_RESULT_CANDIDATE_AUTHORITY_REQUIRED", "Paid Movie Mentor inference cannot run without durable pre-closure result staging authority.");
   if (!resultEnabled) throw runtimeError("MOVIE_MENTOR_CANONICAL_RESULT_AUTHORITY_REQUIRED", "Paid Movie Mentor inference cannot run without durable canonical result authority.");
