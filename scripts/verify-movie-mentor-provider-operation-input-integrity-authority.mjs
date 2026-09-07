@@ -60,24 +60,24 @@ const authority = createMovieMentorProviderOperationAuthority({
   resolveCurrentTarget: () => describeCurrentMovieMentorProviderTarget({ env: {} }),
 });
 
+const integrityError = (error) => error?.code === "MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_INTEGRITY_INVALID";
+
 await assert.rejects(
   () => authority.bindReconstructionInput({ providerCall, reconstructionInput: inputA }),
-  (error) => error?.code === "MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_INTEGRITY_INVALID",
+  integrityError,
   "durable ACK with digest A + payload B must not gain inputBound authority",
 );
 
-const tamperedRead = await authority.readOperation(providerCall.providerCallId);
-assert.notEqual(
-  tamperedRead?.authorized,
-  true,
-  "readOperation must not emit authorized operation evidence for a mismatched reconstruction payload",
+await assert.rejects(
+  () => authority.readOperation(providerCall.providerCallId),
+  integrityError,
+  "readOperation must structurally fail closed instead of emitting authorized evidence for a mismatched reconstruction payload",
 );
 
-const targetDecision = await authority.assertCurrentTarget({ providerCall });
-assert.notEqual(
-  targetDecision?.dispatchAuthorized,
-  true,
-  "assertCurrentTarget must not grant dispatch authority from a mismatched reconstruction payload",
+await assert.rejects(
+  () => authority.assertCurrentTarget({ providerCall }),
+  integrityError,
+  "assertCurrentTarget must structurally fail closed instead of granting dispatch authority from a mismatched reconstruction payload",
 );
 
 console.log("✓ durable storage acknowledgement is evidence, not authority");
