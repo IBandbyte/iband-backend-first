@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { createTurnContextEnvelope } from "./MovieMentorTurnContextControl.js";
 import { orchestrateMovieMentorTurn } from "./MovieMentorTurnOrchestrator.js";
 import { interpretMovieMentorSemantics } from "./MovieMentorSemanticInterpreter.js";
-import { executeMovieMentorSpecialistWorkOrder, LIVE_AGENT_IDS, MOVIE_MENTOR_SPECIALIST_EXECUTOR_VERSION, SPECIALIST_CONTRACT_VERSION } from "./MovieMentorSpecialistExecutor.js";
+import { executeMovieMentorSpecialistWorkOrder, prepareContinuityHistoricalInput, LIVE_AGENT_IDS, MOVIE_MENTOR_SPECIALIST_EXECUTOR_VERSION, SPECIALIST_CONTRACT_VERSION } from "./MovieMentorSpecialistExecutor.js";
 import { synthesizeMovieMentorResponse } from "./MovieMentorSynthesisEngine.js";
 import { buildCurrentCreatorTruthView } from "./MovieMentorCreatorTruthViewControl.js";
 import { readAuthoritativeTurnSource, readAuthoritativeRevision, readAuthoritativeCreatorState } from "./MovieMentorCreatorStateStore.js";
@@ -10,7 +10,7 @@ import { recoverPreviouslyAdmittedProviderResult } from "./MovieMentorRecoveredP
 import { reconstructRecoveredMovieMentorSemanticResult } from "./MovieMentorRecoveredSemanticResult.js";
 import { reconstructRecoveredMovieMentorSpecialistResult, reconstructRecoveredMovieMentorSynthesisResult } from "./MovieMentorRecoveredTaskResult.js";
 
-const MOVIE_MENTOR_TURN_RUNTIME_VERSION = "2.10.0";
+const MOVIE_MENTOR_TURN_RUNTIME_VERSION = "2.11.0";
 const s = (value) => (typeof value === "string" ? value.trim() : "");
 
 function clone(value) {
@@ -257,7 +257,7 @@ function createFencedInferenceOrchestrationDeps({ execution, inferenceExecutionA
     );
   }
 
-  const invoke = async (slotId, task, providerFunction, { input = null, reconstructRecoveredResult = null } = {}) => {
+  const invoke = async (slotId, task, providerFunction, { input = null, reconstructRecoveredResult = null, bindReconstructionInput = false } = {}) => {
     const decision = await inferenceExecutionAuthority.claimProviderCall({ execution, slotId, task });
     if (decision?.dispatchAuthorized !== true) {
       if (decision?.reason === "provider-call-slot-already-admitted") {
@@ -268,6 +268,7 @@ function createFencedInferenceOrchestrationDeps({ execution, inferenceExecutionA
           task,
           input,
           recoverProviderOutcome: inferenceExecutionAuthority?.recoverProviderOutcome,
+          readProviderOperation: inferenceExecutionAuthority?.readProviderOperation,
           reconstructRecoveredResult,
         });
       }
@@ -277,6 +278,27 @@ function createFencedInferenceOrchestrationDeps({ execution, inferenceExecutionA
       });
     }
     onClaim?.(decision);
+
+    if (bindReconstructionInput) {
+      if (typeof inferenceExecutionAuthority?.bindProviderReconstructionInput !== "function") {
+        throw runtimeError(
+          "MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_AUTHORITY_REQUIRED",
+          "Continuity provider dispatch requires durable historical reconstruction-input authority before UNKNOWN.",
+          { providerCallId: decision.providerCallId, slotId },
+        );
+      }
+      const inputBinding = await inferenceExecutionAuthority.bindProviderReconstructionInput({
+        providerCall: decision,
+        reconstructionInput: clone(input),
+      });
+      if (inputBinding?.authorized !== true || inputBinding?.inputBound !== true) {
+        throw runtimeError(
+          "MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_NOT_AUTHORIZED",
+          "Continuity provider input did not become durably bound before UNKNOWN.",
+          { providerCallId: decision.providerCallId, slotId },
+        );
+      }
+    }
 
     const dispatch = await inferenceExecutionAuthority.beginProviderDispatch({ providerCall: decision });
     if (dispatch?.dispatchAuthorized !== true) {
@@ -335,6 +357,7 @@ function createFencedInferenceOrchestrationDeps({ execution, inferenceExecutionA
   const interpret = deps.interpretSemantics || interpretMovieMentorSemantics;
   const synthesize = deps.synthesizeResponse || synthesizeMovieMentorResponse;
   const executeWorkOrder = deps.executeSpecialistWorkOrder || executeMovieMentorSpecialistWorkOrder;
+  const prepareContinuity = deps.prepareContinuityHistoricalInput || prepareContinuityHistoricalInput;
   const reconstructSemantic = deps.reconstructRecoveredSemanticResult || reconstructRecoveredMovieMentorSemanticResult;
   const reconstructSpecialist = deps.reconstructRecoveredSpecialistResult || reconstructRecoveredMovieMentorSpecialistResult;
   const reconstructSynthesis = deps.reconstructRecoveredSynthesisResult || reconstructRecoveredMovieMentorSynthesisResult;
@@ -355,11 +378,18 @@ function createFencedInferenceOrchestrationDeps({ execution, inferenceExecutionA
           continue;
         }
         try {
+          const preparedWorkOrder = agentId === "continuity"
+            ? await prepareContinuity(clone(workOrder), { ...(deps.specialistDeps || {}) })
+            : clone(workOrder);
           const result = await invoke(
             agentId,
             `movie-mentor-specialist:${agentId}`,
-            (context) => executeWorkOrder(clone(workOrder), { ...(deps.specialistDeps || {}), ...context }),
-            { input: clone(workOrder), reconstructRecoveredResult: reconstructSpecialist },
+            (context) => executeWorkOrder(clone(preparedWorkOrder), { ...(deps.specialistDeps || {}), ...context }),
+            {
+              input: clone(preparedWorkOrder),
+              reconstructRecoveredResult: reconstructSpecialist,
+              bindReconstructionInput: agentId === "continuity",
+            },
           );
           contributions.push(result.contribution);
           metadata.push({ agentId, metadata: clone(result.metadata || null) });
@@ -384,6 +414,7 @@ function createFencedInferenceOrchestrationDeps({ execution, inferenceExecutionA
           providerCallsRequireDurableExecutionClaim: true,
           providerDispatchRequiresDurableUnknown: true,
           providerDispatchRequiresCurrentExecutionFence: true,
+          continuityHistoricalInputRequiresDurablePreUnknownBinding: true,
           creatorTruthDominates: true,
           specialistsRemainProvisional: true,
         },
@@ -627,8 +658,6 @@ async function runMovieMentorTurn(input = {}, deps = {}) {
   const runtimeAuthority = assertRuntimeServerAuthority({ serverAuthority: deps.serverAuthority, requestedProjectId: identity.projectId });
   const principalId = runtimeAuthority.principalId;
 
-  // A terminal durable universe must not depend on mutable creator-state availability.
-  // When project identity is already server-authorized in the request, converge the exact creator-turn universe first.
   if (identity.projectId) {
     const earlyRequestDigest = buildRequestDigest({ creatorMessage, projectId: identity.projectId, options: input?.options || {} });
     const earlyExisting = await inferenceExecutionAuthority.findExecutionByCreatorTurn({
@@ -713,7 +742,6 @@ async function runMovieMentorTurn(input = {}, deps = {}) {
   try {
     result = await orchestrate({ message: creatorMessage, authoritativeTurnContext: envelope, options: clone(input?.options || {}) }, orchestrationDeps);
   } catch (error) {
-    // Process memory never decides release. Every orchestration failure asks durable execution reality whether zero claims still holds.
     await releaseFailedUnclaimedExecution({ execution, settlementAuthority, error });
     throw error;
   }
