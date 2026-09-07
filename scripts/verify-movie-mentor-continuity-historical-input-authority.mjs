@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createFencedInferenceOrchestrationDeps } from "../ai/MovieMentorTurnRuntime.js";
 
-const execution = Object.freeze({
+const generationOne = Object.freeze({
   authorized: true,
   executionAuthorized: true,
   executionId: "execution-continuity-input",
@@ -10,18 +10,27 @@ const execution = Object.freeze({
   leaseReference: "lease-generation-one",
   fencingToken: "fence-generation-one",
 });
+const generationTwo = Object.freeze({
+  authorized: true,
+  executionAuthorized: true,
+  executionId: generationOne.executionId,
+  ownerId: "worker-generation-two",
+  leaseGeneration: 2,
+  leaseReference: "lease-generation-two",
+  fencingToken: "fence-generation-two",
+});
 
 const call = Object.freeze({
   authorized: true,
   dispatchAuthorized: true,
   providerCallId: "provider-call-continuity-input-one",
-  executionId: execution.executionId,
+  executionId: generationOne.executionId,
   slotId: "continuity",
   task: "movie-mentor-specialist:continuity",
-  ownerId: execution.ownerId,
-  leaseGeneration: execution.leaseGeneration,
-  leaseReference: execution.leaseReference,
-  fencingToken: execution.fencingToken,
+  ownerId: generationOne.ownerId,
+  leaseGeneration: generationOne.leaseGeneration,
+  leaseReference: generationOne.leaseReference,
+  fencingToken: generationOne.fencingToken,
 });
 
 const cacheA = Object.freeze([{ constraintId: "constraint-a", category: "location", key: "hero.location", value: "harbour", reason: "established", confidence: 1, dependencies: [] }]);
@@ -31,12 +40,44 @@ let durableHistoricalInput = null;
 let bindInputCalls = 0;
 let beginUnknownCalls = 0;
 let liveContinuityCalls = 0;
+let recoveryCalls = 0;
 let activeCache = cacheA;
+let takeover = false;
+
+const recoveredProviderResponse = Object.freeze({
+  id: "resp-continuity-input-one",
+  model: "test-model",
+  output_text: JSON.stringify({
+    agentId: "continuity",
+    derivedConstraints: [],
+    continuityConflicts: [],
+    unresolvedContinuityQuestions: [],
+    provisionalSuggestions: [],
+    confidence: 1,
+    provenance: { source: "provider", model: "test-model", contractVersion: "2.1.1" },
+  }),
+});
 
 const authority = {
-  async claimProviderCall({ slotId, task } = {}) {
+  async claimProviderCall({ execution, slotId, task } = {}) {
     assert.equal(slotId, "continuity");
     assert.equal(task, "movie-mentor-specialist:continuity");
+    if (takeover) {
+      assert.equal(execution?.ownerId, generationTwo.ownerId);
+      return Object.freeze({
+        authorized: false,
+        dispatchAuthorized: false,
+        reason: "provider-call-slot-already-admitted",
+        existingProviderCallId: call.providerCallId,
+        existingProviderCall: Object.freeze({
+          providerCallId: call.providerCallId,
+          executionId: call.executionId,
+          slotId: call.slotId,
+          task: call.task,
+        }),
+      });
+    }
+    assert.equal(execution?.ownerId, generationOne.ownerId);
     return call;
   },
   async bindProviderReconstructionInput({ providerCall, reconstructionInput } = {}) {
@@ -69,6 +110,39 @@ const authority = {
     return call;
   },
   async contributeProviderEffectEvidence() {},
+  async readProviderOperation(providerCallId) {
+    assert.equal(providerCallId, call.providerCallId);
+    assert.ok(durableHistoricalInput, "historical reconstruction input must survive process takeover");
+    return Object.freeze({
+      authorized: true,
+      providerCallId: call.providerCallId,
+      executionId: call.executionId,
+      slotId: call.slotId,
+      task: call.task,
+      reconstructionInputDigest: "historical-input-digest-a",
+      reconstructionInput: structuredClone(durableHistoricalInput),
+    });
+  },
+  async recoverProviderOutcome({ providerCallId, recoveryAuthority } = {}) {
+    recoveryCalls += 1;
+    assert.equal(providerCallId, call.providerCallId);
+    assert.equal(recoveryAuthority?.ownerId, generationTwo.ownerId);
+    return Object.freeze({
+      outcome: "CONFIRMED_EFFECT",
+      recovered: true,
+      recoveryAuthorized: true,
+      redispatchAuthorized: false,
+      refundAuthorized: false,
+      providerCallId: call.providerCallId,
+      executionId: call.executionId,
+      slotId: call.slotId,
+      task: call.task,
+      externalEffectId: recoveredProviderResponse.id,
+      recoveredProviderResponse,
+      recoveryOwnerId: generationTwo.ownerId,
+      recoveryLeaseGeneration: generationTwo.leaseGeneration,
+    });
+  },
 };
 
 const workOrder = Object.freeze({
@@ -97,68 +171,83 @@ const workOrder = Object.freeze({
   }),
 });
 
-const fenced = createFencedInferenceOrchestrationDeps({
-  execution,
-  inferenceExecutionAuthority: authority,
-  deps: {
-    specialistDeps: {
-      async readReusableContinuityDerivedCache() {
-        return Object.freeze({ hit: true, stale: false, constraints: structuredClone(activeCache), record: null, reasons: [] });
-      },
-      async executeContinuityAgent(preparedWorkOrder) {
-        liveContinuityCalls += 1;
-        assert.deepEqual(preparedWorkOrder?.input?.reusableDerivedContinuity, cacheA);
-        return Object.freeze({
-          success: true,
-          contribution: Object.freeze({
-            agentId: "continuity",
-            derivedConstraints: structuredClone(cacheA),
-            newlyDerivedConstraints: [],
-            continuityConflicts: [],
-            unresolvedContinuityQuestions: [],
-            provisionalSuggestions: [],
-            continuityConsequenceEnvelope: Object.freeze({ status: "consistent", requiresClarification: false, constraints: structuredClone(cacheA) }),
-            reusableDerivedContinuityConsumed: structuredClone(cacheA),
-            confidence: 1,
-            provenance: Object.freeze({ source: "movie-mentor-continuity-agent", model: "test", contractVersion: "2.1.1" }),
-            authority: "mentor-provisional",
-            creatorFacing: false,
-            mayAdvanceJourney: false,
-            mayOverwriteCreatorTruth: false,
-            mayCreateCanon: false,
-            mayPromoteInferenceToCanon: false,
-            requiresMentorSynthesis: true,
-          }),
-          metadata: {},
-        });
-      },
-      async readAuthoritativeTurnSource() {
-        return Object.freeze({
-          projectId: "project-one",
-          revision: 4,
-          creatorStateGeneration: 7,
-          creatorStateFingerprint: "fingerprint-seven",
-          snapshotReference: "snapshot-four",
-          creatorConfirmedContext: [],
-        });
-      },
-    },
+const specialistDeps = {
+  async readReusableContinuityDerivedCache() {
+    return Object.freeze({ hit: true, stale: false, constraints: structuredClone(activeCache), record: null, reasons: [] });
   },
-});
+  async executeContinuityAgent(preparedWorkOrder) {
+    liveContinuityCalls += 1;
+    assert.deepEqual(preparedWorkOrder?.input?.reusableDerivedContinuity, cacheA);
+    return Object.freeze({
+      success: true,
+      contribution: Object.freeze({
+        agentId: "continuity",
+        derivedConstraints: structuredClone(cacheA),
+        newlyDerivedConstraints: [],
+        continuityConflicts: [],
+        unresolvedContinuityQuestions: [],
+        provisionalSuggestions: [],
+        continuityConsequenceEnvelope: Object.freeze({ status: "consistent", requiresClarification: false, constraints: structuredClone(cacheA) }),
+        reusableDerivedContinuityConsumed: structuredClone(cacheA),
+        confidence: 1,
+        provenance: Object.freeze({ source: "movie-mentor-continuity-agent", model: "test", contractVersion: "2.1.1" }),
+        authority: "mentor-provisional",
+        creatorFacing: false,
+        mayAdvanceJourney: false,
+        mayOverwriteCreatorTruth: false,
+        mayCreateCanon: false,
+        mayPromoteInferenceToCanon: false,
+        requiresMentorSynthesis: true,
+      }),
+      metadata: {},
+    });
+  },
+  async readAuthoritativeTurnSource() {
+    return Object.freeze({
+      projectId: "project-one",
+      revision: 4,
+      creatorStateGeneration: 7,
+      creatorStateFingerprint: "fingerprint-seven",
+      snapshotReference: "snapshot-four",
+      creatorConfirmedContext: [],
+    });
+  },
+};
 
-const first = await fenced.executeSpecialistPlan({ workOrders: [workOrder] });
+const firstFenced = createFencedInferenceOrchestrationDeps({
+  execution: generationOne,
+  inferenceExecutionAuthority: authority,
+  deps: { specialistDeps },
+});
+const first = await firstFenced.executeSpecialistPlan({ workOrders: [workOrder] });
 assert.equal(first.status, "completed");
 assert.equal(bindInputCalls, 1);
 assert.equal(beginUnknownCalls, 1);
 assert.equal(liveContinuityCalls, 1);
 assert.deepEqual(durableHistoricalInput?.input?.reusableDerivedContinuity, cacheA);
 
-// Simulate later cache drift after generation-one dies. Historical operation truth must still say cache A.
+// Generation one dies. Current cache drifts after the provider operation already answered cache A.
 activeCache = cacheB;
+takeover = true;
 assert.deepEqual(
   durableHistoricalInput?.input?.reusableDerivedContinuity,
   cacheA,
   "later cache mutation must not rewrite the historical provider-input universe",
 );
+
+const secondFenced = createFencedInferenceOrchestrationDeps({
+  execution: generationTwo,
+  inferenceExecutionAuthority: authority,
+  deps: { specialistDeps },
+});
+const recovered = await secondFenced.executeSpecialistPlan({ workOrders: [workOrder] });
+assert.equal(recovered.status, "completed", "current generation must reconstruct the same historical Continuity result");
+assert.equal(bindInputCalls, 1, "takeover must not bind a second input universe");
+assert.equal(beginUnknownCalls, 1, "takeover must not reopen UNKNOWN or creative dispatch");
+assert.equal(liveContinuityCalls, 1, "takeover must make zero second live Continuity/provider calls");
+assert.equal(recoveryCalls, 1, "takeover may recover the exact historical provider response once");
+assert.deepEqual(recovered.contributions[0]?.reusableDerivedContinuityConsumed, cacheA, "recovered Continuity must validate against historical cache A, never current cache B");
+assert.notDeepEqual(recovered.contributions[0]?.reusableDerivedContinuityConsumed, cacheB);
+assert.equal(recovered.metadata[0]?.metadata?.historicalContinuityInputReused, true);
 
 console.log("Movie Mentor Continuity historical-input authority verifier passed.");
