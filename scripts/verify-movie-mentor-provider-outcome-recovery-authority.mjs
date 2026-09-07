@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createMovieMentorInferenceExecutionLeaseAuthority } from "../ai/MovieMentorInferenceExecutionLeaseAuthority.js";
 import { createMovieMentorProviderEffectAuthority } from "../ai/MovieMentorProviderEffectAuthority.js";
 import { createMovieMentorProviderOperationAuthority } from "../ai/MovieMentorProviderOperationAuthority.js";
+import { retrieveMovieMentorProviderResponse } from "../ai/MovieMentorProviderRecoveryAdapter.js";
 
 function clone(value) {
   return value == null ? value : structuredClone(value);
@@ -194,6 +195,7 @@ const recoveryCalls = [];
 const recoveryAuthority = recoveryModule.createMovieMentorProviderOutcomeRecoveryAuthority({
   readProviderOperation: (providerCallId) => operationAuthority.readOperation(providerCallId),
   readProviderEffectReality: (providerCallId) => effectAuthority.readReality(providerCallId),
+  resolveCurrentTarget: () => historicalTarget,
   recoverProviderResponse: async (request) => {
     recoveryCalls.push(clone(request));
     return {
@@ -208,6 +210,8 @@ const recovered = await recoveryAuthority.reconcile({ providerCallId: confirmedC
 assert.equal(recovered.outcome, "CONFIRMED_EFFECT");
 assert.equal(recovered.recoveryAuthorized, true);
 assert.equal(recovered.recovered, true);
+assert.equal(recovered.redispatchAuthorized, false);
+assert.equal(recovered.refundAuthorized, false);
 assert.equal(recovered.externalEffectId, "resp_confirmed_same_operation");
 assert.equal(recoveryCalls.length, 1, "known-ID recovery should perform exactly one recovery-only provider request");
 assert.equal(recoveryCalls[0].providerOperationId, confirmedCall.providerCallId);
@@ -219,10 +223,72 @@ const unresolved = await recoveryAuthority.reconcile({ providerCallId: unknownCa
 assert.equal(unresolved.outcome, "STILL_UNKNOWN");
 assert.equal(unresolved.recoveryAuthorized, false);
 assert.equal(unresolved.recovered, false);
+assert.equal(unresolved.redispatchAuthorized, false);
+assert.equal(unresolved.refundAuthorized, false);
 assert.equal(recoveryCalls.length, 1, "ID-less UNKNOWN must perform zero recovery network calls");
+
+const changedTarget = Object.freeze({ ...historicalTarget, routeFingerprint: "b".repeat(64) });
+const changedTargetAuthority = recoveryModule.createMovieMentorProviderOutcomeRecoveryAuthority({
+  readProviderOperation: (providerCallId) => operationAuthority.readOperation(providerCallId),
+  readProviderEffectReality: (providerCallId) => effectAuthority.readReality(providerCallId),
+  resolveCurrentTarget: () => changedTarget,
+  recoverProviderResponse: async (request) => {
+    recoveryCalls.push(clone(request));
+    throw new Error("changed target must not reach recovery network");
+  },
+});
+const targetMismatch = await changedTargetAuthority.reconcile({ providerCallId: confirmedCall.providerCallId });
+assert.equal(targetMismatch.outcome, "CONFIRMED_EFFECT");
+assert.equal(targetMismatch.recoveryAuthorized, false);
+assert.equal(targetMismatch.recovered, false);
+assert.equal(targetMismatch.reason, "provider-target-no-longer-current");
+assert.equal(recoveryCalls.length, 1, "current provider target mismatch must block recovery before network");
+
+const originalFetch = globalThis.fetch;
+const envKeys = ["IBAND_AI_PROVIDER", "IBAND_AI_MODEL", "IBAND_AI_BASE_URL", "IBAND_AI_API_KEY", "OPENAI_API_KEY"];
+const originalEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
+try {
+  process.env.IBAND_AI_PROVIDER = "openai";
+  process.env.IBAND_AI_MODEL = "gpt-test";
+  process.env.IBAND_AI_BASE_URL = "https://provider.example.test/v1/responses";
+  process.env.IBAND_AI_API_KEY = "test-key";
+  let request = null;
+  globalThis.fetch = async (url, options = {}) => {
+    request = { url: String(url), options: clone(options) };
+    return new Response(JSON.stringify({
+      id: "resp_confirmed_same_operation",
+      status: "completed",
+      output_text: "{}",
+    }), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+  const adapterResult = await retrieveMovieMentorProviderResponse({
+    method: "retrieve-known-response-id",
+    providerCallId: confirmedCall.providerCallId,
+    providerOperationId: confirmedCall.providerCallId,
+    executionId: execution.executionId,
+    slotId: "semantic",
+    task: "movie-mentor-semantic",
+    externalEffectId: "resp_confirmed_same_operation",
+    providerTarget: historicalTarget,
+  });
+  assert.equal(adapterResult.externalEffectId, "resp_confirmed_same_operation");
+  assert.equal(adapterResult.providerOperationId, confirmedCall.providerCallId);
+  assert.equal(request.options.method, "GET", "provider outcome recovery must use retrieval, not creative POST redispatch");
+  assert.equal(request.url, "https://provider.example.test/v1/responses/resp_confirmed_same_operation");
+  assert.equal(request.options.body, undefined, "response retrieval must not send a creative request body");
+  assert.equal(request.options.headers["Idempotency-Key"], undefined, "recovery GET must not masquerade as idempotent creative POST replay");
+} finally {
+  globalThis.fetch = originalFetch;
+  for (const key of envKeys) {
+    if (originalEnv[key] === undefined) delete process.env[key];
+    else process.env[key] = originalEnv[key];
+  }
+}
 
 console.log("✓ confirmed known-ID provider work can enter a recovery-only same-operation path");
 console.log("✓ true ID-less UNKNOWN remains STILL_UNKNOWN and never turns provider capability into redispatch authority");
+console.log("✓ changed current provider target cannot impersonate historical recovery authority");
+console.log("✓ OpenAI recovery adapter performs GET-by-known-response-ID with no creative body or redispatch idempotency header");
 console.log("LAW: RECOVERY MAY OBSERVE THE SAME OPERATION. IT MAY NOT INVENT A SECOND OPERATION.");
 console.log("LAW: NO PROVIDER RESPONSE ID MEANS NO KNOWN-ID RETRIEVAL REQUEST.");
 console.log("Movie Mentor provider outcome recovery authority gate: GREEN");
