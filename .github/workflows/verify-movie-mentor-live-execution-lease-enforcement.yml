@@ -2,11 +2,28 @@ name: Verify Movie Mentor Live Execution Lease Enforcement
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/verify-movie-mentor-live-execution-lease-enforcement.yml"
+      - ".github/workflows/ci-backend.yml"
+      - "scripts/verify-movie-mentor-live-execution-lease-enforcement.mjs"
+      - "scripts/verify-movie-mentor-live-lease-backend-ci-authority.mjs"
+      - "scripts/verify-movie-mentor-inference-spend-authority.mjs"
+      - "scripts/verify-movie-mentor-round-four-certification-anchor.mjs"
+      - "ai/MovieMentorInferenceExecutionMongoStore.js"
+      - "ai/MovieMentorInferenceExecutionLeaseAuthority.js"
+      - "ai/MovieMentorProductionInferenceExecutionComposition.js"
+      - "ai/MovieMentorTurnRuntime.js"
+      - "movieMentorTurn.js"
+      - "server.js"
   push:
     branches: [main]
     paths:
       - ".github/workflows/verify-movie-mentor-live-execution-lease-enforcement.yml"
+      - ".github/workflows/ci-backend.yml"
       - "scripts/verify-movie-mentor-live-execution-lease-enforcement.mjs"
+      - "scripts/verify-movie-mentor-live-lease-backend-ci-authority.mjs"
       - "scripts/verify-movie-mentor-inference-spend-authority.mjs"
       - "scripts/verify-movie-mentor-round-four-certification-anchor.mjs"
       - "ai/MovieMentorInferenceExecutionMongoStore.js"
@@ -38,8 +55,11 @@ jobs:
           node --check movieMentorTurn.js
           node --check server.js
           node --check scripts/verify-movie-mentor-live-execution-lease-enforcement.mjs
+          node --check scripts/verify-movie-mentor-live-lease-backend-ci-authority.mjs
           node --check scripts/verify-movie-mentor-inference-spend-authority.mjs
       - name: Run 5A.24 Round Two stale-owner catastrophe torture
         run: node scripts/verify-movie-mentor-live-execution-lease-enforcement.mjs
+      - name: Verify Live Lease Backend CI jurisdiction
+        run: node scripts/verify-movie-mentor-live-lease-backend-ci-authority.mjs
       - name: Regress inference spend production wiring
         run: node scripts/verify-movie-mentor-inference-spend-authority.mjs

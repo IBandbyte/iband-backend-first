@@ -99,10 +99,11 @@ assert.match(serverSource,/status\?\.fullExecutionAuthority===true/);
 assert.match(serverSource,/!executionCompositionProven\(executionComposition,executionStatus\)/);
 assert.ok(serverSource.indexOf("!executionCompositionProven(executionComposition,executionStatus)")<serverSource.indexOf("createMovieMentorTurnRouter({requestAuthority"),"execution owner proof must be consumed before creator router construction");
 
-const slots=[], executed=[],dispatches=[],evidence=[];
+const slots=[], executed=[],dispatches=[],evidence=[],inputBindings=[];
 const fakeExecution={authorized:true,executionId:"execution-live",ownerId:"owner-live",leaseGeneration:7,leaseReference:"lease-7",fencingToken:"fence-7"};
 const fakeAuthority={
   async claimProviderCall({slotId,task}){slots.push(slotId);return{authorized:true,dispatchAuthorized:true,providerCallId:`call-${slotId}`,slotId,task,executionId:"execution-live",ownerId:"owner-live",leaseGeneration:7,leaseReference:"lease-7",fencingToken:"fence-7"};},
+  async bindProviderReconstructionInput({providerCall,reconstructionInput}){inputBindings.push(providerCall.slotId);return{authorized:true,inputBound:true,providerCallId:providerCall.providerCallId,reconstructionInput:clone(reconstructionInput)};},
   async beginProviderDispatch({providerCall}){dispatches.push(`begin:${providerCall.slotId}`);return{authorized:true,dispatchAuthorized:true,providerCallId:providerCall.providerCallId};},
   async assertProviderDispatch({providerCall}){dispatches.push(`assert:${providerCall.slotId}`);return{authorized:true,dispatchAuthorized:true,providerCallId:providerCall.providerCallId};},
   async contributeProviderEffectEvidence(input){evidence.push(input);return{authorized:true,recorded:true};},
@@ -112,6 +113,7 @@ const fenced=createFencedInferenceOrchestrationDeps({
   inferenceExecutionAuthority:fakeAuthority,
   deps:{
     interpretSemantics:async()=>{executed.push("semantic");return{ok:true};},
+    prepareContinuityHistoricalInput:async(workOrder)=>clone(workOrder),
     executeSpecialistWorkOrder:async(workOrder)=>{executed.push(workOrder.agentId);return{contribution:{agentId:workOrder.agentId},metadata:{}};},
     synthesizeResponse:async()=>{executed.push("synthesis");return{success:true,text:"ok"};},
   },
@@ -122,6 +124,7 @@ assert.equal(planResult.status,"completed");
 await fenced.synthesizeResponse({});
 assert.deepEqual(slots,["semantic","story","character","continuity","synthesis"]);
 assert.deepEqual(executed,["semantic","story","character","continuity","synthesis"]);
+assert.deepEqual(inputBindings,["continuity"],"Continuity must bind historical reconstruction input before UNKNOWN while other lease-only fixtures remain unchanged");
 assert.deepEqual(dispatches,["begin:semantic","assert:semantic","begin:story","assert:story","begin:character","assert:character","begin:continuity","assert:continuity","begin:synthesis","assert:synthesis"]);
 assert.equal(evidence.length,0);
 
@@ -146,8 +149,8 @@ console.log("✓ provider-call budget is enforced at admission");
 console.log("✓ externally injected execution/provider-effect/canonical-result/result-candidate stores receive zero production provenance credit regardless of method shape or self-attested capability strings");
 console.log("✓ production execution composition may mint owner proof only from stores it constructs through its production store factories");
 console.log("✓ server consumes the exact production execution owner proof before creator router construction; readiness plus method shape cannot mount the route");
-console.log("✓ Semantic, Story, Character, Continuity and Synthesis cross claim → durable UNKNOWN → current dispatch fence before provider invocation");
-console.log("✓ denied claim prevents UNKNOWN creation, dispatch fencing and provider invocation");
+console.log("✓ Semantic, Story, Character, Continuity and Synthesis cross claim → durable UNKNOWN → current dispatch fence before provider invocation; Continuity additionally binds historical input before UNKNOWN");
+console.log("✓ denied claim prevents historical-input binding, UNKNOWN creation, dispatch fencing and provider invocation");
 console.log("LAW: PRODUCTION-OWNED DURABLE STORES → PRODUCTION EXECUTION COMPOSITION OWNS ONE STABLE PROOF → SERVER CONSUMES THAT EXACT OWNER PROOF → ROUTE");
 console.log("LAW: READY + METHOD SHAPE + SELF-ATTESTED STATUS IS NOT PRODUCTION AUTHORITY. PROOF DOES NOT TELEPORT.");
 console.log("5A.24 Round Seven torture: GREEN");
