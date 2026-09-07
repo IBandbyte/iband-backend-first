@@ -1,0 +1,38 @@
+name: Verify Movie Mentor Provider Reconstruction Input Integrity Authority
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/verify-movie-mentor-provider-reconstruction-input-integrity-authority.yml"
+      - ".github/workflows/ci-backend.yml"
+      - "scripts/verify-movie-mentor-provider-reconstruction-input-integrity-authority.mjs"
+      - "ai/MovieMentorProviderOperationAuthority.js"
+      - "ai/MovieMentorRecoveredProviderResultAuthority.js"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/verify-movie-mentor-provider-reconstruction-input-integrity-authority.yml"
+      - ".github/workflows/ci-backend.yml"
+      - "scripts/verify-movie-mentor-provider-reconstruction-input-integrity-authority.mjs"
+      - "ai/MovieMentorProviderOperationAuthority.js"
+      - "ai/MovieMentorRecoveredProviderResultAuthority.js"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Check provider reconstruction-input integrity authority syntax
+        run: |
+          node --check ai/MovieMentorProviderOperationAuthority.js
+          node --check ai/MovieMentorRecoveredProviderResultAuthority.js
+          node --check scripts/verify-movie-mentor-provider-reconstruction-input-integrity-authority.mjs
+      - name: Verify provider reconstruction-input integrity authority
+        run: node scripts/verify-movie-mentor-provider-reconstruction-input-integrity-authority.mjs
