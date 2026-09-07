@@ -36,7 +36,8 @@ jobs:
           node --check ai/MovieMentorInferenceExecutionMongoStore.js &&
           node --check ai/MovieMentorProductionInferenceExecutionComposition.js &&
           node --check scripts/verify-movie-mentor-provider-recovery-identity-authority.mjs &&
-          node --check scripts/verify-movie-mentor-provider-outcome-recovery-authority.mjs
+          node --check scripts/verify-movie-mentor-provider-outcome-recovery-authority.mjs &&
+          node --check scripts/verify-movie-mentor-provider-outcome-recovery-lease-authority.mjs
       - name: Check Movie Mentor Operations catastrophe security syntax
         run: >-
           node --check ai/MovieMentorOperationsTrustedTimeAuthorityControl.js &&
@@ -91,6 +92,8 @@ jobs:
         run: node scripts/verify-movie-mentor-provider-recovery-identity-authority.mjs
       - name: Verify Movie Mentor provider outcome recovery authority
         run: node scripts/verify-movie-mentor-provider-outcome-recovery-authority.mjs
+      - name: Verify Movie Mentor provider outcome recovery current-lease authority
+        run: node scripts/verify-movie-mentor-provider-outcome-recovery-lease-authority.mjs
       - name: Verify Movie Mentor Operations architecture hardening v2
         run: npm run verify:movie-mentor-operations
       - name: Verify Movie Mentor Operations Warp 40 seams
