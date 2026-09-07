@@ -16,6 +16,9 @@ async function captureSocket(structured,invoke,id){let header=null;globalThis.fe
 try{
  installOpenAIEnvironment();
  const operation=Object.freeze({providerOperationId:"provider-call-network-proof",executionId:"execution-network-proof",slotId:"semantic",task:"movie-mentor-semantic"});
+ let malformedFetches=0;globalThis.fetch=async()=>{malformedFetches+=1;throw new Error("malformed provider operation must fail before network");};
+ await assert.rejects(()=>executeStructuredAI({task:"movie-mentor-network-proof",systemInstructions:"Return the required schema.",input:{proof:true},schema:{type:"object",additionalProperties:false,properties:{value:{type:"string"}},required:["value"]},schemaName:"movie_mentor_network_operation_identity",providerOperation:{providerOperationId:"provider-call-network-proof",executionId:"execution-network-proof",slotId:"semantic"}}),error=>error?.code==="AI_PROVIDER_OPERATION_IDENTITY_INVALID");
+ assert.equal(malformedFetches,0,"incomplete provider operation identity must fail closed before any provider socket opens");
  const shared=await captureSocket({value:"ok"},()=>executeStructuredAI({task:"movie-mentor-network-proof",systemInstructions:"Return the required schema.",input:{proof:true},schema:{type:"object",additionalProperties:false,properties:{value:{type:"string"}},required:["value"]},schemaName:"movie_mentor_network_operation_identity",providerOperation:operation}),"resp-shared-network-proof");
  assert.equal(shared.result.structured.value,"ok");assert.equal(shared.header,operation.providerOperationId,"the shared OpenAI socket must carry the exact durable Movie Mentor provider operation ID as the provider idempotency key");
  const semantic=await captureSocket(validSemantic,()=>interpretMovieMentorSemantics({message:"A lighthouse sends messages from a missing daughter.",context:{creatorConfirmedContext:[]}},{providerOperation:operation}),"resp-semantic-network-proof");
@@ -38,6 +41,7 @@ try{
  const fenced=createFencedInferenceOrchestrationDeps({execution:{authorized:true},inferenceExecutionAuthority:runtimeAuthority,deps:{interpretSemantics:async(_input,context={})=>{runtimeOperation=context.providerOperation||null;return{structured:{movieJourneyIntelligence:validSemantic},metadata:{provider:"openai",responseId:"resp-runtime-network-proof"}};}}});
  await fenced.interpretSemantics({proof:true});
  assert.deepEqual(runtimeOperation,{providerOperationId:providerCall.providerCallId,executionId:providerCall.executionId,slotId:providerCall.slotId,task:providerCall.task},"runtime must hand the exact durable provider-call identity across the provider invocation boundary rather than stopping one layer before the network client");
+ console.log("✓ incomplete provider operation identity fails closed before the network boundary");
  console.log("✓ shared, semantic, specialist, continuity and synthesis OpenAI sockets carry exact durable Movie Mentor operation identity");
  console.log("✓ fenced runtime transports exact provider-call identity into the provider adapter boundary");
  console.log("LAW: AN INTERNAL IDEMPOTENCY ID THAT STOPS BEFORE THE NETWORK SOCKET IS NOT PROVIDER IDEMPOTENCY.");
