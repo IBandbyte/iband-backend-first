@@ -4,7 +4,7 @@ import {
   sameMovieMentorProviderTarget,
 } from "./MovieMentorProviderTargetAuthority.js";
 
-const VERSION = "1.0.0";
+const VERSION = "1.1.0";
 const DOMAIN = "iband.movie-mentor.provider-outcome-recovery-authority";
 const OUTCOMES = Object.freeze({
   CONFIRMED_EFFECT: "CONFIRMED_EFFECT",
@@ -123,11 +123,37 @@ function conflictingEffect(binding, operation, extras = {}) {
   });
 }
 
+function normalizeRecoveryAuthorityProof(proof, binding) {
+  const ownerId = text(proof?.ownerId);
+  const leaseReference = text(proof?.leaseReference);
+  const fencingToken = text(proof?.fencingToken);
+  const leaseGeneration = Number(proof?.leaseGeneration);
+  const valid = proof?.authorized === true
+    && proof?.currentRecoveryAuthorityVerified === true
+    && text(proof?.transition) === "provider-outcome-recovery"
+    && text(proof?.executionId) === binding.executionId
+    && text(proof?.providerCallId) === binding.providerCallId
+    && ownerId
+    && leaseReference
+    && fencingToken
+    && Number.isSafeInteger(leaseGeneration)
+    && leaseGeneration >= 1;
+  if (!valid) return null;
+  return freeze({
+    ownerId,
+    leaseGeneration,
+    leaseReference,
+    fencingToken,
+  });
+}
+
 function createMovieMentorProviderOutcomeRecoveryAuthority({
   readProviderOperation = null,
   readProviderEffectReality = null,
   recoverProviderResponse = null,
   resolveCurrentTarget = () => describeCurrentMovieMentorProviderTarget(),
+  assertCurrentRecoveryAuthority = null,
+  requireRecoveryAuthority = false,
 } = {}) {
   if (typeof readProviderOperation !== "function" || typeof readProviderEffectReality !== "function") {
     fail(
@@ -147,8 +173,20 @@ function createMovieMentorProviderOutcomeRecoveryAuthority({
       "Provider outcome recovery requires a current provider target resolver.",
     );
   }
+  if (typeof requireRecoveryAuthority !== "boolean") {
+    fail(
+      "MOVIE_MENTOR_PROVIDER_OUTCOME_RECOVERY_AUTHORITY_CONFIGURATION_INVALID",
+      "Provider outcome recovery authority requirement must be an explicit boolean.",
+    );
+  }
+  if (requireRecoveryAuthority && typeof assertCurrentRecoveryAuthority !== "function") {
+    fail(
+      "MOVIE_MENTOR_PROVIDER_OUTCOME_RECOVERY_AUTHORITY_CALLBACK_REQUIRED",
+      "Production provider outcome recovery requires a current recovery-authority callback.",
+    );
+  }
 
-  async function reconcile({ providerCallId = null } = {}) {
+  async function reconcile({ providerCallId = null, recoveryAuthority = null } = {}) {
     const callId = text(providerCallId);
     if (!callId) {
       fail("MOVIE_MENTOR_PROVIDER_OUTCOME_CALL_ID_REQUIRED", "Provider outcome recovery requires an exact durable provider call ID.");
@@ -231,6 +269,31 @@ function createMovieMentorProviderOutcomeRecoveryAuthority({
       });
     }
 
+    let recoveryProof = null;
+    if (requireRecoveryAuthority) {
+      if (!recoveryAuthority) {
+        return confirmedEffect(binding, operation, externalEffectId, {
+          recoveryAuthorized: false,
+          recovered: false,
+          reason: "provider-recovery-authority-required",
+        });
+      }
+      const proof = await assertCurrentRecoveryAuthority({
+        operation: freeze({ ...clone(operation), ...binding }),
+        providerEffectReality: clone(effect),
+        recoveryAuthority,
+      });
+      recoveryProof = normalizeRecoveryAuthorityProof(proof, binding);
+      if (!recoveryProof) {
+        return confirmedEffect(binding, operation, externalEffectId, {
+          recoveryAuthorized: false,
+          recovered: false,
+          reason: "provider-recovery-execution-fenced",
+          recoveryAuthorityReason: text(proof?.reason) || null,
+        });
+      }
+    }
+
     const request = freeze({
       method: "retrieve-known-response-id",
       providerCallId: binding.providerCallId,
@@ -252,6 +315,10 @@ function createMovieMentorProviderOutcomeRecoveryAuthority({
         retryable: error?.retryable !== false,
         reason: "provider-recovery-request-failed",
         recoveryErrorCode: text(error?.code) || null,
+        ...(recoveryProof ? {
+          recoveryOwnerId: recoveryProof.ownerId,
+          recoveryLeaseGeneration: recoveryProof.leaseGeneration,
+        } : {}),
       });
     }
 
@@ -280,6 +347,10 @@ function createMovieMentorProviderOutcomeRecoveryAuthority({
       recovered: true,
       recoveryMethod: request.method,
       recoveredProviderResponse: clone(recovered.response),
+      ...(recoveryProof ? {
+        recoveryOwnerId: recoveryProof.ownerId,
+        recoveryLeaseGeneration: recoveryProof.leaseGeneration,
+      } : {}),
     });
   }
 
