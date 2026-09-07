@@ -7,7 +7,7 @@ import { synthesizeMovieMentorResponse } from "./MovieMentorSynthesisEngine.js";
 import { buildCurrentCreatorTruthView } from "./MovieMentorCreatorTruthViewControl.js";
 import { readAuthoritativeTurnSource, readAuthoritativeRevision, readAuthoritativeCreatorState } from "./MovieMentorCreatorStateStore.js";
 
-const MOVIE_MENTOR_TURN_RUNTIME_VERSION = "2.7.0";
+const MOVIE_MENTOR_TURN_RUNTIME_VERSION = "2.8.0";
 const s = (value) => (typeof value === "string" ? value.trim() : "");
 
 function clone(value) {
@@ -124,6 +124,7 @@ function assertCreatorResponseAuthority({ canonical = null, settlement = null, e
     "projectId",
     "reservationId",
     "resultReference",
+    "candidateReference",
     "resultDigest",
     "closureCertificateDigest",
   ];
@@ -225,6 +226,7 @@ function resultResponse(canonical, settlement, { replayed = false, execution = n
         resultFinalizationVerified: true,
         creatorResponseAuthorityVerified: true,
         resultReference: canonical.resultReference,
+        candidateReference: canonical.candidateReference,
         resultDigest: canonical.resultDigest,
         executionId: canonical.executionId,
         closureReference: canonical.closureReference,
