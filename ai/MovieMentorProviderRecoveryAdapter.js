@@ -8,7 +8,7 @@ import {
   sameMovieMentorProviderTarget,
 } from "./MovieMentorProviderTargetAuthority.js";
 
-const VERSION = "1.1.0";
+const VERSION = "1.2.0";
 const DOMAIN = "iband.movie-mentor.provider-recovery-adapter";
 
 function text(value) {
@@ -51,7 +51,15 @@ async function getJson(url, { key = "", timeoutMs = 30_000 } = {}) {
         ...(key ? { Authorization: `Bearer ${key}` } : {}),
       },
       signal: controller.signal,
+      redirect: "manual",
     });
+    if (response.status >= 300 && response.status < 400) {
+      fail(
+        "MOVIE_MENTOR_PROVIDER_RECOVERY_REDIRECT_FORBIDDEN",
+        "Provider recovery redirected away from the authorized historical route.",
+        { retryable: false, status: response.status },
+      );
+    }
     const raw = await response.text();
     let payload = null;
     try { payload = raw ? JSON.parse(raw) : null; } catch { payload = { raw }; }
