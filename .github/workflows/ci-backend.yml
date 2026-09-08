@@ -240,3 +240,8 @@ jobs:
         run: npm run verify:movie-mentor-recovery-matrix
       - name: Verify adversarial cross-layer catastrophe v2
         run: npm run verify:movie-mentor-cross-layer-catastrophe
+
+      - name: Check Movie Mentor canonical schema settlement authority syntax
+        run: node --check scripts/verify-movie-mentor-canonical-schema-settlement-authority.mjs
+      - name: Verify Movie Mentor canonical schema settlement authority
+        run: node scripts/verify-movie-mentor-canonical-schema-settlement-authority.mjs
