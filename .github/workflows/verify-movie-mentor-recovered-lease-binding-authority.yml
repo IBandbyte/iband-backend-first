@@ -1,0 +1,30 @@
+name: Verify Movie Mentor Recovered Lease Binding Authority
+
+on:
+  pull_request:
+    paths:
+      - 'ai/MovieMentorRecoveredProviderResultAuthority.js'
+      - 'scripts/verify-movie-mentor-recovered-lease-binding-authority.mjs'
+      - 'scripts/verify-movie-mentor-recovered-lease-binding-backend-ci-authority.mjs'
+      - 'scripts/verify-movie-mentor-recovered-provider-model-backend-ci-authority.mjs'
+      - '.github/workflows/verify-movie-mentor-recovered-lease-binding-authority.yml'
+  push:
+    branches:
+      - movie-mentor-recovered-lease-binding-authority
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Syntax check recovered provider result authority
+        run: node --check ai/MovieMentorRecoveredProviderResultAuthority.js
+      - name: Syntax check verifier
+        run: node --check scripts/verify-movie-mentor-recovered-lease-binding-authority.mjs
+      - name: Syntax check Backend CI jurisdiction
+        run: node --check scripts/verify-movie-mentor-recovered-lease-binding-backend-ci-authority.mjs
+      - name: Verify recovered lease binding authority
+        run: node scripts/verify-movie-mentor-recovered-lease-binding-authority.mjs

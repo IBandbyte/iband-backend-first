@@ -4,7 +4,7 @@ import {
   normalizeMovieMentorProviderTarget,
 } from "./MovieMentorProviderTargetAuthority.js";
 
-const VERSION = "1.5.0";
+const VERSION = "1.6.0";
 const DOMAIN = "iband.movie-mentor.recovered-provider-result-authority";
 
 function text(value) {
@@ -153,6 +153,40 @@ function assertRecoveredOutcomeBinding({ recovery, historical } = {}) {
   });
 }
 
+function assertRecoveryLeaseBinding({ recovery, execution, historical } = {}) {
+  const expectedOwnerId = text(execution?.ownerId);
+  const actualOwnerId = text(recovery?.recoveryOwnerId);
+  const expectedLeaseGeneration = Number.isSafeInteger(execution?.leaseGeneration)
+    ? execution.leaseGeneration
+    : null;
+  const actualLeaseGeneration = Number.isSafeInteger(recovery?.recoveryLeaseGeneration)
+    ? recovery.recoveryLeaseGeneration
+    : null;
+
+  if (
+    !expectedOwnerId
+    || expectedLeaseGeneration === null
+    || !actualOwnerId
+    || actualLeaseGeneration === null
+    || actualOwnerId !== expectedOwnerId
+    || actualLeaseGeneration !== expectedLeaseGeneration
+  ) {
+    fail(
+      "MOVIE_MENTOR_PROVIDER_RECOVERY_LEASE_BINDING_INVALID",
+      "Recovered provider bytes do not belong to the exact current recovery owner and lease generation.",
+      {
+        retryable: false,
+        providerCallId: text(historical?.providerCallId) || null,
+        expectedOwnerId: expectedOwnerId || null,
+        actualOwnerId: actualOwnerId || null,
+        expectedLeaseGeneration,
+        actualLeaseGeneration,
+      },
+    );
+  }
+  return true;
+}
+
 function historicalInputRequired(historical = {}) {
   fail(
     "MOVIE_MENTOR_PROVIDER_RECOVERY_INPUT_AUTHORITY_REQUIRED",
@@ -274,6 +308,7 @@ async function recoverPreviouslyAdmittedProviderResult({
     recoveryAuthority: execution,
   });
   const bound = assertRecoveredOutcomeBinding({ recovery, historical });
+  assertRecoveryLeaseBinding({ recovery, execution, historical });
   const reconstructionAuthority = await resolveHistoricalReconstructionAuthority({ historical, readProviderOperation });
   const providerOperation = freeze({
     providerOperationId: historical.providerCallId,
@@ -307,6 +342,7 @@ export {
   normalizeHistoricalProviderCall,
   assertExactHistoricalBinding,
   assertRecoveredOutcomeBinding,
+  assertRecoveryLeaseBinding,
   resolveHistoricalReconstructionInput,
   recoverPreviouslyAdmittedProviderResult,
 };
