@@ -1,0 +1,32 @@
+name: Verify Movie Mentor Provider Redirect Target Authority
+
+on:
+  push:
+    paths:
+      - "ai/StructuredAIProviderClient.js"
+      - "ai/MovieMentorProviderRecoveryAdapter.js"
+      - "ai/MovieMentorProviderTargetAuthority.js"
+      - "scripts/verify-movie-mentor-provider-redirect-target-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-provider-redirect-target-authority.yml"
+  pull_request:
+    paths:
+      - "ai/StructuredAIProviderClient.js"
+      - "ai/MovieMentorProviderRecoveryAdapter.js"
+      - "ai/MovieMentorProviderTargetAuthority.js"
+      - "scripts/verify-movie-mentor-provider-redirect-target-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-provider-redirect-target-authority.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund --ignore-scripts
+      - run: node --check ai/StructuredAIProviderClient.js
+      - run: node --check ai/MovieMentorProviderRecoveryAdapter.js
+      - run: node --check scripts/verify-movie-mentor-provider-redirect-target-authority.mjs
+      - run: node scripts/verify-movie-mentor-provider-redirect-target-authority.mjs
