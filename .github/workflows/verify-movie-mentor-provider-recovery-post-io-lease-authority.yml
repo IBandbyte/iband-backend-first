@@ -1,0 +1,26 @@
+name: Verify Movie Mentor Provider Recovery Post-IO Lease Authority
+
+on:
+  pull_request:
+    paths:
+      - 'ai/MovieMentorProviderOutcomeRecoveryAuthority.js'
+      - 'scripts/verify-movie-mentor-provider-recovery-post-io-lease-authority.mjs'
+      - '.github/workflows/verify-movie-mentor-provider-recovery-post-io-lease-authority.yml'
+  push:
+    branches:
+      - movie-mentor-recovery-post-io-lease-authority
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Syntax check provider outcome recovery authority
+        run: node --check ai/MovieMentorProviderOutcomeRecoveryAuthority.js
+      - name: Syntax check verifier
+        run: node --check scripts/verify-movie-mentor-provider-recovery-post-io-lease-authority.mjs
+      - name: Verify provider recovery post-I/O lease authority
+        run: node scripts/verify-movie-mentor-provider-recovery-post-io-lease-authority.mjs
