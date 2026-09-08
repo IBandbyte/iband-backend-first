@@ -1,0 +1,34 @@
+name: Verify Movie Mentor Execution Schema Settlement Authority
+
+on:
+  pull_request:
+    paths:
+      - "ai/MovieMentorInferenceSettlementMongoStore.js"
+      - "ai/MovieMentorInferenceExecutionMongoStore.js"
+      - "scripts/verify-movie-mentor-execution-schema-settlement-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-execution-schema-settlement-authority.yml"
+  push:
+    branches: [main]
+    paths:
+      - "ai/MovieMentorInferenceSettlementMongoStore.js"
+      - "ai/MovieMentorInferenceExecutionMongoStore.js"
+      - "scripts/verify-movie-mentor-execution-schema-settlement-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-execution-schema-settlement-authority.yml"
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Syntax check execution schema settlement authority
+        run: |
+          node --check ai/MovieMentorInferenceSettlementMongoStore.js
+          node --check ai/MovieMentorInferenceExecutionMongoStore.js
+          node --check scripts/verify-movie-mentor-execution-schema-settlement-authority.mjs
+      - name: Verify execution schema settlement authority
+        run: node scripts/verify-movie-mentor-execution-schema-settlement-authority.mjs
