@@ -190,6 +190,7 @@ const recoveryAuthority = createMovieMentorProviderOutcomeRecoveryAuthority({
     return {
       provider: "openai",
       externalEffectId: request.externalEffectId,
+      providerOperationId: request.providerOperationId,
       response: { id: request.externalEffectId, status: "completed", output_text: "{}" },
     };
   },

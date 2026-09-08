@@ -46,6 +46,8 @@ jobs:
           node --check scripts/verify-movie-mentor-provider-query-target-backend-ci-authority.mjs &&
           node --check scripts/verify-movie-mentor-provider-outcome-recovery-authority.mjs &&
           node --check scripts/verify-movie-mentor-provider-outcome-recovery-lease-authority.mjs &&
+          node --check scripts/verify-movie-mentor-provider-recovery-operation-binding-authority.mjs &&
+          node --check scripts/verify-movie-mentor-provider-recovery-backend-ci-authority.mjs &&
           node --check scripts/verify-movie-mentor-recovered-result-reconstruction-authority.mjs &&
           node --check scripts/verify-movie-mentor-recovered-response-effect-binding-authority.mjs &&
           node --check scripts/verify-movie-mentor-recovered-response-effect-binding-backend-ci-authority.mjs &&
@@ -136,6 +138,10 @@ jobs:
         run: node scripts/verify-movie-mentor-provider-outcome-recovery-authority.mjs
       - name: Verify Movie Mentor provider outcome recovery current-lease authority
         run: node scripts/verify-movie-mentor-provider-outcome-recovery-lease-authority.mjs
+      - name: Verify Movie Mentor provider recovery operation-binding authority
+        run: node scripts/verify-movie-mentor-provider-recovery-operation-binding-authority.mjs
+      - name: Verify Movie Mentor provider recovery Backend CI authority
+        run: node scripts/verify-movie-mentor-provider-recovery-backend-ci-authority.mjs
       - name: Verify Movie Mentor recovered-result reconstruction authority
         run: node scripts/verify-movie-mentor-recovered-result-reconstruction-authority.mjs
       - name: Verify Movie Mentor recovered response effect-binding authority
