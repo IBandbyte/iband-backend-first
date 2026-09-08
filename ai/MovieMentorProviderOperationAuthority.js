@@ -1,11 +1,14 @@
 import crypto from "node:crypto";
 import {
+  describeCurrentMovieMentorProviderModel,
   describeCurrentMovieMentorProviderTarget,
+  normalizeMovieMentorProviderModel,
   normalizeMovieMentorProviderTarget,
+  sameMovieMentorProviderModel,
   sameMovieMentorProviderTarget,
 } from "./MovieMentorProviderTargetAuthority.js";
 
-const VERSION = "1.3.0";
+const VERSION = "1.4.0";
 const DOMAIN = "iband.movie-mentor.provider-operation-authority";
 
 function text(value) {
@@ -124,6 +127,10 @@ function assertReconstructionInputIntegrity(record = {}) {
 
 function operationEvidence(record, extras = {}) {
   const inputIntegrity = assertReconstructionInputIntegrity(record);
+  const providerTarget = normalizeMovieMentorProviderTarget(record.providerTarget);
+  const providerModel = record.providerModel == null
+    ? null
+    : normalizeMovieMentorProviderModel(record.providerModel, { provider: providerTarget.provider });
   return freeze({
     authorized: true,
     domain: DOMAIN,
@@ -132,7 +139,8 @@ function operationEvidence(record, extras = {}) {
     executionId: text(record.executionId),
     slotId: text(record.slotId),
     task: text(record.task),
-    providerTarget: normalizeMovieMentorProviderTarget(record.providerTarget),
+    providerTarget,
+    providerModel,
     boundAt: instant(record.boundAt).toISOString(),
     reconstructionInputDigest: inputIntegrity.recordedDigest,
     reconstructionInput: inputIntegrity.inputBound ? clone(record.reconstructionInput) : null,
@@ -146,6 +154,7 @@ function createMovieMentorProviderOperationAuthority({
   store = null,
   now = () => new Date(),
   resolveCurrentTarget = () => describeCurrentMovieMentorProviderTarget(),
+  resolveCurrentModel = ({ providerTarget } = {}) => describeCurrentMovieMentorProviderModel({ providerTarget }),
 } = {}) {
   if (typeof store?.readOperation !== "function" || typeof store?.bindOperation !== "function") {
     fail("MOVIE_MENTOR_PROVIDER_OPERATION_STORE_REQUIRED", "Provider operation authority requires a durable immutable operation identity store.");
@@ -153,14 +162,23 @@ function createMovieMentorProviderOperationAuthority({
   if (typeof resolveCurrentTarget !== "function") {
     fail("MOVIE_MENTOR_PROVIDER_OPERATION_TARGET_RESOLVER_REQUIRED", "Provider operation authority requires a current provider target resolver.");
   }
+  if (typeof resolveCurrentModel !== "function") {
+    fail("MOVIE_MENTOR_PROVIDER_OPERATION_MODEL_RESOLVER_REQUIRED", "Provider operation authority requires a current provider model resolver.");
+  }
+
+  function currentIdentity() {
+    const providerTarget = normalizeMovieMentorProviderTarget(resolveCurrentTarget());
+    const providerModel = normalizeMovieMentorProviderModel(resolveCurrentModel({ providerTarget }), { provider: providerTarget.provider });
+    return freeze({ providerTarget, providerModel });
+  }
 
   async function bindOperation({ providerCall = null } = {}) {
     const binding = bindingFromProviderCall(providerCall);
-    const providerTarget = normalizeMovieMentorProviderTarget(resolveCurrentTarget());
+    const { providerTarget, providerModel } = currentIdentity();
     const boundAt = instant(now()).toISOString();
     let durable;
     try {
-      durable = await store.bindOperation({ ...binding, providerTarget, boundAt });
+      durable = await store.bindOperation({ ...binding, providerTarget, providerModel, boundAt });
     } catch (error) {
       durable = await store.readOperation(binding.providerCallId);
       if (!durable) throw error;
@@ -175,6 +193,13 @@ function createMovieMentorProviderOperationAuthority({
       fail(
         "MOVIE_MENTOR_PROVIDER_OPERATION_TARGET_CONFLICT",
         "Provider operation identity is already bound to a different provider target.",
+        { providerCallId: binding.providerCallId },
+      );
+    }
+    if (!sameMovieMentorProviderModel(durable.providerModel, providerModel)) {
+      fail(
+        "MOVIE_MENTOR_PROVIDER_OPERATION_MODEL_CONFLICT",
+        "Provider operation identity is already bound to a different inference model.",
         { providerCallId: binding.providerCallId },
       );
     }
@@ -239,7 +264,31 @@ function createMovieMentorProviderOperationAuthority({
         currentProviderTarget: currentTarget,
       });
     }
-    return operationEvidence(durable, { dispatchAuthorized: true, currentTargetVerified: true });
+    const durableModel = durable.providerModel == null
+      ? null
+      : normalizeMovieMentorProviderModel(durable.providerModel, { provider: currentTarget.provider });
+    if (currentTarget.provider === "openai" && !durableModel) {
+      return freeze({
+        authorized: false,
+        dispatchAuthorized: false,
+        reason: "provider-model-authority-not-bound",
+        providerCallId: binding.providerCallId,
+        providerTarget: normalizeMovieMentorProviderTarget(durable.providerTarget),
+      });
+    }
+    const currentModel = normalizeMovieMentorProviderModel(resolveCurrentModel({ providerTarget: currentTarget }), { provider: currentTarget.provider });
+    if (!sameMovieMentorProviderModel(durableModel, currentModel)) {
+      return freeze({
+        authorized: false,
+        dispatchAuthorized: false,
+        reason: "provider-model-no-longer-current",
+        providerCallId: binding.providerCallId,
+        providerTarget: normalizeMovieMentorProviderTarget(durable.providerTarget),
+        providerModel: durableModel,
+        currentProviderModel: currentModel,
+      });
+    }
+    return operationEvidence(durable, { dispatchAuthorized: true, currentTargetVerified: true, currentModelVerified: true });
   }
 
   return freeze({ bindOperation, bindReconstructionInput, readOperation, assertCurrentTarget });
