@@ -6,7 +6,7 @@ import {createMovieMentorResultCandidateMongoStore} from "../ai/MovieMentorResul
 import {createMovieMentorCanonicalResultMongoStore} from "../ai/MovieMentorCanonicalResultMongoStore.js";
 
 const closureStore={
-  readExecution:async()=>({phase:"active",executionId:"e",ownerId:"o",leaseGeneration:1,leaseReference:"l",fencingToken:"f",leaseExpiresAt:"2032-01-01T00:10:00.000Z",providerCalls:[],providerCallsClaimed:0}),
+  readExecution:async()=>({schema:6,phase:"active",executionId:"e",ownerId:"o",leaseGeneration:1,leaseReference:"l",fencingToken:"f",leaseExpiresAt:"2032-01-01T00:10:00.000Z",providerCalls:[],providerCallsClaimed:0}),
   beginClosing:async()=>null,recoverExpiredIntoClosing:async()=>null,completeClosing:async()=>null,quarantineExecution:async()=>null
 };
 const effectStore={readEffect:async()=>null};
