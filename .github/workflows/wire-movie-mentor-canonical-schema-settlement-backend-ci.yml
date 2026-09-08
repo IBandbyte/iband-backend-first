@@ -1,0 +1,40 @@
+name: Wire Movie Mentor Canonical Schema Settlement Backend CI
+
+on:
+  push:
+    branches: [movie-mentor-canonical-schema-settlement-authority]
+    paths:
+      - ".github/workflows/wire-movie-mentor-canonical-schema-settlement-backend-ci.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  wire:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: movie-mentor-canonical-schema-settlement-authority
+      - name: Make Backend CI own the court
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path(".github/workflows/ci-backend.yml")
+          source = path.read_text()
+          needle = "scripts/verify-movie-mentor-canonical-schema-settlement-authority.mjs"
+          if needle in source:
+              raise SystemExit("canonical schema settlement court is already owned by Backend CI")
+          addition = '''\n      - name: Check Movie Mentor canonical schema settlement authority syntax\n        run: node --check scripts/verify-movie-mentor-canonical-schema-settlement-authority.mjs\n      - name: Verify Movie Mentor canonical schema settlement authority\n        run: node scripts/verify-movie-mentor-canonical-schema-settlement-authority.mjs\n'''
+          if not source.endswith("\n"):
+              source += "\n"
+          path.write_text(source + addition)
+          PY
+          git diff --check
+      - name: Commit Backend CI ownership
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows/ci-backend.yml
+          git commit -m "Make Backend CI own canonical schema settlement authority"
+          git push origin HEAD:movie-mentor-canonical-schema-settlement-authority
