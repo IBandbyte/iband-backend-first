@@ -288,7 +288,12 @@ function createMovieMentorProviderOperationAuthority({
         currentProviderModel: currentModel,
       });
     }
-    return operationEvidence(durable, { dispatchAuthorized: true, currentTargetVerified: true, currentModelVerified: true });
+    return operationEvidence(durable, {
+      dispatchAuthorized: true,
+      currentTargetVerified: true,
+      currentModelVerified: true,
+      providerTarget: freeze({ ...normalizeMovieMentorProviderTarget(durable.providerTarget), dispatchModel: durableModel }),
+    });
   }
 
   return freeze({ bindOperation, bindReconstructionInput, readOperation, assertCurrentTarget });
