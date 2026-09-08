@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import "./verify-movie-mentor-recovered-lease-binding-authority.mjs";
+import "./verify-movie-mentor-recovered-lease-binding-backend-ci-authority.mjs";
 
 console.log("Movie Mentor recovered provider model Backend CI jurisdiction court");
 
