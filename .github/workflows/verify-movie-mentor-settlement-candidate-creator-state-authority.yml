@@ -1,0 +1,27 @@
+name: Verify Movie Mentor Settlement Candidate Creator State Authority
+
+on:
+  pull_request:
+    paths:
+      - "ai/MovieMentorInferenceSettlementMongoStore.js"
+      - "ai/MovieMentorResultCandidateMongoStore.js"
+      - "scripts/verify-movie-mentor-settlement-candidate-creator-state-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-settlement-candidate-creator-state-authority.yml"
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Syntax check settlement candidate creator-state authority
+        run: |
+          node --check ai/MovieMentorInferenceSettlementMongoStore.js
+          node --check ai/MovieMentorResultCandidateMongoStore.js
+          node --check scripts/verify-movie-mentor-settlement-candidate-creator-state-authority.mjs
+      - name: Verify settlement candidate creator-state authority
+        run: node scripts/verify-movie-mentor-settlement-candidate-creator-state-authority.mjs

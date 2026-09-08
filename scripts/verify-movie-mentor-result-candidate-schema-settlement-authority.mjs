@@ -31,6 +31,9 @@ const execution = {
   projectId: "project-schema-2",
   reservationId: "reservation-schema-2",
   requestDigest: "request-schema-2",
+  leaseGeneration: 7,
+  leaseReference: "lease-schema-2",
+  fencingToken: "fence-schema-2",
   closureReference: "closure-schema-2",
   closureCertificateDigest: "closure-digest-schema-2",
   finalizedResultReference: "deliberately-wrong-result-reference",
@@ -66,6 +69,15 @@ const candidate = {
   requestDigest: execution.requestDigest,
   resultDigest,
   resultPayload: payload,
+  stagedFromLeaseGeneration: execution.leaseGeneration,
+  stagedFromLeaseReference: execution.leaseReference,
+  stagedFromFencingToken: execution.fencingToken,
+  creatorStateRevision: 11,
+  creatorStateGeneration: 12,
+  creatorStateFingerprint: "creator-state-fingerprint-schema-2",
+  creatorStateOwnershipRef: "creator-state-ownership-schema-2",
+  creatorStateOwnershipRevision: 13,
+  stagedAt: new Date("2031-12-31T23:59:59.000Z"),
 };
 
 const rows = new Map([
@@ -95,10 +107,10 @@ const outcome = await store.settleCanonicalResult({ executionId: execution.execu
 assert.equal(
   outcome.reason,
   "canonical-result-finalization-binding-invalid",
-  `current schema-${candidateStatus.schema} result candidate must cross settlement candidate validation and reach the deliberately later finalization fence; got ${outcome.reason}`,
+  `current schema-${candidateStatus.schema} proof-bearing result candidate must cross settlement candidate validation and reach the deliberately later finalization fence; got ${outcome.reason}`,
 );
 
-console.log("✓ settlement accepts the exact result-candidate schema emitted by the current candidate store");
+console.log("✓ settlement accepts the exact proof-bearing result-candidate schema emitted by the current candidate store");
 console.log("✓ verifier reaches the later finalization fence, proving candidate-schema validation did not reject current durable reality");
 console.log("LAW: CURRENT DURABLE SCHEMA MUST CROSS EVERY IRREVERSIBLE BOUNDARY OR THE GATE FAILS CLOSED");
 console.log("5A.27 result-candidate schema settlement authority torture: GREEN");
