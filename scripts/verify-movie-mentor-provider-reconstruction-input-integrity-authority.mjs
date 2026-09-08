@@ -35,6 +35,7 @@ const authority = createMovieMentorProviderOperationAuthority({
   store,
   now: () => new Date("2032-01-01T00:00:00.000Z"),
   resolveCurrentTarget: () => describeCurrentMovieMentorProviderTarget({ env: {} }),
+  resolveCurrentModel: () => "model-reconstruction-input-integrity",
 });
 
 const providerCall = Object.freeze({

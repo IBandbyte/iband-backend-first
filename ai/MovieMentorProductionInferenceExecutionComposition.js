@@ -11,7 +11,7 @@ import { createMovieMentorCanonicalResultMongoStore, getMovieMentorCanonicalResu
 import { createMovieMentorCanonicalResultAuthority } from "./MovieMentorCanonicalResultAuthority.js";
 import { createMovieMentorResultCandidateMongoStore, getMovieMentorResultCandidateMongoStoreStatus, MOVIE_MENTOR_RESULT_CANDIDATE_CREATOR_STATE_ATOMIC_FENCE } from "./MovieMentorResultCandidateMongoStore.js";
 
-const VERSION="1.20.0";
+const VERSION="1.21.0";
 const DOMAIN="iband.movie-mentor.production-inference-execution-composition";
 const EXECUTION_CAS="reservation-binding-active-closure-frozen-universe-provider-reality-revision-finalized-result-binding-and-atomic-abort";
 const EFFECT_SERIALIZATION="execution-providerEffectRealityRevision";
@@ -29,7 +29,7 @@ function ownedStatus(store){
 }
 function executionCapabilityProven(status){return status?.configured===true&&status?.durable===true&&status?.cas===EXECUTION_CAS;}
 function effectCapabilityProven(status){return status?.configured===true&&status?.cas==="revision"&&status?.crossLedgerSerialization===EFFECT_SERIALIZATION;}
-function operationCapabilityProven(status){return status?.configured===true&&status?.durable===true&&status?.immutableProviderTarget===true&&status?.immutableReconstructionInput===true&&status?.reconstructionInputBoundBeforeUnknownCapable===true&&status?.recoveryIdentity===OPERATION_RECOVERY_IDENTITY;}
+function operationCapabilityProven(status){return status?.configured===true&&status?.durable===true&&status?.immutableProviderTarget===true&&status?.immutableProviderModel===true&&status?.immutableReconstructionInput===true&&status?.reconstructionInputBoundBeforeUnknownCapable===true&&status?.recoveryIdentity===OPERATION_RECOVERY_IDENTITY;}
 function resultCapabilityProven(status){return status?.configured===true&&status?.candidateLineage===RESULT_LINEAGE&&status?.resultFinalization===RESULT_FINALIZATION&&status?.finalizationFreshnessFence===RESULT_FRESHNESS;}
 function candidateCapabilityProven(status){return status?.configured===true&&status?.authority===CANDIDATE_AUTHORITY&&status?.atomicFence===CANDIDATE_FENCE&&status?.creatorStateAtomicFence===MOVIE_MENTOR_RESULT_CANDIDATE_CREATOR_STATE_ATOMIC_FENCE&&status?.legacySchemaAuthority===false;}
 function isMovieMentorProductionInferenceExecutionOwnerProof(composition,status){return Boolean(composition&&status&&ownedCompositionProofs.get(composition)===status&&composition.status===status&&typeof composition.getStatus==="function"&&composition.getStatus()===status);}
@@ -44,6 +44,7 @@ function ownedComposition({reason,authority,storeStatus,effectStoreStatus=null,o
     providerEffectStoreProvenanceRequired:fullExecutionAuthority===true,
     providerOperationStoreProvenanceRequired:fullExecutionAuthority===true,
     providerOperationTargetImmutableBeforeUnknownRequired:fullExecutionAuthority===true,
+    providerOperationModelImmutableBeforeUnknownRequired:fullExecutionAuthority===true,
     providerReconstructionInputImmutableBeforeUnknownRequired:fullExecutionAuthority===true,
     providerEffectEvidenceOperationBindingRequired:fullExecutionAuthority===true,
     providerOutcomeRecoveryAuthorityRequired:fullExecutionAuthority===true,
@@ -198,7 +199,7 @@ function createMovieMentorProductionInferenceExecutionComposition({store=null,ef
       readCanonicalResult:resultAuthority.readResult,
     });
     return ownedComposition({
-      reason:"durable-inference-execution-provider-operation-target-reconstruction-input-provider-effect-evidence-operation-binding-current-lease-provider-outcome-recovery-provider-effect-closure-atomic-finalized-result-candidate-lineage-current-creator-state-atomic-fence-current-reality-and-result-authority-composed",
+      reason:"durable-inference-execution-provider-operation-target-model-reconstruction-input-provider-effect-evidence-operation-binding-current-lease-provider-outcome-recovery-provider-effect-closure-atomic-finalized-result-candidate-lineage-current-creator-state-atomic-fence-current-reality-and-result-authority-composed",
       authority,
       storeStatus:status,
       effectStoreStatus:effectStatus,

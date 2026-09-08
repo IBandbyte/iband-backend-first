@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
-import { normalizeMovieMentorProviderTarget } from "./MovieMentorProviderTargetAuthority.js";
+import { normalizeMovieMentorProviderModel, normalizeMovieMentorProviderTarget } from "./MovieMentorProviderTargetAuthority.js";
 
-const VERSION = "1.1.0";
+const VERSION = "1.2.0";
 const DOMAIN = "iband.movie-mentor.provider-operation-reality";
 const SCHEMA = 1;
 const COLLECTION = "movie_mentor_provider_operation_reality";
@@ -53,6 +53,7 @@ function getModel() {
     slotId: { type: String, required: true, immutable: true, trim: true },
     task: { type: String, required: true, immutable: true, trim: true },
     providerTarget: { type: providerTargetSchema, required: true, immutable: true },
+    providerModel: { type: String, default: null, immutable: true, trim: true },
     boundAt: { type: Date, required: true, immutable: true },
     reconstructionInputDigest: { type: String, default: null, immutable: true, trim: true },
     reconstructionInput: { type: mongoose.Schema.Types.Mixed, default: null, immutable: true },
@@ -97,6 +98,10 @@ function normalize(record) {
   ) {
     fail("MOVIE_MENTOR_PROVIDER_OPERATION_RECORD_INVALID", "Durable provider operation identity is malformed.");
   }
+  const providerTarget = normalizeMovieMentorProviderTarget(value.providerTarget);
+  const providerModel = value.providerModel == null
+    ? null
+    : normalizeMovieMentorProviderModel(value.providerModel, { provider: providerTarget.provider });
   const reconstructionInputDigest = text(value.reconstructionInputDigest) || null;
   const reconstructionInputBoundAt = value.reconstructionInputBoundAt ? iso(value.reconstructionInputBoundAt) : null;
   if ((reconstructionInputDigest && !reconstructionInputBoundAt) || (!reconstructionInputDigest && reconstructionInputBoundAt)) {
@@ -107,7 +112,8 @@ function normalize(record) {
     executionId: text(value.executionId),
     slotId: text(value.slotId),
     task: text(value.task),
-    providerTarget: normalizeMovieMentorProviderTarget(value.providerTarget),
+    providerTarget,
+    providerModel,
     boundAt: iso(value.boundAt),
     reconstructionInputDigest,
     reconstructionInput: reconstructionInputDigest ? clone(value.reconstructionInput) : null,
@@ -136,6 +142,8 @@ function createMovieMentorProviderOperationMongoStore({ mongoModel = null, conne
 
   async function bindOperation(input = {}) {
     await ready();
+    const providerTarget = normalizeMovieMentorProviderTarget(input.providerTarget);
+    const providerModel = normalizeMovieMentorProviderModel(input.providerModel, { provider: providerTarget.provider });
     const candidate = {
       domain: DOMAIN,
       schema: SCHEMA,
@@ -143,7 +151,8 @@ function createMovieMentorProviderOperationMongoStore({ mongoModel = null, conne
       executionId: text(input.executionId),
       slotId: text(input.slotId),
       task: text(input.task),
-      providerTarget: normalizeMovieMentorProviderTarget(input.providerTarget),
+      providerTarget,
+      providerModel,
       boundAt: new Date(input.boundAt),
     };
     if (
@@ -221,6 +230,7 @@ function getMovieMentorProviderOperationMongoStoreStatus() {
     configured,
     durable: configured,
     immutableProviderTarget: true,
+    immutableProviderModel: true,
     immutableReconstructionInput: true,
     reconstructionInputBoundBeforeUnknownCapable: true,
     recoveryIdentity: "provider-adapter-route-fingerprint-recovery-mode",
