@@ -18,62 +18,51 @@ const call = Object.freeze({
   fencingToken: "fence-evidence-binding",
   admittedAt: "2026-09-08T00:00:00.000Z",
 });
+const exactOperation = Object.freeze({
+  providerOperationId: call.providerCallId,
+  executionId: call.executionId,
+  slotId: call.slotId,
+  task: call.task,
+});
 
 let reality = null;
+let appendCount = 0;
 const store = {
   async readEffect() { return reality ? structuredClone(reality) : null; },
   async beginUnknown(input) {
-    reality = {
-      providerCallId: input.providerCallId,
-      executionId: input.executionId,
-      slotId: input.slotId,
-      task: input.task,
-      state: "unknown",
-      dispatchUnknownAt: input.dispatchUnknownAt,
-      evidence: [],
-    };
+    reality = { providerCallId: input.providerCallId, executionId: input.executionId, slotId: input.slotId, task: input.task, state: "unknown", dispatchUnknownAt: input.dispatchUnknownAt, evidence: [] };
     return structuredClone(reality);
   },
   async appendEvidence(input) {
-    reality = {
-      ...reality,
-      state: "confirmed",
-      evidence: [{
-        externalEffectId: input.externalEffectId,
-        provider: input.provider,
-        observedAt: input.observedAt,
-        source: input.source,
-      }],
-    };
+    appendCount += 1;
+    reality = { ...reality, state: "confirmed", evidence: [...reality.evidence, { externalEffectId: input.externalEffectId, provider: input.provider, observedAt: input.observedAt, source: input.source }] };
     return structuredClone(reality);
   },
 };
-
-const authority = createMovieMentorProviderEffectAuthority({
-  store,
-  now: () => new Date("2026-09-08T00:00:01.000Z"),
-});
-
+const authority = createMovieMentorProviderEffectAuthority({ store, now: () => new Date("2026-09-08T00:00:01.000Z"), requireEvidenceOperationBinding: true });
 await authority.beginDispatch({ providerCall: call });
 
 await assert.rejects(
-  () => authority.contributeEvidence({
-    providerCallId: call.providerCallId,
-    externalEffectId: "resp-known",
-    provider: "openai",
-    source: "provider-response",
-    providerOperation: {
-      providerOperationId: "different-provider-call",
-      executionId: call.executionId,
-      slotId: call.slotId,
-      task: call.task,
-    },
-  }),
-  (error) => error?.code === "MOVIE_MENTOR_PROVIDER_EFFECT_OPERATION_BINDING_INVALID",
-  "provider evidence must not become durable authority when the supplied provider operation belongs to a different provider-call universe",
+  () => authority.contributeEvidence({ providerCallId: call.providerCallId, externalEffectId: "resp-missing-operation", provider: "openai", source: "provider-response" }),
+  (error) => error?.code === "MOVIE_MENTOR_PROVIDER_EFFECT_OPERATION_BINDING_REQUIRED",
+  "production evidence authority must reject caller-supplied effect identity without its durable provider operation",
 );
+assert.equal(appendCount, 0, "missing provider-operation authority must fail before durable mutation");
 
-assert.equal(reality.state, "unknown", "mismatched provider-operation evidence must not mutate durable effect reality");
-assert.deepEqual(reality.evidence, [], "mismatched provider-operation evidence must not be appended");
+await assert.rejects(
+  () => authority.contributeEvidence({ providerCallId: call.providerCallId, externalEffectId: "resp-wrong-operation", provider: "openai", source: "provider-response", providerOperation: { ...exactOperation, providerOperationId: "different-provider-call" } }),
+  (error) => error?.code === "MOVIE_MENTOR_PROVIDER_EFFECT_OPERATION_BINDING_INVALID",
+  "mismatched provider operation must be structurally rejected",
+);
+assert.equal(appendCount, 0, "mismatched provider-operation evidence must fail before durable mutation");
+assert.equal(reality.state, "unknown");
+assert.deepEqual(reality.evidence, []);
+
+const accepted = await authority.contributeEvidence({ providerCallId: call.providerCallId, externalEffectId: "resp-known", provider: "openai", source: "provider-response", providerOperation: exactOperation });
+assert.equal(accepted.accepted, true);
+assert.equal(accepted.providerOperationBound, true);
+assert.equal(appendCount, 1);
+assert.equal(reality.state, "confirmed");
+assert.equal(reality.evidence[0].externalEffectId, "resp-known");
 
 console.log("Movie Mentor provider evidence operation-binding authority: GREEN");
