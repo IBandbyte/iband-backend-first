@@ -6,12 +6,14 @@ on:
       - "ai/MovieMentorProviderOperationMongoStore.js"
       - "ai/MovieMentorProviderOperationAuthority.js"
       - "scripts/verify-movie-mentor-durable-null-model-authority.mjs"
+      - "scripts/verify-movie-mentor-provider-model-backend-ci-authority.mjs"
       - ".github/workflows/verify-movie-mentor-durable-null-model-authority.yml"
   pull_request:
     paths:
       - "ai/MovieMentorProviderOperationMongoStore.js"
       - "ai/MovieMentorProviderOperationAuthority.js"
       - "scripts/verify-movie-mentor-durable-null-model-authority.mjs"
+      - "scripts/verify-movie-mentor-provider-model-backend-ci-authority.mjs"
       - ".github/workflows/verify-movie-mentor-durable-null-model-authority.yml"
   workflow_dispatch:
 
@@ -28,4 +30,5 @@ jobs:
       - run: node --check ai/MovieMentorProviderOperationMongoStore.js
       - run: node --check ai/MovieMentorProviderOperationAuthority.js
       - run: node --check scripts/verify-movie-mentor-durable-null-model-authority.mjs
+      - run: node --check scripts/verify-movie-mentor-provider-model-backend-ci-authority.mjs
       - run: node scripts/verify-movie-mentor-durable-null-model-authority.mjs
