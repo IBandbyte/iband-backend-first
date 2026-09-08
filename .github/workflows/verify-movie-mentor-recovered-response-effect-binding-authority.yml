@@ -1,0 +1,27 @@
+name: Verify Movie Mentor Recovered Response Effect Binding Authority
+
+on:
+  push:
+    paths:
+      - "ai/MovieMentorRecoveredProviderResultAuthority.js"
+      - "scripts/verify-movie-mentor-recovered-response-effect-binding-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-recovered-response-effect-binding-authority.yml"
+  pull_request:
+    paths:
+      - "ai/MovieMentorRecoveredProviderResultAuthority.js"
+      - "scripts/verify-movie-mentor-recovered-response-effect-binding-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-recovered-response-effect-binding-authority.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund --ignore-scripts
+      - run: node --check ai/MovieMentorRecoveredProviderResultAuthority.js
+      - run: node --check scripts/verify-movie-mentor-recovered-response-effect-binding-authority.mjs
+      - run: node scripts/verify-movie-mentor-recovered-response-effect-binding-authority.mjs
