@@ -10,7 +10,7 @@ import { recoverPreviouslyAdmittedProviderResult } from "./MovieMentorRecoveredP
 import { reconstructRecoveredMovieMentorSemanticResult } from "./MovieMentorRecoveredSemanticResult.js";
 import { reconstructRecoveredMovieMentorSpecialistResult, reconstructRecoveredMovieMentorSynthesisResult } from "./MovieMentorRecoveredTaskResult.js";
 
-const MOVIE_MENTOR_TURN_RUNTIME_VERSION = "2.14.0";
+const MOVIE_MENTOR_TURN_RUNTIME_VERSION = "2.15.0";
 const s = (value) => (typeof value === "string" ? value.trim() : "");
 
 function clone(value) {
@@ -334,12 +334,30 @@ function createFencedInferenceOrchestrationDeps({ execution, inferenceExecutionA
     const providerTarget = currentOperation?.providerTarget && typeof currentOperation.providerTarget === "object"
       ? Object.freeze(clone(currentOperation.providerTarget))
       : null;
+    const providerModelAuthorityBound = currentOperation?.currentModelVerified === true;
+    const providerModel = providerModelAuthorityBound
+      ? (Object.prototype.hasOwnProperty.call(currentOperation, "providerModel") ? currentOperation.providerModel : undefined)
+      : undefined;
+    if (providerModelAuthorityBound) {
+      const targetCarriesModelAuthority = Boolean(
+        providerTarget && Object.prototype.hasOwnProperty.call(providerTarget, "dispatchModel"),
+      );
+      if (!Object.prototype.hasOwnProperty.call(currentOperation, "providerModel") || !targetCarriesModelAuthority || providerModel !== providerTarget.dispatchModel) {
+        throw runtimeError(
+          "MOVIE_MENTOR_PROVIDER_MODEL_AUTHORITY_CONFLICT",
+          "Current provider-model authority does not match the exact model bound into the current provider target.",
+          { providerCallId: s(decision?.providerCallId) || null },
+        );
+      }
+    }
     const providerOperation = Object.freeze({
       providerOperationId: s(currentOperation?.providerOperationId || currentOperation?.providerCallId || decision.providerCallId),
       executionId: s(currentOperation?.executionId || decision.executionId),
       slotId: s(currentOperation?.slotId || decision.slotId || slotId),
       task: s(currentOperation?.task || decision.task || task),
       ...(providerTarget ? { providerTarget } : {}),
+      providerModelAuthorityBound,
+      ...(providerModelAuthorityBound ? { providerModel } : {}),
     });
     if (!providerOperation.providerOperationId || !providerOperation.executionId || !providerOperation.slotId || !providerOperation.task) {
       throw runtimeError(
