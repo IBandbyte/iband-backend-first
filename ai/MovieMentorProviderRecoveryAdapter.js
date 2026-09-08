@@ -8,7 +8,7 @@ import {
   sameMovieMentorProviderTarget,
 } from "./MovieMentorProviderTargetAuthority.js";
 
-const VERSION = "1.2.0";
+const VERSION = "1.3.0";
 const DOMAIN = "iband.movie-mentor.provider-recovery-adapter";
 
 function text(value) {
@@ -34,7 +34,6 @@ function retrievalUrl(baseUrl, externalEffectId) {
   }
   parsed.username = "";
   parsed.password = "";
-  parsed.search = "";
   parsed.hash = "";
   parsed.pathname = `${parsed.pathname.replace(/\/+$/, "")}/${encodeURIComponent(externalEffectId)}`;
   return parsed.toString();
