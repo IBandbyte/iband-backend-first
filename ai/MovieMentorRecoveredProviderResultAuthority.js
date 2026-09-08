@@ -1,6 +1,6 @@
 import { digestMovieMentorProviderReconstructionInput } from "./MovieMentorProviderOperationAuthority.js";
 
-const VERSION = "1.3.0";
+const VERSION = "1.4.0";
 const DOMAIN = "iband.movie-mentor.recovered-provider-result-authority";
 
 function text(value) {
@@ -120,6 +120,21 @@ function assertRecoveredOutcomeBinding({ recovery, historical } = {}) {
     );
   }
 
+  const externalEffectId = text(recovery?.externalEffectId);
+  const recoveredResponseId = text(recovery?.recoveredProviderResponse?.id);
+  if (!externalEffectId || !recoveredResponseId || recoveredResponseId !== externalEffectId) {
+    fail(
+      "MOVIE_MENTOR_PROVIDER_RECOVERY_RESPONSE_EFFECT_BINDING_INVALID",
+      "Recovered provider bytes do not bind the exact authorized historical external effect.",
+      {
+        retryable: false,
+        providerCallId: historical.providerCallId,
+        externalEffectId: externalEffectId || null,
+        recoveredResponseId: recoveredResponseId || null,
+      },
+    );
+  }
+
   return freeze({
     providerCallId: historical.providerCallId,
     executionId: historical.executionId,
@@ -130,7 +145,7 @@ function assertRecoveredOutcomeBinding({ recovery, historical } = {}) {
     recoveryLeaseGeneration: Number.isSafeInteger(recovery?.recoveryLeaseGeneration)
       ? recovery.recoveryLeaseGeneration
       : null,
-    externalEffectId: text(recovery?.externalEffectId) || null,
+    externalEffectId,
   });
 }
 
