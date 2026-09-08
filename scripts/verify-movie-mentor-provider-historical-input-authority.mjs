@@ -7,6 +7,13 @@ console.log("Movie Mentor provider historical-input authority court");
 const executionId = "execution-historical-input-all-tasks";
 const currentInput = Object.freeze({ universe: "CURRENT-B", creatorStateRevision: 9 });
 const historicalInput = Object.freeze({ universe: "HISTORICAL-A", creatorStateRevision: 8 });
+const providerModel = "gpt-test";
+const providerTarget = Object.freeze({
+  provider: "openai",
+  adapter: "openai-responses",
+  routeFingerprint: "a".repeat(64),
+  recoveryMode: "known-response-id-retrieval",
+});
 
 function historical(task, slotId) {
   return Object.freeze({
@@ -17,21 +24,28 @@ function historical(task, slotId) {
   });
 }
 
+function durableOperation(operation, reconstructionInputDigest, reconstructionInput) {
+  return Object.freeze({
+    authorized: true,
+    providerCallId: operation.providerCallId,
+    providerOperationId: operation.providerCallId,
+    executionId: operation.executionId,
+    slotId: operation.slotId,
+    task: operation.task,
+    providerTarget,
+    providerModel,
+    reconstructionInputDigest,
+    reconstructionInput,
+  });
+}
+
 async function expectMissingHistoricalInputRejected(task, slotId) {
   const operation = historical(task, slotId);
   await assert.rejects(
     () => resolveHistoricalReconstructionInput({
       historical: operation,
       currentInput,
-      readProviderOperation: async () => Object.freeze({
-        authorized: true,
-        providerCallId: operation.providerCallId,
-        executionId: operation.executionId,
-        slotId: operation.slotId,
-        task: operation.task,
-        reconstructionInputDigest: null,
-        reconstructionInput: null,
-      }),
+      readProviderOperation: async () => durableOperation(operation, null, null),
     }),
     (error) => error?.code === "MOVIE_MENTOR_PROVIDER_RECOVERY_INPUT_AUTHORITY_REQUIRED",
     `${task} must fail closed rather than borrow current input when historical input is absent`,
@@ -42,15 +56,11 @@ const semantic = historical("movie-mentor-semantic", "semantic");
 const resolved = await resolveHistoricalReconstructionInput({
   historical: semantic,
   currentInput,
-  readProviderOperation: async () => Object.freeze({
-    authorized: true,
-    providerCallId: semantic.providerCallId,
-    executionId: semantic.executionId,
-    slotId: semantic.slotId,
-    task: semantic.task,
-    reconstructionInputDigest: digestMovieMentorProviderReconstructionInput(historicalInput),
-    reconstructionInput: historicalInput,
-  }),
+  readProviderOperation: async () => durableOperation(
+    semantic,
+    digestMovieMentorProviderReconstructionInput(historicalInput),
+    historicalInput,
+  ),
 });
 assert.deepEqual(resolved, historicalInput, "durable historical input must outrank today's reconstructed input universe");
 assert.notDeepEqual(resolved, currentInput);
