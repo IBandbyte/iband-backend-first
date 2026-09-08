@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
+import fs from "node:fs";
 import { createMovieMentorCanonicalResultMongoStore } from "../ai/MovieMentorCanonicalResultMongoStore.js";
-import { getMovieMentorInferenceExecutionMongoStoreStatus } from "../ai/MovieMentorInferenceExecutionMongoStore.js";
 
 const stable=value=>{if(Array.isArray(value))return value.map(stable);if(value&&typeof value==="object"){const out={};for(const key of Object.keys(value).sort())out[key]=stable(value[key]);return out;}return value;};
 const digest=value=>crypto.createHash("sha256").update(JSON.stringify(stable(value))).digest("hex");
-const executionStatus=getMovieMentorInferenceExecutionMongoStoreStatus();
-assert.equal(executionStatus.schema,6,"court must track the current inference execution schema");
+const executionSource=fs.readFileSync(new URL("../ai/MovieMentorInferenceExecutionMongoStore.js",import.meta.url),"utf8");
+const schemaMatch=executionSource.match(/const VERSION="[^"]+",DOMAIN="iband\.movie-mentor\.inference-execution-store",SCHEMA=(\d+)/);
+assert.ok(schemaMatch,"court must locate the current durable inference execution schema");
+const currentSchema=Number(schemaMatch[1]);
+assert.equal(currentSchema,6,"court is intentionally anchored to the current durable execution schema");
 const payload={success:true,mentorResponse:{text:"Only current execution schema may acquire FINALIZED authority."}},resultDigest=digest(payload);
 
 async function attempt(schema){
@@ -23,12 +26,12 @@ async function attempt(schema){
   catch(error){return{ok:false,error,executionRow};}
 }
 
-const current=await attempt(6);
-assert.equal(current.ok,true,"current execution schema 6 must cross CLOSED -> FINALIZED");
+const current=await attempt(currentSchema);
+assert.equal(current.ok,true,`current execution schema ${currentSchema} must cross CLOSED -> FINALIZED`);
 assert.equal(current.executionRow.phase,"finalized");
 
-const legacy=await attempt(5);
-assert.equal(legacy.ok,false,"legacy execution schema 5 must fail closed before acquiring FINALIZED authority");
+const legacy=await attempt(currentSchema-1);
+assert.equal(legacy.ok,false,`legacy execution schema ${currentSchema-1} must fail closed before acquiring FINALIZED authority`);
 assert.equal(legacy.error?.code,"MOVIE_MENTOR_CANONICAL_RESULT_EXECUTION_NOT_CLOSED");
 assert.equal(legacy.executionRow.phase,"closed","legacy execution must not be promoted to FINALIZED");
 
