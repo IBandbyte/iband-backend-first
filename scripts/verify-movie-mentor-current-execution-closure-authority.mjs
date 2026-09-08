@@ -14,7 +14,7 @@ function fakeModel(initial){
     findOne(){return chain(row);},
     findOneAndUpdate(filter,update){
       const matches=Object.entries(filter).every(([k,v])=>{if(k==="leaseExpiresAt"&&v?.$gt)return new Date(row[k])>new Date(v.$gt);if(k==="leaseExpiresAt"&&v?.$lte)return new Date(row[k])<=new Date(v.$lte);return row[k]===v;});
-      if(matches){writes+=1;row={...row,...structuredClone(update.$set||{})};
+      if(matches){writes+=1;row={...row,...structuredClone(update.$set||{})};}
       return chain(matches?row:null);
     }
   };
@@ -29,7 +29,6 @@ async function beginClosingCase(schema){
 
 const current=await beginClosingCase(6);
 const legacy=await beginClosingCase(5);
-
 const frozenDigest=digest([]),closureReference="closure-legacy-closed";
 const certificate={executionId:"execution-legacy-closed",creatorTurnId:"turn-legacy-closed",principalId:"creator-legacy-closed",projectId:"project-legacy-closed",reservationId:"reservation-legacy-closed",requestDigest:"request-legacy-closed",closureReference,frozenProviderCallSetDigest:frozenDigest,closurePolicyVersion:MOVIE_MENTOR_INFERENCE_EXECUTION_CLOSURE_POLICY_VERSION,realities:[]};
 const legacyClosed={...base,schema:5,executionId:certificate.executionId,creatorTurnId:certificate.creatorTurnId,principalId:certificate.principalId,projectId:certificate.projectId,reservationId:certificate.reservationId,requestDigest:certificate.requestDigest,phase:"closed",closureReference,frozenProviderCallCount:0,frozenProviderCallSetDigest:frozenDigest,closingAt:new Date("2032-01-01T00:01:00.000Z"),closedFromExecutionGeneration:3,closurePolicyVersion:MOVIE_MENTOR_INFERENCE_EXECUTION_CLOSURE_POLICY_VERSION,closureCertificateDigest:digest(certificate),closedAt:new Date("2032-01-01T00:02:00.000Z")};
