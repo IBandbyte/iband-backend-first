@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createFencedInferenceOrchestrationDeps } from "../ai/MovieMentorTurnRuntime.js";
+import { normalizeProviderOperation } from "../ai/StructuredAIProviderClient.js";
 
 const providerCall = Object.freeze({
   dispatchAuthorized: true,
@@ -69,14 +70,21 @@ await deps.interpretSemantics({ message: "prove null model propagation" });
 
 assert.ok(observedProviderOperation, "runtime must pass provider operation identity to the provider adapter boundary");
 assert.equal(observedProviderOperation.providerOperationId, providerCall.providerCallId);
-assert.equal(observedProviderOperation.providerTarget.dispatchModel, null);
-assert.equal(
-  observedProviderOperation.providerModelAuthorityBound,
-  true,
-  "an explicitly authorized null model must cross the runtime boundary as owned model authority rather than disappearing into absence",
+assert.ok(
+  Object.prototype.hasOwnProperty.call(observedProviderOperation.providerTarget, "dispatchModel"),
+  "runtime must preserve the model-authority field even when its authorized value is null",
 );
-assert.equal(observedProviderOperation.providerModel, null);
+assert.equal(observedProviderOperation.providerTarget.dispatchModel, null);
 
-console.log("✓ runtime preserves explicit null-model authority through the provider-operation envelope");
+const socketOperation = normalizeProviderOperation(observedProviderOperation);
+assert.equal(
+  socketOperation.providerModelAuthorityBound,
+  true,
+  "provider socket must distinguish an explicitly authorized null model from missing model authority",
+);
+assert.equal(socketOperation.providerModel, null);
+
+console.log("✓ runtime preserves explicit null-model authority through the provider target envelope");
+console.log("✓ provider socket recognizes that explicit null as owned model authority");
 console.log("LAW: NULL MAY BE THE AUTHORIZED VALUE. ABSENCE OF PROOF IS NOT THE SAME THING.");
 console.log("Movie Mentor provider null-model runtime propagation gate: GREEN");
