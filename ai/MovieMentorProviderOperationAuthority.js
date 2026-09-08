@@ -8,7 +8,7 @@ import {
   sameMovieMentorProviderTarget,
 } from "./MovieMentorProviderTargetAuthority.js";
 
-const VERSION = "1.4.0";
+const VERSION = "1.5.0";
 const DOMAIN = "iband.movie-mentor.provider-operation-authority";
 
 function text(value) {
@@ -39,6 +39,17 @@ function fail(code, message, extras = {}) {
   error.code = code;
   Object.assign(error, extras);
   throw error;
+}
+
+function assertExplicitProviderModelAuthority(record = {}) {
+  if (!Object.prototype.hasOwnProperty.call(record, "providerModel") || record.providerModel === undefined) {
+    fail(
+      "MOVIE_MENTOR_PROVIDER_OPERATION_MODEL_AUTHORITY_ABSENT",
+      "Provider operation is missing explicit durable provider-model authority; absence may not be normalized into null.",
+      { providerCallId: text(record?.providerCallId) || null },
+    );
+  }
+  return true;
 }
 
 function instant(value) {
@@ -126,9 +137,10 @@ function assertReconstructionInputIntegrity(record = {}) {
 }
 
 function operationEvidence(record, extras = {}) {
+  assertExplicitProviderModelAuthority(record);
   const inputIntegrity = assertReconstructionInputIntegrity(record);
   const providerTarget = normalizeMovieMentorProviderTarget(record.providerTarget);
-  const providerModel = record.providerModel == null
+  const providerModel = record.providerModel === null
     ? null
     : normalizeMovieMentorProviderModel(record.providerModel, { provider: providerTarget.provider });
   return freeze({
@@ -189,6 +201,7 @@ function createMovieMentorProviderOperationAuthority({
     if (!sameBinding(durable, binding)) {
       fail("MOVIE_MENTOR_PROVIDER_OPERATION_IDENTITY_CONFLICT", "Provider operation identity is bound to a different durable provider-call universe.");
     }
+    assertExplicitProviderModelAuthority(durable);
     if (!sameMovieMentorProviderTarget(durable.providerTarget, providerTarget)) {
       fail(
         "MOVIE_MENTOR_PROVIDER_OPERATION_TARGET_CONFLICT",
@@ -253,6 +266,7 @@ function createMovieMentorProviderOperationAuthority({
     if (!sameBinding(durable, binding)) {
       return freeze({ authorized: false, dispatchAuthorized: false, reason: "provider-operation-identity-conflict", providerCallId: binding.providerCallId });
     }
+    assertExplicitProviderModelAuthority(durable);
     const currentTarget = normalizeMovieMentorProviderTarget(resolveCurrentTarget());
     if (!sameMovieMentorProviderTarget(durable.providerTarget, currentTarget)) {
       return freeze({
@@ -264,7 +278,7 @@ function createMovieMentorProviderOperationAuthority({
         currentProviderTarget: currentTarget,
       });
     }
-    const durableModel = durable.providerModel == null
+    const durableModel = durable.providerModel === null
       ? null
       : normalizeMovieMentorProviderModel(durable.providerModel, { provider: currentTarget.provider });
     if (currentTarget.provider === "openai" && !durableModel) {
