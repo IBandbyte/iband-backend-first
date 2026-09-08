@@ -1,0 +1,21 @@
+name: Verify Movie Mentor Canonical Lineage Production Composition Authority
+on:
+  pull_request:
+    paths:
+      - "ai/MovieMentorProductionInferenceExecutionComposition.js"
+      - "ai/MovieMentorCanonicalResultMongoStore.js"
+      - "scripts/verify-movie-mentor-canonical-lineage-composition-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-canonical-lineage-composition-authority.yml"
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - run: node --check ai/MovieMentorProductionInferenceExecutionComposition.js
+      - run: node --check scripts/verify-movie-mentor-canonical-lineage-composition-authority.mjs
+      - run: node scripts/verify-movie-mentor-canonical-lineage-composition-authority.mjs

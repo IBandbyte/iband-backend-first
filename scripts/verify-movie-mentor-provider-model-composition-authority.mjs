@@ -20,3 +20,6 @@ console.log("✓ production composition requires immutable provider-model capabi
 console.log("✓ composition status exposes provider-model immutability as an owned requirement");
 console.log("LAW: A STORE MAY IMPLEMENT MODEL IMMUTABILITY. PRODUCTION COMPOSITION MUST REQUIRE IT BEFORE CLAIMING AUTHORITY.");
 console.log("Movie Mentor provider model production-composition authority: GREEN");
+
+// Backend CI owns the live production-composition compatibility court directly.
+await import("./verify-movie-mentor-canonical-lineage-composition-authority.mjs");
