@@ -23,6 +23,12 @@ const exactOperation = Object.freeze({
   executionId: call.executionId,
   slotId: call.slotId,
   task: call.task,
+  providerTarget: Object.freeze({
+    provider: "openai",
+    adapter: "openai-responses",
+    routeFingerprint: "a".repeat(64),
+    recoveryMode: "known-response-id-retrieval",
+  }),
 });
 
 let reality = null;
@@ -55,6 +61,13 @@ await assert.rejects(
   "mismatched provider operation must be structurally rejected",
 );
 assert.equal(appendCount, 0, "mismatched provider-operation evidence must fail before durable mutation");
+
+await assert.rejects(
+  () => authority.contributeEvidence({ providerCallId: call.providerCallId, externalEffectId: "resp-wrong-provider", provider: "generic-http", source: "provider-response", providerOperation: exactOperation }),
+  (error) => error?.code === "MOVIE_MENTOR_PROVIDER_EFFECT_PROVIDER_BINDING_INVALID",
+  "provider evidence must match the provider identity durably bound to the exact provider operation",
+);
+assert.equal(appendCount, 0, "wrong-provider evidence must fail before durable mutation");
 assert.equal(reality.state, "unknown");
 assert.deepEqual(reality.evidence, []);
 
@@ -64,5 +77,6 @@ assert.equal(accepted.providerOperationBound, true);
 assert.equal(appendCount, 1);
 assert.equal(reality.state, "confirmed");
 assert.equal(reality.evidence[0].externalEffectId, "resp-known");
+assert.equal(reality.evidence[0].provider, "openai");
 
 console.log("Movie Mentor provider evidence operation-binding authority: GREEN");
