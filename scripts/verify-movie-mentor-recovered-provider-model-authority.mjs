@@ -26,7 +26,11 @@ const decision = Object.freeze({
   existingProviderCallId: providerCallId,
   existingProviderCall: Object.freeze({ providerCallId, executionId, slotId, task }),
 });
-const execution = Object.freeze({ executionId });
+const execution = Object.freeze({
+  executionId,
+  ownerId: "worker-model-recovery",
+  leaseGeneration: 3,
+});
 const reconstructionInput = Object.freeze({ creatorMessage: "historical input" });
 const reconstructionInputDigest = crypto
   .createHash("sha256")
@@ -64,6 +68,8 @@ await recoverPreviouslyAdmittedProviderResult({
     task,
     externalEffectId: "resp-model-recovery-1",
     recoveredProviderResponse: Object.freeze({ id: "resp-model-recovery-1", model: historicalModel }),
+    recoveryOwnerId: execution.ownerId,
+    recoveryLeaseGeneration: execution.leaseGeneration,
   }),
   readProviderOperation: async () => operation,
   reconstructRecoveredResult: async ({ providerOperation }) => {
