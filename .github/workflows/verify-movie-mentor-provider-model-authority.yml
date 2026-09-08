@@ -9,6 +9,8 @@ on:
       - "ai/MovieMentorTurnRuntime.js"
       - "ai/StructuredAIProviderClient.js"
       - "scripts/verify-movie-mentor-provider-model-authority.mjs"
+      - "scripts/verify-movie-mentor-provider-model-backend-ci-authority.mjs"
+      - ".github/workflows/ci-backend.yml"
       - ".github/workflows/verify-movie-mentor-provider-model-authority.yml"
   pull_request:
     paths:
@@ -18,6 +20,8 @@ on:
       - "ai/MovieMentorTurnRuntime.js"
       - "ai/StructuredAIProviderClient.js"
       - "scripts/verify-movie-mentor-provider-model-authority.mjs"
+      - "scripts/verify-movie-mentor-provider-model-backend-ci-authority.mjs"
+      - ".github/workflows/ci-backend.yml"
       - ".github/workflows/verify-movie-mentor-provider-model-authority.yml"
 
 jobs:
@@ -30,5 +34,11 @@ jobs:
           node-version: 20
       - name: Install dependencies
         run: npm install --no-audit --no-fund --ignore-scripts
+      - run: node --check ai/MovieMentorProviderTargetAuthority.js
+      - run: node --check ai/MovieMentorProviderOperationAuthority.js
+      - run: node --check ai/MovieMentorProviderOperationMongoStore.js
+      - run: node --check ai/StructuredAIProviderClient.js
       - run: node --check scripts/verify-movie-mentor-provider-model-authority.mjs
+      - run: node --check scripts/verify-movie-mentor-provider-model-backend-ci-authority.mjs
       - run: node scripts/verify-movie-mentor-provider-model-authority.mjs
+      - run: node scripts/verify-movie-mentor-provider-model-backend-ci-authority.mjs
