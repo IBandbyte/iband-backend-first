@@ -1,10 +1,14 @@
 import {
   getStructuredAIProviderConfig,
   getStructuredAIProviderConfigurationIssues,
+  transportTargetFromConfig,
 } from "./StructuredAIProviderClient.js";
-import { normalizeMovieMentorProviderTarget } from "./MovieMentorProviderTargetAuthority.js";
+import {
+  normalizeMovieMentorProviderTarget,
+  sameMovieMentorProviderTarget,
+} from "./MovieMentorProviderTargetAuthority.js";
 
-const VERSION = "1.0.0";
+const VERSION = "1.1.0";
 const DOMAIN = "iband.movie-mentor.provider-recovery-adapter";
 
 function text(value) {
@@ -103,6 +107,20 @@ async function retrieveMovieMentorProviderResponse(request = {}) {
       "MOVIE_MENTOR_PROVIDER_RECOVERY_PROVIDER_NOT_CONFIGURED",
       "Current provider configuration cannot execute the historical OpenAI response retrieval mechanism.",
       { retryable: false, configurationIssues: issues },
+    );
+  }
+
+  let currentTarget = null;
+  try {
+    currentTarget = transportTargetFromConfig(config);
+  } catch {
+    currentTarget = null;
+  }
+  if (!currentTarget || !sameMovieMentorProviderTarget(providerTarget, currentTarget)) {
+    fail(
+      "MOVIE_MENTOR_PROVIDER_RECOVERY_TRANSPORT_TARGET_AUTHORITY_INVALID",
+      "Provider recovery transport no longer matches the exact historical provider target authorized for this durable operation.",
+      { retryable: false, providerOperationId },
     );
   }
 
