@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import { normalizeMovieMentorProviderModel, normalizeMovieMentorProviderTarget } from "./MovieMentorProviderTargetAuthority.js";
 
-const VERSION = "1.2.0";
+const VERSION = "1.3.0";
 const DOMAIN = "iband.movie-mentor.provider-operation-reality";
 const SCHEMA = 1;
 const COLLECTION = "movie_mentor_provider_operation_reality";
@@ -99,7 +99,14 @@ function normalize(record) {
     fail("MOVIE_MENTOR_PROVIDER_OPERATION_RECORD_INVALID", "Durable provider operation identity is malformed.");
   }
   const providerTarget = normalizeMovieMentorProviderTarget(value.providerTarget);
-  const providerModel = value.providerModel == null
+  if (!Object.prototype.hasOwnProperty.call(value, "providerModel") || value.providerModel === undefined) {
+    fail(
+      "MOVIE_MENTOR_PROVIDER_OPERATION_MODEL_AUTHORITY_ABSENT",
+      "Durable provider operation is missing explicit provider-model authority; absence may not be normalized into null.",
+      { providerCallId: text(value.providerCallId) || null },
+    );
+  }
+  const providerModel = value.providerModel === null
     ? null
     : normalizeMovieMentorProviderModel(value.providerModel, { provider: providerTarget.provider });
   const reconstructionInputDigest = text(value.reconstructionInputDigest) || null;
