@@ -1,0 +1,21 @@
+name: Verify Movie Mentor Execution Schema Runtime Propagation Authority
+on:
+  pull_request:
+    paths:
+      - "ai/MovieMentorInferenceExecutionMongoStore.js"
+      - "ai/MovieMentorInferenceExecutionClosureAuthority.js"
+      - "scripts/verify-movie-mentor-execution-schema-runtime-propagation-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-execution-schema-runtime-propagation-authority.yml"
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - run: node --check ai/MovieMentorInferenceExecutionMongoStore.js
+      - run: node --check scripts/verify-movie-mentor-execution-schema-runtime-propagation-authority.mjs
+      - run: node scripts/verify-movie-mentor-execution-schema-runtime-propagation-authority.mjs

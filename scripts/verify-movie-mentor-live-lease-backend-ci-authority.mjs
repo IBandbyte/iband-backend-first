@@ -49,3 +49,7 @@ assert.match(
 );
 
 console.log("PASS — Live Lease owns PR proof and Backend CI independently owns the same behavioral court.");
+
+// Backend CI's Live Lease jurisdiction also owns the real durable-store -> runtime
+// schema propagation court used by current-schema closure authority.
+await import("./verify-movie-mentor-execution-schema-runtime-propagation-authority.mjs");
