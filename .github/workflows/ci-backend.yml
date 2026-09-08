@@ -113,7 +113,7 @@ jobs:
       - name: Verify Movie Mentor durable creator state turn runtime
         run: npm run verify:movie-mentor-turn-runtime
       - name: Verify Movie Mentor durable creator state transition boundary
-        run: npm run verify-movie-mentor-creator-state-transition
+        run: npm run verify:movie-mentor-creator-state-transition
       - name: Verify Movie Mentor project authority across working sessions
         run: npm run verify:movie-mentor-project-session-continuity
       - name: Verify Movie Mentor durable creator state round trip
