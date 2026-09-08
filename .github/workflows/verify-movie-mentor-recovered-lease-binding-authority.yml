@@ -5,6 +5,8 @@ on:
     paths:
       - 'ai/MovieMentorRecoveredProviderResultAuthority.js'
       - 'scripts/verify-movie-mentor-recovered-lease-binding-authority.mjs'
+      - 'scripts/verify-movie-mentor-recovered-lease-binding-backend-ci-authority.mjs'
+      - 'scripts/verify-movie-mentor-recovered-provider-model-backend-ci-authority.mjs'
       - '.github/workflows/verify-movie-mentor-recovered-lease-binding-authority.yml'
   push:
     branches:
@@ -22,5 +24,7 @@ jobs:
         run: node --check ai/MovieMentorRecoveredProviderResultAuthority.js
       - name: Syntax check verifier
         run: node --check scripts/verify-movie-mentor-recovered-lease-binding-authority.mjs
+      - name: Syntax check Backend CI jurisdiction
+        run: node --check scripts/verify-movie-mentor-recovered-lease-binding-backend-ci-authority.mjs
       - name: Verify recovered lease binding authority
         run: node scripts/verify-movie-mentor-recovered-lease-binding-authority.mjs
