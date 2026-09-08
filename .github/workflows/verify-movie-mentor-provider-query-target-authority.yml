@@ -7,6 +7,8 @@ on:
       - "ai/StructuredAIProviderClient.js"
       - "ai/MovieMentorProviderRecoveryAdapter.js"
       - "scripts/verify-movie-mentor-provider-query-target-authority.mjs"
+      - "scripts/verify-movie-mentor-provider-query-target-backend-ci-authority.mjs"
+      - ".github/workflows/ci-backend.yml"
       - ".github/workflows/verify-movie-mentor-provider-query-target-authority.yml"
   pull_request:
     paths:
@@ -14,6 +16,8 @@ on:
       - "ai/StructuredAIProviderClient.js"
       - "ai/MovieMentorProviderRecoveryAdapter.js"
       - "scripts/verify-movie-mentor-provider-query-target-authority.mjs"
+      - "scripts/verify-movie-mentor-provider-query-target-backend-ci-authority.mjs"
+      - ".github/workflows/ci-backend.yml"
       - ".github/workflows/verify-movie-mentor-provider-query-target-authority.yml"
 
 jobs:
@@ -30,4 +34,6 @@ jobs:
       - run: node --check ai/StructuredAIProviderClient.js
       - run: node --check ai/MovieMentorProviderRecoveryAdapter.js
       - run: node --check scripts/verify-movie-mentor-provider-query-target-authority.mjs
+      - run: node --check scripts/verify-movie-mentor-provider-query-target-backend-ci-authority.mjs
       - run: node scripts/verify-movie-mentor-provider-query-target-authority.mjs
+      - run: node scripts/verify-movie-mentor-provider-query-target-backend-ci-authority.mjs
