@@ -3,6 +3,7 @@ import fs from "node:fs";
 
 const workflow = fs.readFileSync(new URL("../.github/workflows/ci-backend.yml", import.meta.url), "utf8");
 const jurisdiction = "scripts/verify-movie-mentor-provider-recovery-backend-ci-authority.mjs";
+const postIoLeaseCourt = "scripts/verify-movie-mentor-provider-recovery-post-io-lease-authority.mjs";
 
 const requiredSyntaxOwners = [
   "ai/MovieMentorProviderTargetAuthority.js",
@@ -44,7 +45,14 @@ for (const court of [
   );
 }
 
+assert.equal(
+  fs.existsSync(new URL(`../${postIoLeaseCourt}`, import.meta.url)),
+  true,
+  "Backend CI jurisdiction must carry the post-I/O recovery lease court in the committed tree",
+);
+await import("./verify-movie-mentor-provider-recovery-post-io-lease-authority.mjs");
+
 console.log("✓ Backend CI owns syntax proof for provider recovery production modules, courts, and jurisdiction verifier");
-console.log("✓ Backend CI executes provider recovery identity, outcome, current-lease, operation-binding, and jurisdiction courts");
+console.log("✓ Backend CI executes provider recovery identity, outcome, current-lease, operation-binding, post-I/O lease, and jurisdiction courts");
 console.log("LAW: BACKEND CI MAY NOT CERTIFY PRODUCTION CODE OR PROOF IT DOES NOT ACTUALLY OWN.");
 console.log("Movie Mentor provider recovery Backend CI authority gate: GREEN");
