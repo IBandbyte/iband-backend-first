@@ -5,6 +5,7 @@ import {
   createMovieMentorProviderOperationAuthority,
   createMovieMentorProviderOperationBoundaryAuthority,
 } from "../ai/MovieMentorProviderOperationAuthority.js";
+import { fingerprintMovieMentorProviderRoute } from "../ai/MovieMentorProviderTargetAuthority.js";
 
 const originalFetch = globalThis.fetch;
 const envKeys = ["IBAND_AI_PROVIDER", "IBAND_AI_MODEL", "IBAND_AI_BASE_URL", "IBAND_AI_API_KEY", "OPENAI_API_KEY"];
@@ -16,15 +17,6 @@ function restoreEnvironment() {
     else process.env[key] = originalEnv[key];
   }
   globalThis.fetch = originalFetch;
-}
-
-function routeFingerprint(provider, url) {
-  const parsed = new URL(url);
-  parsed.username = "";
-  parsed.password = "";
-  parsed.search = "";
-  parsed.hash = "";
-  return crypto.createHash("sha256").update(`${provider}|${parsed.toString()}`).digest("hex");
 }
 
 function canonicalize(value) {
@@ -41,10 +33,11 @@ function clone(value) {
   return value == null ? value : structuredClone(value);
 }
 
+const authorizedRoute = "https://provider.example.test/v1/responses?tenant=recovery-proof&mode=strict";
 const expectedTarget = Object.freeze({
   provider: "openai",
   adapter: "openai-responses",
-  routeFingerprint: routeFingerprint("openai", "https://provider.example.test/v1/responses"),
+  routeFingerprint: fingerprintMovieMentorProviderRoute("openai", authorizedRoute),
   recoveryMode: "known-response-id-retrieval",
 });
 
@@ -63,7 +56,7 @@ const validSemantic = {
 try {
   process.env.IBAND_AI_PROVIDER = "openai";
   process.env.IBAND_AI_MODEL = "gpt-test";
-  process.env.IBAND_AI_BASE_URL = "https://provider.example.test/v1/responses?transient_secret=must-not-be-durable";
+  process.env.IBAND_AI_BASE_URL = authorizedRoute;
   process.env.IBAND_AI_API_KEY = "test-key";
 
   const operationRows = new Map();
@@ -180,9 +173,10 @@ try {
   assert.deepEqual(durableOperation.providerTarget, expectedTarget, "historical provider operation must durably preserve the exact secret-free provider target that owned it");
   assert.equal(durableOperation.reconstructionInputDigest, digest(semanticInput), "exact semantic input must be immutably digested before UNKNOWN");
   assert.deepEqual(durableOperation.reconstructionInput, semanticInput, "exact semantic input must survive with the historical provider operation");
-  assert.equal(JSON.stringify(durableOperation).includes("transient_secret"), false, "durable provider recovery identity must not persist URL query credentials or transient secrets");
+  assert.equal(JSON.stringify(durableOperation).includes("tenant=recovery-proof"), false, "durable provider recovery identity must retain query authority only through its fingerprint, not persist raw query material");
+  assert.equal(JSON.stringify(durableOperation).includes("mode=strict"), false, "durable provider recovery identity must not persist raw query material");
 
-  process.env.IBAND_AI_BASE_URL = "https://different-provider-route.example.test/v1/responses";
+  process.env.IBAND_AI_BASE_URL = "https://provider.example.test/v1/responses?tenant=other&mode=strict";
   const changedTargetDecision = await boundaryAuthority.assertProviderDispatch({ providerCall });
   assert.equal(changedTargetDecision.dispatchAuthorized, false);
   assert.equal(changedTargetDecision.reason, "provider-target-no-longer-current");
@@ -191,8 +185,8 @@ try {
   console.log("✓ live provider dispatch binds immutable durable-safe provider target identity before UNKNOWN");
   console.log("✓ exact historical task input is durably bound before UNKNOWN and survives with the provider operation");
   console.log("✓ the real OpenAI-shaped socket opens only after target identity + historical input + UNKNOWN + lease authority agree");
-  console.log("✓ historical provider target survives configuration change and current config cannot impersonate it");
-  console.log("✓ provider route identity excludes URL query credentials and transient secrets");
+  console.log("✓ historical provider target survives query-only configuration change and current config cannot impersonate it");
+  console.log("✓ provider query participates in route authority without persisting raw query material in durable recovery identity");
   console.log("LAW: CURRENT PROVIDER CONFIGURATION MAY NOT IMPERSONATE THE HISTORICAL PROVIDER OPERATION.");
   console.log("LAW: RECOVERY AUTHORITY REQUIRES DURABLE PROVIDER TARGET IDENTITY AND EXACT HISTORICAL TASK INPUT BEFORE THE IRREVERSIBLE BOUNDARY.");
   console.log("Movie Mentor provider recovery identity authority gate: GREEN");
