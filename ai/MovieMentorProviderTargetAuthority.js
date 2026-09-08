@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 
-const VERSION = "1.1.0";
+const VERSION = "1.2.0";
 const DOMAIN = "iband.movie-mentor.provider-target-authority";
 const RECOVERY_MODES = Object.freeze(["known-response-id-retrieval", "none"]);
 
@@ -33,7 +33,6 @@ function sanitizeProviderRoute(value) {
   }
   parsed.username = "";
   parsed.password = "";
-  parsed.search = "";
   parsed.hash = "";
   return parsed.toString();
 }
