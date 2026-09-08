@@ -120,6 +120,7 @@ const operationAuthority = createMovieMentorProviderOperationAuthority({
   store: operationStore,
   now: () => new Date(clock),
   resolveCurrentTarget: () => providerTarget,
+  resolveCurrentModel: () => "model-provider-outcome-recovery-lease",
 });
 
 const generationOne = await leaseAuthority.openExecution({
