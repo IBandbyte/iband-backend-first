@@ -11,13 +11,13 @@ import { createMovieMentorCanonicalResultMongoStore, getMovieMentorCanonicalResu
 import { createMovieMentorCanonicalResultAuthority } from "./MovieMentorCanonicalResultAuthority.js";
 import { createMovieMentorResultCandidateMongoStore, getMovieMentorResultCandidateMongoStoreStatus, MOVIE_MENTOR_RESULT_CANDIDATE_CREATOR_STATE_ATOMIC_FENCE } from "./MovieMentorResultCandidateMongoStore.js";
 
-const VERSION="1.21.0";
+const VERSION="1.22.0";
 const DOMAIN="iband.movie-mentor.production-inference-execution-composition";
 const EXECUTION_CAS="reservation-binding-active-closure-frozen-universe-provider-reality-revision-finalized-result-binding-and-atomic-abort";
 const EFFECT_SERIALIZATION="execution-providerEffectRealityRevision";
 const OPERATION_RECOVERY_IDENTITY="provider-adapter-route-fingerprint-recovery-mode";
 const RESULT_FINALIZATION="atomic-result-insert-plus-closed-to-finalized-execution-transition";
-const RESULT_LINEAGE="revalidated-in-finalization-transaction";
+const RESULT_LINEAGE="proof-bearing-provenance-revalidated-in-finalization-transaction";
 const RESULT_FRESHNESS="exact-provider-effect-reality-revision";
 const CANDIDATE_AUTHORITY="zero-until-current-creator-state-and-current-execution-atomic-fence-plus-closure-and-canonical-finalization";
 const CANDIDATE_FENCE="shared-execution-write-barrier-before-closure";
