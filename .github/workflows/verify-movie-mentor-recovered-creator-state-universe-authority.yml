@@ -1,0 +1,24 @@
+name: Verify Movie Mentor Recovered Creator State Universe Authority
+
+on:
+  pull_request:
+    paths:
+      - "ai/MovieMentorRecoveredProviderResultAuthority.js"
+      - "scripts/verify-movie-mentor-recovered-creator-state-universe-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-recovered-creator-state-universe-authority.yml"
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check recovered creator-state universe authority syntax
+        run: >-
+          node --check ai/MovieMentorRecoveredProviderResultAuthority.js &&
+          node --check scripts/verify-movie-mentor-recovered-creator-state-universe-authority.mjs
+      - name: Verify recovered creator-state universe authority
+        run: node scripts/verify-movie-mentor-recovered-creator-state-universe-authority.mjs
