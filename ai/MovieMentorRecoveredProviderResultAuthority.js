@@ -1,6 +1,10 @@
 import { digestMovieMentorProviderReconstructionInput } from "./MovieMentorProviderOperationAuthority.js";
+import {
+  normalizeMovieMentorProviderModel,
+  normalizeMovieMentorProviderTarget,
+} from "./MovieMentorProviderTargetAuthority.js";
 
-const VERSION = "1.4.0";
+const VERSION = "1.5.0";
 const DOMAIN = "iband.movie-mentor.recovered-provider-result-authority";
 
 function text(value) {
@@ -179,7 +183,7 @@ function historicalInputIntegrityInvalid(historical = {}, recordedDigest = null,
   );
 }
 
-async function resolveHistoricalReconstructionInput({ historical, currentInput, readProviderOperation } = {}) {
+async function resolveHistoricalReconstructionAuthority({ historical, readProviderOperation } = {}) {
   if (typeof readProviderOperation !== "function") historicalInputRequired(historical);
 
   const operation = await readProviderOperation(historical.providerCallId);
@@ -198,10 +202,47 @@ async function resolveHistoricalReconstructionInput({ historical, currentInput, 
     if (recordedDigest !== observedDigest) {
       historicalInputIntegrityInvalid(historical, recordedDigest, observedDigest);
     }
-    return clone(operation.reconstructionInput);
+
+    if (!operation.providerTarget || typeof operation.providerTarget !== "object" || !Object.prototype.hasOwnProperty.call(operation, "providerModel")) {
+      fail(
+        "MOVIE_MENTOR_PROVIDER_RECOVERY_MODEL_AUTHORITY_REQUIRED",
+        "Recovered provider bytes require explicit durable historical provider target and model authority before local reconstruction.",
+        { retryable: false, providerCallId: historical.providerCallId },
+      );
+    }
+
+    let providerTarget;
+    let providerModel;
+    try {
+      providerTarget = normalizeMovieMentorProviderTarget(operation.providerTarget);
+      providerModel = operation.providerModel == null
+        ? null
+        : normalizeMovieMentorProviderModel(operation.providerModel, { provider: providerTarget.provider });
+      if (providerTarget.provider === "openai" && !providerModel) {
+        throw new Error("openai historical model authority missing");
+      }
+    } catch {
+      fail(
+        "MOVIE_MENTOR_PROVIDER_RECOVERY_MODEL_AUTHORITY_INVALID",
+        "Historical provider target/model authority is invalid and cannot authorize recovered local reconstruction.",
+        { retryable: false, providerCallId: historical.providerCallId },
+      );
+    }
+
+    return freeze({
+      historicalInput: clone(operation.reconstructionInput),
+      providerTarget,
+      providerModel,
+      providerModelAuthorityBound: true,
+    });
   }
 
   historicalInputRequired(historical);
+}
+
+async function resolveHistoricalReconstructionInput({ historical, currentInput, readProviderOperation } = {}) {
+  const authority = await resolveHistoricalReconstructionAuthority({ historical, readProviderOperation });
+  return clone(authority.historicalInput);
 }
 
 async function recoverPreviouslyAdmittedProviderResult({
@@ -233,16 +274,19 @@ async function recoverPreviouslyAdmittedProviderResult({
     recoveryAuthority: execution,
   });
   const bound = assertRecoveredOutcomeBinding({ recovery, historical });
-  const historicalInput = await resolveHistoricalReconstructionInput({ historical, currentInput: input, readProviderOperation });
+  const reconstructionAuthority = await resolveHistoricalReconstructionAuthority({ historical, readProviderOperation });
   const providerOperation = freeze({
     providerOperationId: historical.providerCallId,
     executionId: historical.executionId,
     slotId: historical.slotId,
     task: historical.task,
+    providerTarget: reconstructionAuthority.providerTarget,
+    providerModelAuthorityBound: true,
+    providerModel: reconstructionAuthority.providerModel,
   });
 
   const reconstructed = await reconstructRecoveredResult({
-    input: historicalInput,
+    input: clone(reconstructionAuthority.historicalInput),
     providerOperation,
     recoveredProviderResponse: bound.recoveredProviderResponse,
     recovery: freeze({ ...recovery }),
