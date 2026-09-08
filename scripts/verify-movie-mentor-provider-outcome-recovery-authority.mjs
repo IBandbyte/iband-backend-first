@@ -3,6 +3,7 @@ import { createMovieMentorInferenceExecutionLeaseAuthority } from "../ai/MovieMe
 import { createMovieMentorProviderEffectAuthority } from "../ai/MovieMentorProviderEffectAuthority.js";
 import { createMovieMentorProviderOperationAuthority } from "../ai/MovieMentorProviderOperationAuthority.js";
 import { retrieveMovieMentorProviderResponse } from "../ai/MovieMentorProviderRecoveryAdapter.js";
+import { fingerprintMovieMentorProviderRoute } from "../ai/MovieMentorProviderTargetAuthority.js";
 
 function clone(value) {
   return value == null ? value : structuredClone(value);
@@ -252,6 +253,12 @@ try {
   process.env.IBAND_AI_MODEL = "gpt-test";
   process.env.IBAND_AI_BASE_URL = "https://provider.example.test/v1/responses";
   process.env.IBAND_AI_API_KEY = "test-key";
+  const configuredAdapterTarget = Object.freeze({
+    provider: "openai",
+    adapter: "openai-responses",
+    routeFingerprint: fingerprintMovieMentorProviderRoute("openai", process.env.IBAND_AI_BASE_URL),
+    recoveryMode: "known-response-id-retrieval",
+  });
   let request = null;
   globalThis.fetch = async (url, options = {}) => {
     request = { url: String(url), options: clone(options) };
@@ -269,7 +276,7 @@ try {
     slotId: "semantic",
     task: "movie-mentor-semantic",
     externalEffectId: "resp_confirmed_same_operation",
-    providerTarget: historicalTarget,
+    providerTarget: configuredAdapterTarget,
   });
   assert.equal(adapterResult.externalEffectId, "resp_confirmed_same_operation");
   assert.equal(adapterResult.providerOperationId, confirmedCall.providerCallId);
