@@ -8,6 +8,8 @@ on:
       - "ai/MovieMentorProviderOperationAuthority.js"
       - "ai/MovieMentorTurnRuntime.js"
       - "scripts/verify-movie-mentor-provider-transport-target-authority.mjs"
+      - "scripts/verify-movie-mentor-provider-transport-target-backend-ci-authority.mjs"
+      - ".github/workflows/ci-backend.yml"
       - ".github/workflows/verify-movie-mentor-provider-transport-target-authority.yml"
   pull_request:
     paths:
@@ -16,6 +18,8 @@ on:
       - "ai/MovieMentorProviderOperationAuthority.js"
       - "ai/MovieMentorTurnRuntime.js"
       - "scripts/verify-movie-mentor-provider-transport-target-authority.mjs"
+      - "scripts/verify-movie-mentor-provider-transport-target-backend-ci-authority.mjs"
+      - ".github/workflows/ci-backend.yml"
       - ".github/workflows/verify-movie-mentor-provider-transport-target-authority.yml"
 
 jobs:
