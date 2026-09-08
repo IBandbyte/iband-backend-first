@@ -1,0 +1,34 @@
+name: Verify Movie Mentor Durable Null Model Authority
+
+on:
+  push:
+    paths:
+      - "ai/MovieMentorProviderOperationMongoStore.js"
+      - "ai/MovieMentorProviderOperationAuthority.js"
+      - "scripts/verify-movie-mentor-durable-null-model-authority.mjs"
+      - "scripts/verify-movie-mentor-provider-model-backend-ci-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-durable-null-model-authority.yml"
+  pull_request:
+    paths:
+      - "ai/MovieMentorProviderOperationMongoStore.js"
+      - "ai/MovieMentorProviderOperationAuthority.js"
+      - "scripts/verify-movie-mentor-durable-null-model-authority.mjs"
+      - "scripts/verify-movie-mentor-provider-model-backend-ci-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-durable-null-model-authority.yml"
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund --ignore-scripts
+      - run: node --check ai/MovieMentorProviderOperationMongoStore.js
+      - run: node --check ai/MovieMentorProviderOperationAuthority.js
+      - run: node --check scripts/verify-movie-mentor-durable-null-model-authority.mjs
+      - run: node --check scripts/verify-movie-mentor-provider-model-backend-ci-authority.mjs
+      - run: node scripts/verify-movie-mentor-durable-null-model-authority.mjs
