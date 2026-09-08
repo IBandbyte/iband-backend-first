@@ -14,6 +14,14 @@ const execution = Object.freeze({
   fencingToken: "fence-generation-two",
 });
 
+const historicalProviderModel = "gpt-test";
+const historicalProviderTarget = Object.freeze({
+  provider: "openai",
+  adapter: "openai-responses",
+  routeFingerprint: "a".repeat(64),
+  recoveryMode: "known-response-id-retrieval",
+});
+
 let liveProviderCalls = 0;
 let recoveryCalls = 0;
 let reconstructionCalls = 0;
@@ -23,7 +31,7 @@ let assertDispatchCalls = 0;
 const semanticHistoricalInput = Object.freeze({ message: "same creator turn" });
 const recoveredProviderResponse = Object.freeze({
   id: "resp_same_operation",
-  model: "gpt-test",
+  model: historicalProviderModel,
   output_text: JSON.stringify({
     understoodContext: [],
     provisionalContext: [],
@@ -68,9 +76,12 @@ const authority = {
     return Object.freeze({
       authorized: true,
       providerCallId,
+      providerOperationId: providerCallId,
       executionId: execution.executionId,
       slotId: "semantic",
       task: "movie-mentor-semantic",
+      providerTarget: historicalProviderTarget,
+      providerModel: historicalProviderModel,
       reconstructionInputDigest: digestMovieMentorProviderReconstructionInput(semanticHistoricalInput),
       reconstructionInput: semanticHistoricalInput,
     });
@@ -127,7 +138,7 @@ assert.equal(reconstructionCalls, 1, "recovered bytes must pass the real semanti
 let invalidRecoveryCalls = 0;
 const malformedProviderResponse = Object.freeze({
   id: "resp_invalid_semantic",
-  model: "gpt-test",
+  model: historicalProviderModel,
   output_text: JSON.stringify({
     understoodContext: [{ key: "truth", value: "invented", evidence: null, confidenceSource: "creator-confirmed" }],
     provisionalContext: [],
@@ -284,9 +295,12 @@ function historicalAuthority({ slotId, task, providerCallId, response, historica
       return Object.freeze({
         authorized: true,
         providerCallId,
+        providerOperationId: providerCallId,
         executionId: execution.executionId,
         slotId,
         task,
+        providerTarget: historicalProviderTarget,
+        providerModel: historicalProviderModel,
         reconstructionInputDigest: historicalInput ? digestMovieMentorProviderReconstructionInput(historicalInput) : null,
         reconstructionInput: historicalInput,
       });
@@ -332,7 +346,7 @@ const storyWorkOrder = Object.freeze({
 });
 const storyResponse = Object.freeze({
   id: "resp_story_same_operation",
-  model: "gpt-test",
+  model: historicalProviderModel,
   output_text: JSON.stringify({
     agentId: "story",
     observations: [],
@@ -386,7 +400,7 @@ const synthesisInput = Object.freeze({
 });
 const synthesisResponse = Object.freeze({
   id: "resp_synthesis_same_operation",
-  model: "gpt-test",
+  model: historicalProviderModel,
   output_text: JSON.stringify({
     text: "Recovered same synthesis.",
     usedContributionAgentIds: [],
@@ -424,7 +438,7 @@ assert.equal(synthesisAuthority.recoveries, 1);
 
 const continuityResponse = Object.freeze({
   id: "resp_continuity_historical",
-  model: "gpt-test",
+  model: historicalProviderModel,
   output_text: "{}",
 });
 const continuityAuthority = historicalAuthority({
