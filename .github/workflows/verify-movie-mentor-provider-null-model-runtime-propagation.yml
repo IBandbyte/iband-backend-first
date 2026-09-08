@@ -4,11 +4,13 @@ on:
   push:
     paths:
       - "ai/MovieMentorTurnRuntime.js"
+      - "ai/StructuredAIProviderClient.js"
       - "scripts/verify-movie-mentor-provider-null-model-runtime-propagation.mjs"
       - ".github/workflows/verify-movie-mentor-provider-null-model-runtime-propagation.yml"
   pull_request:
     paths:
       - "ai/MovieMentorTurnRuntime.js"
+      - "ai/StructuredAIProviderClient.js"
       - "scripts/verify-movie-mentor-provider-null-model-runtime-propagation.mjs"
       - ".github/workflows/verify-movie-mentor-provider-null-model-runtime-propagation.yml"
   workflow_dispatch:
@@ -24,5 +26,6 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund --ignore-scripts
       - run: node --check ai/MovieMentorTurnRuntime.js
+      - run: node --check ai/StructuredAIProviderClient.js
       - run: node --check scripts/verify-movie-mentor-provider-null-model-runtime-propagation.mjs
       - run: node scripts/verify-movie-mentor-provider-null-model-runtime-propagation.mjs
