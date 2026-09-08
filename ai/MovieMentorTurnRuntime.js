@@ -356,8 +356,7 @@ function createFencedInferenceOrchestrationDeps({ execution, inferenceExecutionA
       slotId: s(currentOperation?.slotId || decision.slotId || slotId),
       task: s(currentOperation?.task || decision.task || task),
       ...(providerTarget ? { providerTarget } : {}),
-      providerModelAuthorityBound,
-      ...(providerModelAuthorityBound ? { providerModel } : {}),
+      ...(providerModelAuthorityBound ? { providerModelAuthorityBound: true, providerModel } : {}),
     });
     if (!providerOperation.providerOperationId || !providerOperation.executionId || !providerOperation.slotId || !providerOperation.task) {
       throw runtimeError(
