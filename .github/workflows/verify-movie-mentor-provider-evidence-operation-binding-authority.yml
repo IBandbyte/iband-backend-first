@@ -7,6 +7,8 @@ on:
       - "ai/MovieMentorProductionInferenceExecutionComposition.js"
       - "ai/MovieMentorTurnRuntime.js"
       - "scripts/verify-movie-mentor-provider-evidence-operation-binding-authority.mjs"
+      - "scripts/verify-movie-mentor-provider-evidence-operation-binding-backend-ci-authority.mjs"
+      - ".github/workflows/ci-backend.yml"
       - ".github/workflows/verify-movie-mentor-provider-evidence-operation-binding-authority.yml"
   pull_request:
     paths:
@@ -14,6 +16,8 @@ on:
       - "ai/MovieMentorProductionInferenceExecutionComposition.js"
       - "ai/MovieMentorTurnRuntime.js"
       - "scripts/verify-movie-mentor-provider-evidence-operation-binding-authority.mjs"
+      - "scripts/verify-movie-mentor-provider-evidence-operation-binding-backend-ci-authority.mjs"
+      - ".github/workflows/ci-backend.yml"
       - ".github/workflows/verify-movie-mentor-provider-evidence-operation-binding-authority.yml"
 
 jobs:
@@ -29,4 +33,6 @@ jobs:
       - run: node --check ai/MovieMentorProviderEffectAuthority.js
       - run: node --check ai/MovieMentorProductionInferenceExecutionComposition.js
       - run: node --check scripts/verify-movie-mentor-provider-evidence-operation-binding-authority.mjs
+      - run: node --check scripts/verify-movie-mentor-provider-evidence-operation-binding-backend-ci-authority.mjs
       - run: node scripts/verify-movie-mentor-provider-evidence-operation-binding-authority.mjs
+      - run: node scripts/verify-movie-mentor-provider-evidence-operation-binding-backend-ci-authority.mjs
