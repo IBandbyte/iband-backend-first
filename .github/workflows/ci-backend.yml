@@ -55,6 +55,8 @@ jobs:
           node --check scripts/verify-movie-mentor-provider-transport-target-backend-ci-authority.mjs &&
           node --check scripts/verify-movie-mentor-provider-recovery-transport-target-authority.mjs &&
           node --check scripts/verify-movie-mentor-provider-recovery-transport-target-backend-ci-authority.mjs &&
+          node --check scripts/verify-movie-mentor-provider-redirect-target-authority.mjs &&
+          node --check scripts/verify-movie-mentor-provider-redirect-target-backend-ci-authority.mjs &&
           node --check scripts/verify-movie-mentor-provider-model-authority.mjs &&
           node --check scripts/verify-movie-mentor-provider-model-composition-authority.mjs &&
           node --check scripts/verify-movie-mentor-provider-model-backend-ci-authority.mjs &&
@@ -148,6 +150,10 @@ jobs:
         run: node scripts/verify-movie-mentor-provider-recovery-transport-target-authority.mjs
       - name: Verify Movie Mentor provider recovery transport-target Backend CI authority
         run: node scripts/verify-movie-mentor-provider-recovery-transport-target-backend-ci-authority.mjs
+      - name: Verify Movie Mentor provider redirect-target authority
+        run: node scripts/verify-movie-mentor-provider-redirect-target-authority.mjs
+      - name: Verify Movie Mentor provider redirect-target Backend CI authority
+        run: node scripts/verify-movie-mentor-provider-redirect-target-backend-ci-authority.mjs
       - name: Verify Movie Mentor provider model authority
         run: node scripts/verify-movie-mentor-provider-model-authority.mjs
       - name: Verify Movie Mentor provider model production-composition authority
