@@ -28,3 +28,4 @@ await import("./verify-movie-mentor-legacy-canonical-finalization-authority.mjs"
 await import("./verify-movie-mentor-legacy-canonical-read-authority.mjs");
 await import("./verify-movie-mentor-current-schema-closure-entry-authority.mjs");
 await import("./verify-movie-mentor-current-schema-closure-completion-authority.mjs");
+await import("./verify-movie-mentor-current-schema-closure-reentry-authority.mjs");
