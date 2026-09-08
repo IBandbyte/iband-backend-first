@@ -39,8 +39,12 @@ assert.throws(
     recoveredProviderResponse,
     recovery: Object.freeze({ recoveryOwnerId: "worker-one", recoveryLeaseGeneration: 1 }),
   }),
-  (error) => error?.code === "SEMANTIC_RECOVERED_PROVIDER_OPERATION_BINDING_INVALID",
-  "semantic reconstruction must reject recovered bytes carrying a neighbouring provider task identity rather than borrowing upstream task proof",
+  (error) =>
+    error?.code === "SEMANTIC_RECOVERED_PROVIDER_TASK_AUTHORITY_INVALID" &&
+    error?.expectedTask === "movie-mentor-semantic" &&
+    error?.actualTask === "movie-mentor-synthesis" &&
+    error?.retryable === false,
+  "semantic reconstruction must reject recovered bytes carrying a neighbouring provider task identity with its own explicit fail-closed task-authority proof",
 );
 
 console.log("Movie Mentor recovered semantic task authority verifier passed.");
