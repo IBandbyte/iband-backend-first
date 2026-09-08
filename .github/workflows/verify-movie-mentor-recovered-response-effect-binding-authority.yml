@@ -5,11 +5,15 @@ on:
     paths:
       - "ai/MovieMentorRecoveredProviderResultAuthority.js"
       - "scripts/verify-movie-mentor-recovered-response-effect-binding-authority.mjs"
+      - "scripts/verify-movie-mentor-recovered-response-effect-binding-backend-ci-authority.mjs"
+      - ".github/workflows/ci-backend.yml"
       - ".github/workflows/verify-movie-mentor-recovered-response-effect-binding-authority.yml"
   pull_request:
     paths:
       - "ai/MovieMentorRecoveredProviderResultAuthority.js"
       - "scripts/verify-movie-mentor-recovered-response-effect-binding-authority.mjs"
+      - "scripts/verify-movie-mentor-recovered-response-effect-binding-backend-ci-authority.mjs"
+      - ".github/workflows/ci-backend.yml"
       - ".github/workflows/verify-movie-mentor-recovered-response-effect-binding-authority.yml"
 
 jobs:
@@ -24,4 +28,6 @@ jobs:
         run: npm install --no-audit --no-fund --ignore-scripts
       - run: node --check ai/MovieMentorRecoveredProviderResultAuthority.js
       - run: node --check scripts/verify-movie-mentor-recovered-response-effect-binding-authority.mjs
+      - run: node --check scripts/verify-movie-mentor-recovered-response-effect-binding-backend-ci-authority.mjs
       - run: node scripts/verify-movie-mentor-recovered-response-effect-binding-authority.mjs
+      - run: node scripts/verify-movie-mentor-recovered-response-effect-binding-backend-ci-authority.mjs
