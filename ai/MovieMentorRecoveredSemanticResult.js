@@ -5,8 +5,9 @@ import {
   normalizeCreatorConfirmedContext,
 } from "./MovieMentorSemanticInterpreter.js";
 
-const VERSION = "1.0.0";
+const VERSION = "1.1.0";
 const DOMAIN = "iband.movie-mentor.recovered-semantic-result";
+const SEMANTIC_TASK = "movie-mentor-semantic";
 
 function cleanString(value) {
   return typeof value === "string" ? value.trim() : "";
@@ -60,12 +61,20 @@ function reconstructRecoveredMovieMentorSemanticResult({
   }
 
   const providerOperationId = cleanString(providerOperation?.providerOperationId);
+  const providerTask = cleanString(providerOperation?.task);
   const responseId = cleanString(recoveredProviderResponse?.id);
   if (!providerOperationId || !responseId) {
     fail(
       "SEMANTIC_RECOVERED_PROVIDER_IDENTITY_INVALID",
       "Recovered semantic bytes require exact historical provider-operation and response identity.",
       { retryable: false },
+    );
+  }
+  if (providerTask !== SEMANTIC_TASK) {
+    fail(
+      "SEMANTIC_RECOVERED_PROVIDER_TASK_AUTHORITY_INVALID",
+      "Recovered semantic bytes require a historical provider operation owned by the semantic task.",
+      { retryable: false, expectedTask: SEMANTIC_TASK, actualTask: providerTask || null },
     );
   }
 

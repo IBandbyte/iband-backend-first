@@ -1,0 +1,26 @@
+name: Verify Movie Mentor Recovered Semantic Task Authority
+
+on:
+  pull_request:
+    paths:
+      - 'ai/MovieMentorRecoveredSemanticResult.js'
+      - 'scripts/verify-movie-mentor-recovered-semantic-task-authority.mjs'
+      - '.github/workflows/verify-movie-mentor-recovered-semantic-task-authority.yml'
+  push:
+    branches:
+      - movie-mentor-recovered-semantic-task-authority
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Syntax check recovered semantic result
+        run: node --check ai/MovieMentorRecoveredSemanticResult.js
+      - name: Syntax check verifier
+        run: node --check scripts/verify-movie-mentor-recovered-semantic-task-authority.mjs
+      - name: Verify recovered semantic task authority
+        run: node scripts/verify-movie-mentor-recovered-semantic-task-authority.mjs
