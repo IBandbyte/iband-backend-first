@@ -1,0 +1,247 @@
+name: CI (Backend)
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Check server syntax
+        run: node --check server.js
+      - name: Check Movie Mentor gateways and engines
+        run: node --check movieMentorTurn.js && node --check movieMentorSemantic.js && node --check movieMentorSpecialists.js && node --check movieMentorSynthesis.js && node --check ai/MovieMentorCreatorStateStore.js && node --check ai/MovieMentorCreatorStateTransition.js && node --check ai/MovieMentorCreatorDecisionAuthority.js && node --check ai/MovieMentorCreatorTruthViewControl.js && node --check ai/MovieMentorContinuityConsequenceAuthority.js && node --check ai/MovieMentorContinuityDerivedCacheControl.js && node --check ai/MovieMentorContinuityDerivedCacheStore.js && node --check ai/MovieMentorContinuityAgent.js && node --check ai/MovieMentorTurnRuntime.js && node --check ai/MovieMentorTurnContextControl.js && node --check ai/MovieMentorTurnOrchestrator.js && node --check ai/MovieMentorRecommendationReferenceControl.js && node --check ai/MovieMentorContinuationReferenceControl.js && node --check ai/MovieMentorContinuationObedienceControl.js && node --check ai/MovieMentorSemanticInterpreter.js && node --check ai/StructuredAIProviderClient.js && node --check ai/MovieMentorSpecialistExecutor.js && node --check ai/MovieMentorSynthesisEngine.js && node --check scripts/verify-movie-mentor-continuation-reference.mjs && node --check scripts/verify-movie-mentor-recommendation-reference.mjs && node --check scripts/verify-movie-mentor-continuation-obedience.mjs && node --check scripts/verify-movie-mentor-creator-decision-authority.mjs && node --check scripts/verify-movie-mentor-decision-propagation.mjs && node --check scripts/verify-movie-mentor-continuity-authority.mjs && node --check scripts/verify-movie-mentor-continuity-derived-cache.mjs && node --check scripts/verify-movie-mentor-continuity-cache-execution-bridge.mjs && node --check scripts/verify-movie-mentor-continuity-cache-restart-reload.mjs && node --check scripts/verify-movie-mentor-continuity-cache-distributed-resurrection.mjs && node --check scripts/verify-movie-mentor-live-continuity-wiring.mjs && node --check scripts/verify-movie-mentor-project-session-continuity.mjs && node --check scripts/verify-movie-mentor-durable-round-trip.mjs && node --check scripts/verify-movie-mentor-creator-state-transition.mjs && node --check scripts/verify-movie-mentor-turn-runtime.mjs && node --check scripts/verify-movie-mentor-turn-orchestrator.mjs
+      - name: Check Movie Mentor provider recovery authority syntax
+        run: >-
+          node --check ai/MovieMentorProviderTargetAuthority.js &&
+          node --check ai/MovieMentorProviderOperationAuthority.js &&
+          node --check ai/MovieMentorProviderOperationMongoStore.js &&
+          node --check ai/MovieMentorProviderOutcomeRecoveryAuthority.js &&
+          node --check ai/MovieMentorProviderRecoveryAdapter.js &&
+          node --check ai/MovieMentorProviderEffectAuthority.js &&
+          node --check ai/MovieMentorProviderEffectMongoStore.js &&
+          node --check ai/MovieMentorInferenceExecutionLeaseAuthority.js &&
+          node --check ai/MovieMentorInferenceExecutionMongoStore.js &&
+          node --check ai/MovieMentorProductionInferenceExecutionComposition.js &&
+          node --check ai/MovieMentorRecoveredProviderResultAuthority.js &&
+          node --check ai/MovieMentorRecoveredSemanticResult.js &&
+          node --check ai/MovieMentorRecoveredStructuredResult.js &&
+          node --check ai/MovieMentorRecoveredTaskResult.js &&
+          node --check scripts/verify-movie-mentor-provider-effect-reality.mjs &&
+          node --check scripts/verify-movie-mentor-provider-recovery-identity-authority.mjs &&
+          node --check scripts/verify-movie-mentor-provider-query-target-authority.mjs &&
+          node --check scripts/verify-movie-mentor-provider-query-target-backend-ci-authority.mjs &&
+          node --check scripts/verify-movie-mentor-provider-outcome-recovery-authority.mjs &&
+          node --check scripts/verify-movie-mentor-provider-outcome-recovery-lease-authority.mjs &&
+          node --check scripts/verify-movie-mentor-provider-recovery-operation-binding-authority.mjs &&
+          node --check scripts/verify-movie-mentor-provider-recovery-backend-ci-authority.mjs &&
+          node --check scripts/verify-movie-mentor-recovered-result-reconstruction-authority.mjs &&
+          node --check scripts/verify-movie-mentor-recovered-response-effect-binding-authority.mjs &&
+          node --check scripts/verify-movie-mentor-recovered-response-effect-binding-backend-ci-authority.mjs &&
+          node --check scripts/verify-movie-mentor-recovered-provider-model-authority.mjs &&
+          node --check scripts/verify-movie-mentor-recovered-provider-model-backend-ci-authority.mjs &&
+          node --check scripts/verify-movie-mentor-provider-reconstruction-input-integrity-authority.mjs &&
+          node --check scripts/verify-movie-mentor-provider-operation-input-integrity-authority.mjs &&
+          node --check scripts/verify-movie-mentor-provider-evidence-durability-authority.mjs &&
+          node --check scripts/verify-movie-mentor-provider-evidence-durability-backend-ci-authority.mjs &&
+          node --check scripts/verify-movie-mentor-provider-evidence-operation-binding-authority.mjs &&
+          node --check scripts/verify-movie-mentor-provider-evidence-operation-binding-backend-ci-authority.mjs &&
+          node --check scripts/verify-movie-mentor-provider-transport-target-authority.mjs &&
+          node --check scripts/verify-movie-mentor-provider-transport-target-backend-ci-authority.mjs &&
+          node --check scripts/verify-movie-mentor-provider-recovery-transport-target-authority.mjs &&
+          node --check scripts/verify-movie-mentor-provider-recovery-transport-target-backend-ci-authority.mjs &&
+          node --check scripts/verify-movie-mentor-provider-redirect-target-authority.mjs &&
+          node --check scripts/verify-movie-mentor-provider-redirect-target-backend-ci-authority.mjs &&
+          node --check scripts/verify-movie-mentor-provider-model-authority.mjs &&
+          node --check scripts/verify-movie-mentor-provider-model-composition-authority.mjs &&
+          node --check scripts/verify-movie-mentor-provider-model-backend-ci-authority.mjs &&
+          node --check scripts/verify-movie-mentor-provider-null-model-runtime-propagation.mjs &&
+          node --check scripts/verify-movie-mentor-provider-null-model-runtime-backend-ci-authority.mjs &&
+          node --check scripts/verify-movie-mentor-specialist-provider-evidence-authority.mjs &&
+          node --check scripts/verify-movie-mentor-specialist-provider-evidence-backend-ci-authority.mjs &&
+          node --check scripts/verify-movie-mentor-continuity-historical-input-authority.mjs &&
+          node --check scripts/verify-movie-mentor-continuity-historical-input-backend-ci-authority.mjs &&
+          node --check scripts/verify-movie-mentor-live-execution-lease-enforcement.mjs &&
+          node --check scripts/verify-movie-mentor-live-lease-backend-ci-authority.mjs
+      - name: Check Movie Mentor Operations catastrophe security syntax
+        run: >-
+          node --check ai/MovieMentorOperationsTrustedTimeAuthorityControl.js &&
+          node --check ai/MovieMentorOperationsEvidenceAuthorityIndependenceControl.js &&
+          node --check ai/MovieMentorPostCatastropheRecoveryCertification.js &&
+          node --check ai/MovieMentorRecoveryRetryProofFreshnessControl.js &&
+          node --check ai/MovieMentorRecoveryFinalizationRetryControl.js &&
+          node --check scripts/verify-movie-mentor-post-catastrophe-recovery-certification.mjs &&
+          node --check scripts/verify-movie-mentor-recovery-retry-snapshot-lineage-race.mjs &&
+          node --check scripts/verify-movie-mentor-recovery-catastrophe-regression-matrix.mjs &&
+          node --check scripts/verify-movie-mentor-adversarial-cross-layer-catastrophe-v2.mjs &&
+          node --check scripts/verify-movie-mentor-operations-catastrophe.mjs
+      - name: Verify Movie Mentor semantic authority and safety
+        run: npm run verify:movie-mentor-semantic
+      - name: Verify Movie Mentor continuation reference authority
+        run: npm run verify:movie-mentor-continuation-reference
+      - name: Verify Movie Mentor Journey recommendation reference authority
+        run: npm run verify:movie-mentor-recommendation-reference
+      - name: Verify Movie Mentor continuation obedience authority
+        run: npm run verify:movie-mentor-continuation-obedience
+      - name: Verify Movie Mentor creator decision authority
+        run: npm run verify:movie-mentor-creator-decision
+      - name: Verify Movie Mentor creator decision consequence propagation
+        run: npm run verify:movie-mentor-decision-propagation
+      - name: Verify Movie Mentor standalone continuity consequence authority
+        run: npm run verify:movie-mentor-continuity-authority
+      - name: Verify Movie Mentor continuity derived cache authority
+        run: npm run verify:movie-mentor-continuity-derived-cache
+      - name: Verify Movie Mentor cache-aware continuity execution bridge
+        run: npm run verify:movie-mentor-continuity-cache-bridge
+      - name: Verify Movie Mentor continuity cache restart and stale-write catastrophe
+        run: npm run verify:movie-mentor-continuity-cache-restart
+      - name: Verify Movie Mentor distributed continuity cache resurrection fence
+        run: npm run verify:movie-mentor-continuity-cache-distributed-resurrection
+      - name: Verify Movie Mentor live continuity wiring
+        run: npm run verify:movie-mentor-live-continuity
+      - name: Verify Movie Mentor specialist authority and safety
+        run: npm run verify:movie-mentor-specialists
+      - name: Verify Movie Mentor synthesis authority and safety
+        run: npm run verify:movie-mentor-synthesis
+      - name: Verify Movie Mentor post-provider domain-rejection evidence authority
+        run: node scripts/verify-movie-mentor-specialist-provider-evidence-authority.mjs
+      - name: Verify Movie Mentor post-provider evidence Backend CI authority
+        run: node scripts/verify-movie-mentor-specialist-provider-evidence-backend-ci-authority.mjs
+      - name: Verify Movie Mentor canonical turn wiring
+        run: npm run verify:movie-mentor-turn
+      - name: Verify Movie Mentor durable creator state turn runtime
+        run: npm run verify:movie-mentor-turn-runtime
+      - name: Verify Movie Mentor durable creator state transition boundary
+        run: npm run verify:movie-mentor-creator-state-transition
+      - name: Verify Movie Mentor project authority across working sessions
+        run: npm run verify:movie-mentor-project-session-continuity
+      - name: Verify Movie Mentor durable creator state round trip
+        run: npm run verify:movie-mentor-durable-round-trip
+      - name: Verify Movie Mentor provider effect reality authority
+        run: node scripts/verify-movie-mentor-provider-effect-reality.mjs
+      - name: Verify Movie Mentor provider recovery identity authority
+        run: node scripts/verify-movie-mentor-provider-recovery-identity-authority.mjs
+      - name: Verify Movie Mentor provider query-target authority
+        run: node scripts/verify-movie-mentor-provider-query-target-authority.mjs
+      - name: Verify Movie Mentor provider query-target Backend CI authority
+        run: node scripts/verify-movie-mentor-provider-query-target-backend-ci-authority.mjs
+      - name: Verify Movie Mentor provider outcome recovery authority
+        run: node scripts/verify-movie-mentor-provider-outcome-recovery-authority.mjs
+      - name: Verify Movie Mentor provider outcome recovery current-lease authority
+        run: node scripts/verify-movie-mentor-provider-outcome-recovery-lease-authority.mjs
+      - name: Verify Movie Mentor provider recovery operation-binding authority
+        run: node scripts/verify-movie-mentor-provider-recovery-operation-binding-authority.mjs
+      - name: Verify Movie Mentor provider recovery Backend CI authority
+        run: node scripts/verify-movie-mentor-provider-recovery-backend-ci-authority.mjs
+      - name: Verify Movie Mentor recovered-result reconstruction authority
+        run: node scripts/verify-movie-mentor-recovered-result-reconstruction-authority.mjs
+      - name: Verify Movie Mentor recovered response effect-binding authority
+        run: node scripts/verify-movie-mentor-recovered-response-effect-binding-authority.mjs
+      - name: Verify Movie Mentor recovered response effect-binding Backend CI authority
+        run: node scripts/verify-movie-mentor-recovered-response-effect-binding-backend-ci-authority.mjs
+      - name: Verify Movie Mentor recovered provider model authority
+        run: node scripts/verify-movie-mentor-recovered-provider-model-authority.mjs
+      - name: Verify Movie Mentor recovered provider model Backend CI authority
+        run: node scripts/verify-movie-mentor-recovered-provider-model-backend-ci-authority.mjs
+      - name: Verify Movie Mentor provider reconstruction-input integrity authority
+        run: node scripts/verify-movie-mentor-provider-reconstruction-input-integrity-authority.mjs
+      - name: Verify Movie Mentor provider operation input-integrity authority
+        run: node scripts/verify-movie-mentor-provider-operation-input-integrity-authority.mjs
+      - name: Verify Movie Mentor provider evidence durability authority
+        run: node scripts/verify-movie-mentor-provider-evidence-durability-authority.mjs
+      - name: Verify Movie Mentor provider evidence durability Backend CI authority
+        run: node scripts/verify-movie-mentor-provider-evidence-durability-backend-ci-authority.mjs
+      - name: Verify Movie Mentor provider evidence operation-binding authority
+        run: node scripts/verify-movie-mentor-provider-evidence-operation-binding-authority.mjs
+      - name: Verify Movie Mentor provider evidence operation-binding Backend CI authority
+        run: node scripts/verify-movie-mentor-provider-evidence-operation-binding-backend-ci-authority.mjs
+      - name: Verify Movie Mentor provider transport-target authority
+        run: node scripts/verify-movie-mentor-provider-transport-target-authority.mjs
+      - name: Verify Movie Mentor provider transport-target Backend CI authority
+        run: node scripts/verify-movie-mentor-provider-transport-target-backend-ci-authority.mjs
+      - name: Verify Movie Mentor provider recovery transport-target authority
+        run: node scripts/verify-movie-mentor-provider-recovery-transport-target-authority.mjs
+      - name: Verify Movie Mentor provider recovery transport-target Backend CI authority
+        run: node scripts/verify-movie-mentor-provider-recovery-transport-target-backend-ci-authority.mjs
+      - name: Verify Movie Mentor provider redirect-target authority
+        run: node scripts/verify-movie-mentor-provider-redirect-target-authority.mjs
+      - name: Verify Movie Mentor provider redirect-target Backend CI authority
+        run: node scripts/verify-movie-mentor-provider-redirect-target-backend-ci-authority.mjs
+      - name: Verify Movie Mentor provider model authority
+        run: node scripts/verify-movie-mentor-provider-model-authority.mjs
+      - name: Verify Movie Mentor provider model production-composition authority
+        run: node scripts/verify-movie-mentor-provider-model-composition-authority.mjs
+      - name: Verify Movie Mentor provider model Backend CI authority
+        run: node scripts/verify-movie-mentor-provider-model-backend-ci-authority.mjs
+      - name: Verify Movie Mentor provider null-model runtime propagation authority
+        run: node scripts/verify-movie-mentor-provider-null-model-runtime-propagation.mjs
+      - name: Verify Movie Mentor provider null-model runtime Backend CI authority
+        run: node scripts/verify-movie-mentor-provider-null-model-runtime-backend-ci-authority.mjs
+      - name: Verify Movie Mentor Continuity historical-input authority
+        run: node scripts/verify-movie-mentor-continuity-historical-input-authority.mjs
+      - name: Verify Movie Mentor Continuity historical-input Backend CI authority
+        run: node scripts/verify-movie-mentor-continuity-historical-input-backend-ci-authority.mjs
+      - name: Verify Movie Mentor live execution lease enforcement
+        run: node scripts/verify-movie-mentor-live-execution-lease-enforcement.mjs
+      - name: Verify Movie Mentor Live Lease Backend CI authority
+        run: node scripts/verify-movie-mentor-live-lease-backend-ci-authority.mjs
+      - name: Verify Movie Mentor Operations architecture hardening v2
+        run: npm run verify:movie-mentor-operations
+      - name: Verify Movie Mentor Operations Warp 40 seams
+        run: npm run verify:movie-mentor-operations-warp40
+      - name: Verify Movie Mentor Operations replay freshness
+        run: npm run verify:movie-mentor-operations-replay
+      - name: Verify Movie Mentor Operations authoritative replay proof
+        run: npm run verify:movie-mentor-operations-replay-proof
+      - name: Verify Movie Mentor Operations atomic freshness
+        run: npm run verify:movie-mentor-operations-atomic-freshness
+      - name: Verify Movie Mentor Operations scope isolation
+        run: npm run verify:movie-mentor-operations-scope
+      - name: Verify Movie Mentor Operations runtime origin attestation
+        run: npm run verify:movie-mentor-operations-runtime-origin
+      - name: Verify Movie Mentor Operations reality evidence
+        run: npm run verify:movie-mentor-operations-reality
+      - name: Verify Movie Mentor Operations mutation capability power boundary
+        run: npm run verify:movie-mentor-operations-power
+      - name: Verify Movie Mentor creator work custody soul boundary
+        run: npm run verify:movie-mentor-operations-soul
+      - name: Verify Movie Mentor concurrent creator revision barrier
+        run: npm run verify:movie-mentor-creator-revision-barrier
+      - name: Verify Movie Mentor multi-device creator branch convergence
+        run: npm run verify:movie-mentor-creator-branch-convergence
+      - name: Verify Movie Mentor Infinity Gauntlet integration
+        run: npm run verify:movie-mentor-operations-gauntlet
+      - name: Verify Movie Mentor atomic Gauntlet mutation boundary
+        run: npm run verify:movie-mentor-operations-atomic-gauntlet
+      - name: Verify Movie Mentor distributed effect reconciliation
+        run: npm run verify:movie-mentor-operations-distributed-effects
+      - name: Verify Movie Mentor reconciliation lease split-brain fencing
+        run: npm run verify:movie-mentor-operations-reconciliation-lease
+      - name: Verify Movie Mentor lease authority quorum
+        run: npm run verify:movie-mentor-operations-lease-authority-quorum
+      - name: Verify Movie Mentor authority re-entry convergence
+        run: npm run verify:movie-mentor-operations-authority-reentry
+      - name: Verify Movie Mentor recovery anti-flapping stability
+        run: npm run verify:movie-mentor-operations-recovery-stability
+      - name: Verify permanent Recovery Catastrophe Regression Matrix
+        run: npm run verify:movie-mentor-recovery-matrix
+      - name: Verify adversarial cross-layer catastrophe v2
+        run: npm run verify:movie-mentor-cross-layer-catastrophe
+
+      - name: Check Movie Mentor canonical schema settlement authority syntax
+        run: node --check scripts/verify-movie-mentor-canonical-schema-settlement-authority.mjs
+      - name: Verify Movie Mentor canonical schema settlement authority
+        run: node scripts/verify-movie-mentor-canonical-schema-settlement-authority.mjs
