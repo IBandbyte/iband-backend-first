@@ -71,8 +71,22 @@ await deps.interpretSemantics({ message: "prove null model propagation" });
 assert.ok(observedProviderOperation, "runtime must pass provider operation identity to the provider adapter boundary");
 assert.equal(observedProviderOperation.providerOperationId, providerCall.providerCallId);
 assert.ok(
+  Object.prototype.hasOwnProperty.call(observedProviderOperation, "providerModelAuthorityBound"),
+  "runtime must carry an explicit model-authority marker instead of borrowing authority from providerTarget",
+);
+assert.equal(
+  observedProviderOperation.providerModelAuthorityBound,
+  true,
+  "an explicitly authorized null model must cross the runtime boundary as owned model authority rather than disappearing into absence",
+);
+assert.ok(
+  Object.prototype.hasOwnProperty.call(observedProviderOperation, "providerModel"),
+  "runtime must carry the authorized provider model value even when that value is null",
+);
+assert.equal(observedProviderOperation.providerModel, null);
+assert.ok(
   Object.prototype.hasOwnProperty.call(observedProviderOperation.providerTarget, "dispatchModel"),
-  "runtime must preserve the model-authority field even when its authorized value is null",
+  "runtime must also preserve the target-bound dispatch model field even when its authorized value is null",
 );
 assert.equal(observedProviderOperation.providerTarget.dispatchModel, null);
 
@@ -80,11 +94,11 @@ const socketOperation = normalizeProviderOperation(observedProviderOperation);
 assert.equal(
   socketOperation.providerModelAuthorityBound,
   true,
-  "provider socket must distinguish an explicitly authorized null model from missing model authority",
+  "provider socket must preserve the runtime-owned explicit null model authority marker",
 );
 assert.equal(socketOperation.providerModel, null);
 
-console.log("✓ runtime preserves explicit null-model authority through the provider target envelope");
-console.log("✓ provider socket recognizes that explicit null as owned model authority");
+console.log("✓ runtime preserves explicit null-model authority through its owned provider-operation envelope");
+console.log("✓ provider socket preserves that explicit runtime-owned null authority");
 console.log("LAW: NULL MAY BE THE AUTHORIZED VALUE. ABSENCE OF PROOF IS NOT THE SAME THING.");
 console.log("Movie Mentor provider null-model runtime propagation gate: GREEN");
