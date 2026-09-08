@@ -1,0 +1,23 @@
+name: Verify Movie Mentor Current Schema Closure Entry Authority
+
+on:
+  push:
+    branches:
+      - movie-mentor-current-schema-closure-entry-authority
+  pull_request:
+    paths:
+      - "ai/MovieMentorInferenceExecutionClosureAuthority.js"
+      - "scripts/verify-movie-mentor-current-schema-closure-entry-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-current-schema-closure-entry-authority.yml"
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - run: node scripts/verify-movie-mentor-current-schema-closure-entry-authority.mjs
