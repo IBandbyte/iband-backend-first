@@ -10,7 +10,7 @@ import { recoverPreviouslyAdmittedProviderResult } from "./MovieMentorRecoveredP
 import { reconstructRecoveredMovieMentorSemanticResult } from "./MovieMentorRecoveredSemanticResult.js";
 import { reconstructRecoveredMovieMentorSpecialistResult, reconstructRecoveredMovieMentorSynthesisResult } from "./MovieMentorRecoveredTaskResult.js";
 
-const MOVIE_MENTOR_TURN_RUNTIME_VERSION = "2.13.0";
+const MOVIE_MENTOR_TURN_RUNTIME_VERSION = "2.14.0";
 const s = (value) => (typeof value === "string" ? value.trim() : "");
 
 function clone(value) {
@@ -330,17 +330,44 @@ function createFencedInferenceOrchestrationDeps({ execution, inferenceExecutionA
       });
     }
 
+    const currentOperation = current?.providerOperationIdentity || dispatch?.providerOperationIdentity || null;
+    const providerTarget = currentOperation?.providerTarget && typeof currentOperation.providerTarget === "object"
+      ? Object.freeze(clone(currentOperation.providerTarget))
+      : null;
     const providerOperation = Object.freeze({
-      providerOperationId: s(decision.providerCallId),
-      executionId: s(decision.executionId),
-      slotId: s(decision.slotId || slotId),
-      task: s(decision.task || task),
+      providerOperationId: s(currentOperation?.providerOperationId || currentOperation?.providerCallId || decision.providerCallId),
+      executionId: s(currentOperation?.executionId || decision.executionId),
+      slotId: s(currentOperation?.slotId || decision.slotId || slotId),
+      task: s(currentOperation?.task || decision.task || task),
+      ...(providerTarget ? { providerTarget } : {}),
     });
     if (!providerOperation.providerOperationId || !providerOperation.executionId || !providerOperation.slotId || !providerOperation.task) {
       throw runtimeError(
         "MOVIE_MENTOR_PROVIDER_OPERATION_IDENTITY_REQUIRED",
         "Provider dispatch requires the exact durable provider-call identity before the irreversible network boundary.",
         { providerCallId: s(decision?.providerCallId) || null },
+      );
+    }
+    if (
+      currentOperation
+      && (
+        providerOperation.providerOperationId !== s(decision.providerCallId)
+        || providerOperation.executionId !== s(decision.executionId)
+        || providerOperation.slotId !== s(decision.slotId || slotId)
+        || providerOperation.task !== s(decision.task || task)
+      )
+    ) {
+      throw runtimeError(
+        "MOVIE_MENTOR_PROVIDER_OPERATION_IDENTITY_CONFLICT",
+        "Current provider-operation authority does not bind the exact admitted provider-call universe.",
+        { providerCallId: s(decision?.providerCallId) || null },
+      );
+    }
+    if (currentOperation && !providerTarget) {
+      throw runtimeError(
+        "MOVIE_MENTOR_PROVIDER_TRANSPORT_TARGET_AUTHORITY_REQUIRED",
+        "Current provider dispatch authority must carry the exact provider target to the irreversible transport boundary.",
+        { providerCallId: providerOperation.providerOperationId },
       );
     }
 
