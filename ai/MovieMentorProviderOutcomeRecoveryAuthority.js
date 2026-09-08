@@ -4,7 +4,7 @@ import {
   sameMovieMentorProviderTarget,
 } from "./MovieMentorProviderTargetAuthority.js";
 
-const VERSION = "1.2.0";
+const VERSION = "1.3.0";
 const DOMAIN = "iband.movie-mentor.provider-outcome-recovery-authority";
 const OUTCOMES = Object.freeze({
   CONFIRMED_EFFECT: "CONFIRMED_EFFECT",
@@ -142,6 +142,17 @@ function normalizeRecoveryAuthorityProof(proof, binding) {
   return freeze({ ownerId, leaseGeneration, leaseReference, fencingToken });
 }
 
+function sameRecoveryAuthority(left, right) {
+  return Boolean(
+    left
+    && right
+    && left.ownerId === right.ownerId
+    && left.leaseGeneration === right.leaseGeneration
+    && left.leaseReference === right.leaseReference
+    && left.fencingToken === right.fencingToken
+  );
+}
+
 function createMovieMentorProviderOutcomeRecoveryAuthority({
   readProviderOperation = null,
   readProviderEffectReality = null,
@@ -234,6 +245,28 @@ function createMovieMentorProviderOutcomeRecoveryAuthority({
         recoveryErrorCode: text(error?.code) || null,
         ...(recoveryProof ? { recoveryOwnerId: recoveryProof.ownerId, recoveryLeaseGeneration: recoveryProof.leaseGeneration } : {}),
       });
+    }
+
+    if (requireRecoveryAuthority) {
+      const postIoProof = await assertCurrentRecoveryAuthority({
+        operation: freeze({ ...clone(operation), ...binding }),
+        providerEffectReality: clone(effect),
+        recoveryAuthority,
+      });
+      const postIoRecoveryProof = normalizeRecoveryAuthorityProof(postIoProof, binding);
+      if (!postIoRecoveryProof || !sameRecoveryAuthority(recoveryProof, postIoRecoveryProof)) {
+        fail(
+          "MOVIE_MENTOR_PROVIDER_RECOVERY_POST_IO_AUTHORITY_REVOKED",
+          "Provider recovery authority was lost or changed while provider recovery I/O was in flight; recovered bytes cannot gain local authority.",
+          {
+            retryable: true,
+            providerCallId: binding.providerCallId,
+            executionId: binding.executionId,
+            recoveryAuthorityReason: text(postIoProof?.reason) || null,
+          },
+        );
+      }
+      recoveryProof = postIoRecoveryProof;
     }
 
     const recoveredOperationId = text(recovered?.providerOperationId || recovered?.providerCallId);
