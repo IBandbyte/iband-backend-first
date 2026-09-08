@@ -7,6 +7,13 @@ on:
       - "ai/MovieMentorCanonicalResultMongoStore.js"
       - "scripts/verify-movie-mentor-canonical-schema-settlement-authority.mjs"
       - ".github/workflows/verify-movie-mentor-canonical-schema-settlement-authority.yml"
+  push:
+    branches: [main]
+    paths:
+      - "ai/MovieMentorInferenceSettlementMongoStore.js"
+      - "ai/MovieMentorCanonicalResultMongoStore.js"
+      - "scripts/verify-movie-mentor-canonical-schema-settlement-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-canonical-schema-settlement-authority.yml"
   workflow_dispatch:
 
 jobs:
@@ -17,8 +24,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-      - run: npm ci
+      - run: npm install --no-audit --no-fund --ignore-scripts
       - name: Syntax check canonical schema settlement authority
         run: |
           node --check ai/MovieMentorInferenceSettlementMongoStore.js
