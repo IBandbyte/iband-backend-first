@@ -84,6 +84,8 @@ try {
         slotId: current.slotId,
         task: current.task,
         providerTarget: current.providerTarget,
+        providerModelAuthorityBound: true,
+        providerModel: current.providerModel,
       },
     }),
     (error) => {

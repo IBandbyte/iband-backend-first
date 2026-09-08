@@ -79,10 +79,13 @@ try {
   process.env.IBAND_AI_API_KEY = "test-key";
   delete process.env.OPENAI_API_KEY;
 
-  const providerTarget = transportTargetFromConfig({
-    provider: "openai",
-    model: "gpt-test",
-    url: authorizedUrl,
+  const providerTarget = Object.freeze({
+    ...transportTargetFromConfig({
+      provider: "openai",
+      model: "gpt-test",
+      url: authorizedUrl,
+    }),
+    dispatchModel: "gpt-test",
   });
 
   await assert.rejects(
@@ -98,6 +101,7 @@ try {
         slotId: "semantic",
         task: "movie-mentor-redirect-target-authority",
         providerTarget,
+        providerModelAuthorityBound: true,
         providerModel: "gpt-test",
       },
     }),

@@ -26,10 +26,13 @@ const schema = {
   required: ["ok"],
 };
 
-const authorizedTarget = transportTargetFromConfig({
-  provider: "openai",
-  model: "gpt-test",
-  url: authorizedUrl,
+const authorizedTarget = Object.freeze({
+  ...transportTargetFromConfig({
+    provider: "openai",
+    model: "gpt-test",
+    url: authorizedUrl,
+  }),
+  dispatchModel: "gpt-test",
 });
 
 let networkCalls = 0;
@@ -93,6 +96,7 @@ try {
         slotId: "semantic",
         task: "movie-mentor-query-target-authority",
         providerTarget: authorizedTarget,
+        providerModelAuthorityBound: true,
         providerModel: "gpt-test",
       },
     }),
