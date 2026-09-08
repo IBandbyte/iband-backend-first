@@ -1,0 +1,23 @@
+name: Verify Movie Mentor Canonical Execution Schema Finalization Authority
+on:
+  pull_request:
+    paths:
+      - "ai/MovieMentorCanonicalResultMongoStore.js"
+      - "scripts/verify-movie-mentor-canonical-execution-schema-finalization-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-canonical-execution-schema-finalization-authority.yml"
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Syntax check canonical execution schema finalization authority
+        run: |
+          node --check ai/MovieMentorCanonicalResultMongoStore.js
+          node --check scripts/verify-movie-mentor-canonical-execution-schema-finalization-authority.mjs
+      - name: Verify canonical execution schema finalization authority
+        run: node scripts/verify-movie-mentor-canonical-execution-schema-finalization-authority.mjs
