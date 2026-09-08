@@ -58,6 +58,7 @@ const authority = createMovieMentorProviderOperationAuthority({
   store,
   now: () => new Date("2032-01-01T00:00:00.000Z"),
   resolveCurrentTarget: () => describeCurrentMovieMentorProviderTarget({ env: {} }),
+  resolveCurrentModel: () => "model-operation-input-integrity",
 });
 
 const integrityError = (error) => error?.code === "MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_INTEGRITY_INVALID";
