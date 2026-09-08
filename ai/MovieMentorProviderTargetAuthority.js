@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 
-const VERSION = "1.0.0";
+const VERSION = "1.1.0";
 const DOMAIN = "iband.movie-mentor.provider-target-authority";
 const RECOVERY_MODES = Object.freeze(["known-response-id-retrieval", "none"]);
 
@@ -53,6 +53,15 @@ function normalizeMovieMentorProviderTarget(value = {}) {
   return freeze({ provider, adapter, routeFingerprint: fingerprint, recoveryMode });
 }
 
+function normalizeMovieMentorProviderModel(value, { provider = "" } = {}) {
+  const providerName = text(provider).toLowerCase();
+  const model = text(value);
+  if (providerName === "openai" && !model) {
+    fail("MOVIE_MENTOR_PROVIDER_MODEL_REQUIRED", "OpenAI provider operation identity requires an exact configured inference model.");
+  }
+  return model || null;
+}
+
 function describeCurrentMovieMentorProviderTarget({ env = process.env } = {}) {
   const provider = text(env?.IBAND_AI_PROVIDER || "openai").toLowerCase();
   if (provider === "openai") {
@@ -77,6 +86,13 @@ function describeCurrentMovieMentorProviderTarget({ env = process.env } = {}) {
   fail("MOVIE_MENTOR_PROVIDER_TARGET_UNSUPPORTED", "Unsupported Movie Mentor provider cannot acquire provider target authority.", { provider: provider || null });
 }
 
+function describeCurrentMovieMentorProviderModel({ env = process.env, providerTarget = null } = {}) {
+  const target = providerTarget
+    ? normalizeMovieMentorProviderTarget(providerTarget)
+    : describeCurrentMovieMentorProviderTarget({ env });
+  return normalizeMovieMentorProviderModel(env?.IBAND_AI_MODEL, { provider: target.provider });
+}
+
 function sameMovieMentorProviderTarget(left, right) {
   const a = normalizeMovieMentorProviderTarget(left);
   const b = normalizeMovieMentorProviderTarget(right);
@@ -86,6 +102,10 @@ function sameMovieMentorProviderTarget(left, right) {
     && a.recoveryMode === b.recoveryMode;
 }
 
+function sameMovieMentorProviderModel(left, right) {
+  return (text(left) || null) === (text(right) || null);
+}
+
 export {
   VERSION as MOVIE_MENTOR_PROVIDER_TARGET_AUTHORITY_VERSION,
   DOMAIN as MOVIE_MENTOR_PROVIDER_TARGET_AUTHORITY_DOMAIN,
@@ -93,8 +113,11 @@ export {
   sanitizeProviderRoute,
   routeFingerprint as fingerprintMovieMentorProviderRoute,
   normalizeMovieMentorProviderTarget,
+  normalizeMovieMentorProviderModel,
   describeCurrentMovieMentorProviderTarget,
+  describeCurrentMovieMentorProviderModel,
   sameMovieMentorProviderTarget,
+  sameMovieMentorProviderModel,
 };
 
 export default describeCurrentMovieMentorProviderTarget;
