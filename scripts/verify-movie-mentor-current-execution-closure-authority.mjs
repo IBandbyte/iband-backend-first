@@ -14,7 +14,7 @@ function fakeModel(initial){
     findOne(){return chain(row);},
     findOneAndUpdate(filter,update){
       const matches=Object.entries(filter).every(([k,v])=>{if(k==="leaseExpiresAt"&&v?.$gt)return new Date(row[k])>new Date(v.$gt);if(k==="leaseExpiresAt"&&v?.$lte)return new Date(row[k])<=new Date(v.$lte);return row[k]===v;});
-      if(matches){writes+=1;row={...row,...structuredClone(update.$set||{})};}
+      if(matches){writes+=1;row={...row,...structuredClone(update.$set||{})};
       return chain(matches?row:null);
     }
   };
@@ -28,12 +28,7 @@ async function beginClosingCase(schema){
 }
 
 const current=await beginClosingCase(6);
-assert.equal(current.outcome.phase,"closing","current schema-6 execution must retain closure authority");
-assert.equal(current.model.writes,1);
 const legacy=await beginClosingCase(5);
-assert.equal(legacy.outcome.phase,"active","legacy execution must remain historical ACTIVE state instead of being upgraded into CLOSING authority");
-assert.equal(legacy.model.writes,0,"legacy execution must be rejected before the irreversible ACTIVE -> CLOSING write");
-assert.equal(legacy.model.row.schema,5,"legacy schema must not be silently rewritten to current schema as a side effect of closure");
 
 const frozenDigest=digest([]),closureReference="closure-legacy-closed";
 const certificate={executionId:"execution-legacy-closed",creatorTurnId:"turn-legacy-closed",principalId:"creator-legacy-closed",projectId:"project-legacy-closed",reservationId:"reservation-legacy-closed",requestDigest:"request-legacy-closed",closureReference,frozenProviderCallSetDigest:frozenDigest,closurePolicyVersion:MOVIE_MENTOR_INFERENCE_EXECUTION_CLOSURE_POLICY_VERSION,realities:[]};
@@ -41,8 +36,14 @@ const legacyClosed={...base,schema:5,executionId:certificate.executionId,creator
 const legacyClosedModel=fakeModel(legacyClosed),legacyClosedStore=createMovieMentorInferenceExecutionMongoStore({mongoModel:legacyClosedModel});
 const closure=createMovieMentorInferenceExecutionClosureAuthority({store:legacyClosedStore,effectStore:{async readEffect(){throw new Error("zero-call universe must not read effects");}},now:()=>new Date("2032-01-01T00:03:00.000Z")});
 const historical=await closure.assertCurrentClosure({executionId:legacyClosed.executionId,closureReference,closureCertificateDigest:legacyClosed.closureCertificateDigest});
-assert.equal(historical.authorized,false,"legacy CLOSED execution must not borrow recomputed provider reality to become current closure authority");
-assert.equal(historical.reason,"execution-current-schema-required");
+
+assert.equal(current.outcome.phase,"closing","current schema-6 execution must retain closure authority");
+assert.equal(current.model.writes,1);
+assert.deepEqual(
+  {legacyPhase:legacy.outcome.phase,legacyWrites:legacy.model.writes,legacySchema:legacy.model.row.schema,historicalAuthorized:historical.authorized,historicalReason:historical.reason??null},
+  {legacyPhase:"active",legacyWrites:0,legacySchema:5,historicalAuthorized:false,historicalReason:"execution-current-schema-required"},
+  "legacy execution history must neither cross ACTIVE -> CLOSING as an implicit schema migration nor borrow recomputed reality as current CLOSED authority",
+);
 
 console.log("GREEN: execution history stays readable, but only current schema-6 records may enter CLOSING or return as current CLOSED authority.");
 console.log("LAW: A CLOSURE TRANSITION MUST NOT DOUBLE AS A SCHEMA MIGRATION. HISTORY MAY SURVIVE; CURRENT CLOSURE AUTHORITY MAY NOT BE BORROWED.");
