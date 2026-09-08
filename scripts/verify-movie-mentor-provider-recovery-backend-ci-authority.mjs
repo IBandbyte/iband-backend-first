@@ -4,6 +4,7 @@ import fs from "node:fs";
 const workflow = fs.readFileSync(new URL("../.github/workflows/ci-backend.yml", import.meta.url), "utf8");
 const jurisdiction = "scripts/verify-movie-mentor-provider-recovery-backend-ci-authority.mjs";
 const postIoLeaseCourt = "scripts/verify-movie-mentor-provider-recovery-post-io-lease-authority.mjs";
+const postIoRealityCourt = "scripts/verify-movie-mentor-provider-recovery-post-io-reality-authority.mjs";
 
 const requiredSyntaxOwners = [
   "ai/MovieMentorProviderTargetAuthority.js",
@@ -24,13 +25,8 @@ const requiredSyntaxOwners = [
 ];
 
 for (const owner of requiredSyntaxOwners) {
-  assert.match(
-    workflow,
-    new RegExp(`node --check ${owner.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`),
-    `Backend CI must own syntax proof for ${owner}`,
-  );
+  assert.match(workflow, new RegExp(`node --check ${owner.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`), `Backend CI must own syntax proof for ${owner}`);
 }
-
 for (const court of [
   "scripts/verify-movie-mentor-provider-recovery-identity-authority.mjs",
   "scripts/verify-movie-mentor-provider-outcome-recovery-authority.mjs",
@@ -38,21 +34,15 @@ for (const court of [
   "scripts/verify-movie-mentor-provider-recovery-operation-binding-authority.mjs",
   jurisdiction,
 ]) {
-  assert.match(
-    workflow,
-    new RegExp(`node ${court.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`),
-    `Backend CI must behaviorally execute ${court}`,
-  );
+  assert.match(workflow, new RegExp(`node ${court.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`), `Backend CI must behaviorally execute ${court}`);
 }
-
-assert.equal(
-  fs.existsSync(new URL(`../${postIoLeaseCourt}`, import.meta.url)),
-  true,
-  "Backend CI jurisdiction must carry the post-I/O recovery lease court in the committed tree",
-);
+for (const court of [postIoLeaseCourt, postIoRealityCourt]) {
+  assert.equal(fs.existsSync(new URL(`../${court}`, import.meta.url)), true, `Backend CI jurisdiction must carry ${court} in the committed tree`);
+}
 await import("./verify-movie-mentor-provider-recovery-post-io-lease-authority.mjs");
+await import("./verify-movie-mentor-provider-recovery-post-io-reality-authority.mjs");
 
 console.log("✓ Backend CI owns syntax proof for provider recovery production modules, courts, and jurisdiction verifier");
-console.log("✓ Backend CI executes provider recovery identity, outcome, current-lease, operation-binding, post-I/O lease, and jurisdiction courts");
+console.log("✓ Backend CI executes provider recovery identity, outcome, current-lease, operation-binding, post-I/O lease, post-I/O reality, and jurisdiction courts");
 console.log("LAW: BACKEND CI MAY NOT CERTIFY PRODUCTION CODE OR PROOF IT DOES NOT ACTUALLY OWN.");
 console.log("Movie Mentor provider recovery Backend CI authority gate: GREEN");
