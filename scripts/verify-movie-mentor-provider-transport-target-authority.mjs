@@ -14,6 +14,8 @@ function restore() {
   globalThis.fetch = originalFetch;
 }
 
+const schema = { type: "object", additionalProperties: false, properties: { value: { type: "string" } }, required: ["value"] };
+
 try {
   process.env.IBAND_AI_PROVIDER = "openai";
   process.env.IBAND_AI_MODEL = "gpt-test";
@@ -43,7 +45,7 @@ try {
       task: "movie-mentor-transport-target-proof",
       systemInstructions: "Return the required schema.",
       input: { proof: true },
-      schema: { type: "object", additionalProperties: false, properties: { value: { type: "string" } }, required: ["value"] },
+      schema,
       schemaName: "movie_mentor_transport_target_authority",
       providerOperation,
     }),
@@ -101,6 +103,40 @@ try {
   });
   await fenced.interpretSemantics({ proof: true });
   assert.deepEqual(runtimeOperation?.providerTarget, providerTarget, "runtime must transport the exact provider target proven by assertProviderDispatch into the provider adapter boundary");
+
+  // End-to-end production-shaped race: current dispatch proves route A, then configuration drifts
+  // before the actual provider adapter reads its transport config. The adapter must still fail closed.
+  process.env.IBAND_AI_BASE_URL = "https://authorized-provider.example.test/v1/responses";
+  networkCalls = 0;
+  observedUrl = null;
+  const endToEndAuthority = {
+    ...runtimeAuthority,
+    async assertProviderDispatch() {
+      process.env.IBAND_AI_BASE_URL = "https://drifted-provider.example.test/v1/responses";
+      return { authorized: true, dispatchAuthorized: true, providerOperationIdentity: durableOperation };
+    },
+  };
+  const endToEnd = createFencedInferenceOrchestrationDeps({
+    execution: { authorized: true },
+    inferenceExecutionAuthority: endToEndAuthority,
+    deps: {
+      interpretSemantics: (input, context = {}) => executeStructuredAI({
+        task: "movie-mentor-transport-target-proof",
+        systemInstructions: "Return the required schema.",
+        input,
+        schema,
+        schemaName: "movie_mentor_transport_target_authority",
+        providerOperation: context.providerOperation,
+      }),
+    },
+  });
+  await assert.rejects(
+    () => endToEnd.interpretSemantics({ proof: "runtime-to-socket" }),
+    (error) => error?.code === "AI_PROVIDER_TRANSPORT_TARGET_AUTHORITY_INVALID",
+    "runtime-carried target authority must survive all the way to the real provider socket",
+  );
+  assert.equal(networkCalls, 0, "end-to-end target drift must fail before fetch");
+  assert.equal(observedUrl, null, "end-to-end target drift must not contact the drifted destination");
 
   console.log("LAW: THE TARGET THAT CROSSES THE NETWORK BOUNDARY MUST BE THE TARGET THAT WON AUTHORITY.");
   console.log("LAW: A PRE-FLIGHT TARGET CHECK IS NOT A TRANSPORT BINDING.");
