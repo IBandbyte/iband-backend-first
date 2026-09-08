@@ -1,0 +1,44 @@
+name: Repair Movie Mentor Canonical Schema Settlement Authority
+
+on:
+  push:
+    branches: [movie-mentor-canonical-schema-settlement-authority]
+    paths:
+      - ".github/workflows/repair-movie-mentor-canonical-schema-settlement-authority.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: movie-mentor-canonical-schema-settlement-authority
+      - name: Apply exact production repair
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("ai/MovieMentorInferenceSettlementMongoStore.js")
+          source = path.read_text()
+          replacements = [
+              ('const VERSION="1.11.0",DOMAIN=', 'const VERSION="1.12.0",DOMAIN='),
+              ('result.domain!==RESULT_DOMAIN||![1,2].includes(result.schema)||!bindingMatches(result,execution)', 'result.domain!==RESULT_DOMAIN||result.schema!==2||!bindingMatches(result,execution)'),
+          ]
+          for old, new in replacements:
+              if source.count(old) != 1:
+                  raise SystemExit(f"expected exactly one production seam for {old!r}; found {source.count(old)}")
+              source = source.replace(old, new)
+          path.write_text(source)
+          PY
+          node --check ai/MovieMentorInferenceSettlementMongoStore.js
+          git diff --check
+          git diff -- ai/MovieMentorInferenceSettlementMongoStore.js
+      - name: Commit exact repair
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ai/MovieMentorInferenceSettlementMongoStore.js
+          git commit -m "Require current canonical result schema at settlement"
+          git push origin HEAD:movie-mentor-canonical-schema-settlement-authority
