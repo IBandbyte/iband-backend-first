@@ -21,7 +21,8 @@ const currentReason=await settlementReasonFor(resultStatus.schema);assert.equal(
 const legacyReason=await settlementReasonFor(1);assert.equal(legacyReason,"canonical-result-binding-invalid",`legacy canonical schema must fail closed at settlement before candidate/finalization authority; got ${legacyReason}`);
 console.log(`✓ current canonical schema-${resultStatus.schema} crosses settlement validation with proof-bearing candidate lineage`);console.log("✓ legacy canonical schema is denied authority at the irreversible settlement boundary");console.log("LAW: CURRENT DURABLE SCHEMA MUST CROSS EVERY IRREVERSIBLE BOUNDARY OR THE GATE FAILS CLOSED");console.log("5A.28 canonical-result schema settlement authority torture: GREEN");
 
-// Backend CI owns the adjacent canonical finalization courts directly rather than
+// Backend CI owns the adjacent canonical authority courts directly rather than
 // borrowing their dedicated workflow results.
 await import("./verify-movie-mentor-canonical-execution-schema-finalization-authority.mjs");
 await import("./verify-movie-mentor-legacy-canonical-finalization-authority.mjs");
+await import("./verify-movie-mentor-legacy-canonical-read-authority.mjs");
