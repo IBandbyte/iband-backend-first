@@ -51,6 +51,8 @@ jobs:
           node --check scripts/verify-movie-mentor-provider-evidence-durability-backend-ci-authority.mjs &&
           node --check scripts/verify-movie-mentor-provider-evidence-operation-binding-authority.mjs &&
           node --check scripts/verify-movie-mentor-provider-evidence-operation-binding-backend-ci-authority.mjs &&
+          node --check scripts/verify-movie-mentor-provider-transport-target-authority.mjs &&
+          node --check scripts/verify-movie-mentor-provider-transport-target-backend-ci-authority.mjs &&
           node --check scripts/verify-movie-mentor-specialist-provider-evidence-authority.mjs &&
           node --check scripts/verify-movie-mentor-specialist-provider-evidence-backend-ci-authority.mjs &&
           node --check scripts/verify-movie-mentor-continuity-historical-input-authority.mjs &&
@@ -133,6 +135,10 @@ jobs:
         run: node scripts/verify-movie-mentor-provider-evidence-operation-binding-authority.mjs
       - name: Verify Movie Mentor provider evidence operation-binding Backend CI authority
         run: node scripts/verify-movie-mentor-provider-evidence-operation-binding-backend-ci-authority.mjs
+      - name: Verify Movie Mentor provider transport-target authority
+        run: node scripts/verify-movie-mentor-provider-transport-target-authority.mjs
+      - name: Verify Movie Mentor provider transport-target Backend CI authority
+        run: node scripts/verify-movie-mentor-provider-transport-target-backend-ci-authority.mjs
       - name: Verify Movie Mentor Continuity historical-input authority
         run: node scripts/verify-movie-mentor-continuity-historical-input-authority.mjs
       - name: Verify Movie Mentor Continuity historical-input Backend CI authority
