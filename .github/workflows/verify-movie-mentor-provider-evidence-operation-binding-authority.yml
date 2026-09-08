@@ -4,12 +4,14 @@ on:
   push:
     paths:
       - "ai/MovieMentorProviderEffectAuthority.js"
+      - "ai/MovieMentorProductionInferenceExecutionComposition.js"
       - "ai/MovieMentorTurnRuntime.js"
       - "scripts/verify-movie-mentor-provider-evidence-operation-binding-authority.mjs"
       - ".github/workflows/verify-movie-mentor-provider-evidence-operation-binding-authority.yml"
   pull_request:
     paths:
       - "ai/MovieMentorProviderEffectAuthority.js"
+      - "ai/MovieMentorProductionInferenceExecutionComposition.js"
       - "ai/MovieMentorTurnRuntime.js"
       - "scripts/verify-movie-mentor-provider-evidence-operation-binding-authority.mjs"
       - ".github/workflows/verify-movie-mentor-provider-evidence-operation-binding-authority.yml"
@@ -24,5 +26,7 @@ jobs:
           node-version: 20
       - name: Install dependencies
         run: npm install --no-audit --no-fund --ignore-scripts
+      - run: node --check ai/MovieMentorProviderEffectAuthority.js
+      - run: node --check ai/MovieMentorProductionInferenceExecutionComposition.js
       - run: node --check scripts/verify-movie-mentor-provider-evidence-operation-binding-authority.mjs
       - run: node scripts/verify-movie-mentor-provider-evidence-operation-binding-authority.mjs
