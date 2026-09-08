@@ -6,13 +6,12 @@ const providerCallId = "provider-call-model-recovery-1";
 const executionId = "execution-model-recovery-1";
 const slotId = "semantic";
 const task = "semantic-interpretation";
-const historicalModel = Object.freeze({ provider: "openai", model: "gpt-historical" });
+const historicalModel = "gpt-historical";
 const historicalTarget = Object.freeze({
   provider: "openai",
   adapter: "openai-responses",
-  routeFingerprint: "route-fingerprint",
+  routeFingerprint: "a".repeat(64),
   recoveryMode: "known-response-id-retrieval",
-  dispatchModel: historicalModel,
 });
 
 function canonicalize(value) {
@@ -64,7 +63,7 @@ await recoverPreviouslyAdmittedProviderResult({
     slotId,
     task,
     externalEffectId: "resp-model-recovery-1",
-    recoveredProviderResponse: Object.freeze({ id: "resp-model-recovery-1", model: "gpt-historical" }),
+    recoveredProviderResponse: Object.freeze({ id: "resp-model-recovery-1", model: historicalModel }),
   }),
   readProviderOperation: async () => operation,
   reconstructRecoveredResult: async ({ providerOperation }) => {
@@ -78,7 +77,7 @@ assert.equal(
   true,
   "recovered reconstruction must receive explicit historical provider-model authority rather than losing it at the recovery boundary",
 );
-assert.deepEqual(
+assert.equal(
   observedProviderOperation?.providerModel,
   historicalModel,
   "recovered reconstruction must receive the exact durable provider model that authorized the historical operation",
@@ -86,7 +85,7 @@ assert.deepEqual(
 assert.deepEqual(
   observedProviderOperation?.providerTarget,
   historicalTarget,
-  "recovered reconstruction must receive the exact durable provider target carrying the historical dispatch model",
+  "recovered reconstruction must receive the exact durable provider target that authorized the historical operation",
 );
 
 console.log("Movie Mentor recovered provider model authority verifier passed.");
