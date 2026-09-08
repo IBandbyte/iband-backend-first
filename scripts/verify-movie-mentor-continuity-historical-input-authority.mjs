@@ -68,9 +68,16 @@ let cacheReadCalls = 0;
 let activeCache = cacheA;
 let takeover = false;
 
+const historicalProviderModel = "test-model";
+const historicalProviderTarget = Object.freeze({
+  provider: "openai",
+  adapter: "openai-responses",
+  routeFingerprint: "a".repeat(64),
+  recoveryMode: "known-response-id-retrieval",
+});
 const recoveredProviderResponse = Object.freeze({
   id: "resp-continuity-input-one",
-  model: "test-model",
+  model: historicalProviderModel,
   output_text: JSON.stringify({
     agentId: "continuity",
     derivedConstraints: [],
@@ -78,7 +85,7 @@ const recoveredProviderResponse = Object.freeze({
     unresolvedContinuityQuestions: [],
     provisionalSuggestions: [],
     confidence: 1,
-    provenance: { source: "provider", model: "test-model", contractVersion: "2.1.1" },
+    provenance: { source: "provider", model: historicalProviderModel, contractVersion: "2.1.1" },
   }),
 });
 
@@ -140,9 +147,12 @@ const authority = {
     return Object.freeze({
       authorized: true,
       providerCallId: call.providerCallId,
+      providerOperationId: call.providerCallId,
       executionId: call.executionId,
       slotId: call.slotId,
       task: call.task,
+      providerTarget: historicalProviderTarget,
+      providerModel: historicalProviderModel,
       reconstructionInputDigest: digestMovieMentorProviderReconstructionInput(durableHistoricalInput),
       reconstructionInput: structuredClone(durableHistoricalInput),
     });
