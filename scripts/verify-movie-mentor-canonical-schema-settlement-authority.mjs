@@ -56,3 +56,8 @@ console.log(`✓ current canonical schema-${resultStatus.schema} crosses settlem
 console.log("✓ legacy canonical schema is denied authority at the irreversible settlement boundary");
 console.log("LAW: CURRENT DURABLE SCHEMA MUST CROSS EVERY IRREVERSIBLE BOUNDARY OR THE GATE FAILS CLOSED");
 console.log("5A.28 canonical-result schema settlement authority torture: GREEN");
+
+// Backend CI executes this verifier directly. Import the adjacent CLOSED -> FINALIZED
+// execution-schema court here so Backend CI owns that proof instead of borrowing
+// the dedicated workflow's GREEN.
+await import("./verify-movie-mentor-canonical-execution-schema-finalization-authority.mjs");
