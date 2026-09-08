@@ -6,12 +6,16 @@ on:
       - "ai/MovieMentorTurnRuntime.js"
       - "ai/MovieMentorProviderEffectAuthority.js"
       - "scripts/verify-movie-mentor-provider-evidence-durability-authority.mjs"
+      - "scripts/verify-movie-mentor-provider-evidence-durability-backend-ci-authority.mjs"
+      - ".github/workflows/ci-backend.yml"
       - ".github/workflows/verify-movie-mentor-provider-evidence-durability-authority.yml"
   pull_request:
     paths:
       - "ai/MovieMentorTurnRuntime.js"
       - "ai/MovieMentorProviderEffectAuthority.js"
       - "scripts/verify-movie-mentor-provider-evidence-durability-authority.mjs"
+      - "scripts/verify-movie-mentor-provider-evidence-durability-backend-ci-authority.mjs"
+      - ".github/workflows/ci-backend.yml"
       - ".github/workflows/verify-movie-mentor-provider-evidence-durability-authority.yml"
 
 jobs:
