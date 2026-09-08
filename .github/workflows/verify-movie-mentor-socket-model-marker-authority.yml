@@ -5,11 +5,13 @@ on:
     paths:
       - "ai/StructuredAIProviderClient.js"
       - "scripts/verify-movie-mentor-socket-model-marker-authority.mjs"
+      - "scripts/verify-movie-mentor-provider-null-model-runtime-backend-ci-authority.mjs"
       - ".github/workflows/verify-movie-mentor-socket-model-marker-authority.yml"
   pull_request:
     paths:
       - "ai/StructuredAIProviderClient.js"
       - "scripts/verify-movie-mentor-socket-model-marker-authority.mjs"
+      - "scripts/verify-movie-mentor-provider-null-model-runtime-backend-ci-authority.mjs"
       - ".github/workflows/verify-movie-mentor-socket-model-marker-authority.yml"
   workflow_dispatch:
 
@@ -25,4 +27,5 @@ jobs:
         run: npm install --no-audit --no-fund --ignore-scripts
       - run: node --check ai/StructuredAIProviderClient.js
       - run: node --check scripts/verify-movie-mentor-socket-model-marker-authority.mjs
+      - run: node --check scripts/verify-movie-mentor-provider-null-model-runtime-backend-ci-authority.mjs
       - run: node scripts/verify-movie-mentor-socket-model-marker-authority.mjs
