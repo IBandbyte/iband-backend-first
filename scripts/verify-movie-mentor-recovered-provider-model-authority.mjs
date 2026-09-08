@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import { recoverPreviouslyAdmittedProviderResult } from "../ai/MovieMentorRecoveredProviderResultAuthority.js";
 
 const providerCallId = "provider-call-model-recovery-1";
@@ -14,6 +15,12 @@ const historicalTarget = Object.freeze({
   dispatchModel: historicalModel,
 });
 
+function canonicalize(value) {
+  if (value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map(canonicalize);
+  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalize(value[key])]));
+}
+
 const decision = Object.freeze({
   dispatchAuthorized: false,
   reason: "provider-call-slot-already-admitted",
@@ -22,6 +29,10 @@ const decision = Object.freeze({
 });
 const execution = Object.freeze({ executionId });
 const reconstructionInput = Object.freeze({ creatorMessage: "historical input" });
+const reconstructionInputDigest = crypto
+  .createHash("sha256")
+  .update(JSON.stringify(canonicalize(reconstructionInput)))
+  .digest("hex");
 const operation = Object.freeze({
   authorized: true,
   providerCallId,
@@ -31,17 +42,9 @@ const operation = Object.freeze({
   task,
   providerTarget: historicalTarget,
   providerModel: historicalModel,
-  reconstructionInputDigest: "placeholder",
+  reconstructionInputDigest,
   reconstructionInput,
 });
-
-const crypto = await import("node:crypto");
-function canonicalize(value) {
-  if (value === null || typeof value !== "object") return value;
-  if (Array.isArray(value)) return value.map(canonicalize);
-  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalize(value[key])]));
-}
-operation.reconstructionInputDigest = crypto.createHash("sha256").update(JSON.stringify(canonicalize(reconstructionInput))).digest("hex");
 
 let observedProviderOperation = null;
 await recoverPreviouslyAdmittedProviderResult({
