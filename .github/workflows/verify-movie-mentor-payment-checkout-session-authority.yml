@@ -22,3 +22,7 @@ jobs:
       - run: npm install --no-audit --no-fund --ignore-scripts
       - run: node --check scripts/verify-movie-mentor-payment-checkout-session-authority.mjs
       - run: node scripts/verify-movie-mentor-payment-checkout-session-authority.mjs
+      - name: Regress commercial provider ingress authority
+        run: node scripts/verify-movie-mentor-commercial-provider-ingress-authority.mjs
+      - name: Regress provider registry transitive provenance
+        run: node scripts/verify-movie-mentor-provider-registry-transitive-provenance.mjs
