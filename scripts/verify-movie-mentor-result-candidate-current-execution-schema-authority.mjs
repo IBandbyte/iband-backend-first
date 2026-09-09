@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import mongoose from "mongoose";
 import { createMovieMentorResultCandidateMongoStore } from "../ai/MovieMentorResultCandidateMongoStore.js";
 import { MOVIE_MENTOR_CREATOR_STATE_CONSUMPTION_PROOF_DOMAIN, MOVIE_MENTOR_CREATOR_STATE_CONSUMPTION_SCHEMA } from "../ai/MovieMentorCreatorStateConsumptionAuthority.js";
+import "./verify-movie-mentor-result-candidate-idempotent-current-state-authority.mjs";
 
 function query(value){return{session(){return this;},lean(){return this;},async exec(){return value?structuredClone(value):null;}};}
 function session(){return{async withTransaction(fn){await fn();},async endSession(){}};}
@@ -36,4 +37,5 @@ assert.equal(legacy.executionBarrierFilter?.schema,6,"legacy caller evidence mus
 assert.equal(legacy.error?.code,"MOVIE_MENTOR_RESULT_CANDIDATE_EXECUTION_FENCED");
 
 console.log("GREEN: result-candidate staging independently proves current execution schema at its atomic durable boundary.");
+console.log("GREEN: Backend CI candidate jurisdiction also owns idempotent current-state revalidation.");
 console.log("LAW: CURRENT LEASE AUTHORITY CANNOT LEND CURRENT-SCHEMA AUTHORITY TO RESULT-CANDIDATE STAGING.");
