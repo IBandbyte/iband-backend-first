@@ -1,0 +1,58 @@
+import assert from "node:assert/strict";
+import crypto from "node:crypto";
+import {createMovieMentorCommercialProviderIngressAuthority} from "../ai/MovieMentorCommercialProviderIngressAuthority.js";
+
+function digest(value){return crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");}
+
+const purchaseCapability=Object.freeze({domain:"iband.movie-mentor.production-commercial-purchase-intent-authority",production:true,durablePurchaseIntent:true,immutableCommercialTerms:true,serverOwnedPolicy:true,processLocalFallback:false});
+const checkoutCapability=Object.freeze({domain:"iband.movie-mentor.production-commercial-checkout-authority",production:true,durableCheckoutBinding:true,checkoutBindingResolution:true,providerPaymentReferenceBinding:true,providerPaymentReferenceResolution:true,serverOwnedIdempotency:true,purchaseIntentProvenanceRequired:true,explicitProviderRequired:true,processLocalFallback:false});
+const issuanceCapability=Object.freeze({domain:"iband.movie-mentor.production-entitlement-issuance-authority",production:true,durableAtomicIssuance:true,evidenceIdentityUnique:true,issuanceReceiptDurable:true,processLocalFallback:false});
+const reversalCapability=Object.freeze({domain:"iband.movie-mentor.production-commercial-reversal-authority",production:true,durableAtomicSuspension:true,reversalIdentityUnique:true,currentEntitlementSuspension:true,reversalReceiptDurable:true,pendingReversalHistoryDurable:true,pendingReversalIdentityUnique:true,pendingReversalReconciliation:true,processLocalFallback:false});
+const providerCapability=Object.freeze({domain:"iband.movie-mentor.commercial-provider-adapter",provider:"provider-a",productionCommercialProviderAdapter:true,checkoutTransport:true,serverOwnedIdempotencyRequired:true,rawBodyDeliveryVerification:true,signatureVerification:true,normalizesCommercialEvidence:true,checkoutReferenceEvidence:true,providerPaymentReferenceEvidence:true,commercialReversalEvidence:true,creatorPayloadIsNotPaymentAuthority:true,processLocalFallback:false});
+
+const snapshot=Object.freeze({packageId:"creator-20",provider:"provider-a",providerProductId:"prod_creator20",amountMinor:1200,currency:"GBP",environment:"live",units:20,policyVersion:"v1"});
+const intent=Object.freeze({commercialIntentId:"intent_race_1",principalId:"principal_A",...snapshot,policyDigest:digest(snapshot),status:"created"});
+const paidEvent=Object.freeze({eventId:"evt_paid_race_1",provider:"provider-a",eventKind:"payment-completed",commercialIntentId:intent.commercialIntentId,checkoutReference:"checkout_race_1",providerPaymentReference:"payment_race_1",commerciallyFinal:true,commercialReversal:false,providerProductId:snapshot.providerProductId,amountMinor:snapshot.amountMinor,currency:snapshot.currency,environment:snapshot.environment});
+const reversalEvent=Object.freeze({eventId:"evt_refund_race_1",provider:"provider-a",eventKind:"refund",providerPaymentReference:"payment_race_1",commercialReversal:true,commerciallyFinal:false,reversalAmountMinor:1200,currency:"GBP",environment:"live"});
+
+let boundPayment="";
+let entitlementExists=false;
+let releaseIssuance;
+let issuanceEntered;
+const issuanceEnteredPromise=new Promise(resolve=>{issuanceEntered=resolve;});
+const releaseIssuancePromise=new Promise(resolve=>{releaseIssuance=resolve;});
+const pending=[];
+
+const purchaseIntentAuthority=Object.freeze({resolvePurchaseIntent:async({commercialIntentId})=>commercialIntentId===intent.commercialIntentId?intent:null,getStatus:()=>purchaseCapability});
+const checkoutBindingAuthority=Object.freeze({
+ resolveCheckoutBinding:async({commercialIntentId})=>commercialIntentId===intent.commercialIntentId?Object.freeze({commercialIntentId,provider:"provider-a",status:"completed",checkoutReference:"checkout_race_1",providerPaymentReference:boundPayment||null}):null,
+ bindProviderPaymentReference:async({commercialIntentId,provider,checkoutReference,providerPaymentReference})=>{assert.equal(commercialIntentId,intent.commercialIntentId);assert.equal(provider,"provider-a");assert.equal(checkoutReference,"checkout_race_1");boundPayment=providerPaymentReference;return Object.freeze({commercialIntentId,provider,status:"completed",checkoutReference,providerPaymentReference});},
+ resolveCheckoutBindingByProviderPaymentReference:async({provider,providerPaymentReference})=>provider==="provider-a"&&providerPaymentReference===boundPayment?Object.freeze({commercialIntentId:intent.commercialIntentId,provider,status:"completed",checkoutReference:"checkout_race_1",providerPaymentReference}):null,
+ getStatus:()=>checkoutCapability
+});
+const issuanceAuthority=Object.freeze({issueVerifiedEvidence:async()=>{issuanceEntered();await releaseIssuancePromise;entitlementExists=true;return Object.freeze({authorized:true,principalId:intent.principalId,units:snapshot.units});},getStatus:()=>issuanceCapability});
+const reversalAuthority=Object.freeze({
+ suspendVerifiedReversal:async({reversal})=>{if(!entitlementExists){const e=new Error("Verified reversal cannot be reconciled because its durable entitlement is missing.");e.code="MOVIE_MENTOR_COMMERCIAL_REVERSAL_ENTITLEMENT_NOT_FOUND";throw e;}return Object.freeze({suspended:true,evidenceId:reversal.evidenceId});},
+ preserveVerifiedReversalHistory:async({reversal})=>{pending.push(reversal);return Object.freeze({preserved:true,evidenceId:reversal.evidenceId});},
+ reconcilePendingReversals:async()=>Object.freeze({reconciled:true,count:pending.length}),
+ getStatus:()=>reversalCapability
+});
+const providerA=Object.freeze({verifyDelivery:async({delivery})=>delivery?.signature==="provider-a-valid"?Object.freeze({verified:true,payload:delivery.payload}):Object.freeze({verified:false}),normalizeEvent:async({verifiedDelivery})=>verifiedDelivery.payload,getStatus:()=>providerCapability});
+const authority=createMovieMentorCommercialProviderIngressAuthority({providers:{"provider-a":providerA},purchaseIntentAuthority,checkoutBindingAuthority,issuanceAuthority,reversalAuthority});
+
+const paidPromise=authority.processProviderDelivery({provider:"provider-a",delivery:{signature:"provider-a-valid",payload:paidEvent}});
+await issuanceEnteredPromise;
+assert.equal(boundPayment,"payment_race_1","court requires durable provider-payment lineage before entitlement issuance completes");
+assert.equal(entitlementExists,false,"court requires entitlement issuance still in flight");
+
+const reversalResult=await authority.processProviderDelivery({provider:"provider-a",delivery:{signature:"provider-a-valid",payload:reversalEvent}});
+assert.equal(reversalResult.preserved,true,"verified reversal arriving after payment lineage but before entitlement existence must survive durably as history");
+assert.equal(pending.length,1,"race reversal must remain pending until entitlement authority exists");
+
+releaseIssuance();
+await paidPromise;
+assert.equal(entitlementExists,true);
+console.log("✓ payment lineage may become durable before entitlement issuance completes");
+console.log("✓ verified reversal in that interval survives as durable pending history instead of disappearing");
+console.log("LAW: PAYMENT LINEAGE MAY IDENTIFY HISTORY; IT MAY NOT BORROW ENTITLEMENT EXISTENCE.");
+console.log("reversal-during-entitlement-issuance authority torture: GREEN");
