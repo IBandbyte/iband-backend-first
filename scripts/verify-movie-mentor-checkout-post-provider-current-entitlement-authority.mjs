@@ -1,0 +1,23 @@
+import assert from "node:assert/strict";
+import {createMovieMentorCommercialCheckoutInitiationAuthority} from "../ai/MovieMentorCommercialCheckoutInitiationAuthority.js";
+
+const intent=Object.freeze({commercialIntentId:"intent_post_provider_race_1",principalId:"creator_post_provider_race",packageId:"creator-20",provider:"provider-a",providerProductId:"prod_creator20",amountMinor:1200,currency:"GBP",environment:"live",units:20,policyVersion:"v1",policyDigest:"server-owned-digest",status:"created"});
+let entitlement=Object.freeze({principalId:intent.principalId,status:"active",remainingUnits:20,reservedUnits:0,consumedUnits:0,entitlementRevision:40});
+let entitlementReads=0,providerCalls=0,completeCalls=0;
+const authority=createMovieMentorCommercialCheckoutInitiationAuthority({
+ resolvePurchaseIntent:async()=>intent,
+ resolveCurrentEntitlement:async()=>{entitlementReads++;return entitlement;},
+ checkoutBindingStore:{
+  async begin(){return Object.freeze({commercialIntentId:intent.commercialIntentId,provider:"provider-a",idempotencyKey:`movie-mentor:${intent.commercialIntentId}`,status:"pending"});},
+  async complete(){completeCalls++;return Object.freeze({commercialIntentId:intent.commercialIntentId,provider:"provider-a",idempotencyKey:`movie-mentor:${intent.commercialIntentId}`,status:"completed",checkoutReference:"checkout_post_provider_race_1",checkoutUrl:"https://provider.example/checkout_post_provider_race_1",expiresAt:null});},
+  async resolve(){return null;}
+ },
+ createProviderCheckout:async()=>{providerCalls++;entitlement=Object.freeze({...entitlement,status:"suspended",entitlementRevision:41});return Object.freeze({authorized:true,commercialIntentId:intent.commercialIntentId,provider:"provider-a",checkoutReference:"checkout_post_provider_race_1",checkoutUrl:"https://provider.example/checkout_post_provider_race_1",expiresAt:null});}
+});
+await assert.rejects(()=>authority.initiateCheckout({principalId:intent.principalId,commercialIntentId:intent.commercialIntentId}),error=>error?.code==="MOVIE_MENTOR_CHECKOUT_ENTITLEMENT_SUSPENDED");
+assert.equal(providerCalls,1,"court requires provider checkout creation to finish before suspension is observed");
+assert.ok(entitlementReads>=3,"creator-facing checkout authority must own a fresh current-entitlement reread after provider I/O");
+assert.equal(completeCalls,0,"provider checkout history may exist, but suspended current authority must block durable creator-facing checkout completion");
+console.log("✓ provider checkout history may survive a concurrent reversal without becoming creator-facing checkout authority");
+console.log("LAW: PROVIDER CHECKOUT HISTORY MAY SURVIVE; CREATOR-FACING CHECKOUT AUTHORITY MUST RE-EARN CURRENT ENTITLEMENT AFTER PROVIDER I/O.");
+console.log("checkout-post-provider current-entitlement authority torture: GREEN");
