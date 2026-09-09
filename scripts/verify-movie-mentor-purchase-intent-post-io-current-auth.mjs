@@ -34,7 +34,8 @@ const store={
     currentTime=new Date("2030-01-01T00:00:06.000Z");
     return created;
   },
-  async resolve(){return null;}
+  async resolve(){return null;},
+  async resolveAttempt(){return null;}
 };
 const purchaseIntentAuthority=createMovieMentorCommercialPurchaseIntentAuthority({
   store,
@@ -45,7 +46,7 @@ const checkoutAuthority={async initiateCheckout(){throw new Error("outside court
 const router=createMovieMentorCommercialRouter({requestAuthority,purchaseIntentAuthority,checkoutAuthority,listCommercialPackages:async()=>[]});
 const layer=router.stack.find(entry=>entry.route?.path==="/purchase-intents");
 const res=response();
-await layer.route.stack[0].handle({headers:{authorization:"Bearer expiring-purchase-response-token"},body:{packageId:"creator-20"}},res);
+await layer.route.stack[0].handle({headers:{authorization:"Bearer expiring-purchase-response-token"},body:{packageId:"creator-20",purchaseAttemptId:"attempt-post-io-auth-1"}},res);
 
 assert.equal(durableWrites,1,"durable purchase history may already exist when post-I/O request authority expires");
 assert.equal(authReads,4,"creator-facing purchase-intent exposure must re-earn current request authentication after mint I/O");
