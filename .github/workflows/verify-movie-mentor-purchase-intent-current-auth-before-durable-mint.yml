@@ -1,0 +1,26 @@
+name: Verify Movie Mentor Purchase Intent Current Auth Before Durable Mint
+
+on:
+  pull_request:
+    paths:
+      - 'ai/MovieMentorCommercialPurchaseIntentAuthority.js'
+      - 'ai/MovieMentorCreatorCommercialRequestAuthority.js'
+      - 'movieMentorCommercial.js'
+      - 'scripts/verify-movie-mentor-purchase-intent-current-auth-before-durable-mint.mjs'
+      - '.github/workflows/verify-movie-mentor-purchase-intent-current-auth-before-durable-mint.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - run: node --check scripts/verify-movie-mentor-purchase-intent-current-auth-before-durable-mint.mjs
+      - run: node scripts/verify-movie-mentor-purchase-intent-current-auth-before-durable-mint.mjs
