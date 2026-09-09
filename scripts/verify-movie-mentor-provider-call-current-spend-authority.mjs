@@ -61,6 +61,7 @@ assert.equal(claimWrites,0,"no provider-call authority may become durable after 
 console.log("GREEN: provider-call admission independently revalidates the exact reserved spend row under current entitlement reality.");
 console.log("LAW: EXECUTION CREATION DOES NOT LEND ITS SPEND PROOF TO PROVIDER-CALL ADMISSION.");
 
-// CI (Backend) already owns this verifier directly. Import the adjacent irreversible-dispatch
-// court here so Backend CI executes that proof rather than borrowing its dedicated workflow.
+// CI (Backend) owns this verifier directly. Execute the adjacent spend courts here so
+// Backend CI owns the actual irreversible-dispatch and durable-UNKNOWN proofs too.
 await import("./verify-movie-mentor-provider-dispatch-current-spend-authority.mjs");
+await import("./verify-movie-mentor-provider-unknown-current-spend-authority.mjs");
