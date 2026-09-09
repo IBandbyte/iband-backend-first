@@ -6,12 +6,39 @@ import {
   assertMovieMentorForwardProviderEffectUnknownAuthority,
 } from "./MovieMentorForwardExecutionAuthority.js";
 
-const MOVIE_MENTOR_FORWARD_EXECUTION_RUNTIME_VERSION = "1.3.0";
+const MOVIE_MENTOR_FORWARD_EXECUTION_RUNTIME_VERSION = "1.4.0";
 const s = (value) => (typeof value === "string" ? value.trim() : "");
+
+async function assertCurrentSpendExecutionCreationAuthority({ spendAuthority = null, authority = null, ...target } = {}) {
+  if (typeof spendAuthority?.readReservation !== "function") {
+    throw Object.assign(new Error("Fresh execution creation requires current durable spend reservation authority."), {
+      code: "MOVIE_MENTOR_FORWARD_EXECUTION_SPEND_AUTHORITY_REQUIRED",
+    });
+  }
+  const reservation = await spendAuthority.readReservation({
+    reservationId: target.reservationId,
+    principalId: target.principalId,
+    projectId: target.projectId,
+  });
+  if (
+    reservation?.authorized !== true
+    || s(reservation?.reservationId) !== s(target.reservationId)
+    || s(reservation?.principalId) !== s(target.principalId)
+    || s(reservation?.projectId) !== s(target.projectId)
+    || s(reservation?.status) !== "reserved"
+  ) {
+    throw Object.assign(new Error("Fresh execution creation requires the exact reserved spend row to remain current under durable entitlement authority."), {
+      code: "MOVIE_MENTOR_FORWARD_EXECUTION_CURRENT_SPEND_REQUIRED",
+      reservationId: s(target.reservationId) || null,
+    });
+  }
+  return assertMovieMentorForwardExecutionCreationAuthority({ authority, ...target });
+}
 
 function createForwardExecutionRuntimeDeps(deps = {}) {
   const base = deps.inferenceExecutionAuthority;
   const authority = deps.forwardExecutionAuthority;
+  const spendAuthority = deps.inferenceSpendAuthority;
   if (!base || typeof base.findExecutionByCreatorTurn !== "function" || typeof base.acquireExecution !== "function") throw Object.assign(new Error("Forward execution runtime requires durable execution lookup and reacquisition authority."), { code: "MOVIE_MENTOR_FORWARD_EXECUTION_DURABLE_AUTHORITY_REQUIRED" });
   if (typeof authority?.assertCurrentReacquisition !== "function") throw Object.assign(new Error("Forward execution runtime requires server-created current ownership authority for reacquisition."), { code: "MOVIE_MENTOR_FORWARD_EXECUTION_AUTHORITY_REQUIRED" });
 
@@ -26,9 +53,10 @@ function createForwardExecutionRuntimeDeps(deps = {}) {
 
   if (typeof base.openExecution === "function") {
     if (typeof authority?.assertCurrentCreation !== "function") throw Object.assign(new Error("Fresh execution creation requires server-created current ownership authority."), { code: "MOVIE_MENTOR_FORWARD_EXECUTION_AUTHORITY_REQUIRED" });
+    if (typeof spendAuthority?.readReservation !== "function") throw Object.assign(new Error("Fresh execution creation requires current durable spend reservation authority."), { code: "MOVIE_MENTOR_FORWARD_EXECUTION_SPEND_AUTHORITY_REQUIRED" });
     guarded.openExecution = async (input = {}) => base.openExecution({
       ...input,
-      assertCurrentCreationAuthority: async (target = {}) => assertMovieMentorForwardExecutionCreationAuthority({ authority, ...target }),
+      assertCurrentCreationAuthority: async (target = {}) => assertCurrentSpendExecutionCreationAuthority({ spendAuthority, authority, ...target }),
     });
   }
 
