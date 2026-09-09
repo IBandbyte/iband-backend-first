@@ -2,6 +2,7 @@ name: Verify Movie Mentor Reversal Before Payment Lineage Authority
 
 on:
   pull_request:
+    branches: [main]
     paths:
       - 'ai/**'
       - 'scripts/verify-movie-mentor-reversal-before-payment-lineage-authority.mjs'
@@ -16,6 +17,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-      - run: npm ci
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - run: node --check scripts/verify-movie-mentor-reversal-before-payment-lineage-authority.mjs
       - run: node scripts/verify-movie-mentor-reversal-before-payment-lineage-authority.mjs
