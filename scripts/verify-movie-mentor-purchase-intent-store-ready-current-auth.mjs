@@ -25,7 +25,8 @@ const store={
     durableWrites++;
     return Object.freeze({...record,status:"created"});
   },
-  async resolve(){return null;}
+  async resolve(){return null;},
+  async resolveAttempt(){return null;}
 };
 
 const authority=createMovieMentorCommercialPurchaseIntentAuthority({
@@ -35,7 +36,7 @@ const authority=createMovieMentorCommercialPurchaseIntentAuthority({
 });
 
 await assert.rejects(
-  ()=>authority.createPurchaseIntent({principalId:"creator-store-ready-auth",packageId:"creator-20",currentPrincipalAuthority}),
+  ()=>authority.createPurchaseIntent({principalId:"creator-store-ready-auth",packageId:"creator-20",purchaseAttemptId:"attempt-store-ready-auth-1",currentPrincipalAuthority}),
   error=>error?.code==="MOVIE_MENTOR_AUTH_EXPIRED"
 );
 assert.equal(authReads,2,"store-owned irreversible write boundary must re-earn current principal after readiness I/O");
