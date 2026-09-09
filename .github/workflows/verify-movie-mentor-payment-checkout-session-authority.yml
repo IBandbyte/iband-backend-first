@@ -1,0 +1,28 @@
+name: Verify Movie Mentor Payment Checkout Session Authority
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "ai/MovieMentorStripeCommercialProviderAdapter.js"
+      - "ai/MovieMentorCommercialPaymentEvidenceAuthority.js"
+      - "ai/MovieMentorCommercialProviderIngressAuthority.js"
+      - "ai/MovieMentorProductionCommercialProviderIngressComposition.js"
+      - "ai/MovieMentorProductionCommercialHttpIngress.js"
+      - "scripts/verify-movie-mentor-payment-checkout-session-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-payment-checkout-session-authority.yml"
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - run: node --check scripts/verify-movie-mentor-payment-checkout-session-authority.mjs
+      - run: node scripts/verify-movie-mentor-payment-checkout-session-authority.mjs
+      - name: Regress commercial provider ingress authority
+        run: node scripts/verify-movie-mentor-commercial-provider-ingress-authority.mjs
+      - name: Regress provider registry transitive provenance
+        run: node scripts/verify-movie-mentor-provider-registry-transitive-provenance.mjs
