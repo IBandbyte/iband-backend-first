@@ -11,7 +11,7 @@ import { createMovieMentorCanonicalResultMongoStore, getMovieMentorCanonicalResu
 import { createMovieMentorCanonicalResultAuthority } from "./MovieMentorCanonicalResultAuthority.js";
 import { createMovieMentorResultCandidateMongoStore, getMovieMentorResultCandidateMongoStoreStatus, MOVIE_MENTOR_RESULT_CANDIDATE_CREATOR_STATE_ATOMIC_FENCE } from "./MovieMentorResultCandidateMongoStore.js";
 
-const VERSION="1.22.0";
+const VERSION="1.23.0";
 const DOMAIN="iband.movie-mentor.production-inference-execution-composition";
 const EXECUTION_CAS="reservation-binding-active-closure-frozen-universe-provider-reality-revision-finalized-result-binding-and-atomic-abort";
 const EFFECT_SERIALIZATION="execution-providerEffectRealityRevision";
@@ -19,8 +19,9 @@ const OPERATION_RECOVERY_IDENTITY="provider-adapter-route-fingerprint-recovery-m
 const RESULT_FINALIZATION="atomic-result-insert-plus-closed-to-finalized-execution-transition";
 const RESULT_LINEAGE="proof-bearing-provenance-revalidated-in-finalization-transaction";
 const RESULT_FRESHNESS="exact-provider-effect-reality-revision";
-const CANDIDATE_AUTHORITY="zero-until-current-creator-state-and-current-execution-atomic-fence-plus-closure-and-canonical-finalization";
+const CANDIDATE_AUTHORITY="zero-until-current-creator-state-and-current-execution-schema-and-atomic-fence-plus-closure-and-canonical-finalization";
 const CANDIDATE_FENCE="shared-execution-write-barrier-before-closure";
+const CURRENT_EXECUTION_SCHEMA=6;
 const ownedCompositionProofs=new WeakMap();
 
 function ownedStatus(store){
@@ -31,7 +32,7 @@ function executionCapabilityProven(status){return status?.configured===true&&sta
 function effectCapabilityProven(status){return status?.configured===true&&status?.cas==="revision"&&status?.crossLedgerSerialization===EFFECT_SERIALIZATION;}
 function operationCapabilityProven(status){return status?.configured===true&&status?.durable===true&&status?.immutableProviderTarget===true&&status?.immutableProviderModel===true&&status?.immutableReconstructionInput===true&&status?.reconstructionInputBoundBeforeUnknownCapable===true&&status?.recoveryIdentity===OPERATION_RECOVERY_IDENTITY;}
 function resultCapabilityProven(status){return status?.configured===true&&status?.candidateLineage===RESULT_LINEAGE&&status?.resultFinalization===RESULT_FINALIZATION&&status?.finalizationFreshnessFence===RESULT_FRESHNESS;}
-function candidateCapabilityProven(status){return status?.configured===true&&status?.authority===CANDIDATE_AUTHORITY&&status?.atomicFence===CANDIDATE_FENCE&&status?.creatorStateAtomicFence===MOVIE_MENTOR_RESULT_CANDIDATE_CREATOR_STATE_ATOMIC_FENCE&&status?.legacySchemaAuthority===false;}
+function candidateCapabilityProven(status){return status?.configured===true&&status?.authority===CANDIDATE_AUTHORITY&&status?.atomicFence===CANDIDATE_FENCE&&status?.creatorStateAtomicFence===MOVIE_MENTOR_RESULT_CANDIDATE_CREATOR_STATE_ATOMIC_FENCE&&status?.currentExecutionSchemaAuthority===CURRENT_EXECUTION_SCHEMA&&status?.legacySchemaAuthority===false;}
 function isMovieMentorProductionInferenceExecutionOwnerProof(composition,status){return Boolean(composition&&status&&ownedCompositionProofs.get(composition)===status&&composition.status===status&&typeof composition.getStatus==="function"&&composition.getStatus()===status);}
 function rejected(reason,statuses={}){return Object.freeze({ready:false,reason,version:VERSION,authority:null,...statuses,status:null,getStatus:()=>null});}
 function ownedComposition({reason,authority,storeStatus,effectStoreStatus=null,operationStoreStatus=null,resultStoreStatus=null,candidateStoreStatus=null,fullExecutionAuthority=false}){
@@ -53,6 +54,7 @@ function ownedComposition({reason,authority,storeStatus,effectStoreStatus=null,o
     canonicalResultStoreProvenanceRequired:fullExecutionAuthority===true,
     resultCandidateStoreProvenanceRequired:fullExecutionAuthority===true,
     resultCandidateCurrentCreatorStateAtomicFenceRequired:fullExecutionAuthority===true,
+    resultCandidateCurrentExecutionSchemaRequired:fullExecutionAuthority===true,
     freshExecutionCreationAuthorityRequired:true,
     providerCallAdmissionCurrentOwnershipRequired:true,
     providerEffectUnknownCurrentOwnershipRequired:true,
@@ -98,25 +100,13 @@ function createMovieMentorProductionInferenceExecutionComposition({store=null,ef
     if(!operationCapabilityProven(operationStatus))return rejected("provider-operation-capability-not-proven",{storeStatus:status,effectStoreStatus:effectStatus,operationStoreStatus:operationStatus});
 
     const durableEffectStore=createMovieMentorProviderEffectMongoStore();
-    const providerEffectAuthority=createMovieMentorProviderEffectAuthority({
-      store:durableEffectStore,
-      requireUnknownAuthority:true,
-      requireEvidenceOperationBinding:true,
-    });
+    const providerEffectAuthority=createMovieMentorProviderEffectAuthority({store:durableEffectStore,requireUnknownAuthority:true,requireEvidenceOperationBinding:true});
     const durableOperationStore=createMovieMentorProviderOperationMongoStore();
     const providerOperationAuthority=createMovieMentorProviderOperationAuthority({store:durableOperationStore});
-    const providerBoundaryAuthority=createMovieMentorProviderOperationBoundaryAuthority({
-      leaseAuthority,
-      providerEffectAuthority,
-      providerOperationAuthority,
-    });
+    const providerBoundaryAuthority=createMovieMentorProviderOperationBoundaryAuthority({leaseAuthority,providerEffectAuthority,providerOperationAuthority});
     const contributeProviderEffectEvidence=async(input={})=>{
       const operation=await providerOperationAuthority.readOperation(input.providerCallId);
-      if(!operation){
-        const error=new Error("Production provider-effect evidence requires its exact durable provider operation.");
-        error.code="MOVIE_MENTOR_PROVIDER_EFFECT_OPERATION_BINDING_REQUIRED";
-        throw error;
-      }
+      if(!operation){const error=new Error("Production provider-effect evidence requires its exact durable provider operation.");error.code="MOVIE_MENTOR_PROVIDER_EFFECT_OPERATION_BINDING_REQUIRED";throw error;}
       return providerEffectAuthority.contributeEvidence({...input,providerOperation:operation});
     };
     const providerOutcomeRecoveryAuthority=createMovieMentorProviderOutcomeRecoveryAuthority({
@@ -126,31 +116,9 @@ function createMovieMentorProductionInferenceExecutionComposition({store=null,ef
       requireRecoveryAuthority:true,
       assertCurrentRecoveryAuthority:async({operation,recoveryAuthority}={})=>{
         const current=await leaseAuthority.assertFence(recoveryAuthority);
-        if(current?.authorized!==true||current?.executionAuthorized!==true){
-          return Object.freeze({
-            authorized:false,
-            currentRecoveryAuthorityVerified:false,
-            reason:current?.reason||"execution-recovery-fenced",
-          });
-        }
-        if(current.executionId!==operation?.executionId){
-          return Object.freeze({
-            authorized:false,
-            currentRecoveryAuthorityVerified:false,
-            reason:"execution-recovery-binding-conflict",
-          });
-        }
-        return Object.freeze({
-          authorized:true,
-          currentRecoveryAuthorityVerified:true,
-          transition:"provider-outcome-recovery",
-          executionId:current.executionId,
-          providerCallId:operation.providerCallId,
-          ownerId:current.ownerId,
-          leaseGeneration:current.leaseGeneration,
-          leaseReference:current.leaseReference,
-          fencingToken:current.fencingToken,
-        });
+        if(current?.authorized!==true||current?.executionAuthorized!==true)return Object.freeze({authorized:false,currentRecoveryAuthorityVerified:false,reason:current?.reason||"execution-recovery-fenced"});
+        if(current.executionId!==operation?.executionId)return Object.freeze({authorized:false,currentRecoveryAuthorityVerified:false,reason:"execution-recovery-binding-conflict"});
+        return Object.freeze({authorized:true,currentRecoveryAuthorityVerified:true,transition:"provider-outcome-recovery",executionId:current.executionId,providerCallId:operation.providerCallId,ownerId:current.ownerId,leaseGeneration:current.leaseGeneration,leaseReference:current.leaseReference,fencingToken:current.fencingToken});
       },
     });
     const closureAuthority=createMovieMentorInferenceExecutionClosureAuthority({store:durableStore,effectStore:durableEffectStore});
@@ -162,61 +130,19 @@ function createMovieMentorProductionInferenceExecutionComposition({store=null,ef
     if(!resultCapabilityProven(resultStatus))return rejected("canonical-result-capability-not-proven",{storeStatus:status,effectStoreStatus:effectStatus,operationStoreStatus:operationStatus,resultStoreStatus:resultStatus,candidateStoreStatus:candidateStatus});
     if(!candidateCapabilityProven(candidateStatus))return rejected("result-candidate-capability-not-proven",{storeStatus:status,effectStoreStatus:effectStatus,operationStoreStatus:operationStatus,resultStoreStatus:resultStatus,candidateStoreStatus:candidateStatus});
 
-    const closureCapabilities={
-      beginExecutionClosing:closureAuthority.beginClosing,
-      recoverExpiredExecutionIntoClosing:closureAuthority.recoverExpiredIntoClosing,
-      reconcileExecutionClosure:closureAuthority.reconcile,
-      assertCurrentExecutionClosure:closureAuthority.assertCurrentClosure,
-    };
-
+    const closureCapabilities={beginExecutionClosing:closureAuthority.beginClosing,recoverExpiredExecutionIntoClosing:closureAuthority.recoverExpiredIntoClosing,reconcileExecutionClosure:closureAuthority.reconcile,assertCurrentExecutionClosure:closureAuthority.assertCurrentClosure};
     const durableResultStore=createMovieMentorCanonicalResultMongoStore();
     const durableCandidateStore=createMovieMentorResultCandidateMongoStore();
-    const resultAuthority=createMovieMentorCanonicalResultAuthority({
-      store:durableResultStore,
-      assertCurrentClosure:closureAuthority.assertCurrentClosure,
-      readResultCandidate:durableCandidateStore.readByExecution,
-    });
+    const resultAuthority=createMovieMentorCanonicalResultAuthority({store:durableResultStore,assertCurrentClosure:closureAuthority.assertCurrentClosure,readResultCandidate:durableCandidateStore.readByExecution});
     const stageResultCandidate=async({execution=null,resultPayload=null,creatorStateConsumptionProof=null}={})=>{
       const currentExecution=await leaseAuthority.assertFence(execution);
-      if(currentExecution?.authorized!==true||currentExecution?.executionAuthorized!==true){
-        return Object.freeze({authorized:false,staged:false,reason:currentExecution?.reason||"execution-forward-authority-required"});
-      }
+      if(currentExecution?.authorized!==true||currentExecution?.executionAuthorized!==true)return Object.freeze({authorized:false,staged:false,reason:currentExecution?.reason||"execution-forward-authority-required"});
       return durableCandidateStore.stageCandidate({execution:currentExecution,resultPayload,creatorStateConsumptionProof});
     };
-    const authority=Object.freeze({
-      ...leaseAuthority,
-      bindProviderReconstructionInput:providerOperationAuthority.bindReconstructionInput,
-      beginProviderDispatch:providerBoundaryAuthority.beginProviderDispatch,
-      assertProviderDispatch:providerBoundaryAuthority.assertProviderDispatch,
-      contributeProviderEffectEvidence,
-      readProviderEffectReality:providerEffectAuthority.readReality,
-      readProviderOperation:providerOperationAuthority.readOperation,
-      recoverProviderOutcome:providerOutcomeRecoveryAuthority.reconcile,
-      ...closureCapabilities,
-      stageResultCandidate,
-      readResultCandidate:durableCandidateStore.readByExecution,
-      commitCanonicalResult:resultAuthority.commitResult,
-      readCanonicalResult:resultAuthority.readResult,
-    });
-    return ownedComposition({
-      reason:"durable-inference-execution-provider-operation-target-model-reconstruction-input-provider-effect-evidence-operation-binding-current-lease-provider-outcome-recovery-provider-effect-closure-atomic-finalized-result-candidate-lineage-current-creator-state-atomic-fence-current-reality-and-result-authority-composed",
-      authority,
-      storeStatus:status,
-      effectStoreStatus:effectStatus,
-      operationStoreStatus:operationStatus,
-      resultStoreStatus:resultStatus,
-      candidateStoreStatus:candidateStatus,
-      fullExecutionAuthority:true,
-    });
-  }catch(error){
-    return rejected(error?.code||"inference-execution-composition-failed",{storeStatus:status});
-  }
+    const authority=Object.freeze({...leaseAuthority,bindProviderReconstructionInput:providerOperationAuthority.bindReconstructionInput,beginProviderDispatch:providerBoundaryAuthority.beginProviderDispatch,assertProviderDispatch:providerBoundaryAuthority.assertProviderDispatch,contributeProviderEffectEvidence,readProviderEffectReality:providerEffectAuthority.readReality,readProviderOperation:providerOperationAuthority.readOperation,recoverProviderOutcome:providerOutcomeRecoveryAuthority.reconcile,...closureCapabilities,stageResultCandidate,readResultCandidate:durableCandidateStore.readByExecution,commitCanonicalResult:resultAuthority.commitResult,readCanonicalResult:resultAuthority.readResult});
+    return ownedComposition({reason:"durable-inference-execution-provider-operation-target-model-reconstruction-input-provider-effect-evidence-operation-binding-current-lease-provider-outcome-recovery-provider-effect-closure-atomic-finalized-result-candidate-lineage-current-creator-state-current-execution-schema-atomic-fence-current-reality-and-result-authority-composed",authority,storeStatus:status,effectStoreStatus:effectStatus,operationStoreStatus:operationStatus,resultStoreStatus:resultStatus,candidateStoreStatus:candidateStatus,fullExecutionAuthority:true});
+  }catch(error){return rejected(error?.code||"inference-execution-composition-failed",{storeStatus:status});}
 }
 
-export{
-  VERSION as MOVIE_MENTOR_PRODUCTION_INFERENCE_EXECUTION_COMPOSITION_VERSION,
-  DOMAIN as MOVIE_MENTOR_PRODUCTION_INFERENCE_EXECUTION_COMPOSITION_DOMAIN,
-  createMovieMentorProductionInferenceExecutionComposition,
-  isMovieMentorProductionInferenceExecutionOwnerProof,
-};
+export{VERSION as MOVIE_MENTOR_PRODUCTION_INFERENCE_EXECUTION_COMPOSITION_VERSION,DOMAIN as MOVIE_MENTOR_PRODUCTION_INFERENCE_EXECUTION_COMPOSITION_DOMAIN,createMovieMentorProductionInferenceExecutionComposition,isMovieMentorProductionInferenceExecutionOwnerProof};
 export default createMovieMentorProductionInferenceExecutionComposition;

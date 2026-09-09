@@ -14,11 +14,11 @@ assert.match(backendCi,/node --check scripts\/verify-movie-mentor-live-lease-bac
 assert.match(backendCi,/Verify Movie Mentor live execution lease enforcement[\s\S]*node scripts\/verify-movie-mentor-live-execution-lease-enforcement\.mjs/,"Backend CI must behaviorally execute the Live Lease court");
 assert.match(backendCi,/Verify Movie Mentor Live Lease Backend CI authority[\s\S]*node scripts\/verify-movie-mentor-live-lease-backend-ci-authority\.mjs/,"Backend CI must execute the independent jurisdiction proof");
 
-// The jurisdiction proof itself is executed by Backend CI. These imports therefore
-// make Backend CI behaviorally own the schema-sensitive live and forward-effect
-// boundaries rather than borrowing their dedicated workflow greens.
+// This jurisdiction proof is itself executed by Backend CI. Imports here make
+// Backend CI behaviorally own each schema-sensitive forward-authority court.
 await import("./verify-movie-mentor-execution-schema-runtime-propagation-authority.mjs");
 await import("./verify-movie-mentor-current-schema-live-execution-authority.mjs");
 await import("./verify-movie-mentor-provider-effect-current-execution-schema-authority.mjs");
+await import("./verify-movie-mentor-result-candidate-current-execution-schema-authority.mjs");
 
-console.log("PASS — Live Lease owns PR proof and Backend CI independently owns live lease, schema propagation, current-schema live execution, and provider-effect UNKNOWN current-schema authority.");
+console.log("PASS — Backend CI independently owns live lease, schema propagation, current-schema live execution, provider-effect UNKNOWN, and result-candidate current-schema authority.");
