@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import { createMovieMentorProviderOperationAuthority } from "../ai/MovieMentorProviderOperationAuthority.js";
 import { createMovieMentorProviderOperationMongoStore } from "../ai/MovieMentorProviderOperationMongoStore.js";
 
@@ -16,12 +17,14 @@ function memoryModel() {
   };
 }
 
+const routeFingerprint = crypto.createHash("sha256").update("generic-http|https://provider-operation-schema.example.test/v1/infer").digest("hex");
+
 async function attempt(executionSchema) {
   const store = createMovieMentorProviderOperationMongoStore({ mongoModel: memoryModel() });
   const authority = createMovieMentorProviderOperationAuthority({
     store,
     now: () => new Date("2035-01-01T00:00:00.000Z"),
-    resolveCurrentTarget: () => ({ provider: "generic-http", adapter: "generic-http", routeFingerprint: "route-schema-court", recoveryMode: "none" }),
+    resolveCurrentTarget: () => ({ provider: "generic-http", adapter: "generic-http", routeFingerprint, recoveryMode: "none" }),
     resolveCurrentModel: () => null,
   });
   const providerCall = Object.freeze({
@@ -42,7 +45,7 @@ async function attempt(executionSchema) {
 }
 
 const current = await attempt(6);
-assert.equal(current.ok, true, "current schema-6 provider-call authority must bind durable provider-operation identity");
+assert.equal(current.ok, true, `current schema-6 provider-call authority must bind durable provider-operation identity; observed ${current.error?.code || "no-error-code"}`);
 assert.equal(current.result.authorized, true);
 
 const legacy = await attempt(5);
