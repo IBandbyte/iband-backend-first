@@ -4,6 +4,7 @@ on:
     branches: [main]
     paths:
       - "ai/MovieMentorForwardExecutionRuntime.js"
+      - "scripts/verify-movie-mentor-provider-call-current-spend-authority.mjs"
       - "scripts/verify-movie-mentor-provider-dispatch-current-spend-authority.mjs"
       - ".github/workflows/verify-movie-mentor-provider-dispatch-current-spend-authority.yml"
   workflow_dispatch:
