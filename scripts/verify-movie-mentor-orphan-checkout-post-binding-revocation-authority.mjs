@@ -12,11 +12,11 @@ const authority=createMovieMentorCommercialCheckoutInitiationAuthority({
  revokeProviderCheckout:async({provider,checkoutReference:ref})=>{assert.equal(provider,intent.provider);assert.equal(ref,checkoutReference);revokeCalls++;providerSessionStatus="expired";return Object.freeze({revoked:true,provider,checkoutReference:ref,status:"expired"});},
  checkoutBindingStore:{
   async begin(){return Object.freeze({commercialIntentId:intent.commercialIntentId,provider:intent.provider,idempotencyKey:`movie-mentor:${intent.commercialIntentId}`,status:"pending"});},
-  async complete(){completeCalls++;/* Production race: reversal suspends while binding is still pending, so its unpaid-completed discovery can miss this checkout. */ entitlement=Object.freeze({...entitlement,status:"suspended",entitlementRevision:81});return Object.freeze({commercialIntentId:intent.commercialIntentId,provider:intent.provider,idempotencyKey:`movie-mentor:${intent.commercialIntentId}`,status:"completed",checkoutReference,checkoutUrl:`https://provider.example/${checkoutReference}`,expiresAt:null});},
+  async complete(){completeCalls++; entitlement=Object.freeze({...entitlement,status:"suspended",entitlementRevision:81});return Object.freeze({commercialIntentId:intent.commercialIntentId,provider:intent.provider,idempotencyKey:`movie-mentor:${intent.commercialIntentId}`,status:"completed",checkoutReference,checkoutUrl:`https://provider.example/${checkoutReference}`,expiresAt:null});},
   async resolve(){return null;}
  }
 });
-let error=null;try{await authority.initiateCheckout({principalId:intent.principalId,commercialIntentId:intent.commercialIntentId});}catch(cause){error=cause;}
+let error=null;try{await authority.initiateCheckout({principalId:intent.principalId,commercialIntentId:intent.commercialIntentId,currentPrincipalAuthority:async()=>({principalId:intent.principalId})});}catch(cause){error=cause;}
 assert.equal(error?.code,"MOVIE_MENTOR_CHECKOUT_ENTITLEMENT_SUSPENDED","final creator-facing entitlement reread must still fail closed");
 assert.equal(providerCalls,1,"court requires provider checkout creation before the race");
 assert.equal(completeCalls,1,"court requires durable binding completion to cross after concurrent suspension");
