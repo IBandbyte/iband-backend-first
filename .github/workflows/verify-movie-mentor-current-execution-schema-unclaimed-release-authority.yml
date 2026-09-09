@@ -20,7 +20,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-      - run: npm ci
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Syntax check current execution schema unclaimed release authority
+        run: |
+          node --check ai/MovieMentorInferenceSettlementMongoStore.js
+          node --check ai/MovieMentorInferenceExecutionMongoStore.js
+          node --check scripts/verify-movie-mentor-current-execution-schema-unclaimed-release-authority.mjs
       - name: Verify current execution schema at unclaimed economic release
         run: node scripts/verify-movie-mentor-current-execution-schema-unclaimed-release-authority.mjs
