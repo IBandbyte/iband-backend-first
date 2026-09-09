@@ -6,12 +6,12 @@ import {
   assertMovieMentorForwardProviderEffectUnknownAuthority,
 } from "./MovieMentorForwardExecutionAuthority.js";
 
-const MOVIE_MENTOR_FORWARD_EXECUTION_RUNTIME_VERSION = "1.4.0";
+const MOVIE_MENTOR_FORWARD_EXECUTION_RUNTIME_VERSION = "1.5.0";
 const s = (value) => (typeof value === "string" ? value.trim() : "");
 
-async function assertCurrentSpendExecutionCreationAuthority({ spendAuthority = null, authority = null, ...target } = {}) {
+async function assertCurrentReservedSpend({ spendAuthority = null, target = {}, transition = "forward-execution" } = {}) {
   if (typeof spendAuthority?.readReservation !== "function") {
-    throw Object.assign(new Error("Fresh execution creation requires current durable spend reservation authority."), {
+    throw Object.assign(new Error(`${transition} requires current durable spend reservation authority.`), {
       code: "MOVIE_MENTOR_FORWARD_EXECUTION_SPEND_AUTHORITY_REQUIRED",
     });
   }
@@ -27,12 +27,23 @@ async function assertCurrentSpendExecutionCreationAuthority({ spendAuthority = n
     || s(reservation?.projectId) !== s(target.projectId)
     || s(reservation?.status) !== "reserved"
   ) {
-    throw Object.assign(new Error("Fresh execution creation requires the exact reserved spend row to remain current under durable entitlement authority."), {
+    throw Object.assign(new Error(`${transition} requires the exact reserved spend row to remain current under durable entitlement authority.`), {
       code: "MOVIE_MENTOR_FORWARD_EXECUTION_CURRENT_SPEND_REQUIRED",
       reservationId: s(target.reservationId) || null,
+      transition,
     });
   }
+  return reservation;
+}
+
+async function assertCurrentSpendExecutionCreationAuthority({ spendAuthority = null, authority = null, ...target } = {}) {
+  await assertCurrentReservedSpend({ spendAuthority, target, transition: "execution-creation" });
   return assertMovieMentorForwardExecutionCreationAuthority({ authority, ...target });
+}
+
+async function assertCurrentSpendProviderCallAdmissionAuthority({ spendAuthority = null, authority = null, ...target } = {}) {
+  await assertCurrentReservedSpend({ spendAuthority, target, transition: "provider-call-admission" });
+  return assertMovieMentorForwardProviderCallAdmissionAuthority({ authority, ...target });
 }
 
 function createForwardExecutionRuntimeDeps(deps = {}) {
@@ -79,7 +90,7 @@ function createForwardExecutionRuntimeDeps(deps = {}) {
     if (typeof authority?.assertCurrentProviderCallAdmission !== "function") throw Object.assign(new Error("Provider-call admission requires server-created current ownership authority."), { code: "MOVIE_MENTOR_FORWARD_EXECUTION_AUTHORITY_REQUIRED" });
     guarded.claimProviderCall = async (input = {}) => base.claimProviderCall({
       ...input,
-      assertCurrentProviderCallAdmissionAuthority: async (target = {}) => assertMovieMentorForwardProviderCallAdmissionAuthority({ authority, ...target }),
+      assertCurrentProviderCallAdmissionAuthority: async (target = {}) => assertCurrentSpendProviderCallAdmissionAuthority({ spendAuthority, authority, ...target }),
     });
   }
 
