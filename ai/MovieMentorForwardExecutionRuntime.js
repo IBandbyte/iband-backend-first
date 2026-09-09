@@ -53,7 +53,6 @@ function createForwardExecutionRuntimeDeps(deps = {}) {
 
   if (typeof base.openExecution === "function") {
     if (typeof authority?.assertCurrentCreation !== "function") throw Object.assign(new Error("Fresh execution creation requires server-created current ownership authority."), { code: "MOVIE_MENTOR_FORWARD_EXECUTION_AUTHORITY_REQUIRED" });
-    if (typeof spendAuthority?.readReservation !== "function") throw Object.assign(new Error("Fresh execution creation requires current durable spend reservation authority."), { code: "MOVIE_MENTOR_FORWARD_EXECUTION_SPEND_AUTHORITY_REQUIRED" });
     guarded.openExecution = async (input = {}) => base.openExecution({
       ...input,
       assertCurrentCreationAuthority: async (target = {}) => assertCurrentSpendExecutionCreationAuthority({ spendAuthority, authority, ...target }),
