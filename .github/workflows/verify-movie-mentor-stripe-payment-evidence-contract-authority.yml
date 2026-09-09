@@ -19,4 +19,9 @@ jobs:
           node-version: 20
       - run: npm install --no-audit --no-fund --ignore-scripts
       - run: node --check scripts/verify-movie-mentor-stripe-payment-evidence-contract-authority.mjs
-      - run: node scripts/verify-movie-mentor-stripe-payment-evidence-contract-authority.mjs
+      - name: Prove Stripe adapter evidence coordinates
+        run: node scripts/verify-movie-mentor-stripe-payment-evidence-contract-authority.mjs adapter
+      - name: Prove payment evidence consumer coordinates
+        run: node scripts/verify-movie-mentor-stripe-payment-evidence-contract-authority.mjs evidence
+      - name: Prove full Stripe ingress to entitlement issuance
+        run: node scripts/verify-movie-mentor-stripe-payment-evidence-contract-authority.mjs full
