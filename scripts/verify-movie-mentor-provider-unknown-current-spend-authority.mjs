@@ -29,18 +29,29 @@ const inferenceSpendAuthority = Object.freeze({
   },
 });
 
+function ownershipProof(transition, target = {}) {
+  return Object.freeze({
+    domain: "iband.movie-mentor.forward-execution-proof",
+    schema: 1,
+    authorized: true,
+    currentOwnershipVerified: true,
+    principalId: binding.principalId,
+    projectId: binding.projectId,
+    ownershipRef: "ownership:project-1",
+    ownershipRevision: 7,
+    ...target,
+    transition,
+  });
+}
+
 const forwardExecutionAuthority = Object.freeze({
   domain: "iband.movie-mentor.forward-execution-authority",
   schema: 1,
   principalId: binding.principalId,
   projectId: binding.projectId,
   async assertCurrentReacquisition() { throw new Error("reacquisition is outside this court"); },
-  async assertCurrentProviderCallAdmission(target = {}) {
-    return Object.freeze({ authorized: true, currentOwnershipVerified: true, transition: "provider-call-admission", ...target });
-  },
-  async assertCurrentProviderEffectUnknown(target = {}) {
-    return Object.freeze({ authorized: true, currentOwnershipVerified: true, transition: "provider-effect-unknown", ...target });
-  },
+  async assertCurrentProviderCallAdmission(target = {}) { return ownershipProof("provider-call-admission", target); },
+  async assertCurrentProviderEffectUnknown(target = {}) { return ownershipProof("provider-effect-unknown", target); },
 });
 
 const execution = Object.freeze({
