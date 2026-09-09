@@ -2,19 +2,21 @@ import {createMovieMentorCommercialPaymentEvidenceAuthority} from "./MovieMentor
 import {createMovieMentorCommercialPaymentEvidenceBridge} from "./MovieMentorCommercialPaymentEvidenceBridge.js";
 import {createMovieMentorCommercialProviderIngressRegistry} from "./MovieMentorCommercialProviderIngressRegistry.js";
 
-const VERSION="1.2.0";
+const VERSION="1.3.0";
 const DOMAIN="iband.movie-mentor.commercial-provider-ingress-authority";
 const REGISTRY_DOMAIN="iband.movie-mentor.commercial-provider-ingress-registry";
 const ADAPTER_DOMAIN="iband.movie-mentor.commercial-provider-adapter";
 const PURCHASE_INTENT_DOMAIN="iband.movie-mentor.production-commercial-purchase-intent-authority";
+const CHECKOUT_DOMAIN="iband.movie-mentor.production-commercial-checkout-authority";
 const ISSUANCE_DOMAIN="iband.movie-mentor.production-entitlement-issuance-authority";
 
 function text(value){return typeof value==="string"?value.trim():"";}
 function fail(code,message){const error=new Error(message);error.code=code;throw error;}
 function ownedStatus(authority){if(typeof authority?.getStatus!=="function")return null;try{const status=authority.getStatus();return status&&typeof status==="object"?status:null;}catch{return null;}}
 function purchaseIntentProven(status){return status?.domain===PURCHASE_INTENT_DOMAIN&&status?.production===true&&status?.durablePurchaseIntent===true&&status?.immutableCommercialTerms===true&&status?.serverOwnedPolicy===true&&status?.processLocalFallback===false;}
+function checkoutProven(status){return status?.domain===CHECKOUT_DOMAIN&&status?.production===true&&status?.durableCheckoutBinding===true&&status?.checkoutBindingResolution===true&&status?.serverOwnedIdempotency===true&&status?.purchaseIntentProvenanceRequired===true&&status?.explicitProviderRequired===true&&status?.processLocalFallback===false;}
 function issuanceProven(status){return status?.domain===ISSUANCE_DOMAIN&&status?.production===true&&status?.durableAtomicIssuance===true&&status?.evidenceIdentityUnique===true&&status?.issuanceReceiptDurable===true&&status?.processLocalFallback===false;}
-function adapterProven(provider,status){return status?.domain===ADAPTER_DOMAIN&&text(status?.provider)===provider&&status?.productionCommercialProviderAdapter===true&&status?.rawBodyDeliveryVerification===true&&status?.signatureVerification===true&&status?.normalizesCommercialEvidence===true&&status?.creatorPayloadIsNotPaymentAuthority===true&&status?.processLocalFallback===false;}
+function adapterProven(provider,status){return status?.domain===ADAPTER_DOMAIN&&text(status?.provider)===provider&&status?.productionCommercialProviderAdapter===true&&status?.rawBodyDeliveryVerification===true&&status?.signatureVerification===true&&status?.normalizesCommercialEvidence===true&&status?.checkoutReferenceEvidence===true&&status?.creatorPayloadIsNotPaymentAuthority===true&&status?.processLocalFallback===false;}
 function registryProven(status){
   if(status?.domain!==REGISTRY_DOMAIN||status?.providerAdapterProvenanceRequired!==true||status?.rawBodyDeliveryVerificationRequired!==true||status?.signatureVerificationRequired!==true||status?.evidenceNormalizationRequired!==true||status?.creatorPayloadIsNotPaymentAuthority!==true||status?.processLocalFallback!==false)return false;
   const providers=Array.isArray(status?.configuredProviders)?status.configuredProviders:[];
@@ -22,10 +24,12 @@ function registryProven(status){
   return providers.length>0&&providerStatuses!==null&&providers.every(provider=>adapterProven(provider,providerStatuses[provider]));
 }
 
-function createMovieMentorCommercialProviderIngressAuthority({providers={},purchaseIntentAuthority,issuanceAuthority}={}){
+function createMovieMentorCommercialProviderIngressAuthority({providers={},purchaseIntentAuthority,checkoutBindingAuthority,issuanceAuthority}={}){
   const purchaseIntentStatus=ownedStatus(purchaseIntentAuthority);
+  const checkoutBindingStatus=ownedStatus(checkoutBindingAuthority);
   const issuanceStatus=ownedStatus(issuanceAuthority);
   if(typeof purchaseIntentAuthority?.resolvePurchaseIntent!=="function"||!purchaseIntentProven(purchaseIntentStatus))fail("MOVIE_MENTOR_COMMERCIAL_PROVIDER_INGRESS_PURCHASE_INTENT_REQUIRED","Verified commercial ingress requires production-proven durable purchase-intent authority.");
+  if(typeof checkoutBindingAuthority?.resolveCheckoutBinding!=="function"||!checkoutProven(checkoutBindingStatus))fail("MOVIE_MENTOR_COMMERCIAL_PROVIDER_INGRESS_CHECKOUT_BINDING_REQUIRED","Verified commercial ingress requires production-proven durable checkout-session authority.");
   if(typeof issuanceAuthority?.issueVerifiedEvidence!=="function"||!issuanceProven(issuanceStatus))fail("MOVIE_MENTOR_COMMERCIAL_PROVIDER_INGRESS_ISSUANCE_REQUIRED","Verified commercial ingress requires production-proven durable entitlement issuance authority.");
 
   const registry=createMovieMentorCommercialProviderIngressRegistry({providers});
@@ -44,12 +48,13 @@ function createMovieMentorCommercialProviderIngressAuthority({providers={},purch
         return event;
       },
       resolvePurchaseIntent:purchaseIntentAuthority.resolvePurchaseIntent,
+      resolveCheckoutBinding:checkoutBindingAuthority.resolveCheckoutBinding,
     });
     const bridge=createMovieMentorCommercialPaymentEvidenceBridge({evidenceAuthority,issuanceAuthority});
     return bridge.processProviderDelivery({delivery});
   }
 
-  const status=Object.freeze({version:VERSION,domain:DOMAIN,providerNeutral:true,providerRegistryStatus,providerRegistryProvenanceRequired:true,purchaseIntentStatus,issuanceStatus,purchaseIntentProvenanceRequired:true,issuanceProvenanceRequired:true,processLocalFallback:false});
+  const status=Object.freeze({version:VERSION,domain:DOMAIN,providerNeutral:true,providerRegistryStatus,providerRegistryProvenanceRequired:true,purchaseIntentStatus,checkoutBindingStatus,issuanceStatus,purchaseIntentProvenanceRequired:true,checkoutBindingProvenanceRequired:true,issuanceProvenanceRequired:true,processLocalFallback:false});
   return Object.freeze({processProviderDelivery,ingest:processProviderDelivery,configuredProviders:registry.configuredProviders,getStatus:()=>status});
 }
 
