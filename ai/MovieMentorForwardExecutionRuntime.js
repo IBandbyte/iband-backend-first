@@ -6,7 +6,7 @@ import {
   assertMovieMentorForwardProviderEffectUnknownAuthority,
 } from "./MovieMentorForwardExecutionAuthority.js";
 
-const MOVIE_MENTOR_FORWARD_EXECUTION_RUNTIME_VERSION = "1.7.0";
+const MOVIE_MENTOR_FORWARD_EXECUTION_RUNTIME_VERSION = "1.8.0";
 const s = (value) => (typeof value === "string" ? value.trim() : "");
 
 async function assertCurrentReservedSpend({ spendAuthority = null, target = {}, transition = "forward-execution" } = {}) {
@@ -44,6 +44,11 @@ async function assertCurrentSpendExecutionCreationAuthority({ spendAuthority = n
 async function assertCurrentSpendProviderCallAdmissionAuthority({ spendAuthority = null, authority = null, ...target } = {}) {
   await assertCurrentReservedSpend({ spendAuthority, target, transition: "provider-call-admission" });
   return assertMovieMentorForwardProviderCallAdmissionAuthority({ authority, ...target });
+}
+
+async function assertCurrentSpendProviderEffectUnknownAuthority({ spendAuthority = null, authority = null, ...target } = {}) {
+  await assertCurrentReservedSpend({ spendAuthority, target, transition: "provider-effect-unknown" });
+  return assertMovieMentorForwardProviderEffectUnknownAuthority({ authority, ...target });
 }
 
 function createForwardExecutionRuntimeDeps(deps = {}) {
@@ -98,7 +103,7 @@ function createForwardExecutionRuntimeDeps(deps = {}) {
     if (typeof authority?.assertCurrentProviderEffectUnknown !== "function") throw Object.assign(new Error("Provider-effect UNKNOWN requires server-created current ownership authority."), { code: "MOVIE_MENTOR_FORWARD_EXECUTION_AUTHORITY_REQUIRED" });
     guarded.beginProviderDispatch = async (input = {}) => base.beginProviderDispatch({
       ...input,
-      assertCurrentProviderEffectUnknownAuthority: async (target = {}) => assertMovieMentorForwardProviderEffectUnknownAuthority({ authority, ...target }),
+      assertCurrentProviderEffectUnknownAuthority: async (target = {}) => assertCurrentSpendProviderEffectUnknownAuthority({ spendAuthority, authority, ...target }),
     });
   }
 
