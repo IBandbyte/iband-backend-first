@@ -1,0 +1,22 @@
+name: Verify Movie Mentor Purchase Intent Store-Ready Current Auth
+
+on:
+  pull_request:
+    paths:
+      - 'ai/MovieMentorCommercialPurchaseIntentAuthority.js'
+      - 'ai/MovieMentorCommercialPurchaseIntentMongoStore.js'
+      - 'scripts/verify-movie-mentor-purchase-intent-store-ready-current-auth.mjs'
+      - '.github/workflows/verify-movie-mentor-purchase-intent-store-ready-current-auth.yml'
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - run: node --check scripts/verify-movie-mentor-purchase-intent-store-ready-current-auth.mjs
+      - run: node scripts/verify-movie-mentor-purchase-intent-store-ready-current-auth.mjs
