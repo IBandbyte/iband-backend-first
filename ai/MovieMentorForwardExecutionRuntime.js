@@ -6,7 +6,7 @@ import {
   assertMovieMentorForwardProviderEffectUnknownAuthority,
 } from "./MovieMentorForwardExecutionAuthority.js";
 
-const MOVIE_MENTOR_FORWARD_EXECUTION_RUNTIME_VERSION = "1.6.0";
+const MOVIE_MENTOR_FORWARD_EXECUTION_RUNTIME_VERSION = "1.7.0";
 const s = (value) => (typeof value === "string" ? value.trim() : "");
 
 async function assertCurrentReservedSpend({ spendAuthority = null, target = {}, transition = "forward-execution" } = {}) {
@@ -104,13 +104,14 @@ function createForwardExecutionRuntimeDeps(deps = {}) {
 
   if (typeof base.assertProviderDispatch === "function") {
     guarded.assertProviderDispatch = async (input = {}) => {
-      const providerCall = input?.providerCall;
+      const current = await base.assertProviderDispatch(input);
+      if (current?.dispatchAuthorized !== true) return current;
       await assertCurrentReservedSpend({
         spendAuthority,
-        target: providerCall,
+        target: input?.providerCall,
         transition: "provider-dispatch",
       });
-      return base.assertProviderDispatch(input);
+      return current;
     };
   }
 
