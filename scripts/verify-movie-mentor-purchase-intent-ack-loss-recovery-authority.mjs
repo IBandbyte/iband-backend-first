@@ -11,7 +11,8 @@ const store={
   if(createCalls===1){const error=new Error("simulated Mongo ACK loss after durable commit");error.code="MOVIE_MENTOR_PURCHASE_INTENT_AUTHORITY_UNAVAILABLE";error.retryable=true;throw error;}
   return durable;
  },
- async resolve({commercialIntentId}){return rows.get(commercialIntentId)||null;}
+ async resolve({commercialIntentId}){return rows.get(commercialIntentId)||null;},
+ async resolveAttempt({principalId,purchaseAttemptDigest}){return [...rows.values()].find(row=>row.principalId===principalId&&row.purchaseAttemptDigest===purchaseAttemptDigest)||null;}
 };
 let ids=0;
 const authority=createMovieMentorCommercialPurchaseIntentAuthority({
@@ -19,7 +20,7 @@ const authority=createMovieMentorCommercialPurchaseIntentAuthority({
  resolveCommercialPolicy:async({packageId})=>Object.freeze({packageId,provider:"provider-a",providerProductId:"prod_creator20",amountMinor:1200,currency:"GBP",environment:"live",units:20,policyVersion:"v1"}),
  createCommercialIntentId:()=>`intent_ack_loss_${++ids}`
 });
-const input={principalId:"creator-ack-loss",packageId:"creator-20",currentPrincipalAuthority:async()=>({principalId:"creator-ack-loss"})};
+const input={principalId:"creator-ack-loss",packageId:"creator-20",purchaseAttemptId:"attempt-ack-loss-1",currentPrincipalAuthority:async()=>({principalId:"creator-ack-loss"})};
 await assert.rejects(()=>authority.createPurchaseIntent(input),error=>error?.code==="MOVIE_MENTOR_PURCHASE_INTENT_AUTHORITY_UNAVAILABLE");
 const recovered=await authority.createPurchaseIntent(input);
 assert.equal(rows.size,1,"retry after a committed-but-unacknowledged purchase-intent mint must not create a second charge-capable durable intent");
