@@ -2,10 +2,11 @@ name: Verify Movie Mentor Orphan Checkout Post-Binding Revocation Authority
 
 on:
   pull_request:
+    branches: [main]
     paths:
-      - "ai/MovieMentorCommercialCheckoutInitiationAuthority.js"
-      - "scripts/verify-movie-mentor-orphan-checkout-post-binding-revocation-authority.mjs"
-      - ".github/workflows/verify-movie-mentor-orphan-checkout-post-binding-revocation-authority.yml"
+      - 'ai/**'
+      - 'scripts/verify-movie-mentor-orphan-checkout-post-binding-revocation-authority.mjs'
+      - '.github/workflows/verify-movie-mentor-orphan-checkout-post-binding-revocation-authority.yml'
   workflow_dispatch:
 
 jobs:
@@ -16,7 +17,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
       - run: npm install --no-audit --no-fund --ignore-scripts
       - run: node --check scripts/verify-movie-mentor-orphan-checkout-post-binding-revocation-authority.mjs
       - run: node scripts/verify-movie-mentor-orphan-checkout-post-binding-revocation-authority.mjs
