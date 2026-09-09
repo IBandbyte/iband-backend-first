@@ -1,0 +1,20 @@
+name: Verify Movie Mentor Result Candidate Current Execution Schema Authority
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "ai/MovieMentorResultCandidateMongoStore.js"
+      - "scripts/verify-movie-mentor-result-candidate-current-execution-schema-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-result-candidate-current-execution-schema-authority.yml"
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - run: node --check scripts/verify-movie-mentor-result-candidate-current-execution-schema-authority.mjs
+      - run: node scripts/verify-movie-mentor-result-candidate-current-execution-schema-authority.mjs
