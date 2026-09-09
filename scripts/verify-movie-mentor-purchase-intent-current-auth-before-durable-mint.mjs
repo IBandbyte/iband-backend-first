@@ -25,7 +25,8 @@ const requestAuthority=createMovieMentorCreatorCommercialRequestAuthority({
 let durableCreates=0;
 const store={
   async create(record){durableCreates++;return Object.freeze({...record,status:"created"});},
-  async resolve(){return null;}
+  async resolve(){return null;},
+  async resolveAttempt(){return null;}
 };
 const resolveCommercialPolicy=async({packageId})=>{
   assert.equal(packageId,"creator-20");
@@ -37,7 +38,7 @@ const checkoutAuthority={async initiateCheckout(){throw new Error("outside court
 const router=createMovieMentorCommercialRouter({requestAuthority,purchaseIntentAuthority,checkoutAuthority,listCommercialPackages:async()=>[]});
 const layer=router.stack.find(entry=>entry.route?.path==="/purchase-intents");
 const res=response();
-await layer.route.stack[0].handle({headers:{authorization:"Bearer expiring-purchase-token"},body:{packageId:"creator-20"}},res);
+await layer.route.stack[0].handle({headers:{authorization:"Bearer expiring-purchase-token"},body:{packageId:"creator-20",purchaseAttemptId:"attempt-current-auth-mint-1"}},res);
 
 assert.equal(authReads,2,"durable purchase-intent mint must re-earn current authentication after policy I/O");
 assert.equal(durableCreates,0,"expired authentication must prevent the irreversible durable purchase-intent write");
