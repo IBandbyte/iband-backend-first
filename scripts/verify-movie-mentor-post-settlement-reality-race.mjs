@@ -11,7 +11,7 @@ const runtime=fs.readFileSync(new URL("../ai/MovieMentorTurnRuntime.js",import.m
 // Observation is allowed after economic settlement; forward provider authority is not.
 assert.match(providerEffectStore,/executionLedger\(\)\.updateOne\(\{executionId:current\.executionId\},\{\$inc:\{providerEffectRealityRevision:1\}\}/);
 assert.match(providerEffectStore,/executionId:c\.executionId,schema:CURRENT_EXECUTION_SCHEMA,phase:"active",ownerId,leaseGeneration,leaseReference,fencingToken/);
-assert.match(executionStore,/executionId:text\(input\.executionId\),phase:"active",ownerId:/);
+assert.match(executionStore,/executionId:text\(input\.executionId\),schema:SCHEMA,phase:"active",ownerId:/);
 
 // SETTLED is closure-bearing history. A late contradiction can revoke forward authority only by quarantine,
 // while retaining the exact proof-bearing source phase and immutable settled lineage.
