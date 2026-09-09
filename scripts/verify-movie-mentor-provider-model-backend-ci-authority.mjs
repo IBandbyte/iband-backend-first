@@ -9,6 +9,7 @@ const verifier = "scripts/verify-movie-mentor-provider-model-authority.mjs";
 const compositionVerifier = "scripts/verify-movie-mentor-provider-model-composition-authority.mjs";
 const jurisdictionVerifier = "scripts/verify-movie-mentor-provider-model-backend-ci-authority.mjs";
 const durableNullModelVerifier = "scripts/verify-movie-mentor-durable-null-model-authority.mjs";
+const providerOperationSchemaVerifier = "scripts/verify-movie-mentor-provider-operation-current-execution-schema-authority.mjs";
 
 for (const [path, label] of [
   [verifier, "provider model authority verifier"],
@@ -19,22 +20,21 @@ for (const [path, label] of [
   assert.match(backendCi, new RegExp(`node ${path.replaceAll(".", "\\.")}`), `Backend CI must behaviorally execute the ${label}`);
 }
 
-for (const args of [
-  ["--check", durableNullModelVerifier],
-  [durableNullModelVerifier],
-]) {
-  const result = spawnSync(process.execPath, args, {
-    cwd: new URL("..", import.meta.url),
-    encoding: "utf8",
-  });
-  assert.equal(
-    result.status,
-    0,
-    `Backend CI provider-model jurisdiction must ${args[0] === "--check" ? "syntax-own" : "behaviorally execute"} the durable null-model authority court.\n${result.stdout || ""}${result.stderr || ""}`,
-  );
+for (const target of [durableNullModelVerifier, providerOperationSchemaVerifier]) {
+  for (const args of [["--check", target], [target]]) {
+    const result = spawnSync(process.execPath, args, {
+      cwd: new URL("..", import.meta.url),
+      encoding: "utf8",
+    });
+    assert.equal(
+      result.status,
+      0,
+      `Backend CI provider-model jurisdiction must ${args[0] === "--check" ? "syntax-own" : "behaviorally execute"} ${target}.\n${result.stdout || ""}${result.stderr || ""}`,
+    );
+  }
 }
 
-console.log("✓ Backend CI's directly-owned provider-model jurisdiction syntax-checks the durable null-model court");
-console.log("✓ Backend CI's directly-owned provider-model jurisdiction behaviorally executes the durable null-model court");
-console.log("LAW: PROVIDER MODEL AUTHORITY MUST BE OWNED BY BACKEND CI, INCLUDING PRODUCTION COMPOSITION AND DURABLE NULL-VERSUS-ABSENCE PROOF.");
+console.log("✓ Backend CI's directly-owned provider-model jurisdiction syntax-checks and executes durable null-model authority");
+console.log("✓ Backend CI's directly-owned provider-model jurisdiction syntax-checks and executes provider-operation current-schema production-reachability exoneration");
+console.log("LAW: PROVIDER MODEL/OPERATION AUTHORITY MUST BE OWNED BY BACKEND CI, INCLUDING PRODUCTION COMPOSITION, DURABLE NULL-VERSUS-ABSENCE PROOF, AND CURRENT-SCHEMA REACHABILITY.");
 console.log("Movie Mentor provider model Backend CI jurisdiction: GREEN");
