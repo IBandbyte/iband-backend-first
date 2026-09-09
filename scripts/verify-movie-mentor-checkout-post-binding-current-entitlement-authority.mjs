@@ -15,7 +15,7 @@ const authority=createMovieMentorCommercialCheckoutInitiationAuthority({
  createProviderCheckout:async()=>{providerCalls++;return Object.freeze({authorized:true,commercialIntentId:intent.commercialIntentId,provider:"provider-a",checkoutReference:"checkout_post_binding_race_1",checkoutUrl:"https://provider.example/checkout_post_binding_race_1",expiresAt:null});},
  revokeProviderCheckout:async({provider,checkoutReference})=>{assert.equal(provider,"provider-a");assert.equal(checkoutReference,"checkout_post_binding_race_1");revokeCalls++;return Object.freeze({revoked:true,provider,checkoutReference,status:"expired"});}
 });
-await assert.rejects(()=>authority.initiateCheckout({principalId:intent.principalId,commercialIntentId:intent.commercialIntentId}),error=>error?.code==="MOVIE_MENTOR_CHECKOUT_ENTITLEMENT_SUSPENDED");
+await assert.rejects(()=>authority.initiateCheckout({principalId:intent.principalId,commercialIntentId:intent.commercialIntentId,currentPrincipalAuthority:async()=>({principalId:intent.principalId})}),error=>error?.code==="MOVIE_MENTOR_CHECKOUT_ENTITLEMENT_SUSPENDED");
 assert.equal(providerCalls,1,"court requires provider checkout history to exist");
 assert.equal(completeCalls,1,"court requires durable checkout completion to finish before concurrent suspension becomes visible");
 assert.equal(revokeCalls,1,"post-binding suspension must revoke the exact provider session already owned by checkout initiation");
