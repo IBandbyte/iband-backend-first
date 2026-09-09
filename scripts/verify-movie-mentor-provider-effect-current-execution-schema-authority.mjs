@@ -16,7 +16,10 @@ async function attempt(executionSchema){
   try{return{ok:true,result:await store.beginUnknown(binding),executionTouched};}catch(error){return{ok:false,error,executionTouched};}finally{if(previous)mongoose.models.MovieMentorProviderEffectReality=previous;else delete mongoose.models.MovieMentorProviderEffectReality;}
 }
 
-const current=await attempt(6);assert.equal(current.ok,true,"current schema-6 execution must be able to durably establish UNKNOWN after exact admitted-call fencing");assert.equal(current.result.state,"unknown");assert.equal(current.executionTouched,1);
+// Run the legacy case first. The production module intentionally caches its Mongoose model;
+// this keeps the two fixture attempts from letting a previously-created current effect row
+// short-circuit the legacy execution fence as an idempotent existing effect.
 const legacy=await attempt(5);assert.equal(legacy.ok,false,"legacy schema-5 execution history must fail closed before the irreversible provider-effect UNKNOWN boundary");assert.equal(legacy.error?.code,"MOVIE_MENTOR_PROVIDER_EFFECT_EXECUTION_FENCED");assert.equal(legacy.executionTouched,0,"legacy execution must not receive provider-effect reality revision authority");
+const current=await attempt(6);assert.equal(current.ok,true,"current schema-6 execution must be able to durably establish UNKNOWN after exact admitted-call fencing");assert.equal(current.result.state,"unknown");assert.equal(current.executionTouched,1);
 console.log("GREEN: provider-effect UNKNOWN independently requires the current durable execution schema at its own irreversible boundary.");
 console.log("LAW: A CURRENT LEASE PROOF CANNOT LEND CURRENT-SCHEMA AUTHORITY TO A LEGACY EXECUTION AT A NEIGHBOURING DURABLE EFFECT BOUNDARY.");
