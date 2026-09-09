@@ -12,3 +12,4 @@ const current=await attempt(6);assert.equal(current.ok,true,"current schema-6 ex
 const legacy=await attempt(5);assert.equal(legacy.ok,false,"legacy execution schema must not cross the irreversible result-candidate staging boundary");
 assert.equal(current.executionBarrierFilter?.schema,6,"candidate store must independently bind the atomic execution fence to current schema 6");assert.equal(legacy.executionBarrierFilter?.schema,6,"legacy caller evidence must not choose the durable schema admitted by the candidate store");assert.equal(legacy.error?.code,"MOVIE_MENTOR_RESULT_CANDIDATE_EXECUTION_FENCED");
 console.log("GREEN: result-candidate staging independently proves current execution schema at its atomic durable boundary.");console.log("LAW: CURRENT LEASE AUTHORITY CANNOT LEND CURRENT-SCHEMA AUTHORITY TO RESULT-CANDIDATE STAGING.");
+
