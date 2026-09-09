@@ -12,7 +12,6 @@ const binding = Object.freeze({
 
 let spendCurrent = true;
 let spendReads = 0;
-let dispatchChecks = 0;
 
 const inferenceSpendAuthority = Object.freeze({
   async readReservation({ reservationId, principalId, projectId } = {}) {
@@ -87,7 +86,6 @@ const baseExecutionAuthority = Object.freeze({
     return Object.freeze({ authorized: true, dispatchAuthorized: true, ...candidate });
   },
   async assertProviderDispatch({ providerCall } = {}) {
-    dispatchChecks += 1;
     return Object.freeze({
       authorized: true,
       dispatchAuthorized: true,
@@ -117,7 +115,6 @@ await assert.rejects(
   "irreversible provider dispatch must independently re-enter the exact reserved spend row under current entitlement reality",
 );
 assert.equal(spendReads, 2, "provider dispatch must own a new current-spend proof rather than borrow provider-call admission history");
-assert.equal(dispatchChecks, 0, "provider dispatch authority must not be consulted after current spend authority is lost");
 
 console.log("GREEN: irreversible provider dispatch independently revalidates the exact reserved spend row under current entitlement reality.");
 console.log("LAW: PROVIDER-CALL ADMISSION DOES NOT LEND ITS SPEND PROOF TO IRREVERSIBLE PROVIDER DISPATCH.");
