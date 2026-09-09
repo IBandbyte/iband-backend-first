@@ -21,10 +21,11 @@ const authority=createMovieMentorCommercialPurchaseIntentAuthority({
  createCommercialIntentId:()=>`intent_ack_loss_${++ids}`
 });
 const input={principalId:"creator-ack-loss",packageId:"creator-20",purchaseAttemptId:"attempt-ack-loss-1",currentPrincipalAuthority:async()=>({principalId:"creator-ack-loss"})};
-await assert.rejects(()=>authority.createPurchaseIntent(input),error=>error?.code==="MOVIE_MENTOR_PURCHASE_INTENT_AUTHORITY_UNAVAILABLE");
-const recovered=await authority.createPurchaseIntent(input);
-assert.equal(rows.size,1,"retry after a committed-but-unacknowledged purchase-intent mint must not create a second charge-capable durable intent");
-assert.equal(recovered.commercialIntentId,"intent_ack_loss_1","retry must recover the exact durable commercial authority whose ACK was lost");
-assert.equal(createCalls,1,"recovery must not cross a second irreversible durable mint");
+const recoveredAfterLostAck=await authority.createPurchaseIntent(input);
+assert.equal(recoveredAfterLostAck.commercialIntentId,"intent_ack_loss_1","authority may recover immediately after a lost ACK, but only by returning the exact committed durable intent");
+const replayed=await authority.createPurchaseIntent(input);
+assert.equal(rows.size,1,"same purchase attempt after a committed-but-unacknowledged mint must never create a second charge-capable durable intent");
+assert.equal(replayed.commercialIntentId,"intent_ack_loss_1","same-attempt replay must recover the exact durable commercial authority whose ACK was lost");
+assert.equal(createCalls,1,"ACK-loss recovery must not cross a second irreversible durable mint");
 console.log("purchase-intent ACK-loss recovery authority torture: GREEN");
 console.log("LAW: A LOST DURABLE PURCHASE-INTENT MINT ACK MAY HIDE COMMITTED COMMERCIAL AUTHORITY; RETRY MUST RECOVER EXACT DURABLE REALITY BEFORE MINTING A SECOND CHARGE-CAPABLE INTENT.");
