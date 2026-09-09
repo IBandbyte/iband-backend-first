@@ -10,7 +10,7 @@ const runtime=fs.readFileSync(new URL("../ai/MovieMentorTurnRuntime.js",import.m
 
 // Observation is allowed after economic settlement; forward provider authority is not.
 assert.match(providerEffectStore,/executionLedger\(\)\.updateOne\(\{executionId:current\.executionId\},\{\$inc:\{providerEffectRealityRevision:1\}\}/);
-assert.match(providerEffectStore,/executionId:c\.executionId,phase:"active",ownerId,leaseGeneration,leaseReference,fencingToken/);
+assert.match(providerEffectStore,/executionId:c\.executionId,schema:CURRENT_EXECUTION_SCHEMA,phase:"active",ownerId,leaseGeneration,leaseReference,fencingToken/);
 assert.match(executionStore,/executionId:text\(input\.executionId\),phase:"active",ownerId:/);
 
 // SETTLED is closure-bearing history. A late contradiction can revoke forward authority only by quarantine,
@@ -31,6 +31,7 @@ assert.equal(inspectMovieMentorInferenceExecution({...base,quarantinedFromPhase:
 console.log("5A.24 post-SETTLED provider-reality catastrophe gate: GREEN");
 console.log("✓ late provider evidence remains durable observation, never renewed dispatch authority");
 console.log("✓ provider-effect mutation serializes through execution providerEffectRealityRevision after SETTLED");
+console.log("✓ provider-effect UNKNOWN independently requires current schema-6 live execution authority");
 console.log("✓ late contradictory reality can quarantine SETTLED while preserving exact economic/result lineage");
 console.log("✓ QUARANTINED cannot settle, replay, reacquire, or admit another provider call");
 console.log("LAW: SETTLEMENT FREEZES CREATOR DEBIT HISTORY, NOT THE UNIVERSE. LATE REALITY MAY REVOKE FORWARD AUTHORITY, BUT IT MAY NOT ERASE OR REWRITE THE PROOF THAT ALREADY OCCURRED.");

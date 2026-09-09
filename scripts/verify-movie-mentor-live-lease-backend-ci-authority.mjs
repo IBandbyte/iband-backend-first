@@ -15,9 +15,10 @@ assert.match(backendCi,/Verify Movie Mentor live execution lease enforcement[\s\
 assert.match(backendCi,/Verify Movie Mentor Live Lease Backend CI authority[\s\S]*node scripts\/verify-movie-mentor-live-lease-backend-ci-authority\.mjs/,"Backend CI must execute the independent jurisdiction proof");
 
 // The jurisdiction proof itself is executed by Backend CI. These imports therefore
-// make Backend CI behaviorally own both schema-propagation and current-schema live
-// execution authority rather than borrowing their dedicated workflow greens.
+// make Backend CI behaviorally own the schema-sensitive live and forward-effect
+// boundaries rather than borrowing their dedicated workflow greens.
 await import("./verify-movie-mentor-execution-schema-runtime-propagation-authority.mjs");
 await import("./verify-movie-mentor-current-schema-live-execution-authority.mjs");
+await import("./verify-movie-mentor-provider-effect-current-execution-schema-authority.mjs");
 
-console.log("PASS — Live Lease owns PR proof and Backend CI independently owns live lease, schema propagation, and current-schema live execution authority.");
+console.log("PASS — Live Lease owns PR proof and Backend CI independently owns live lease, schema propagation, current-schema live execution, and provider-effect UNKNOWN current-schema authority.");
