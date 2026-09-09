@@ -1,0 +1,27 @@
+name: Verify Movie Mentor Stripe Payment Evidence Contract Authority
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "ai/MovieMentorStripeCommercialProviderAdapter.js"
+      - "ai/MovieMentorCommercialPaymentEvidenceAuthority.js"
+      - "ai/MovieMentorCommercialProviderIngressAuthority.js"
+      - "scripts/verify-movie-mentor-stripe-payment-evidence-contract-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-stripe-payment-evidence-contract-authority.yml"
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - run: node --check scripts/verify-movie-mentor-stripe-payment-evidence-contract-authority.mjs
+      - name: Prove Stripe adapter evidence coordinates
+        run: node scripts/verify-movie-mentor-stripe-payment-evidence-contract-authority.mjs adapter
+      - name: Prove payment evidence consumer coordinates
+        run: node scripts/verify-movie-mentor-stripe-payment-evidence-contract-authority.mjs evidence
+      - name: Prove full Stripe ingress to entitlement issuance
+        run: node scripts/verify-movie-mentor-stripe-payment-evidence-contract-authority.mjs full
