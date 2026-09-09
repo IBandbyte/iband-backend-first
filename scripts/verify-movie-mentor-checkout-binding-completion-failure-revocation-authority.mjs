@@ -1,34 +1,6 @@
 import assert from "node:assert/strict";
 import { createMovieMentorCommercialCheckoutInitiationAuthority } from "../ai/MovieMentorCommercialCheckoutInitiationAuthority.js";
-
-const principalId="creator_binding_failure";
-const commercialIntentId="intent_binding_failure";
-const provider="provider-a";
-const checkoutReference="checkout_binding_failure_1";
-let providerCalls=0;
-let revokeCalls=0;
-let completeCalls=0;
-let durableBinding={status:"pending",provider,idempotencyKey:`movie-mentor:${commercialIntentId}`};
-
-const authority=createMovieMentorCommercialCheckoutInitiationAuthority({
-  resolvePurchaseIntent:async()=>({commercialIntentId,principalId,status:"created",packageId:"pkg",provider,providerProductId:"price",amountMinor:1000,currency:"GBP",environment:"test",units:10,policyVersion:"v1",policyDigest:"digest"}),
-  resolveCurrentEntitlement:async()=>({principalId,status:"active",entitlementRevision:9}),
-  createProviderCheckout:async()=>{providerCalls+=1;return {authorized:true,commercialIntentId,provider,checkoutReference,checkoutUrl:"https://checkout.invalid/binding-failure",expiresAt:"2099-01-01T00:00:00.000Z"};},
-  revokeProviderCheckout:async({provider:actualProvider,checkoutReference:actualReference})=>{assert.equal(actualProvider,provider);assert.equal(actualReference,checkoutReference);revokeCalls+=1;return {revoked:true,provider:actualProvider,checkoutReference:actualReference,status:"expired",recovered:false};},
-  checkoutBindingStore:{
-    begin:async()=>durableBinding,
-    complete:async()=>{completeCalls+=1;const error=new Error("simulated durable pre-write failure");error.code="MOVIE_MENTOR_CHECKOUT_BINDING_AUTHORITY_UNAVAILABLE";error.retryable=true;throw error;},
-    resolve:async()=>durableBinding
-  },
-  now:()=>new Date("2026-09-09T16:30:00.000Z")
-});
-
-await assert.rejects(
-  ()=>authority.initiateCheckout({principalId,commercialIntentId}),
-  error=>error?.code==="MOVIE_MENTOR_CHECKOUT_BINDING_AUTHORITY_UNAVAILABLE"
-);
-assert.equal(providerCalls,1,"provider checkout must be created exactly once");
-assert.equal(completeCalls,1,"durable binding completion must be attempted exactly once");
-assert.equal(durableBinding.status,"pending","pre-write failure must leave only pending durable binding reality");
-assert.equal(revokeCalls,1,"newly-created provider checkout must be revoked when durable binding completion fails before certification");
-console.log("Movie Mentor checkout binding completion failure revocation authority GREEN");
+const principalId="creator_binding_failure";const commercialIntentId="intent_binding_failure";const provider="provider-a";const checkoutReference="checkout_binding_failure_1";let providerCalls=0;let revokeCalls=0;let completeCalls=0;let durableBinding={status:"pending",provider,idempotencyKey:`movie-mentor:${commercialIntentId}`};
+const authority=createMovieMentorCommercialCheckoutInitiationAuthority({resolvePurchaseIntent:async()=>({commercialIntentId,principalId,status:"created",packageId:"pkg",provider,providerProductId:"price",amountMinor:1000,currency:"GBP",environment:"test",units:10,policyVersion:"v1",policyDigest:"digest"}),resolveCurrentEntitlement:async()=>({principalId,status:"active",entitlementRevision:9}),createProviderCheckout:async()=>{providerCalls+=1;return {authorized:true,commercialIntentId,provider,checkoutReference,checkoutUrl:"https://checkout.invalid/binding-failure",expiresAt:"2099-01-01T00:00:00.000Z"};},revokeProviderCheckout:async({provider:actualProvider,checkoutReference:actualReference})=>{assert.equal(actualProvider,provider);assert.equal(actualReference,checkoutReference);revokeCalls+=1;return {revoked:true,provider:actualProvider,checkoutReference:actualReference,status:"expired",recovered:false};},checkoutBindingStore:{begin:async()=>durableBinding,complete:async()=>{completeCalls+=1;const error=new Error("simulated durable pre-write failure");error.code="MOVIE_MENTOR_CHECKOUT_BINDING_AUTHORITY_UNAVAILABLE";error.retryable=true;throw error;},resolve:async()=>durableBinding},now:()=>new Date("2026-09-09T16:30:00.000Z")});
+await assert.rejects(()=>authority.initiateCheckout({principalId,commercialIntentId,currentPrincipalAuthority:async()=>({principalId})}),error=>error?.code==="MOVIE_MENTOR_CHECKOUT_BINDING_AUTHORITY_UNAVAILABLE");
+assert.equal(providerCalls,1,"provider checkout must be created exactly once");assert.equal(completeCalls,1,"durable binding completion must be attempted exactly once");assert.equal(durableBinding.status,"pending","pre-write failure must leave only pending durable binding reality");assert.equal(revokeCalls,1,"newly-created provider checkout must be revoked when durable binding completion fails before certification");console.log("Movie Mentor checkout binding completion failure revocation authority GREEN");

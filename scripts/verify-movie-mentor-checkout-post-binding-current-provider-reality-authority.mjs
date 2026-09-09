@@ -16,7 +16,7 @@ const authority=createMovieMentorCommercialCheckoutInitiationAuthority({
  resolveProviderCheckout:async({provider,checkoutReference})=>{providerRealityReads++;assert.equal(provider,"provider-a");assert.equal(checkoutReference,"checkout_post_binding_provider_reality_1");return Object.freeze({provider,checkoutReference,checkoutUrl:"https://provider.example/checkout_post_binding_provider_reality_1",status:"expired"});},
  now:()=>new Date("2026-09-09T17:20:00.000Z")
 });
-await assert.rejects(()=>authority.initiateCheckout({principalId:intent.principalId,commercialIntentId:intent.commercialIntentId}),error=>error?.code==="MOVIE_MENTOR_CHECKOUT_POST_BINDING_PROVIDER_NOT_OPEN");
+await assert.rejects(()=>authority.initiateCheckout({principalId:intent.principalId,commercialIntentId:intent.commercialIntentId,currentPrincipalAuthority:async()=>({principalId:intent.principalId})}),error=>error?.code==="MOVIE_MENTOR_CHECKOUT_POST_BINDING_PROVIDER_NOT_OPEN");
 assert.equal(providerCreates,1,"court requires a fresh provider checkout to have been created open before durable binding I/O");
 assert.equal(completeCalls,1,"court requires durable binding completion before provider reality changes");
 assert.equal(providerRealityReads,1,"creator-facing return must re-earn current provider reality after durable binding completion");

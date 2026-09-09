@@ -19,7 +19,7 @@ const authority=createMovieMentorCommercialCheckoutInitiationAuthority({
  revokeProviderCheckout:async({provider,checkoutReference:reference})=>{assert.equal(provider,"provider-a");assert.equal(reference,checkoutReference);revokeCalls++;return Object.freeze({revoked:true,provider,checkoutReference:reference,status:"expired"});},
  now:()=>new Date("2026-09-09T18:00:00.000Z")
 });
-await assert.rejects(()=>authority.initiateCheckout({principalId:intent.principalId,commercialIntentId:intent.commercialIntentId}),error=>error?.code==="MOVIE_MENTOR_CHECKOUT_ENTITLEMENT_SUSPENDED");
+await assert.rejects(()=>authority.initiateCheckout({principalId:intent.principalId,commercialIntentId:intent.commercialIntentId,currentPrincipalAuthority:async()=>({principalId:intent.principalId})}),error=>error?.code==="MOVIE_MENTOR_CHECKOUT_ENTITLEMENT_SUSPENDED");
 assert.equal(providerCreates,1,"court requires a fresh provider checkout to exist");
 assert.equal(completeCalls,1,"court requires durable binding completion before creator exposure");
 assert.equal(providerRealityReads,1,"court requires current provider-open proof to be re-earned after binding");
