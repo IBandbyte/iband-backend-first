@@ -107,6 +107,11 @@ assert.equal(absentExpiresAt.reason, "time-invalid");
 let mongoWrites = 0;
 const mongoStore = createMovieMentorJourneyRecoveryActivationLeaseMongoStore({
   mongoModel: {
+    collection: {
+      async indexes() {
+        return [{ name: "serviceKey_1", key: { serviceKey: 1 }, unique: true }];
+      },
+    },
     async create() { mongoWrites += 1; throw new Error("must not write malformed candidate"); },
   },
 });
@@ -121,6 +126,7 @@ console.log("✓ null durable expiry cannot become historical active-lease autho
 console.log("✓ null live-fence expiry cannot become complete authorized evidence");
 console.log("✓ null live evaluation clock closes the mounted recovery fence before scheduling renewal");
 console.log("✓ null cross-process expiry cannot cross the activation boundary");
+console.log("✓ proof-time Mongo fixture owns the physical singleton index required before candidate validation");
 console.log("✓ null acquired/expiry timestamps fail durable Mongo schema inspection and candidate writes before mutation");
 console.log("LAW: ABSENCE IS NOT 1970. NO PROOF TIME → NO LEASE AUTHORITY → NO LIVE RECOVERY EXPOSURE.");
 console.log("4G.4 Round Seven proof-time absence torture: GREEN");
