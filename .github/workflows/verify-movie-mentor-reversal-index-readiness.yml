@@ -1,0 +1,25 @@
+name: Verify Movie Mentor Reversal Index Readiness
+
+on:
+  pull_request:
+    paths:
+      - 'ai/MovieMentorCommercialReversalMongoStore.js'
+      - 'ai/MovieMentorProductionCommercialReversalComposition.js'
+      - 'scripts/verify-movie-mentor-reversal-index-readiness.mjs'
+      - '.github/workflows/verify-movie-mentor-reversal-index-readiness.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - run: node --check scripts/verify-movie-mentor-reversal-index-readiness.mjs
+      - run: node scripts/verify-movie-mentor-reversal-index-readiness.mjs
