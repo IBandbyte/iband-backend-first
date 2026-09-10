@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import { isMovieMentorLegacyProjectOwnershipAdoptionAttestationOwnedProof } from "./MovieMentorLegacyProjectOwnershipAdoptionBoundary.js";
 
-const MOVIE_MENTOR_PROJECT_OWNERSHIP_REGISTRY_VERSION = "1.4.0";
+const MOVIE_MENTOR_PROJECT_OWNERSHIP_REGISTRY_VERSION = "1.5.0";
 const MOVIE_MENTOR_PROJECT_OWNERSHIP_COLLECTION = "movie_mentor_project_ownership";
 const MOVIE_MENTOR_PROJECT_OWNERSHIP_DOMAIN = "iband.movie-mentor.project-ownership";
 const MOVIE_MENTOR_PROJECT_OWNERSHIP_SCHEMA = 1;
@@ -12,6 +12,7 @@ const LEGACY_ADOPTION_ATTESTATION_SCHEMA = 1;
 
 let connectionPromise = null;
 let model = null;
+let physicalUniqueIndexReadinessPromise = null;
 
 function s(value) { return typeof value === "string" ? value.trim() : ""; }
 function n(value) { return Number.isSafeInteger(value) && value >= 0 ? value : null; }
@@ -32,6 +33,7 @@ function getMovieMentorProjectOwnershipRegistryStatus() {
     singleton: true,
     projectUnique: true,
     establishmentAuthorityUnique: true,
+    physicalUniqueIndexReadiness: "required-before-durable-mint",
     createOnce: true,
     legacyAdoption: "certified-attestation-only",
     ownershipTransfer: false,
@@ -47,6 +49,7 @@ function storeCapabilityProven(status) {
     status?.singleton === true &&
     status?.projectUnique === true &&
     status?.establishmentAuthorityUnique === true &&
+    status?.physicalUniqueIndexReadiness === "required-before-durable-mint" &&
     status?.createOnce === true &&
     status?.legacyAdoption === "certified-attestation-only" &&
     status?.ownershipTransfer === false &&
@@ -85,6 +88,41 @@ async function ensureConnection() {
   }
   await connectionPromise;
   return mongoose.connection;
+}
+
+function indexMatches(index, expectedKey) {
+  if (index?.unique !== true || !index?.key || typeof index.key !== "object") return false;
+  const actual = Object.entries(index.key);
+  const expected = Object.entries(expectedKey);
+  return actual.length === expected.length && expected.every(([key, direction], position) => actual[position]?.[0] === key && actual[position]?.[1] === direction);
+}
+
+async function ensureMovieMentorProjectOwnershipPhysicalUniqueIndexReadiness() {
+  if (physicalUniqueIndexReadinessPromise) return physicalUniqueIndexReadinessPromise;
+  physicalUniqueIndexReadinessPromise = (async () => {
+    const connection = await ensureConnection();
+    getModel();
+    let indexes;
+    try {
+      indexes = await connection.collection(MOVIE_MENTOR_PROJECT_OWNERSHIP_COLLECTION).indexes();
+    } catch (error) {
+      fail("MOVIE_MENTOR_PROJECT_OWNERSHIP_PHYSICAL_AUTHORITY_UNAVAILABLE", `Project ownership physical index reality unavailable: ${error instanceof Error ? error.message : "Mongo index inspection failed."}`, { retryable: true });
+    }
+    const projectUnique = indexes.some((index) => indexMatches(index, { projectId: 1 }));
+    const establishmentAuthorityUnique = indexes.some((index) => indexMatches(index, { establishmentAuthorityId: 1 }));
+    if (!projectUnique || !establishmentAuthorityUnique) {
+      fail("MOVIE_MENTOR_PROJECT_OWNERSHIP_PHYSICAL_AUTHORITY_UNAVAILABLE", "Project ownership durable mint requires physical unique indexes for projectId and establishmentAuthorityId before create().", {
+        retryable: true,
+        projectUnique,
+        establishmentAuthorityUnique,
+      });
+    }
+    return Object.freeze({ ready: true, projectUnique: true, establishmentAuthorityUnique: true });
+  })().catch((error) => {
+    physicalUniqueIndexReadinessPromise = null;
+    throw error;
+  });
+  return physicalUniqueIndexReadinessPromise;
 }
 
 function inspectMovieMentorProjectOwnership(record) {
@@ -129,6 +167,7 @@ async function readMovieMentorProjectOwnership({ projectId } = {}) {
 
 async function createMovieMentorProjectOwnership(record = {}) {
   await ensureConnection();
+  await ensureMovieMentorProjectOwnershipPhysicalUniqueIndexReadiness();
   const candidate = {
     domain: MOVIE_MENTOR_PROJECT_OWNERSHIP_DOMAIN,
     schema: MOVIE_MENTOR_PROJECT_OWNERSHIP_SCHEMA,
@@ -171,6 +210,7 @@ function createMovieMentorProjectOwnershipAuthority({
         singleton: false,
         projectUnique: false,
         establishmentAuthorityUnique: false,
+        physicalUniqueIndexReadiness: "unproven",
         createOnce: false,
         legacyAdoption: "unproven",
         ownershipTransfer: false,
@@ -187,6 +227,7 @@ function createMovieMentorProjectOwnershipAuthority({
     createOnce: provenStore,
     projectUnique: provenStore,
     establishmentAuthorityUnique: provenStore,
+    physicalUniqueIndexReadiness: provenStore ? "required-before-durable-mint" : "unproven",
     legacyAdoption: provenStore ? "certified-attestation-only" : "unproven",
     ownershipTransfer: false,
     processLocalFallback: !provenStore,
@@ -258,12 +299,7 @@ function createMovieMentorProjectOwnershipAuthority({
       fail("MOVIE_MENTOR_PROJECT_OWNERSHIP_ESTABLISHMENT_CONFLICT", "Native project creation authority does not bind the same principal and project.");
     }
 
-    return establishFromTrustedAuthority({
-      principalId,
-      projectId: pid,
-      authorityId,
-      establishmentSource: "native-project-creation",
-    });
+    return establishFromTrustedAuthority({ principalId, projectId: pid, authorityId, establishmentSource: "native-project-creation" });
   }
 
   async function adoptLegacyOwnership({ principal = null, projectId = null, adoptionAttestation = null } = {}) {
@@ -272,11 +308,7 @@ function createMovieMentorProjectOwnershipAuthority({
     if (!pid) fail("MOVIE_MENTOR_PROJECT_OWNERSHIP_PROJECT_REQUIRED", "Legacy project ownership adoption requires projectId.");
     if (!principalId || principal?.authenticated !== true) fail("MOVIE_MENTOR_PROJECT_OWNERSHIP_AUTHENTICATION_REQUIRED", "Legacy project ownership adoption requires a deterministically authenticated principal.");
 
-    if (
-      adoptionAttestation?.certified !== true ||
-      s(adoptionAttestation?.domain) !== LEGACY_ADOPTION_ATTESTATION_DOMAIN ||
-      adoptionAttestation?.schema !== LEGACY_ADOPTION_ATTESTATION_SCHEMA
-    ) {
+    if (adoptionAttestation?.certified !== true || s(adoptionAttestation?.domain) !== LEGACY_ADOPTION_ATTESTATION_DOMAIN || adoptionAttestation?.schema !== LEGACY_ADOPTION_ATTESTATION_SCHEMA) {
       fail("MOVIE_MENTOR_PROJECT_OWNERSHIP_LEGACY_ATTESTATION_REQUIRED", "Legacy ownership adoption requires a certified migration attestation.");
     }
     if (!isMovieMentorLegacyProjectOwnershipAdoptionAttestationOwnedProof(adoptionAttestation)) {
@@ -293,12 +325,7 @@ function createMovieMentorProjectOwnershipAuthority({
       fail("MOVIE_MENTOR_PROJECT_OWNERSHIP_LEGACY_IDENTITY_REQUIRED", "Legacy migration attestation must bind immutable project identity evidence.");
     }
 
-    return establishFromTrustedAuthority({
-      principalId,
-      projectId: pid,
-      authorityId: adoptionId,
-      establishmentSource: "legacy-project-adoption",
-    });
+    return establishFromTrustedAuthority({ principalId, projectId: pid, authorityId: adoptionId, establishmentSource: "legacy-project-adoption" });
   }
 
   async function authorizeProject({ principal = null, projectId = null } = {}) {
@@ -310,13 +337,7 @@ function createMovieMentorProjectOwnershipAuthority({
     const inspection = inspectMovieMentorProjectOwnership(ownership);
     if (!inspection.valid) fail("MOVIE_MENTOR_PROJECT_OWNERSHIP_RECORD_INVALID", "Project ownership authorization encountered malformed durable ownership.");
     if (inspection.ownerPrincipalId !== principalId) return Object.freeze({ authorized: false, projectId: pid, reason: "principal-not-owner" });
-    return Object.freeze({
-      authorized: true,
-      projectId: pid,
-      ownershipRef: inspection.ownershipReference,
-      ownershipRevision: inspection.ownershipRevision,
-      authorizationSource: "movie-mentor-project-ownership-registry",
-    });
+    return Object.freeze({ authorized: true, projectId: pid, ownershipRef: inspection.ownershipReference, ownershipRevision: inspection.ownershipRevision, authorizationSource: "movie-mentor-project-ownership-registry" });
   }
 
   return Object.freeze({ establishNativeOwnership, adoptLegacyOwnership, authorizeProject, getStatus: () => authorityStatus });
