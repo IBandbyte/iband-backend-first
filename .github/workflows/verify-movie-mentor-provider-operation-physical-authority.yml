@@ -17,6 +17,7 @@ on:
       - "ai/MovieMentorProductionInferenceExecutionComposition.js"
       - "scripts/verify-movie-mentor-provider-operation-physical-authority.mjs"
       - ".github/workflows/verify-movie-mentor-provider-operation-physical-authority.yml"
+  workflow_dispatch:
 
 jobs:
   verify-provider-operation-physical-authority:
@@ -26,6 +27,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-      - run: npm ci
+      - run: npm install --ignore-scripts --no-audit --no-fund
       - run: node scripts/verify-movie-mentor-provider-operation-physical-authority.mjs
