@@ -6,6 +6,8 @@ import "./verify-movie-mentor-result-candidate-idempotent-current-state-authorit
 
 function query(value){return{session(){return this;},lean(){return this;},async exec(){return value?structuredClone(value):null;}};}
 function session(){return{async withTransaction(fn){await fn();},async endSession(){}};}
+const candidatePhysicalIndexes=Object.freeze([{key:{executionId:1},unique:true},{key:{candidateReference:1},unique:true}]);
+async function readCandidateIndexes(collectionName){assert.equal(collectionName,"movie_mentor_result_candidate","current-schema court must prove the result-candidate store's own physical collection");return candidatePhysicalIndexes;}
 
 const Candidate=mongoose.models.MovieMentorResultCandidate||mongoose.model("MovieMentorResultCandidate",new mongoose.Schema({}, {strict:false}));
 let candidateRow=null;
@@ -21,7 +23,7 @@ async function attempt(durableSchema){
   let executionBarrierFilter=null;
   const executionCollection={async updateOne(filter){executionBarrierFilter=structuredClone(filter);return{matchedCount:filter.schema===durableSchema?1:0};}};
   const creatorStateCollection={async updateOne(){return{matchedCount:1};}};
-  const store=createMovieMentorResultCandidateMongoStore({connect:async()=>null,executionCollection,creatorStateCollection,startSession:async()=>session(),now:()=>new Date("2035-01-01T00:00:00.000Z"),randomId:()=>`schema-${durableSchema}`});
+  const store=createMovieMentorResultCandidateMongoStore({connect:async()=>null,readIndexes:readCandidateIndexes,executionCollection,creatorStateCollection,startSession:async()=>session(),now:()=>new Date("2035-01-01T00:00:00.000Z"),randomId:()=>`schema-${durableSchema}`});
   const execution={...executionBase,schema:durableSchema};
   try{return{ok:true,result:await store.stageCandidate({execution,resultPayload:payload,creatorStateConsumptionProof:stateProof}),executionBarrierFilter};}
   catch(error){return{ok:false,error,executionBarrierFilter};}
@@ -36,6 +38,6 @@ assert.equal(legacy.ok,false,"legacy execution schema must not cross the irrever
 assert.equal(legacy.executionBarrierFilter?.schema,6,"legacy caller evidence must not choose the durable schema admitted by the candidate store");
 assert.equal(legacy.error?.code,"MOVIE_MENTOR_RESULT_CANDIDATE_EXECUTION_FENCED");
 
-console.log("GREEN: result-candidate staging independently proves current execution schema at its atomic durable boundary.");
+console.log("GREEN: result-candidate staging proves owned physical uniqueness and independently proves current execution schema at its atomic durable boundary.");
 console.log("GREEN: Backend CI candidate jurisdiction also owns idempotent current-state revalidation.");
-console.log("LAW: CURRENT LEASE AUTHORITY CANNOT LEND CURRENT-SCHEMA AUTHORITY TO RESULT-CANDIDATE STAGING.");
+console.log("LAW: CURRENT LEASE AUTHORITY CANNOT LEND CURRENT-SCHEMA OR PHYSICAL-UNIQUENESS AUTHORITY TO RESULT-CANDIDATE STAGING.");
