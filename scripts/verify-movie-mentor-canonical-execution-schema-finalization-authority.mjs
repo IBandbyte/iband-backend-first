@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import fs from "node:fs";
-import { createMovieMentorCanonicalResultMongoStore } from "../ai/MovieMentorCanonicalResultMongoStore.js";
+import { createMovieMentorCanonicalResultMongoStore, MOVIE_MENTOR_CANONICAL_RESULT_REQUIRED_UNIQUE_INDEXES } from "../ai/MovieMentorCanonicalResultMongoStore.js";
 
 const stable=value=>{if(Array.isArray(value))return value.map(stable);if(value&&typeof value==="object"){const out={};for(const key of Object.keys(value).sort())out[key]=stable(value[key]);return out;}return value;};
 const digest=value=>crypto.createHash("sha256").update(JSON.stringify(stable(value))).digest("hex");
@@ -11,6 +11,7 @@ assert.ok(schemaMatch,"court must locate the current durable inference execution
 const currentSchema=Number(schemaMatch[1]);
 assert.equal(currentSchema,6,"court is intentionally anchored to the current durable execution schema");
 const payload={success:true,mentorResponse:{text:"Only current execution schema may acquire FINALIZED authority."}},resultDigest=digest(payload);
+const physicalIndexes=MOVIE_MENTOR_CANONICAL_RESULT_REQUIRED_UNIQUE_INDEXES.map((key,i)=>({name:`canonical_${i}`,key:{...key},unique:true}));
 
 async function attempt(schema){
   const record={resultReference:`result-exec-schema-${schema}`,candidateReference:`candidate-exec-schema-${schema}`,executionId:`execution-exec-schema-${schema}`,creatorTurnId:`turn-exec-schema-${schema}`,principalId:`creator-exec-schema-${schema}`,projectId:`project-exec-schema-${schema}`,reservationId:`reservation-exec-schema-${schema}`,requestDigest:`request-exec-schema-${schema}`,closureReference:`closure-exec-schema-${schema}`,closureCertificateDigest:`closure-digest-exec-schema-${schema}`,resultDigest,resultPayload:stable(payload),committedAt:"2032-01-01T00:00:00.000Z"};
@@ -21,7 +22,7 @@ async function attempt(schema){
   const executionCollection={async findOne(){return structuredClone(executionRow);},async updateOne(filter,update){executionRow={...executionRow,...structuredClone(update.$set),resultFinalizationBarrierRevision:executionRow.resultFinalizationBarrierRevision+1};return{matchedCount:1};}};
   const candidateCollection={async findOne(){return structuredClone(candidateRow);}};
   const session={async withTransaction(fn){return fn();},async endSession(){}};
-  const store=createMovieMentorCanonicalResultMongoStore({mongoModel:model,executionCollection,candidateCollection,startSession:async()=>session});
+  const store=createMovieMentorCanonicalResultMongoStore({mongoModel:model,executionCollection,candidateCollection,startSession:async()=>session,readIndexes:async collection=>{assert.equal(collection,"movie_mentor_canonical_result");return physicalIndexes;}});
   try{const result=await store.commit(record,{expectedProviderEffectRealityRevision:7});return{ok:true,result,executionRow};}
   catch(error){return{ok:false,error,executionRow};}
 }
@@ -29,11 +30,9 @@ async function attempt(schema){
 const current=await attempt(currentSchema);
 assert.equal(current.ok,true,`current execution schema ${currentSchema} must cross CLOSED -> FINALIZED`);
 assert.equal(current.executionRow.phase,"finalized");
-
 const legacy=await attempt(currentSchema-1);
 assert.equal(legacy.ok,false,`legacy execution schema ${currentSchema-1} must fail closed before acquiring FINALIZED authority`);
 assert.equal(legacy.error?.code,"MOVIE_MENTOR_CANONICAL_RESULT_EXECUTION_NOT_CLOSED");
 assert.equal(legacy.executionRow.phase,"closed","legacy execution must not be promoted to FINALIZED");
-
-console.log("GREEN: canonical finalization grants irreversible FINALIZED authority only to the current durable execution schema.");
+console.log("GREEN: canonical finalization grants irreversible FINALIZED authority only to the current durable execution schema, after canonical physical uniqueness is proven.");
 console.log("LAW: HISTORY MAY SURVIVE. AUTHORITY MAY NOT. CURRENT DURABLE EXECUTION SCHEMA MUST CROSS CLOSED -> FINALIZED OR THE GATE FAILS CLOSED.");
