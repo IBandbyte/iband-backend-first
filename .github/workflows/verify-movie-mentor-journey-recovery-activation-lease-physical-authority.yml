@@ -1,0 +1,25 @@
+name: Verify Movie Mentor Journey Recovery Activation Lease Physical Authority
+
+on:
+  push:
+    paths:
+      - "ai/MovieMentorJourneyRecoveryActivationLeaseMongoStore.js"
+      - "scripts/verify-movie-mentor-journey-recovery-activation-lease-physical-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-journey-recovery-activation-lease-physical-authority.yml"
+  pull_request:
+    paths:
+      - "ai/MovieMentorJourneyRecoveryActivationLeaseMongoStore.js"
+      - "scripts/verify-movie-mentor-journey-recovery-activation-lease-physical-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-journey-recovery-activation-lease-physical-authority.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: node --check scripts/verify-movie-mentor-journey-recovery-activation-lease-physical-authority.mjs
+      - run: node scripts/verify-movie-mentor-journey-recovery-activation-lease-physical-authority.mjs
