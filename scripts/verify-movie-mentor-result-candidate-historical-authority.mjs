@@ -14,6 +14,14 @@ function createMemoryModel() {
     },
   };
 }
+const candidatePhysicalIndexes=Object.freeze([
+  Object.freeze({key:Object.freeze({executionId:1}),unique:true}),
+  Object.freeze({key:Object.freeze({candidateReference:1}),unique:true}),
+]);
+const readCandidateIndexes=async(collectionName)=>{
+  assert.equal(collectionName,"movie_mentor_result_candidate");
+  return candidatePhysicalIndexes;
+};
 
 const baseExecution = Object.freeze({
   authorized: true,
@@ -50,6 +58,7 @@ const payload = Object.freeze({ text: "current result" });
 const liveStore = createMovieMentorResultCandidateMongoStore({
   mongoModel: createMemoryModel(),
   executionCollection: false,
+  readIndexes:readCandidateIndexes,
   now: () => new Date("2031-01-01T00:00:00.000Z"),
   randomId: () => "warp-43-live",
 });
@@ -58,7 +67,7 @@ assert.equal(live.executionId, baseExecution.executionId, "current forward-autho
 assert.equal(live.creatorStateRevision,43);
 
 const noStateProofStore = createMovieMentorResultCandidateMongoStore({
-  mongoModel:createMemoryModel(),executionCollection:false,now:()=>new Date("2031-01-01T00:00:00.500Z"),randomId:()=>"warp-43-no-state-proof",
+  mongoModel:createMemoryModel(),executionCollection:false,readIndexes:readCandidateIndexes,now:()=>new Date("2031-01-01T00:00:00.500Z"),randomId:()=>"warp-43-no-state-proof",
 });
 await assert.rejects(
   noStateProofStore.stageCandidate({execution:{...baseExecution,executionId:"execution-warp-43-no-state-proof"},resultPayload:payload}),
@@ -69,6 +78,7 @@ await assert.rejects(
 const historicalStore = createMovieMentorResultCandidateMongoStore({
   mongoModel: createMemoryModel(),
   executionCollection: false,
+  readIndexes:readCandidateIndexes,
   now: () => new Date("2031-01-01T00:00:01.000Z"),
   randomId: () => "warp-43-history",
 });
@@ -82,6 +92,7 @@ await assert.rejects(
 const absentForwardStore = createMovieMentorResultCandidateMongoStore({
   mongoModel: createMemoryModel(),
   executionCollection: false,
+  readIndexes:readCandidateIndexes,
   now: () => new Date("2031-01-01T00:00:02.000Z"),
   randomId: () => "warp-43-absent-forward",
 });
@@ -94,11 +105,12 @@ await assert.rejects(
 );
 
 console.log("✓ current forward execution plus exact current creator-state authority may cross the candidate-store component seam");
+console.log("✓ candidate-store seam owns current physical uniqueness readiness before staging");
 console.log("✓ missing creator-state proof carries zero candidate-write authority");
 console.log("✓ historical authority-issued evidence carries zero forward result-candidate authority");
 console.log("✓ absent forward-authority bit fails closed rather than inheriting authorized:true");
 console.log("LAW: AUTHORIZED HISTORY ≠ FORWARD EXECUTION AUTHORITY");
 console.log("LAW: FORWARD EXECUTION AUTHORITY ≠ CURRENT CREATOR-STATE AUTHORITY");
-console.log("LAW: RESULT-CANDIDATE STORE REQUIRES BOTH EXPLICIT CURRENT FORWARD EXECUTION AND CURRENT CREATOR-STATE AUTHORITY");
+console.log("LAW: RESULT-CANDIDATE STORE REQUIRES PHYSICAL UNIQUENESS, EXPLICIT CURRENT FORWARD EXECUTION AND CURRENT CREATOR-STATE AUTHORITY");
 console.log("Zorg: But the execution is live. Kraken: SO IS THE CREATOR STATE. PROVE BOTH.");
 console.log("Gates of Progress result-candidate historical authority isolation: GREEN");
