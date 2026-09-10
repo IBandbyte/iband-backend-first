@@ -1,0 +1,26 @@
+name: Verify Movie Mentor Commercial HTTP Ingress Owner Proof
+
+on:
+  pull_request:
+    paths:
+      - 'server.js'
+      - 'ai/MovieMentorProductionCommercialHttpIngress.js'
+      - 'ai/MovieMentorProductionCommercialProviderIngressComposition.js'
+      - 'scripts/verify-movie-mentor-commercial-http-ingress-owner-proof.mjs'
+      - '.github/workflows/verify-movie-mentor-commercial-http-ingress-owner-proof.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - run: node --check scripts/verify-movie-mentor-commercial-http-ingress-owner-proof.mjs
+      - run: node scripts/verify-movie-mentor-commercial-http-ingress-owner-proof.mjs
