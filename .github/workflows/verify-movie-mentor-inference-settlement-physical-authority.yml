@@ -1,0 +1,19 @@
+name: Verify Movie Mentor Inference Settlement Physical Authority
+
+on:
+  pull_request:
+    paths:
+      - "ai/MovieMentorInferenceSettlementMongoStore.js"
+      - "ai/MovieMentorProductionInferenceSettlementComposition.js"
+      - "scripts/verify-movie-mentor-inference-settlement-physical-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-inference-settlement-physical-authority.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node scripts/verify-movie-mentor-inference-settlement-physical-authority.mjs
