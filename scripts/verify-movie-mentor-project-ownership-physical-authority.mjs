@@ -10,9 +10,9 @@ assert.match(source, /schema\.index\(\{ establishmentAuthorityId: 1 \}, \{ uniqu
 
 const createBoundary = source.slice(source.indexOf("async function createMovieMentorProjectOwnership"), source.indexOf("function createMovieMentorProjectOwnershipAuthority"));
 assert.match(createBoundary, /getModel\(\)\.create\(candidate\)/, "production ownership establishment reaches an irreversible durable mint");
-assert.ok(!/collection\.indexes\(|readPhysicalIndexes|physicalUniqueIndexReadiness|syncIndexes\(|createIndexes\(/.test(createBoundary), "RED: ownership establishment crosses durable mint without proving physical Mongo uniqueness first");
+assert.match(createBoundary, /physicalUniqueIndexReadiness|assertPhysicalUniqueIndexes|ensurePhysicalUniqueIndexes/, "ownership establishment must prove physical Mongo uniqueness before irreversible create()");
 
 const statusBoundary = source.slice(source.indexOf("function getMovieMentorProjectOwnershipRegistryStatus"), source.indexOf("function storeCapabilityProven"));
-assert.ok(!/physicalUniqueIndexReadiness|physicalAuthority/.test(statusBoundary), "RED: advertised ownership capability borrows declared schema uniqueness without physical-index reality proof");
+assert.match(statusBoundary, /physicalUniqueIndexReadiness/, "advertised ownership capability must explicitly own physical-index readiness");
 
-console.log("RED expected before repair: project ownership durable mint must own physical projectId + establishmentAuthorityId uniqueness before create().");
+console.log("GREEN: project ownership durable mint owns physical projectId + establishmentAuthorityId uniqueness before create().");
