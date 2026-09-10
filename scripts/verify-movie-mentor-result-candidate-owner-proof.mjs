@@ -11,7 +11,7 @@ const store = {
   async readExecutionByCreatorTurn({ principalId, projectId, creatorTurnId } = {}) {
     return durable && durable.principalId === principalId && durable.projectId === projectId && durable.creatorTurnId === creatorTurnId ? clone(durable) : null;
   },
-  async createExecution(next) { if (durable) return null; durable = clone(next); return clone(durable); },
+  async createExecution(next) { if (durable) return null; durable = clone({ schema: 6, ...next }); return clone(durable); },
   async replaceExecution(next) { durable = clone(next); return clone(durable); },
   async claimProviderCall() { return { claimed: false, execution: clone(durable) }; },
 };
