@@ -14,7 +14,7 @@ function principalAdapter(){return async({request})=>{if(!request?.headers?.auth
 
 const requestAuthority=createMovieMentorCreatorCommercialRequestAuthority({verifyCredential:async()=>({verified:true}),derivePrincipal:principalAdapter()});
 let intentInput=null,checkoutInput=null,packageListCalls=0;
-const purchaseIntentAuthority={async createPurchaseIntent(input){intentInput=input;return Object.freeze({commercialIntentId:"intent-1",principalId:input.principalId,packageId:input.packageId,status:"created"});}};
+const purchaseIntentAuthority={async createPurchaseIntent(input){intentInput=input;return Object.freeze({commercialIntentId:"intent-1",principalId:input.principalId,packageId:input.packageId,purchaseAttemptId:input.purchaseAttemptId,status:"created"});}};
 const checkoutAuthority={async initiateCheckout(input){checkoutInput=input;return Object.freeze({authorized:true,commercialIntentId:input.commercialIntentId,provider:"provider-a",checkoutReference:"session-1",checkoutUrl:"https://checkout.example/session-1"});}};
 const listCommercialPackages=async()=>{packageListCalls+=1;return Object.freeze([Object.freeze({packageId:"creator-20",displayName:"Creator 20",currency:"GBP",amountMinor:2000,units:20})]);};
 
@@ -25,9 +25,9 @@ const purchaseLayer=router.stack.find(layer=>layer.route?.path==="/purchase-inte
 const checkoutLayer=router.stack.find(layer=>layer.route?.path==="/checkout");
 let res=response();await packagesLayer.route.stack[0].handle({headers:{}},res);assert.equal(res.statusCode,401);assert.equal(packageListCalls,0);
 res=response();await packagesLayer.route.stack[0].handle({headers:{authorization:"Bearer valid"}},res);assert.equal(res.statusCode,200);assert.equal(packageListCalls,1);assert.equal(res.payload.status,"commercial-packages-authorized");assert.equal(res.payload.packages[0].packageId,"creator-20");
-res=response();await purchaseLayer.route.stack[0].handle({headers:{},body:{packageId:"creator-20"}},res);assert.equal(res.statusCode,401);assert.equal(intentInput,null);
-res=response();await purchaseLayer.route.stack[0].handle({headers:{authorization:"Bearer valid"},body:{packageId:"creator-20",principalId:"victim",amountMinor:1,units:999999,providerProductId:"attacker"}},res);assert.equal(res.statusCode,201);assert.deepEqual(intentInput,{principalId:"creator-1",packageId:"creator-20"});assert.equal(res.payload.intent.principalId,"creator-1");
-res=response();await checkoutLayer.route.stack[0].handle({headers:{authorization:"Bearer valid"},body:{commercialIntentId:"intent-1",principalId:"victim",amountMinor:1,units:999999}},res);assert.equal(res.statusCode,200);assert.deepEqual(checkoutInput,{principalId:"creator-1",commercialIntentId:"intent-1"});assert.equal(res.payload.checkout.authorized,true);
+res=response();await purchaseLayer.route.stack[0].handle({headers:{},body:{packageId:"creator-20",purchaseAttemptId:"attempt-1"}},res);assert.equal(res.statusCode,401);assert.equal(intentInput,null);
+res=response();await purchaseLayer.route.stack[0].handle({headers:{authorization:"Bearer valid"},body:{packageId:"creator-20",purchaseAttemptId:"attempt-1",principalId:"victim",amountMinor:1,units:999999,providerProductId:"attacker"}},res);assert.equal(res.statusCode,201);assert.equal(intentInput.principalId,"creator-1");assert.equal(intentInput.packageId,"creator-20");assert.equal(intentInput.purchaseAttemptId,"attempt-1");assert.equal(typeof intentInput.currentPrincipalAuthority,"function");assert.equal(res.payload.intent.principalId,"creator-1");
+res=response();await checkoutLayer.route.stack[0].handle({headers:{authorization:"Bearer valid"},body:{commercialIntentId:"intent-1",principalId:"victim",amountMinor:1,units:999999}},res);assert.equal(res.statusCode,200);assert.equal(checkoutInput.principalId,"creator-1");assert.equal(checkoutInput.commercialIntentId,"intent-1");assert.equal(typeof checkoutInput.currentPrincipalAuthority,"function");assert.equal(res.payload.checkout.authorized,true);
 res=response();await checkoutLayer.route.stack[0].handle({headers:{authorization:"Bearer valid"},body:{}},res);assert.equal(res.statusCode,422);
 assert.throws(()=>createMovieMentorCommercialRouter({requestAuthority,purchaseIntentAuthority,listCommercialPackages}),error=>error?.code==="MOVIE_MENTOR_CHECKOUT_AUTHORITY_REQUIRED");
 
@@ -53,6 +53,7 @@ const httpSource=fs.readFileSync(new URL("../ai/MovieMentorProductionCommercialH
 const server=fs.readFileSync(new URL("../server.js",import.meta.url),"utf8");assert.doesNotMatch(server,/createMovieMentorProductionCreatorCommercialComposition/);assert.doesNotMatch(server,/app\.use\("\/api\/movie-mentor-commercial"/);
 
 console.log("✓ creator gateway consumes exact owner-proven authentication, purchase-intent, checkout and catalogue authorities");
+console.log("✓ current purchase-attempt identity and current-principal callbacks cross the creator router court");
 console.log("✓ reconstructed owner-status lookalikes grant zero production credit");
 console.log("✓ server-owned production policy composition alone mints the catalogue proof accepted by the public creator gateway");
 console.log("✓ unauthenticated creator cannot enumerate packages or create commercial authority");
