@@ -20,7 +20,7 @@ try{
  const reversalStatus=Object.freeze({domain:"iband.movie-mentor.production-commercial-reversal-authority",production:true,durableAtomicSuspension:true,reversalIdentityUnique:true,currentEntitlementSuspension:true,reversalReceiptDurable:true,pendingReversalHistoryDurable:true,pendingReversalIdentityUnique:true,pendingReversalReconciliation:true,processLocalFallback:false});
  const reversal=Object.freeze({suspendVerifiedReversal:async()=>Object.freeze({suspended:true}),preserveVerifiedReversalHistory:async()=>Object.freeze({preserved:true}),reconcilePendingReversals:async()=>Object.freeze({reconciled:true,count:0}),getStatus:()=>reversalStatus});
 
- const providerStatus=Object.freeze({domain:"iband.movie-mentor.commercial-provider-adapter",provider:"provider-a",productionCommercialProviderAdapter:true,rawBodyDeliveryVerification:true,signatureVerification:true,normalizesCommercialEvidence:true,creatorPayloadIsNotPaymentAuthority:true,processLocalFallback:false});
+ const providerStatus=Object.freeze({domain:"iband.movie-mentor.commercial-provider-adapter",provider:"provider-a",productionCommercialProviderAdapter:true,rawBodyDeliveryVerification:true,signatureVerification:true,normalizesCommercialEvidence:true,checkoutReferenceEvidence:true,creatorPayloadIsNotPaymentAuthority:true,processLocalFallback:false});
  const provider=Object.freeze({async verifyDelivery(){return Object.freeze({verified:true,payload:{}});},async normalizeEvent({verifiedDelivery}){return verifiedDelivery.payload;},getStatus:()=>providerStatus});
 
  assert.throws(
