@@ -10,12 +10,14 @@ assert.match(candidateSource,/session\.withTransaction\(/,"result-candidate stag
 assert.match(candidateSource,/creatorStateLedger\(\)\.updateOne\(/,"result-candidate transaction must fence current creator state");
 assert.match(candidateSource,/executionLedger\(\)\.updateOne\(/,"result-candidate transaction must fence current execution authority");
 assert.match(candidateSource,/storeModel\(\)\.create\(\[record\],\{session\}\)/,"result-candidate transaction must durably mint the immutable candidate");
+assert.match(candidateSource,/physicalUniqueIndexReadiness:true/,"result-candidate store must advertise owned physical uniqueness readiness");
+assert.match(candidateSource,/readinessBoundary:"before-result-candidate-read-or-transactional-mint"/,"physical readiness must be enforced before candidate read or transactional mint");
+assert.match(candidateSource,/ensurePhysicalAuthority/,"result-candidate store must own an explicit physical readiness gate");
 
-assert.match(compositionSource,/const durableCandidateStore=createMovieMentorResultCandidateMongoStore\(\)/,"production composition must directly own the default result-candidate Mongo store");
-assert.match(compositionSource,/return durableCandidateStore\.stageCandidate\(/,"production stageResultCandidate must reach the durable result-candidate mutation");
+assert.match(compositionSource,/const durableCandidateStore=createMovieMentorResultCandidateMongoStore\(\{readIndexes:readPhysicalIndexes\}\)/,"production composition must wire actual Mongo index reality into its owned result-candidate store");
+assert.match(compositionSource,/database\.collection\(collectionName\)\.indexes\(\)/,"production physical reader must inspect actual Mongo indexes");
+assert.match(compositionSource,/return durableCandidateStore\.stageCandidate\(/,"production stageResultCandidate must reach the physically gated durable result-candidate mutation");
+assert.match(compositionSource,/resultCandidatePhysicalUniqueIndexReadiness:candidateStoreStatus\?\.physicalUniqueIndexReadiness===true/,"production composition status must propagate candidate physical readiness");
 assert.match(compositionSource,/stageResultCandidate,/,"production authority must expose result-candidate staging");
 
-const explicitPhysicalReadiness=/readIndexes|\.indexes\(\)|listIndexes|createIndexes|\.init\(\)|physicalUniqueIndexReadiness|ensurePhysicalAuthority/;
-assert.match(candidateSource,explicitPhysicalReadiness,"result-candidate irreversible staging must explicitly prove physical unique-index readiness before durable mutation");
-
-console.log("PASS result-candidate physical authority — production staging reaches transactional candidate mint only after owned physical uniqueness readiness.");
+console.log("PASS result-candidate physical authority — production staging owns actual Mongo index reality and reaches transactional candidate mint only after physical uniqueness readiness.");
