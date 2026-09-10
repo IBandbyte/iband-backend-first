@@ -4,8 +4,18 @@ on:
     branches: [main]
     paths:
       - 'ai/MovieMentorProductionCreatorCommercialComposition.js'
+      - 'ai/MovieMentorProductionCommercialPolicyComposition.js'
       - 'ai/MovieMentorProductionCommercialHttpIngress.js'
       - 'scripts/verify-movie-mentor-creator-commercial-owner-provenance.mjs'
+      - 'scripts/verify-movie-mentor-creator-commercial-gateway.mjs'
+      - '.github/workflows/verify-movie-mentor-creator-commercial-owner-provenance.yml'
+  pull_request:
+    paths:
+      - 'ai/MovieMentorProductionCreatorCommercialComposition.js'
+      - 'ai/MovieMentorProductionCommercialPolicyComposition.js'
+      - 'ai/MovieMentorProductionCommercialHttpIngress.js'
+      - 'scripts/verify-movie-mentor-creator-commercial-owner-provenance.mjs'
+      - 'scripts/verify-movie-mentor-creator-commercial-gateway.mjs'
       - '.github/workflows/verify-movie-mentor-creator-commercial-owner-provenance.yml'
   workflow_dispatch:
 permissions:
@@ -23,7 +33,7 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund --ignore-scripts
       - name: Check syntax
-        run: node --check ai/MovieMentorProductionCreatorCommercialComposition.js && node --check ai/MovieMentorProductionCommercialHttpIngress.js && node --check scripts/verify-movie-mentor-creator-commercial-owner-provenance.mjs
+        run: node --check ai/MovieMentorProductionCreatorCommercialComposition.js && node --check ai/MovieMentorProductionCommercialPolicyComposition.js && node --check ai/MovieMentorProductionCommercialHttpIngress.js && node --check scripts/verify-movie-mentor-creator-commercial-owner-provenance.mjs && node --check scripts/verify-movie-mentor-creator-commercial-gateway.mjs
       - name: Verify creator commercial owner provenance
         run: node scripts/verify-movie-mentor-creator-commercial-owner-provenance.mjs
       - name: Regress creator commercial gateway
