@@ -19,7 +19,7 @@ function torture(label,composition,predicate){
   assert.equal(predicate(forged,status),false,`${label} self-consistent forged composition must receive zero owner credit`);
 }
 
-const spendStoreStatus=Object.freeze({configured:true,readiness:"injected-proven",atomicity:"mongo-transaction",settlement:"external-durable-current-reality-authority-only",durableReservationRead:true,genericSettlementCapability:false,processLocalFallback:false});
+const spendStoreStatus=Object.freeze({configured:true,readiness:"injected-proven",atomicity:"mongo-transaction",settlement:"external-durable-current-reality-authority-only",durableReservationRead:true,genericSettlementCapability:false,uniquenessReadinessRequired:true,physicalUniqueIndexReadiness:true,processLocalFallback:false});
 const spendStore={getStatus:()=>spendStoreStatus,reserve:async()=>({granted:false,reason:"torture"}),readReservation:async()=>null};
 torture("spend",createMovieMentorProductionInferenceSpendComposition({store:spendStore}),isMovieMentorProductionInferenceSpendOwnerProof);
 
