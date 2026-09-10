@@ -39,9 +39,15 @@ const candidateModel = {
   findOne(){ return { lean(){ return { exec:async()=>null }; } }; },
   create:async row=>row,
 };
+let candidatePhysicalIndexReads=0;
 const candidateStore = createMovieMentorResultCandidateMongoStore({
   mongoModel:candidateModel,
   executionCollection:false,
+  readIndexes:async collectionName=>{
+    candidatePhysicalIndexReads+=1;
+    assert.equal(collectionName,"movie_mentor_result_candidate","proof-creation court must prove the candidate store's own physical collection");
+    return [{key:{executionId:1},unique:true},{key:{candidateReference:1},unique:true}];
+  },
   now:()=>null,
   randomId:()=>"candidate-time"
 });
@@ -49,6 +55,7 @@ await assert.rejects(
   ()=>candidateStore.stageCandidate({execution,resultPayload:{text:"result"},creatorStateConsumptionProof}),
   error=>error.code==="MOVIE_MENTOR_RESULT_CANDIDATE_TIME_INVALID"
 );
+assert.equal(candidatePhysicalIndexReads,1,"proof-creation time court must cross owned candidate physical uniqueness before evaluating irreversible staging time");
 
 const candidatePayload={text:"result"};
 const closure=Object.freeze({
@@ -108,6 +115,7 @@ assert.match(canonicalAuthoritySource,/existing\?\.committedAt\|\|instant\(now\(
 assert.doesNotMatch(canonicalAuthoritySource,/new Date\(now\(\)\)\.toISOString\(\)/);
 
 console.log("5A.24 proof creation-time catastrophe gate: GREEN");
+console.log("✓ candidate staging proves owned physical uniqueness before refusing an absent clock");
 console.log("✓ candidate staging cannot turn an absent clock into 1970 proof");
 console.log("✓ canonical result authority cannot turn an absent clock into 1970 proof");
 console.log("✓ settlement creation clocks are routed through fail-closed time validation");
