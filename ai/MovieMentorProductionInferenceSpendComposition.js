@@ -1,7 +1,7 @@
 import { createMovieMentorInferenceSpendAuthority } from "./MovieMentorInferenceSpendAuthority.js";
 import { createMovieMentorInferenceSpendMongoStore, getMovieMentorInferenceSpendMongoStoreStatus } from "./MovieMentorInferenceSpendMongoStore.js";
 
-const VERSION = "1.3.0";
+const VERSION = "1.4.0";
 const DOMAIN = "iband.movie-mentor.production-inference-spend-composition";
 const ATOMICITY = "mongo-transaction";
 const SETTLEMENT = "external-durable-current-reality-authority-only";
@@ -23,6 +23,8 @@ function capabilityProven(status) {
     status?.settlement === SETTLEMENT &&
     status?.durableReservationRead === true &&
     status?.genericSettlementCapability === false &&
+    status?.uniquenessReadinessRequired === true &&
+    status?.physicalUniqueIndexReadiness === true &&
     status?.processLocalFallback === false;
 }
 
@@ -57,6 +59,8 @@ function createMovieMentorProductionInferenceSpendComposition({ store = null } =
       production: true,
       ready: true,
       durableStoreProvenanceRequired: true,
+      uniquenessReadinessRequired: true,
+      physicalUniqueIndexReadiness: true,
       storeStatus,
       reserveTurn: true,
       durableReservationRead: true,
