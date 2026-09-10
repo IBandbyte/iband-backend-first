@@ -202,12 +202,14 @@ assert.match(leaseSource, /requireCreationAuthority && typeof input\.assertCurre
 assert.match(runtimeSource, /guarded\.openExecution = async \(input = \{\}\) => base\.openExecution\(\{/);
 assert.match(runtimeSource, /assertCurrentCreationAuthority: async \(target = \{\}\) => assertCurrentSpendExecutionCreationAuthority/);
 assert.match(runtimeSource, /spendAuthority\.readReservation\(\{/);
-assert.match(productionSource, /createMovieMentorInferenceExecutionLeaseAuthority\(\{(?=[^}]*store:durableStore)(?=[^}]*requireCreationAuthority:true)[^}]*\}\)/);
+assert.match(productionSource, /createMovieMentorInferenceExecutionPhysicalAuthority\(\{(?=[^}]*store:durableStore)(?=[^}]*readIndexes:readPhysicalIndexes)[^}]*\}\)/);
+assert.match(productionSource, /createMovieMentorInferenceExecutionLeaseAuthority\(\{(?=[^}]*store:physicalStore)(?=[^}]*requireCreationAuthority:true)[^}]*\}\)/);
 assert.match(productionSource, /freshExecutionCreationAuthorityRequired:true/);
 assert.match(gatewaySource, /runTurn=runMovieMentorTurnWithForwardExecutionAuthority/);
 assert.match(gatewaySource, /forwardExecutionAuthority=forwardExecutionAuthorityFrom\(req,authorized\)/);
 
 console.log("✓ production lease composition refuses fresh creation without a server-owned current-creation callback");
+console.log("✓ production lease composition routes durable execution mutation through physical index authority before lease ownership");
 console.log("✓ the lease authority validates the exact generation-one proof; decorative callbacks cannot reach createExecution");
 console.log("✓ fresh creation revalidates current spend reservation authority inside the lease-owned creation callback");
 console.log("✓ ownership revocation before creation leaves zero durable execution, zero provider claims and zero external effect");
