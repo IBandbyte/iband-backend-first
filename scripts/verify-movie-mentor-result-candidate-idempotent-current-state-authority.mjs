@@ -20,17 +20,20 @@ const proof={domain:MOVIE_MENTOR_CREATOR_STATE_CONSUMPTION_PROOF_DOMAIN,schema:M
 
 let stateBarrierCalls=0;
 let executionBarrierCalls=0;
+let physicalIndexReads=0;
 const creatorStateCollection={async updateOne(){stateBarrierCalls+=1;return{matchedCount:0};}};
 const executionCollection={async updateOne(){executionBarrierCalls+=1;return{matchedCount:1};}};
-const store=createMovieMentorResultCandidateMongoStore({connect:async()=>null,creatorStateCollection,executionCollection,startSession:async()=>session(),now:()=>new Date("2035-01-01T00:00:01.000Z")});
+const readIndexes=async collectionName=>{physicalIndexReads+=1;assert.equal(collectionName,"movie_mentor_result_candidate","idempotent court must prove the candidate store's own physical collection");return[{key:{executionId:1},unique:true},{key:{candidateReference:1},unique:true}];};
+const store=createMovieMentorResultCandidateMongoStore({connect:async()=>null,readIndexes,creatorStateCollection,executionCollection,startSession:async()=>session(),now:()=>new Date("2035-01-01T00:00:01.000Z")});
 
 await assert.rejects(
   ()=>store.stageCandidate({execution,resultPayload:payload,creatorStateConsumptionProof:proof}),
   error=>error?.code==="MOVIE_MENTOR_RESULT_CANDIDATE_CREATOR_STATE_FENCED",
   "an existing idempotent candidate must not bypass the atomic current creator-state barrier after the state universe changed",
 );
+assert.equal(physicalIndexReads,1,"idempotent candidate recovery must prove owned physical uniqueness before durable read/reuse authority");
 assert.equal(stateBarrierCalls,1,"idempotent candidate recovery must re-enter the creator-state atomic barrier exactly once");
 assert.equal(executionBarrierCalls,0,"creator-state revocation must fail before execution authority can be reused");
 
-console.log("GREEN: idempotent result-candidate recovery re-earns current creator-state authority at the durable boundary.");
-console.log("LAW: IDEMPOTENCY MAY REUSE HISTORY; IT MAY NOT REUSE STALE CREATOR-STATE AUTHORITY.");
+console.log("GREEN: idempotent result-candidate recovery proves owned physical uniqueness and re-earns current creator-state authority at the durable boundary.");
+console.log("LAW: IDEMPOTENCY MAY REUSE HISTORY; IT MAY NOT BORROW PHYSICAL UNIQUENESS OR REUSE STALE CREATOR-STATE AUTHORITY.");

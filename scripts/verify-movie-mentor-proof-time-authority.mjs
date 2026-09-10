@@ -19,7 +19,8 @@ const invalidSettled=createMovieMentorInferenceSpendMongoStore({models:{reservat
 const payload={response:"x"};const resultDigest=crypto.createHash("sha256").update(JSON.stringify(payload)).digest("hex");
 const candidateRow={domain:"iband.movie-mentor.result-candidate-store",schema:1,candidateReference:"c",executionId:"e",creatorTurnId:"t",principalId:"p",projectId:"pr",reservationId:"r",requestDigest:"q",resultDigest,resultPayload:payload,stagedFromLeaseGeneration:1,stagedFromLeaseReference:"l",stagedFromFencingToken:"f",stagedAt:null};
 const candidateModel={findOne(){return{lean(){return{exec:async()=>candidateRow}}}}};
-const candidateStore=createMovieMentorResultCandidateMongoStore({mongoModel:candidateModel,executionCollection:false});await assert.rejects(()=>candidateStore.readByExecution("e"),e=>e.code==="MOVIE_MENTOR_RESULT_CANDIDATE_RECORD_INVALID");
+const candidatePhysicalIndexes=[{key:{executionId:1},unique:true},{key:{candidateReference:1},unique:true}];
+const candidateStore=createMovieMentorResultCandidateMongoStore({mongoModel:candidateModel,executionCollection:false,readIndexes:async collectionName=>{assert.equal(collectionName,"movie_mentor_result_candidate");return candidatePhysicalIndexes;}});await assert.rejects(()=>candidateStore.readByExecution("e"),e=>e.code==="MOVIE_MENTOR_RESULT_CANDIDATE_RECORD_INVALID");
 
 const physicalIndexes=[{key:{resultReference:1},unique:true},{key:{candidateReference:1},unique:true},{key:{executionId:1},unique:true},{key:{principalId:1,projectId:1,creatorTurnId:1},unique:true},{key:{reservationId:1},unique:true}];
 const canonicalRow={domain:"iband.movie-mentor.canonical-result-store",schema:2,resultReference:"rr",candidateReference:"c",executionId:"e",creatorTurnId:"t",principalId:"p",projectId:"pr",reservationId:"r",requestDigest:"q",closureReference:"cl",closureCertificateDigest:"cd",resultDigest:"d",resultPayload:{},committedAt:null};
