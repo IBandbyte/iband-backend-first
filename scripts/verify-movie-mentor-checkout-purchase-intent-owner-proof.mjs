@@ -26,7 +26,7 @@ const entitlementStore=Object.freeze({
 const entitlementComposition=createMovieMentorProductionEntitlementIssuanceComposition({store:entitlementStore});
 assert.equal(entitlementComposition.ready,true,"court requires genuine owner-proven entitlement authority so only purchase-intent provenance is under attack");
 
-const providerStatus=Object.freeze({domain:"iband.movie-mentor.commercial-provider-adapter",provider:"provider-a",productionCommercialProviderAdapter:true,checkoutTransport:true,serverOwnedIdempotencyRequired:true,rawBodyDeliveryVerification:true,signatureVerification:true,normalizesCommercialEvidence:true,creatorPayloadIsNotPaymentAuthority:true,processLocalFallback:false});
+const providerStatus=Object.freeze({domain:"iband.movie-mentor.commercial-provider-adapter",provider:"provider-a",productionCommercialProviderAdapter:true,checkoutTransport:true,checkoutRevocation:true,checkoutRevocationRecovery:true,currentCheckoutReality:true,serverOwnedIdempotencyRequired:true,creatorPayloadIsNotPaymentAuthority:true,processLocalFallback:false});
 const provider=Object.freeze({
  async createCheckout(){throw new Error("provider dispatch outside composition court");},
  async resolveCheckout(){throw new Error("provider reality outside composition court");},
