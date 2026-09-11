@@ -4,6 +4,11 @@ import {createMovieMentorCommercialPurchaseIntentMongoStore} from "../ai/MovieMe
 let initialized=false;
 let createCalls=0;
 const modelRef={
+ collection:{async indexes(){return[
+  {name:"_id_",key:{_id:1},unique:true},
+  {name:"commercialIntentId_1",key:{commercialIntentId:1},unique:true},
+  {name:"purchase_attempt_unique",key:{domain:1,schema:1,principalId:1,purchaseAttemptDigest:1},unique:true},
+ ];}},
  async init(){initialized=true;return modelRef;},
  async create(records){
   createCalls+=1;
