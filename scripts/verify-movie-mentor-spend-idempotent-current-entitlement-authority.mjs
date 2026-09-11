@@ -3,14 +3,14 @@ import { createMovieMentorInferenceSpendMongoStore } from "../ai/MovieMentorInfe
 
 function query(value){return{session(){return this;},lean(){return this;},async exec(){return value?structuredClone(value):null;}};}
 function session(){return{async withTransaction(fn){await fn();},async endSession(){}};}
-const physicalIndex=key=>({collection:{async indexes(){return[{name:`${key}_1`,key:{[key]:1},unique:true}];}}});
+const physicalModel=(key,extras={})=>({async createIndexes(){return[];},collection:{async indexes(){return[{name:`${key}_1`,key:{[key]:1},unique:true}];}},...extras});
 
 const reservation={domain:"iband.movie-mentor.inference-spend",schema:1,reservationId:"reservation-idempotent-court",principalId:"creator-1",projectId:"project-1",operation:"movie-mentor-turn",units:1,entitlementRevision:7,status:"reserved",reservedAt:new Date("2035-01-01T00:00:00.000Z"),settledAt:null,settlementReason:null,settlementExecutionId:null,settlementResultReference:null,settlementCandidateReference:null,settlementResultDigest:null};
 
 async function attempt({entitlementStatus="active",remainingUnits=10}={}){
   let entitlementChecks=0;
-  const Reservation={...physicalIndex("reservationId"),findOne:()=>query(reservation),create:async()=>{throw new Error("idempotent court must not create a second reservation");}};
-  const Entitlement={...physicalIndex("principalId"),findOneAndUpdate(){entitlementChecks+=1;return query(entitlementStatus==="active"&&remainingUnits>=1?{domain:"iband.movie-mentor.inference-spend",schema:1,principalId:"creator-1",status:"active",remainingUnits,reservedUnits:1,consumedUnits:0,entitlementRevision:8}:null);}};
+  const Reservation=physicalModel("reservationId",{findOne:()=>query(reservation),create:async()=>{throw new Error("idempotent court must not create a second reservation");}});
+  const Entitlement=physicalModel("principalId",{findOneAndUpdate(){entitlementChecks+=1;return query(entitlementStatus==="active"&&remainingUnits>=1?{domain:"iband.movie-mentor.inference-spend",schema:1,principalId:"creator-1",status:"active",remainingUnits,reservedUnits:1,consumedUnits:0,entitlementRevision:8}:null);}});
   const store=createMovieMentorInferenceSpendMongoStore({models:{entitlementModel:Entitlement,reservationModel:Reservation},startSession:async()=>session()});
   try{return{ok:true,result:await store.reserve({reservationId:reservation.reservationId,principalId:reservation.principalId,projectId:reservation.projectId,operation:reservation.operation,units:reservation.units}),entitlementChecks};}
   catch(error){return{ok:false,error,entitlementChecks};}
