@@ -1,12 +1,14 @@
 import mongoose from "mongoose";
 
-const VERSION="1.7.0",DOMAIN="iband.movie-mentor.inference-spend",SCHEMA=1;
+const VERSION="1.8.0",DOMAIN="iband.movie-mentor.inference-spend",SCHEMA=1;
 const ENTITLEMENT_COLLECTION="movie_mentor_inference_entitlement",RESERVATION_COLLECTION="movie_mentor_inference_spend_reservation";
 let connectionPromise=null,entitlementModel=null,reservationModel=null;
 function text(v){return typeof v==="string"?v.trim():"";} function units(v){return Number.isSafeInteger(v)&&v>0?v:null;} function iso(v){if(v===null||v===undefined||v==="")return null;const d=v instanceof Date?new Date(v):new Date(v);return Number.isNaN(d.getTime())?null:d.toISOString();}
 function mongoUri(){return text(process.env.MONGO_URI||process.env.MONGODB_URI||"");}
 function fail(code,message,extras={}){const e=new Error(message);e.code=code;Object.assign(e,extras);throw e;}
 function plain(r){return r&&typeof r.toObject==="function"?r.toObject():r;}
+function sameKey(actual,expected){if(!actual||typeof actual!=="object")return false;const a=Object.entries(actual),e=Object.entries(expected);return a.length===e.length&&e.every(([key,direction],index)=>a[index]?.[0]===key&&a[index]?.[1]===direction);}
+function exactUnique(index,key){return index?.unique===true&&sameKey(index?.key,key);}
 function getModels(){
  if(entitlementModel&&reservationModel)return{entitlementModel,reservationModel};
  const entitlementSchema=new mongoose.Schema({domain:{type:String,required:true,immutable:true},schema:{type:Number,required:true,immutable:true},principalId:{type:String,required:true,trim:true,immutable:true},status:{type:String,enum:["active","suspended"],required:true},remainingUnits:{type:Number,min:0,required:true},reservedUnits:{type:Number,min:0,required:true},consumedUnits:{type:Number,min:0,required:true},entitlementRevision:{type:Number,min:1,required:true}},{collection:ENTITLEMENT_COLLECTION,timestamps:true,minimize:false,strict:true});
@@ -28,17 +30,29 @@ function createMovieMentorInferenceSpendMongoStore({models=null,connect=ensureCo
     for(const Model of [Entitlement,Reservation]){
      if(typeof Model?.createIndexes==="function"){await Model.createIndexes();continue;}
      if(typeof Model?.init==="function"){await Model.init();continue;}
-     if(models)continue;
-     fail("MOVIE_MENTOR_INFERENCE_SPEND_INDEX_AUTHORITY_UNAVAILABLE","Inference spend store cannot prove physical unique-index readiness.",{retryable:true});
+     fail("MOVIE_MENTOR_INFERENCE_SPEND_INDEX_AUTHORITY_UNAVAILABLE","Inference spend store cannot initialize its declared unique indexes.",{retryable:true});
     }
+    let entitlementIndexes,reservationIndexes;
+    try{
+     if(typeof Entitlement?.collection?.indexes!=="function"||typeof Reservation?.collection?.indexes!=="function")fail("MOVIE_MENTOR_INFERENCE_SPEND_PHYSICAL_AUTHORITY_UNAVAILABLE","Inference spend store cannot inspect both owned physical Mongo index catalogues.",{retryable:true});
+     [entitlementIndexes,reservationIndexes]=await Promise.all([Entitlement.collection.indexes(),Reservation.collection.indexes()]);
+    }catch(error){
+     if(error?.code==="MOVIE_MENTOR_INFERENCE_SPEND_PHYSICAL_AUTHORITY_UNAVAILABLE")throw error;
+     fail("MOVIE_MENTOR_INFERENCE_SPEND_PHYSICAL_AUTHORITY_UNAVAILABLE",`Inference spend physical index reality unavailable: ${error instanceof Error?error.message:"Mongo index inspection failed."}`,{retryable:true});
+    }
+    const entitlementPhysical=Array.isArray(entitlementIndexes)?entitlementIndexes:[],reservationPhysical=Array.isArray(reservationIndexes)?reservationIndexes:[];
+    const principalUnique=entitlementPhysical.some(index=>exactUnique(index,{principalId:1}));
+    const reservationIdUnique=reservationPhysical.some(index=>exactUnique(index,{reservationId:1}));
+    if(!principalUnique||!reservationIdUnique)fail("MOVIE_MENTOR_INFERENCE_SPEND_PHYSICAL_AUTHORITY_UNAVAILABLE","Inference spend durable authority requires exact observed physical unique indexes for entitlement principal and reservation identity before any durable read or transaction.",{retryable:true,principalUnique,reservationIdUnique});
+    return Object.freeze({ready:true,principalUnique:true,reservationIdUnique:true});
    })().catch(error=>{indexReadinessPromise=null;if(error?.code?.startsWith?.("MOVIE_MENTOR_INFERENCE_SPEND_"))throw error;fail("MOVIE_MENTOR_INFERENCE_SPEND_INDEX_AUTHORITY_UNAVAILABLE",`Inference spend physical index readiness failed: ${error instanceof Error?error.message:"index initialization failed"}`,{retryable:true});});
   }
   await indexReadinessPromise;
  }
  async function readReservation(reservationId){await ready();const{reservationModel:Reservation}=modelSet();const row=await Reservation.findOne({reservationId:text(reservationId)}).lean().exec();return row?normalizeReservation(row):null;}
  async function reserve(request={}){const n={reservationId:text(request.reservationId),principalId:text(request.principalId),projectId:text(request.projectId),operation:text(request.operation),units:units(request.units)};if(!n.reservationId||!n.principalId||!n.projectId||!n.operation||!n.units)fail("MOVIE_MENTOR_INFERENCE_SPEND_RESERVATION_INVALID","Inference spend reservation requires reservationId, principalId, projectId, operation and positive units.");await ready();const{entitlementModel:Entitlement,reservationModel:Reservation}=modelSet();const session=await startSession();let outcome=null;try{await session.withTransaction(async()=>{const existing=await Reservation.findOne({reservationId:n.reservationId}).session(session).lean().exec();if(existing){const durable=normalizeReservation(existing);if(!sameBinding(durable,n))fail("MOVIE_MENTOR_INFERENCE_SPEND_RESERVATION_CONFLICT","Reservation identity is already bound to different inference spend authority.");if(durable.status!=="reserved")fail("MOVIE_MENTOR_INFERENCE_SPEND_RESERVATION_SETTLED","Settled inference spend authority cannot be reserved again.");const currentEntitlement=await Entitlement.findOneAndUpdate({principalId:n.principalId,domain:DOMAIN,schema:SCHEMA,status:"active"},{$inc:{entitlementRevision:1}},{new:true,runValidators:true,session}).lean().exec();if(!currentEntitlement)fail("MOVIE_MENTOR_INFERENCE_SPEND_IDEMPOTENT_ENTITLEMENT_FENCED","Historical inference spend reservation cannot be reused after its durable entitlement authority ceased to be current.",{retryable:false,reservationId:durable.reservationId});outcome=Object.freeze({granted:true,idempotent:true,reservation:durable});return;}const entitlement=await Entitlement.findOneAndUpdate({principalId:n.principalId,domain:DOMAIN,schema:SCHEMA,status:"active",remainingUnits:{$gte:n.units}},{$inc:{remainingUnits:-n.units,reservedUnits:n.units,entitlementRevision:1}},{new:true,runValidators:true,session}).lean().exec();if(!entitlement){outcome=Object.freeze({granted:false,reason:"no-active-entitlement-or-insufficient-units"});return;}const created=await Reservation.create([{domain:DOMAIN,schema:SCHEMA,...n,entitlementRevision:entitlement.entitlementRevision,status:"reserved",reservedAt:new Date()}],{session});outcome=Object.freeze({granted:true,idempotent:false,reservation:normalizeReservation(created[0])});});if(!outcome)fail("MOVIE_MENTOR_INFERENCE_SPEND_AUTHORITY_UNAVAILABLE","Inference spend transaction completed without a durable decision.",{retryable:true});return outcome;}catch(error){if(error?.code?.startsWith?.("MOVIE_MENTOR_INFERENCE_SPEND_"))throw error;fail("MOVIE_MENTOR_INFERENCE_SPEND_AUTHORITY_UNAVAILABLE",`Inference spend reservation failed: ${error instanceof Error?error.message:"transaction failed"}`,{retryable:true});}finally{await session.endSession();}}
- const status=Object.freeze({...getMovieMentorInferenceSpendMongoStoreStatus(),uniquenessReadinessRequired:true,physicalUniqueIndexReadiness:true});
+ const status=Object.freeze({...getMovieMentorInferenceSpendMongoStoreStatus(),uniquenessReadinessRequired:true,physicalUniqueIndexReadiness:true,physicalUniqueIndexObservationRequired:true});
  return Object.freeze({readReservation,reserve,getStatus:()=>status});
 }
-function getMovieMentorInferenceSpendMongoStoreStatus(){const configured=Boolean(mongoUri());return Object.freeze({version:VERSION,configured,readiness:configured?"configured":"configuration-required",entitlementCollection:ENTITLEMENT_COLLECTION,reservationCollection:RESERVATION_COLLECTION,atomicity:"mongo-transaction",idempotentCurrentEntitlementRevalidation:true,settlement:"external-durable-current-reality-authority-only",durableReservationRead:true,genericSettlementCapability:false,uniquenessReadinessRequired:true,physicalUniqueIndexReadiness:true,processLocalFallback:false});}
+function getMovieMentorInferenceSpendMongoStoreStatus(){const configured=Boolean(mongoUri());return Object.freeze({version:VERSION,configured,readiness:configured?"configured":"configuration-required",entitlementCollection:ENTITLEMENT_COLLECTION,reservationCollection:RESERVATION_COLLECTION,atomicity:"mongo-transaction",idempotentCurrentEntitlementRevalidation:true,settlement:"external-durable-current-reality-authority-only",durableReservationRead:true,genericSettlementCapability:false,uniquenessReadinessRequired:true,physicalUniqueIndexReadiness:true,physicalUniqueIndexObservationRequired:true,processLocalFallback:false});}
 export{VERSION as MOVIE_MENTOR_INFERENCE_SPEND_MONGO_STORE_VERSION,DOMAIN as MOVIE_MENTOR_INFERENCE_SPEND_DOMAIN,SCHEMA as MOVIE_MENTOR_INFERENCE_SPEND_SCHEMA,ENTITLEMENT_COLLECTION as MOVIE_MENTOR_INFERENCE_ENTITLEMENT_COLLECTION,RESERVATION_COLLECTION as MOVIE_MENTOR_INFERENCE_SPEND_RESERVATION_COLLECTION,createMovieMentorInferenceSpendMongoStore,getMovieMentorInferenceSpendMongoStoreStatus}; export default createMovieMentorInferenceSpendMongoStore;
