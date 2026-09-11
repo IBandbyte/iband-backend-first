@@ -60,8 +60,13 @@ const store = createMovieMentorProviderEffectMongoStore({
   executionCollection,
   readPhysicalIndexes: async collection => {
     physicalIndexReads += 1;
-    assert.equal(collection, "movie_mentor_provider_effect_reality", "court must prove the provider-effect store's own physical collection");
-    return [{ name: "providerCallId_1", key: { providerCallId: 1 }, unique: true }];
+    if (collection === "movie_mentor_provider_effect_reality") {
+      return [{ name: "providerCallId_1", key: { providerCallId: 1 }, unique: true }];
+    }
+    if (collection === "movie_mentor_inference_execution") {
+      return [{ name: "executionId_1", key: { executionId: 1 }, unique: true }];
+    }
+    assert.fail(`unexpected physical-index collection: ${collection}`);
   }
 });
 
@@ -98,7 +103,7 @@ try {
   assert.equal(created.providerCallId, admittedCall.providerCallId);
   assert.equal(effects.size, 1);
   assert.equal(revisionTouches, 1);
-  assert.equal(physicalIndexReads, 1, "provider-effect court must cross its physical uniqueness proof exactly once before durable admission");
+  assert.equal(physicalIndexReads, 2, "provider-effect court must prove both provider-effect and execution physical identities exactly once before durable admission");
 
   await denied("never-admitted provider call", value => ({ ...value, providerCallId: "call-never-admitted" }));
   await denied("wrong slot", value => ({ ...value, slotId: "story" }));
@@ -109,12 +114,12 @@ try {
   await denied("expired lease", value => value, { ...execution, leaseExpiresAt: "2030-12-31T23:59:59.000Z" });
   await denied("closed execution", value => value, { ...execution, phase: "closed" });
 
-  console.log("✓ provider-effect physical uniqueness proven by this court before admission");
+  console.log("✓ provider-effect and execution physical uniqueness proven by this court before admission");
   console.log("✓ genuine current durably admitted provider call may create UNKNOWN");
   console.log("✓ never-admitted / wrong-slot / wrong-task lookalikes create zero UNKNOWN");
   console.log("✓ stale-generation / wrong-reference / wrong-fence lookalikes create zero UNKNOWN");
   console.log("✓ expired or non-active execution creates zero UNKNOWN");
-  console.log("LAW: OWN PHYSICAL UNIQUE IDENTITY + CURRENT DURABLE EXECUTION + EXACT ADMITTED PROVIDER CALL → ATOMIC UNKNOWN REALITY; LOOKALIKE → ZERO AUTHORITY");
+  console.log("LAW: OWN PHYSICAL UNIQUE IDENTITY + EXECUTION PHYSICAL IDENTITY + CURRENT DURABLE EXECUTION + EXACT ADMITTED PROVIDER CALL → ATOMIC UNKNOWN REALITY; LOOKALIKE → ZERO AUTHORITY");
   console.log("Zorg: But the form says dispatchAuthorized. Kraken: THE DURABLE LEDGER DISAGREES.");
 } finally {
   if (previousModel) mongoose.models.MovieMentorProviderEffectReality = previousModel;
