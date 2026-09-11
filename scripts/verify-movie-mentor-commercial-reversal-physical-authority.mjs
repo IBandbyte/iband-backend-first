@@ -23,16 +23,16 @@ let durableWrites=0;
 let transactions=0;
 const wrongPhysicalIndexes=Object.freeze([{name:"_id_",key:Object.freeze({_id:1}),unique:true}]);
 const q=value=>({session(){return this;},lean(){return this;},sort(){return this;},async exec(){durableReads+=1;return value;}});
-function model(){return {
+function model({createReturnsInput=false}={}){return {
  async createIndexes(){indexInitializations+=1;return[];},
  collection:{async indexes(){return wrongPhysicalIndexes;}},
  findOne(){return q(null);},
  find(){return q([]);},
  findOneAndUpdate(){durableWrites+=1;return q(null);},
- async create(){durableWrites+=1;return null;},
+ async create(record){durableWrites+=1;return createReturnsInput?Object.freeze({...record}):record;},
  deleteOne(){durableWrites+=1;return q(null);},
 };}
-const entitlementModel=model(),reversalModel=model(),pendingModel=model();
+const entitlementModel=model(),reversalModel=model(),pendingModel=model({createReturnsInput:true});
 const session={async withTransaction(fn){transactions+=1;await fn();},async endSession(){}};
 const store=createMovieMentorCommercialReversalMongoStore({
  modelSet:{entitlementModel,reversalModel,pendingModel},
