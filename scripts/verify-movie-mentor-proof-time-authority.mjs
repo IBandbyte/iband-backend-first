@@ -10,11 +10,14 @@ const effectStore={readEffect:async()=>null};
 const closure=createMovieMentorInferenceExecutionClosureAuthority({store:closureStore,effectStore,now:()=>null});
 await assert.rejects(()=>closure.beginClosing({execution:{authorized:true,executionId:"e",ownerId:"o",leaseGeneration:1,leaseReference:"l",fencingToken:"f"}}),e=>e.code==="MOVIE_MENTOR_INFERENCE_CLOSURE_TIME_INVALID");
 
-function reservationModel(row){return{findOne(){return{lean(){return{exec:async()=>row}}}}};}
+const spendEntitlementIndexes=Object.freeze([{name:"principalId_1",key:Object.freeze({principalId:1}),unique:true}]);
+const spendReservationIndexes=Object.freeze([{name:"reservationId_1",key:Object.freeze({reservationId:1}),unique:true}]);
+function reservationModel(row){return{async createIndexes(){},collection:{async indexes(){return spendReservationIndexes;}},findOne(){return{lean(){return{exec:async()=>row}}}}};}
+function entitlementModel(){return{async createIndexes(){},collection:{async indexes(){return spendEntitlementIndexes;}}};}
 const spendBase={domain:"iband.movie-mentor.inference-spend",schema:1,reservationId:"r",principalId:"p",projectId:"pr",operation:"movie-mentor-turn",units:1,entitlementRevision:1,status:"reserved",reservedAt:"2032-01-01T00:00:00.000Z",settledAt:null};
-const validSpend=createMovieMentorInferenceSpendMongoStore({models:{reservationModel:reservationModel(spendBase),entitlementModel:{}},connect:async()=>{}});assert.equal((await validSpend.readReservation("r")).reservedAt,"2032-01-01T00:00:00.000Z");
-const missingSpend=createMovieMentorInferenceSpendMongoStore({models:{reservationModel:reservationModel({...spendBase,reservedAt:null}),entitlementModel:{}},connect:async()=>{}});await assert.rejects(()=>missingSpend.readReservation("r"),e=>e.code==="MOVIE_MENTOR_INFERENCE_SPEND_RESERVATION_INVALID");
-const invalidSettled=createMovieMentorInferenceSpendMongoStore({models:{reservationModel:reservationModel({...spendBase,settledAt:"not-a-date"}),entitlementModel:{}},connect:async()=>{}});await assert.rejects(()=>invalidSettled.readReservation("r"),e=>e.code==="MOVIE_MENTOR_INFERENCE_SPEND_RESERVATION_INVALID");
+const validSpend=createMovieMentorInferenceSpendMongoStore({models:{reservationModel:reservationModel(spendBase),entitlementModel:entitlementModel()},connect:async()=>{}});assert.equal((await validSpend.readReservation("r")).reservedAt,"2032-01-01T00:00:00.000Z");
+const missingSpend=createMovieMentorInferenceSpendMongoStore({models:{reservationModel:reservationModel({...spendBase,reservedAt:null}),entitlementModel:entitlementModel()},connect:async()=>{}});await assert.rejects(()=>missingSpend.readReservation("r"),e=>e.code==="MOVIE_MENTOR_INFERENCE_SPEND_RESERVATION_INVALID");
+const invalidSettled=createMovieMentorInferenceSpendMongoStore({models:{reservationModel:reservationModel({...spendBase,settledAt:"not-a-date"}),entitlementModel:entitlementModel()},connect:async()=>{}});await assert.rejects(()=>invalidSettled.readReservation("r"),e=>e.code==="MOVIE_MENTOR_INFERENCE_SPEND_RESERVATION_INVALID");
 
 const payload={response:"x"};const resultDigest=crypto.createHash("sha256").update(JSON.stringify(payload)).digest("hex");
 const candidateRow={domain:"iband.movie-mentor.result-candidate-store",schema:1,candidateReference:"c",executionId:"e",creatorTurnId:"t",principalId:"p",projectId:"pr",reservationId:"r",requestDigest:"q",resultDigest,resultPayload:payload,stagedFromLeaseGeneration:1,stagedFromLeaseReference:"l",stagedFromFencingToken:"f",stagedAt:null};
@@ -29,4 +32,4 @@ const canonicalStore=createMovieMentorCanonicalResultMongoStore({mongoModel:cano
 await assert.rejects(()=>canonicalStore.readByExecution("e"),e=>e.code==="MOVIE_MENTOR_CANONICAL_RESULT_RECORD_INVALID");
 
 console.log("5A.24 durable proof-time catastrophe gate: GREEN");
-console.log("LAW: ABSENCE IS NOT THE UNIX EPOCH. NO EVENT TIME -> NO DURABLE PROOF.");
+console.log("LAW: ABSENCE IS NOT THE UNIX EPOCH. NO EVENT TIME -> NO DURABLE PROOF. HARDENED STORE FIXTURES MUST FIRST PROVE THEIR OWN PHYSICAL IDENTITIES.");
