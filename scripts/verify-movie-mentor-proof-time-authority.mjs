@@ -10,8 +10,8 @@ const effectStore={readEffect:async()=>null};
 const closure=createMovieMentorInferenceExecutionClosureAuthority({store:closureStore,effectStore,now:()=>null});
 await assert.rejects(()=>closure.beginClosing({execution:{authorized:true,executionId:"e",ownerId:"o",leaseGeneration:1,leaseReference:"l",fencingToken:"f"}}),e=>e.code==="MOVIE_MENTOR_INFERENCE_CLOSURE_TIME_INVALID");
 
-function reservationModel(row){return{collection:{async indexes(){return[{key:{reservationId:1},unique:true}];}},findOne(){return{lean(){return{exec:async()=>row}}}}};}
-function entitlementModel(){return{collection:{async indexes(){return[{key:{principalId:1},unique:true}];}}};}
+function reservationModel(row){return{async createIndexes(){return[];},collection:{async indexes(){return[{key:{reservationId:1},unique:true}];}},findOne(){return{lean(){return{exec:async()=>row}}}}};}
+function entitlementModel(){return{async createIndexes(){return[];},collection:{async indexes(){return[{key:{principalId:1},unique:true}];}}};}
 const spendBase={domain:"iband.movie-mentor.inference-spend",schema:1,reservationId:"r",principalId:"p",projectId:"pr",operation:"movie-mentor-turn",units:1,entitlementRevision:1,status:"reserved",reservedAt:"2032-01-01T00:00:00.000Z",settledAt:null};
 const validSpend=createMovieMentorInferenceSpendMongoStore({models:{reservationModel:reservationModel(spendBase),entitlementModel:entitlementModel()},connect:async()=>{}});assert.equal((await validSpend.readReservation("r")).reservedAt,"2032-01-01T00:00:00.000Z");
 const missingSpend=createMovieMentorInferenceSpendMongoStore({models:{reservationModel:reservationModel({...spendBase,reservedAt:null}),entitlementModel:entitlementModel()},connect:async()=>{}});await assert.rejects(()=>missingSpend.readReservation("r"),e=>e.code==="MOVIE_MENTOR_INFERENCE_SPEND_RESERVATION_INVALID");
