@@ -1,0 +1,38 @@
+name: Verify Movie Mentor Creator State Physical Authority Current Main
+
+on:
+  push:
+    paths:
+      - "ai/MovieMentorCreatorStateStore.js"
+      - "ai/MovieMentorCreatorStateConsumptionRuntime.js"
+      - "ai/MovieMentorCreatorDecisionAuthority.js"
+      - "ai/MovieMentorCreatorStateTransition.js"
+      - "movieMentorTurn.js"
+      - "server.js"
+      - "scripts/verify-movie-mentor-creator-state-physical-authority-current-main.mjs"
+      - ".github/workflows/verify-movie-mentor-creator-state-physical-authority-current-main.yml"
+      - ".github/workflows/ci-backend.yml"
+  pull_request:
+    paths:
+      - "ai/MovieMentorCreatorStateStore.js"
+      - "ai/MovieMentorCreatorStateConsumptionRuntime.js"
+      - "ai/MovieMentorCreatorDecisionAuthority.js"
+      - "ai/MovieMentorCreatorStateTransition.js"
+      - "movieMentorTurn.js"
+      - "server.js"
+      - "scripts/verify-movie-mentor-creator-state-physical-authority-current-main.mjs"
+      - ".github/workflows/verify-movie-mentor-creator-state-physical-authority-current-main.yml"
+      - ".github/workflows/ci-backend.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - run: node --check ai/MovieMentorCreatorStateStore.js
+      - run: node --check scripts/verify-movie-mentor-creator-state-physical-authority-current-main.mjs
+      - run: node scripts/verify-movie-mentor-creator-state-physical-authority-current-main.mjs
