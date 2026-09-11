@@ -1,0 +1,31 @@
+name: Verify Movie Mentor Provider Effect Physical Authority
+
+on:
+  push:
+    paths:
+      - "ai/MovieMentorProviderEffectMongoStore.js"
+      - "ai/MovieMentorProductionInferenceExecutionComposition.js"
+      - "scripts/verify-movie-mentor-provider-effect-physical-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-provider-effect-physical-authority.yml"
+      - ".github/workflows/ci-backend.yml"
+  pull_request:
+    paths:
+      - "ai/MovieMentorProviderEffectMongoStore.js"
+      - "ai/MovieMentorProductionInferenceExecutionComposition.js"
+      - "scripts/verify-movie-mentor-provider-effect-physical-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-provider-effect-physical-authority.yml"
+      - ".github/workflows/ci-backend.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: node --check ai/MovieMentorProviderEffectMongoStore.js
+      - run: node --check ai/MovieMentorProductionInferenceExecutionComposition.js
+      - run: node --check scripts/verify-movie-mentor-provider-effect-physical-authority.mjs
+      - run: node scripts/verify-movie-mentor-provider-effect-physical-authority.mjs
