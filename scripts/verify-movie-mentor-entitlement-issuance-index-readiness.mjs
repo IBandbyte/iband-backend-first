@@ -7,11 +7,13 @@ let transactionCalls=0;
 function query(value){return{session(){return this;},lean(){return this;},async exec(){return value;}};}
 const entitlementModel=Object.freeze({
  async createIndexes(){indexCalls+=1;},
+ collection:{async indexes(){return[{key:{principalId:1},unique:true,name:"principalId_1"}];}},
  findOne(){return query(null);},
  async create(){transactionCalls+=1;if(!indexReady){const error=new Error("physical entitlement uniqueness indexes are not ready");error.code="INDEX_NOT_READY";throw error;}return[];}
 });
 const issuanceModel=Object.freeze({
  async createIndexes(){indexCalls+=1;indexReady=true;},
+ collection:{async indexes(){return[{key:{issuanceId:1},unique:true,name:"issuanceId_1"},{key:{evidenceSource:1,evidenceId:1},unique:true,name:"evidenceSource_1_evidenceId_1"}];}},
  findOne(){return query(null);},
  async create(){transactionCalls+=1;return[];}
 });
@@ -25,13 +27,13 @@ const evidence={evidenceId:"evt-paid-index",evidenceSource:"stripe",evidenceKind
 await assert.rejects(
  ()=>store.issue(evidence),
  error=>error?.code!=="INDEX_NOT_READY"&&error?.message!=="Entitlement issuance failed: physical entitlement uniqueness indexes are not ready",
- "entitlement issuance must explicitly initialize physical uniqueness indexes before transaction mutation; any later domain failure is acceptable only after readiness crossed first"
+ "entitlement issuance must explicitly initialize and observe physical uniqueness indexes before transaction mutation; any later domain failure is acceptable only after readiness crossed first"
 );
-assert.equal(indexCalls,2,"entitlement issuance store must explicitly prove physical indexes for entitlement and issuance models");
+assert.equal(indexCalls,2,"entitlement issuance store must explicitly initialize indexes for entitlement and issuance models");
 assert.equal(transactionCalls,1,"court must reach exactly one post-readiness mutation attempt so index ordering is genuinely exercised");
 const status=getMovieMentorEntitlementIssuanceMongoStoreStatus();
 assert.equal(status.uniquenessReadinessRequired,true,"production entitlement composition must be able to require physical uniqueness readiness");
 assert.equal(status.physicalUniqueIndexReadiness,true,"entitlement issuance store must explicitly own physical unique-index readiness");
 
 console.log("entitlement issuance index-readiness torture: GREEN");
-console.log("LAW: ENTITLEMENT AND ISSUANCE UNIQUENESS ARE NOT AUTHORITATIVE UNTIL THEIR PHYSICAL INDEXES ARE READY; VERIFIED PAYMENT EVIDENCE MAY NOT CROSS AN ENTITLEMENT OR ISSUANCE WRITE BOUNDARY FIRST.");
+console.log("LAW: ENTITLEMENT AND ISSUANCE UNIQUENESS ARE NOT AUTHORITATIVE UNTIL THEIR PHYSICAL INDEXES ARE OBSERVED READY; VERIFIED PAYMENT EVIDENCE MAY NOT CROSS AN ENTITLEMENT OR ISSUANCE WRITE BOUNDARY FIRST.");
