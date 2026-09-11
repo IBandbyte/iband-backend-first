@@ -5,18 +5,16 @@ on:
     paths:
       - "ai/MovieMentorEntitlementIssuanceMongoStore.js"
       - "ai/MovieMentorProductionEntitlementIssuanceComposition.js"
-      - "ai/MovieMentorProductionCommercialHttpIngress.js"
-      - "server.js"
       - "scripts/verify-movie-mentor-entitlement-issuance-physical-authority.mjs"
+      - "scripts/verify-movie-mentor-entitlement-issuance-index-readiness.mjs"
       - ".github/workflows/verify-movie-mentor-entitlement-issuance-physical-authority.yml"
       - ".github/workflows/ci-backend.yml"
   pull_request:
     paths:
       - "ai/MovieMentorEntitlementIssuanceMongoStore.js"
       - "ai/MovieMentorProductionEntitlementIssuanceComposition.js"
-      - "ai/MovieMentorProductionCommercialHttpIngress.js"
-      - "server.js"
       - "scripts/verify-movie-mentor-entitlement-issuance-physical-authority.mjs"
+      - "scripts/verify-movie-mentor-entitlement-issuance-index-readiness.mjs"
       - ".github/workflows/verify-movie-mentor-entitlement-issuance-physical-authority.yml"
       - ".github/workflows/ci-backend.yml"
 
