@@ -13,10 +13,19 @@ let executionRow={domain:"iband.movie-mentor.inference-execution-store",schema:6
 const candidateRow={domain:"iband.movie-mentor.result-candidate-store",schema:candidateStatus.schema,candidateReference:record.candidateReference,executionId:record.executionId,creatorTurnId:record.creatorTurnId,principalId:record.principalId,projectId:record.projectId,reservationId:record.reservationId,requestDigest:record.requestDigest,resultDigest,resultPayload:stable(payload),stagedFromLeaseGeneration:8,stagedFromLeaseReference:"lease-schema-2",stagedFromFencingToken:"fence-schema-2",creatorStateRevision:12,creatorStateGeneration:5,creatorStateFingerprint:"state-schema-2",creatorStateOwnershipRef:"ownership-schema-2",creatorStateOwnershipRevision:3,stagedAt:"2031-12-31T23:59:59.000Z"};
 const executionCollection={async findOne(){return structuredClone(executionRow);},async updateOne(filter,update){assert.equal(filter.executionId,record.executionId);assert.equal(filter.phase,"closed");assert.equal(filter.providerEffectRealityRevision,7);executionRow={...executionRow,...structuredClone(update.$set),resultFinalizationBarrierRevision:executionRow.resultFinalizationBarrierRevision+1};return{matchedCount:1};}};const candidateCollection={async findOne(){return structuredClone(candidateRow);}};const session={async withTransaction(fn){return fn();},async endSession(){}};
 const physicalIndexes=MOVIE_MENTOR_CANONICAL_RESULT_REQUIRED_UNIQUE_INDEXES.map((key,i)=>({name:`canonical_${i}`,key:{...key},unique:true}));
-const store=createMovieMentorCanonicalResultMongoStore({mongoModel:model,executionCollection,candidateCollection,startSession:async()=>session,readIndexes:async collection=>{assert.equal(collection,"movie_mentor_canonical_result");return physicalIndexes;}});
+const crossLedgerPhysicalIndexes={
+  movie_mentor_inference_execution:[{key:{executionId:1},unique:true}],
+  movie_mentor_result_candidate:[{key:{executionId:1},unique:true},{key:{candidateReference:1},unique:true}]
+};
+const readPhysicalIndexes=async collection=>{
+  if(collection==="movie_mentor_canonical_result")return physicalIndexes;
+  if(Object.hasOwn(crossLedgerPhysicalIndexes,collection))return crossLedgerPhysicalIndexes[collection];
+  assert.fail(`unexpected physical index collection: ${collection}`);
+};
+const store=createMovieMentorCanonicalResultMongoStore({mongoModel:model,executionCollection,candidateCollection,startSession:async()=>session,readIndexes:readPhysicalIndexes});
 const committed=await store.commit(record,{expectedProviderEffectRealityRevision:7});assert.equal(committed.resultReference,record.resultReference);assert.equal(committed.candidateReference,record.candidateReference);assert.equal(executionRow.phase,"finalized");assert.equal(executionRow.finalizedCandidateReference,record.candidateReference);assert.equal(executionRow.resultFinalizationBarrierRevision,1);
 console.log("✓ current durable schema-2 candidate with its complete proof-bearing provenance crosses the canonical result store boundary");
 console.log("✓ canonical persistence and CLOSED -> FINALIZED binding preserve exact candidate lineage and staging authority");
-console.log("✓ the court supplies the same five physical unique identities production now requires before canonical finalization");
+console.log("✓ the court supplies canonical, execution, and result-candidate physical unique identities required before canonical finalization");
 console.log("LAW: CURRENT DURABLE SCHEMA AND ITS OWNED PROVENANCE MUST CROSS EVERY IRREVERSIBLE BOUNDARY OR THE GATE FAILS CLOSED");
 console.log("5A.28 canonical result current candidate schema authority torture: GREEN");
