@@ -8,7 +8,7 @@ const serverSource=fs.readFileSync(new URL("../server.js",import.meta.url),"utf8
 
 assert.match(serverSource,/createMovieMentorProductionInferenceSpendComposition\(\)/,"production creator gateway must instantiate the production inference-spend composition");
 assert.match(serverSource,/createMovieMentorTurnRouter\(\{requestAuthority,inferenceSpendAuthority:spendComposition\.authority/,"production Movie Mentor router must receive the owner-proven spend authority");
-assert.match(compositionSource,/store\|\|createMovieMentorInferenceSpendMongoStore\(\)/,"production inference-spend composition must instantiate the durable Mongo store by default");
+assert.match(compositionSource,/store\s*\|\|\s*createMovieMentorInferenceSpendMongoStore\(\)/,"production inference-spend composition must instantiate the durable Mongo store by default");
 assert.match(storeSource,/entitlementSchema\.index\(\{principalId:1\},\{unique:true\}\)/,"inference spend depends on unique current-entitlement principal identity");
 assert.match(storeSource,/reservationSchema\.index\(\{reservationId:1\},\{unique:true\}\)/,"inference spend reservation identity must be declared unique");
 assert.match(storeSource,/Reservation\.create\(/,"reservation grant must cross a durable reservation mint");
