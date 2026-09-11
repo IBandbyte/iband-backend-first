@@ -8,10 +8,12 @@ let indexesReady=false;
 function query(result=null){return{session(){return this;},lean(){return this;},exec:async()=>result};}
 const entitlementModel={
  async createIndexes(){indexCalls+=1;},
+ collection:{async indexes(){return[{name:"principalId_1",key:{principalId:1},unique:true}];}},
  findOneAndUpdate(){return query(null);}
 };
 const reservationModel={
  async createIndexes(){indexCalls+=1;indexesReady=true;},
+ collection:{async indexes(){return[{name:"reservationId_1",key:{reservationId:1},unique:true}];}},
  findOne(){return query(null);},
  async create(){if(!indexesReady){const error=new Error("physical unique indexes were not ready before inference spend reservation mutation");error.code="INDEX_NOT_READY";throw error;}return[];}
 };
