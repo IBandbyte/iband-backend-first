@@ -3,6 +3,17 @@ name: Verify Movie Mentor Gates of Execution Provider Effect Cross-Ledger Admiss
 on:
   push:
     branches: [main]
+    paths:
+      - "ai/MovieMentorProviderEffectMongoStore.js"
+      - "scripts/verify-movie-mentor-provider-effect-cross-ledger-admission.mjs"
+      - ".github/workflows/verify-movie-mentor-provider-effect-cross-ledger-admission.yml"
+      - ".github/workflows/ci-backend.yml"
+  pull_request:
+    paths:
+      - "ai/MovieMentorProviderEffectMongoStore.js"
+      - "scripts/verify-movie-mentor-provider-effect-cross-ledger-admission.mjs"
+      - ".github/workflows/verify-movie-mentor-provider-effect-cross-ledger-admission.yml"
+      - ".github/workflows/ci-backend.yml"
   workflow_dispatch:
 
 permissions:
