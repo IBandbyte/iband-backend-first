@@ -23,7 +23,7 @@ let executionBarrierCalls=0;
 let physicalIndexReads=0;
 const creatorStateCollection={async updateOne(){stateBarrierCalls+=1;return{matchedCount:0};}};
 const executionCollection={async updateOne(){executionBarrierCalls+=1;return{matchedCount:1};}};
-const readIndexes=async collectionName=>{physicalIndexReads+=1;assert.equal(collectionName,"movie_mentor_result_candidate","idempotent court must prove the candidate store's own physical collection");return[{key:{executionId:1},unique:true},{key:{candidateReference:1},unique:true}];};
+const readIndexes=async collectionName=>{physicalIndexReads+=1;if(collectionName==="movie_mentor_result_candidate")return[{key:{executionId:1},unique:true},{key:{candidateReference:1},unique:true}];if(collectionName==="movie_mentor_creator_state")return[{key:{projectId:1},unique:true,partialFilterExpression:{projectId:{$type:"string"}}}];if(collectionName==="movie_mentor_inference_execution")return[{key:{executionId:1},unique:true}];assert.fail(`unexpected physical collection: ${collectionName}`);};
 const store=createMovieMentorResultCandidateMongoStore({connect:async()=>null,readIndexes,creatorStateCollection,executionCollection,startSession:async()=>session(),now:()=>new Date("2035-01-01T00:00:01.000Z")});
 
 await assert.rejects(
@@ -31,7 +31,7 @@ await assert.rejects(
   error=>error?.code==="MOVIE_MENTOR_RESULT_CANDIDATE_CREATOR_STATE_FENCED",
   "an existing idempotent candidate must not bypass the atomic current creator-state barrier after the state universe changed",
 );
-assert.equal(physicalIndexReads,1,"idempotent candidate recovery must prove owned physical uniqueness before durable read/reuse authority");
+assert.equal(physicalIndexReads,3,"idempotent candidate recovery must prove candidate plus both cross-ledger physical identities before durable read/reuse transaction authority");
 assert.equal(stateBarrierCalls,1,"idempotent candidate recovery must re-enter the creator-state atomic barrier exactly once");
 assert.equal(executionBarrierCalls,0,"creator-state revocation must fail before execution authority can be reused");
 
