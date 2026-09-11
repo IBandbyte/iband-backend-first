@@ -7,7 +7,9 @@ import "./verify-movie-mentor-result-candidate-idempotent-current-state-authorit
 function query(value){return{session(){return this;},lean(){return this;},async exec(){return value?structuredClone(value):null;}};}
 function session(){return{async withTransaction(fn){await fn();},async endSession(){}};}
 const candidatePhysicalIndexes=Object.freeze([{key:{executionId:1},unique:true},{key:{candidateReference:1},unique:true}]);
-async function readCandidateIndexes(collectionName){assert.equal(collectionName,"movie_mentor_result_candidate","current-schema court must prove the result-candidate store's own physical collection");return candidatePhysicalIndexes;}
+const creatorStatePhysicalIndexes=Object.freeze([{key:{projectId:1},unique:true,partialFilterExpression:{projectId:{$type:"string"}}}]);
+const executionPhysicalIndexes=Object.freeze([{key:{executionId:1},unique:true}]);
+async function readCandidateIndexes(collectionName){if(collectionName==="movie_mentor_result_candidate")return candidatePhysicalIndexes;if(collectionName==="movie_mentor_creator_state")return creatorStatePhysicalIndexes;if(collectionName==="movie_mentor_inference_execution")return executionPhysicalIndexes;assert.fail(`unexpected physical collection: ${collectionName}`);}
 
 const Candidate=mongoose.models.MovieMentorResultCandidate||mongoose.model("MovieMentorResultCandidate",new mongoose.Schema({}, {strict:false}));
 let candidateRow=null;
