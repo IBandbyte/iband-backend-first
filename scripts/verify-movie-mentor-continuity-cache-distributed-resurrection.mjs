@@ -35,6 +35,7 @@ function createAtomicProjectHeadModel(){
   });
  }
  return{
+  collection:{async indexes(){return[{key:{projectHeadKey:1},unique:true,sparse:true,name:"projectHeadKey_1"}];}},
   snapshot(){return clone(head);},
   findOneAndUpdate(filter,update,options){return{lean(){return{async exec(){
    if(!head){head=clone(update.$set);return clone(head);}
