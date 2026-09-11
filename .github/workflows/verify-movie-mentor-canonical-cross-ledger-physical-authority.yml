@@ -10,6 +10,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-      - run: npm ci
+          node-version: 20
+      - run: npm install --ignore-scripts --no-audit --no-fund
       - run: node scripts/verify-movie-mentor-canonical-cross-ledger-physical-authority.mjs
