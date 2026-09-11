@@ -1,12 +1,13 @@
 import mongoose from "mongoose";
 
-const VERSION="1.7.0",DOMAIN="iband.movie-mentor.inference-spend",SCHEMA=1;
+const VERSION="1.8.0",DOMAIN="iband.movie-mentor.inference-spend",SCHEMA=1;
 const ENTITLEMENT_COLLECTION="movie_mentor_inference_entitlement",RESERVATION_COLLECTION="movie_mentor_inference_spend_reservation";
 let connectionPromise=null,entitlementModel=null,reservationModel=null;
 function text(v){return typeof v==="string"?v.trim():"";} function units(v){return Number.isSafeInteger(v)&&v>0?v:null;} function iso(v){if(v===null||v===undefined||v==="")return null;const d=v instanceof Date?new Date(v):new Date(v);return Number.isNaN(d.getTime())?null:d.toISOString();}
 function mongoUri(){return text(process.env.MONGO_URI||process.env.MONGODB_URI||"");}
 function fail(code,message,extras={}){const e=new Error(message);e.code=code;Object.assign(e,extras);throw e;}
 function plain(r){return r&&typeof r.toObject==="function"?r.toObject():r;}
+function exactUniqueIndex(indexes,key){return Array.isArray(indexes)&&indexes.some(index=>{if(index?.unique!==true||!index?.key||typeof index.key!=="object")return false;const entries=Object.entries(index.key);return entries.length===1&&entries[0][0]===key&&entries[0][1]===1;});}
 function getModels(){
  if(entitlementModel&&reservationModel)return{entitlementModel,reservationModel};
  const entitlementSchema=new mongoose.Schema({domain:{type:String,required:true,immutable:true},schema:{type:Number,required:true,immutable:true},principalId:{type:String,required:true,trim:true,immutable:true},status:{type:String,enum:["active","suspended"],required:true},remainingUnits:{type:Number,min:0,required:true},reservedUnits:{type:Number,min:0,required:true},consumedUnits:{type:Number,min:0,required:true},entitlementRevision:{type:Number,min:1,required:true}},{collection:ENTITLEMENT_COLLECTION,timestamps:true,minimize:false,strict:true});
@@ -29,7 +30,13 @@ function createMovieMentorInferenceSpendMongoStore({models=null,connect=ensureCo
      if(typeof Model?.createIndexes==="function"){await Model.createIndexes();continue;}
      if(typeof Model?.init==="function"){await Model.init();continue;}
      if(models)continue;
-     fail("MOVIE_MENTOR_INFERENCE_SPEND_INDEX_AUTHORITY_UNAVAILABLE","Inference spend store cannot prove physical unique-index readiness.",{retryable:true});
+     fail("MOVIE_MENTOR_INFERENCE_SPEND_INDEX_AUTHORITY_UNAVAILABLE","Inference spend store cannot initialize physical unique indexes.",{retryable:true});
+    }
+    const required=[[Entitlement,"principalId"],[Reservation,"reservationId"]];
+    for(const[Model,key]of required){
+     if(typeof Model?.collection?.indexes!=="function")fail("MOVIE_MENTOR_INFERENCE_SPEND_PHYSICAL_AUTHORITY_UNAVAILABLE",`Inference spend store cannot observe physical unique index for ${key}.`,{retryable:true});
+     const indexes=await Model.collection.indexes();
+     if(!exactUniqueIndex(indexes,key))fail("MOVIE_MENTOR_INFERENCE_SPEND_PHYSICAL_AUTHORITY_UNAVAILABLE",`Inference spend store requires exact physical unique {${key}:1} authority.`,{retryable:true});
     }
    })().catch(error=>{indexReadinessPromise=null;if(error?.code?.startsWith?.("MOVIE_MENTOR_INFERENCE_SPEND_"))throw error;fail("MOVIE_MENTOR_INFERENCE_SPEND_INDEX_AUTHORITY_UNAVAILABLE",`Inference spend physical index readiness failed: ${error instanceof Error?error.message:"index initialization failed"}`,{retryable:true});});
   }
