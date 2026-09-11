@@ -1,0 +1,29 @@
+name: Verify Movie Mentor Result Candidate Cross-Ledger Physical Authority
+
+on:
+  push:
+    paths:
+      - "ai/MovieMentorResultCandidateMongoStore.js"
+      - "ai/MovieMentorProductionInferenceExecutionComposition.js"
+      - "scripts/verify-movie-mentor-result-candidate-cross-ledger-physical-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-result-candidate-cross-ledger-physical-authority.yml"
+  pull_request:
+    paths:
+      - "ai/MovieMentorResultCandidateMongoStore.js"
+      - "ai/MovieMentorProductionInferenceExecutionComposition.js"
+      - "scripts/verify-movie-mentor-result-candidate-cross-ledger-physical-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-result-candidate-cross-ledger-physical-authority.yml"
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --ignore-scripts --no-audit --no-fund
+      - run: node --check scripts/verify-movie-mentor-result-candidate-cross-ledger-physical-authority.mjs
+      - run: node --check ai/MovieMentorResultCandidateMongoStore.js
+      - run: node scripts/verify-movie-mentor-result-candidate-cross-ledger-physical-authority.mjs
