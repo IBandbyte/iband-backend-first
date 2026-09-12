@@ -1,6 +1,19 @@
 name: Verify Movie Mentor Durable Checkout Binding
 
 on:
+  pull_request:
+    paths:
+      - 'ai/MovieMentorCommercialCheckoutBindingMongoStore.js'
+      - 'ai/MovieMentorCommercialCheckoutInitiationAuthority.js'
+      - 'ai/MovieMentorCommercialCheckoutProviderRegistry.js'
+      - 'ai/MovieMentorStripeCommercialProviderAdapter.js'
+      - 'ai/MovieMentorProductionCommercialCheckoutComposition.js'
+      - 'ai/MovieMentorProductionCommercialHttpIngress.js'
+      - 'server.js'
+      - 'scripts/verify-movie-mentor-durable-checkout-binding.mjs'
+      - 'scripts/verify-movie-mentor-production-commercial-http-ingress.mjs'
+      - 'scripts/verify-movie-mentor-journey-recovery-boot-mount-integration.mjs'
+      - '.github/workflows/verify-movie-mentor-durable-checkout-binding.yml'
   push:
     branches: [main]
     paths:
@@ -16,6 +29,9 @@ on:
       - 'scripts/verify-movie-mentor-journey-recovery-boot-mount-integration.mjs'
       - '.github/workflows/verify-movie-mentor-durable-checkout-binding.yml'
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   verify:
