@@ -28,11 +28,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
       - name: Syntax check native project creation court
         run: node --check scripts/verify-movie-mentor-native-project-creation-ingress.mjs
       - name: Verify native project creation production ingress
