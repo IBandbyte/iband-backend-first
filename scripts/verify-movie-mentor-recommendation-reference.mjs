@@ -7,7 +7,7 @@ import {
 import { resolveContinuationReferences } from "../ai/MovieMentorContinuationReferenceControl.js";
 import { buildCreatorDecisionCandidate } from "../ai/MovieMentorCreatorDecisionAuthority.js";
 
-function recommendationMemory({ id, projectId = "p1", turnRevision, nextStep, createdAt }) {
+function recommendationMemory({ id, projectId = "p1", turnRevision, nextStep, createdAt, schema = RECOMMENDATION_REFERENCE_SCHEMA }) {
   return {
     id: `pm-${id}`,
     projectId,
@@ -19,7 +19,7 @@ function recommendationMemory({ id, projectId = "p1", turnRevision, nextStep, cr
       projectId,
       recommendationReference: {
         domain: RECOMMENDATION_REFERENCE_DOMAIN,
-        schema: RECOMMENDATION_REFERENCE_SCHEMA,
+        schema,
         recommendationId: id,
         projectId,
         creatorSessionId: "session-a",
@@ -52,6 +52,13 @@ assert.equal(selected.recommendationId, "B");
 assert.equal(selected.evidence.creatorConfirmed, false);
 assert.equal(selected.evidence.mayCreateCanon, false);
 assert.equal(selected.evidence.mayAdvanceJourney, false);
+
+// The live frontend now persists recommendation references as schema 2. Backend
+// continuation resolution must recognise that exact producer contract.
+const frontendV2 = recommendationMemory({ id: "V2", turnRevision: 12, nextStep: "develop the objective", createdAt: "2026-08-26T20:02:00.000Z", schema: 2 });
+selected = selectCurrentRecommendationReference({ memoryContext: { projectMemories: [frontendV2], conversations: [], sessionHandoffs: [] }, projectId: "p1" });
+assert.equal(selected.status, "resolved", "RED: backend continuation authority does not recognise the live frontend recommendation-reference schema.");
+assert.equal(selected.recommendationId, "V2");
 
 let resolution = resolveContinuationReferences({ creatorMessage: "Yes, do that.", projectId: "p1", memoryContext, creatorConfirmedContext: [] });
 assert.equal(resolution.hasMaterialAmbiguity, false);

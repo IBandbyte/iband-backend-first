@@ -1,6 +1,7 @@
-const MOVIE_MENTOR_RECOMMENDATION_REFERENCE_CONTROL_VERSION = "1.0.1";
+const MOVIE_MENTOR_RECOMMENDATION_REFERENCE_CONTROL_VERSION = "1.1.0";
 const RECOMMENDATION_REFERENCE_DOMAIN = "iband.movie-mentor.journey-recommendation-reference";
-const RECOMMENDATION_REFERENCE_SCHEMA = 1;
+const RECOMMENDATION_REFERENCE_SCHEMA = 2;
+const SUPPORTED_RECOMMENDATION_REFERENCE_SCHEMAS = new Set([1, RECOMMENDATION_REFERENCE_SCHEMA]);
 
 function clean(value) {
   return typeof value === "string" ? value.trim() : "";
@@ -35,7 +36,7 @@ function extractRecommendationEvidence(item) {
   const evidence = item?.metadata?.recommendationReference;
   if (!evidence || typeof evidence !== "object") return null;
   if (clean(evidence.domain) !== RECOMMENDATION_REFERENCE_DOMAIN) return null;
-  if (Number(evidence.schema) !== RECOMMENDATION_REFERENCE_SCHEMA) return null;
+  if (!SUPPORTED_RECOMMENDATION_REFERENCE_SCHEMAS.has(Number(evidence.schema))) return null;
   if (clean(evidence.authority) !== "mentor-advisory") return null;
   if (evidence.creatorConfirmed !== false) return null;
   if (evidence.mayCreateCanon !== false) return null;
