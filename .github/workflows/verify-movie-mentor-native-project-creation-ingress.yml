@@ -6,6 +6,7 @@ on:
     paths:
       - "ai/MovieMentorProjectOwnershipRegistry.js"
       - "ai/MovieMentorNativeProjectCreationAuthority.js"
+      - "movieMentorProjects.js"
       - "movieMentorTurn.js"
       - "server.js"
       - "scripts/verify-movie-mentor-native-project-creation-ingress.mjs"
@@ -15,6 +16,7 @@ on:
     paths:
       - "ai/MovieMentorProjectOwnershipRegistry.js"
       - "ai/MovieMentorNativeProjectCreationAuthority.js"
+      - "movieMentorProjects.js"
       - "movieMentorTurn.js"
       - "server.js"
       - "scripts/verify-movie-mentor-native-project-creation-ingress.mjs"
@@ -28,6 +30,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Syntax check native project creation authority
+        run: node --check ai/MovieMentorNativeProjectCreationAuthority.js
+      - name: Syntax check native project creation router
+        run: node --check movieMentorProjects.js
+      - name: Syntax check production composition
+        run: node --check server.js
       - name: Syntax check native project creation court
         run: node --check scripts/verify-movie-mentor-native-project-creation-ingress.mjs
       - name: Verify native project creation production ingress
