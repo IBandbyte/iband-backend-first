@@ -10,7 +10,12 @@ const call = Object.freeze({
   slotId: "semantic",
   task: "movie-mentor-semantic",
 });
-const target = Object.freeze({ provider: "openai", adapter: "openai-responses", routeFingerprint: "route-cas", recoveryMode: "known-response-id-retrieval" });
+const target = Object.freeze({
+  provider: "openai",
+  adapter: "openai-responses",
+  routeFingerprint: "a".repeat(64),
+  recoveryMode: "known-response-id-retrieval",
+});
 let row = {
   domain: "iband.movie-mentor.provider-operation-reality",
   schema: 1,
