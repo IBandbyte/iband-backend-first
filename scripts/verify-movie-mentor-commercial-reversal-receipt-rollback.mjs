@@ -30,17 +30,22 @@ const entitlementModel = {
   async createIndexes(){},
   collection:{ async indexes(){ return entitlementIndexes; } },
   findOne(){ return q(entitlementRow); },
-  async findOneAndUpdate(filter, update){
-    assert.equal(filter.principalId, entitlementRow.principalId);
-    assert.equal(filter.status, "active");
-    assert.equal(filter.entitlementRevision, 11);
-    entitlementWrites += 1;
-    entitlementRow = {
-      ...entitlementRow,
-      status:update.$set.status,
-      entitlementRevision:entitlementRow.entitlementRevision + update.$inc.entitlementRevision,
+  findOneAndUpdate(filter, update){
+    return {
+      lean(){ return this; },
+      async exec(){
+        assert.equal(filter.principalId, entitlementRow.principalId);
+        assert.equal(filter.status, "active");
+        assert.equal(filter.entitlementRevision, 11);
+        entitlementWrites += 1;
+        entitlementRow = {
+          ...entitlementRow,
+          status:update.$set.status,
+          entitlementRevision:entitlementRow.entitlementRevision + update.$inc.entitlementRevision,
+        };
+        return clone(entitlementRow);
+      },
     };
-    return clone(entitlementRow);
   },
 };
 
