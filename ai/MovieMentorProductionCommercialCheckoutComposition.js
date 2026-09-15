@@ -4,7 +4,7 @@ import {createMovieMentorCommercialCheckoutBindingMongoStore,getMovieMentorComme
 import {isMovieMentorProductionCommercialPurchaseIntentAuthorityOwnedProof} from "./MovieMentorProductionCommercialPurchaseIntentComposition.js";
 import {isMovieMentorProductionEntitlementIssuanceAuthorityOwnedProof} from "./MovieMentorProductionEntitlementIssuanceComposition.js";
 
-const VERSION="2.1.0";
+const VERSION="2.1.1";
 const PURCHASE_INTENT_DOMAIN="iband.movie-mentor.production-commercial-purchase-intent-authority";
 const ENTITLEMENT_DOMAIN="iband.movie-mentor.production-entitlement-issuance-authority";
 const AUTHORITY_DOMAIN="iband.movie-mentor.production-commercial-checkout-authority";
@@ -31,7 +31,7 @@ function createMovieMentorProductionCommercialCheckoutComposition({purchaseInten
  const resolveCheckoutBinding=({commercialIntentId}={})=>checkoutBindingStore.resolve({commercialIntentId});
  const bindProviderPaymentReference=({commercialIntentId,provider,checkoutReference,providerPaymentReference}={})=>checkoutBindingStore.bindProviderPaymentReference({commercialIntentId,provider,checkoutReference,providerPaymentReference});
  const resolveCheckoutBindingByProviderPaymentReference=({provider,providerPaymentReference,paymentReference}={})=>checkoutBindingStore.resolveByProviderPaymentReference({provider,providerPaymentReference,paymentReference});
- async function revokeOpenCheckoutsForPrincipal({principalId}={}){const principal=typeof principalId==="string"?principalId.trim():"";if(!principal)fail("MOVIE_MENTOR_CHECKOUT_REVOCATION_PRINCIPAL_REQUIRED","Open checkout revocation requires an exact principal.");const candidates=await checkoutBindingStore.listUnpaidCompleted();let count=0;for(const binding of candidates){const intent=await purchaseIntentAuthority.resolvePurchaseIntent({commercialIntentId:binding.commercialIntentId});if(!intent||intent.principalId!==principal)continue;await registry.revokeProviderCheckout({provider:binding.provider,checkoutReference:binding.checkoutReference});count++;}return Object.freeze({revoked:true,count});}
+ async function revokeOpenCheckoutsForPrincipal({principalId}={}){const principal=typeof principalId==="string"?principalId.trim():"";if(!principal)fail("MOVIE_MENTOR_CHECKOUT_REVOCATION_PRINCIPAL_REQUIRED","Open checkout revocation requires an exact principal.");const candidates=await checkoutBindingStore.listUnpaidCompleted();let count=0,firstFailure=null;for(const binding of candidates){const intent=await purchaseIntentAuthority.resolvePurchaseIntent({commercialIntentId:binding.commercialIntentId});if(!intent||intent.principalId!==principal)continue;try{await registry.revokeProviderCheckout({provider:binding.provider,checkoutReference:binding.checkoutReference});count++;}catch(error){if(!firstFailure)firstFailure=error;}}if(firstFailure)throw firstFailure;return Object.freeze({revoked:true,count});}
  const status=checkoutStatus(entitlementStatus,storeStatus);
  const authority=Object.freeze({initiateCheckout:rawAuthority.initiateCheckout,resolveCheckoutBinding,bindProviderPaymentReference,resolveCheckoutBindingByProviderPaymentReference,revokeOpenCheckoutsForPrincipal,getStatus:()=>status});
  productionAuthorityProofs.set(authority,status);
