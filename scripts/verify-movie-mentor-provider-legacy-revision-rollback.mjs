@@ -5,8 +5,8 @@ import { createMovieMentorProviderEffectMongoStore } from "../ai/MovieMentorProv
 console.log("Movie Mentor provider legacy revision rollback verifier");
 
 const clone = value => value == null ? value : structuredClone(value);
-const indexes = [{ key: { providerCallId: 1 }, unique: true }];
-const executionIndexes = [{ key: { executionId: 1 }, unique: true }];
+const indexes = [{ name: "providerCallId_1", key: { providerCallId: 1 }, unique: true }];
+const executionIndexes = [{ name: "executionId_1", key: { executionId: 1 }, unique: true }];
 
 let effectRow = {
   domain: "iband.movie-mentor.provider-effect-reality",
@@ -39,6 +39,7 @@ const fakeModel = {
     if (filter?.providerCallId && filter.providerCallId !== effectRow?.providerCallId) return query(null);
     return query(effectRow);
   },
+  find() { return query([]); },
   findOneAndUpdate(filter, update) {
     if (filter?.$or) {
       const legacy = effectRow && (effectRow.revision === null || effectRow.revision === undefined);
@@ -64,11 +65,11 @@ const executionCollection = {
   async indexes() { return executionIndexes; },
   async updateOne() {
     executionTouches += 1;
-    return { matchedCount: 0 };
+    return { matchedCount: 0, modifiedCount: 0 };
   },
 };
 
-const startSession = async () => ({
+const session = {
   async withTransaction(fn) {
     const snapshot = clone(effectRow);
     try {
@@ -79,32 +80,29 @@ const startSession = async () => ({
     }
   },
   async endSession() { sessionsEnded += 1; },
-});
+};
 
 const previous = mongoose.models.MovieMentorProviderEffectReality;
 mongoose.models.MovieMentorProviderEffectReality = fakeModel;
 try {
   const store = createMovieMentorProviderEffectMongoStore({
-    startSession,
+    connect: async () => {},
     executionCollection,
-    readPhysicalIndexes: async collection => collection === "movie_mentor_provider_effect_reality" ? indexes : executionIndexes,
+    startSession: async () => session,
   });
 
-  let error = null;
-  try {
-    await store.appendEvidence({
+  await assert.rejects(
+    () => store.appendEvidence({
       providerCallId: "call-legacy-revision-rollback",
       externalEffectId: "response-legacy-revision-rollback",
       provider: "test-provider",
       observedAt: "2035-01-01T00:00:01.000Z",
       source: "provider-response",
-    });
-  } catch (value) {
-    error = value;
-  }
+    }),
+    error => error?.code === "MOVIE_MENTOR_PROVIDER_EFFECT_EXECUTION_MISSING",
+    "later execution touch loss must abort after legacy migration and evidence mutation",
+  );
 
-  assert.ok(error, "later execution touch loss must abort the transaction");
-  assert.equal(error.code, "MOVIE_MENTOR_PROVIDER_EFFECT_EXECUTION_MISSING");
   assert.equal(migrationWrites, 1, "legacy revision migration must genuinely occur before the forced later failure");
   assert.equal(evidenceWrites, 1, "evidence mutation must genuinely occur after migration and before the forced later failure");
   assert.equal(executionTouches, 1, "execution touch must be attempted once");
