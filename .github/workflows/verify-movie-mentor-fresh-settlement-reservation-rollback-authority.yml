@@ -1,0 +1,24 @@
+name: Verify Movie Mentor Fresh Settlement Reservation Rollback Authority
+
+on:
+  pull_request:
+    paths:
+      - "ai/MovieMentorInferenceSettlementMongoStore.js"
+      - "scripts/verify-movie-mentor-fresh-settlement-reservation-rollback-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-fresh-settlement-reservation-rollback-authority.yml"
+  workflow_dispatch:
+
+jobs:
+  verify-fresh-settlement-reservation-rollback-authority:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Verify fresh settlement reservation rollback authority
+        run: node scripts/verify-movie-mentor-fresh-settlement-reservation-rollback-authority.mjs
