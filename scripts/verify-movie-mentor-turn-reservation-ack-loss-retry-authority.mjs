@@ -19,16 +19,30 @@ const settlement={
 };
 const executionAuthority={
  async findExecutionByCreatorTurn(){return existing?{...existing,found:true,authorized:true}:{found:false,authorized:false};},
- async openExecution({reservation,creatorTurnId,requestDigest}){openCalls+=1;existing={authorized:true,executionId:"execution-ack",creatorTurnId,principalId:"creator-ack",projectId:"project-ack",reservationId:reservation.reservationId,requestDigest,phase:"active",ownerId:"owner-ack",leaseGeneration:1,leaseReference:"lease-ack",fencingToken:"fence-ack",leaseExpiresAt:"2099-01-01T00:00:00.000Z"};const error=new Error("simulated acknowledgement loss after durable execution creation");error.code="SIMULATED_ACK_LOSS";throw error;}
+ async openExecution({reservation,creatorTurnId,requestDigest}){openCalls+=1;existing={authorized:true,executionId:"execution-ack",creatorTurnId,principalId:"creator-ack",projectId:"project-ack",reservationId:reservation.reservationId,requestDigest,phase:"active",ownerId:"owner-ack",leaseGeneration:1,leaseReference:"lease-ack",fencingToken:"fence-ack",leaseExpiresAt:"2099-01-01T00:00:00.000Z"};const error=new Error("simulated acknowledgement loss after durable execution creation");error.code="SIMULATED_ACK_LOSS";throw error;},
+ async acquireExecution(){throw new Error("acquire not expected before acknowledgement-loss verdict");},
+ async assertFence(){throw new Error("fence not expected before acknowledgement-loss verdict");},
+ async claimProviderCall(){throw new Error("provider claim not expected before acknowledgement-loss verdict");},
+ async beginProviderDispatch(){throw new Error("provider dispatch not expected before acknowledgement-loss verdict");},
+ async assertProviderDispatch(){throw new Error("provider dispatch assertion not expected before acknowledgement-loss verdict");},
+ async contributeProviderEffectEvidence(){throw new Error("provider evidence not expected before acknowledgement-loss verdict");},
+ async beginExecutionClosing(){throw new Error("closing not expected before acknowledgement-loss verdict");},
+ async reconcileExecutionClosure(){throw new Error("closure not expected before acknowledgement-loss verdict");},
+ async stageResultCandidate(){throw new Error("candidate staging not expected before acknowledgement-loss verdict");},
+ async readResultCandidate(){return null;},
+ async commitCanonicalResult(){throw new Error("canonical commit not expected before acknowledgement-loss verdict");},
+ async readCanonicalResult(){return null;}
 };
 
-await assert.rejects(()=>runMovieMentorTurn({projectId:"project-ack",creatorSessionId:"session-ack",creatorTurnId:"turn-ack",message:"same creator action"},{serverAuthority,inferenceSpendAuthority:spend,inferenceExecutionAuthority:executionAuthority,inferenceSettlementAuthority:settlement,createExecutionOwnerId:()=>"owner-ack",readAuthoritativeTurnSource:async()=>structuredClone(durable)}),error=>error?.code==="SIMULATED_ACK_LOSS");
+const deps={serverAuthority,inferenceSpendAuthority:spend,inferenceExecutionAuthority:executionAuthority,inferenceSettlementAuthority:settlement,createExecutionOwnerId:()=>"owner-ack",readAuthoritativeTurnSource:async()=>structuredClone(durable)};
+
+await assert.rejects(()=>runMovieMentorTurn({projectId:"project-ack",creatorSessionId:"session-ack",creatorTurnId:"turn-ack",message:"same creator action"},deps),error=>error?.code==="SIMULATED_ACK_LOSS");
 assert.equal(reserveCalls,1,"first transport attempt may create exactly one reservation");
 assert.equal(openCalls,1);
 assert.equal(existing.reservationId,"reservation-1","durable execution must retain the first economic identity despite lost acknowledgement");
 assert.equal(releaseUnboundCalls,0,"a reservation already bound to durable execution must not be released as unbound");
 
-await assert.rejects(()=>runMovieMentorTurn({projectId:"project-ack",creatorSessionId:"session-ack",creatorTurnId:"turn-ack",message:"same creator action"},{serverAuthority,inferenceSpendAuthority:spend,inferenceExecutionAuthority:executionAuthority,inferenceSettlementAuthority:settlement,readAuthoritativeTurnSource:async()=>structuredClone(durable)}),error=>Boolean(error));
+await assert.rejects(()=>runMovieMentorTurn({projectId:"project-ack",creatorSessionId:"session-ack",creatorTurnId:"turn-ack",message:"same creator action"},deps),error=>Boolean(error));
 assert.equal(reserveCalls,1,"same-turn retry must discover durable execution before any second reservation is created");
 assert.equal(openCalls,1,"same-turn retry must not create a second execution");
 assert.equal(reservations.length,1,"one creator action must retain one durable economic reservation identity");
