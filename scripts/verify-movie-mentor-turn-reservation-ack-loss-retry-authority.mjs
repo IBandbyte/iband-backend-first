@@ -42,7 +42,7 @@ const executionAuthority={
 
 const deps={serverAuthority,inferenceSpendAuthority:spend,inferenceExecutionAuthority:executionAuthority,inferenceSettlementAuthority:settlement,createExecutionOwnerId:()=>"owner-ack",readAuthoritativeTurnSource:async()=>structuredClone(durable)};
 
-await assert.rejects(()=>runMovieMentorTurn({projectId:"project-ack",creatorSessionId:"session-ack",creatorTurnId:"turn-ack",message:"same creator action"},deps),error=>error?.code==="SIMULATED_ACK_LOSS");
+await assert.rejects(()=>runMovieMentorTurn({projectId:"project-ack",creatorSessionId:"session-ack",creatorTurnId:"turn-ack",message:"same creator action"},deps),error=>error?.code==="MOVIE_MENTOR_INFERENCE_EXECUTION_BINDING_UNRESOLVED"&&error?.reason==="reservation-already-bound-to-execution"&&error?.executionId==="execution-ack"&&error?.reservationId==="reservation-1");
 assert.equal(reserveCalls,1,"first transport attempt may create exactly one reservation");
 assert.equal(openCalls,1);
 assert.equal(existing.reservationId,"reservation-1","durable execution must retain the first economic identity despite lost acknowledgement");
