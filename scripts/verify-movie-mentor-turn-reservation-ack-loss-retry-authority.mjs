@@ -13,7 +13,13 @@ const spend={
  async readReservation({reservationId}){return reservations.find(r=>r.reservationId===reservationId)||null;}
 };
 const settlement={
- async releaseUnbound({reservationId,principalId,projectId}){releaseUnboundCalls+=1;return{authorized:true,released:true,outcome:"released",reservationId,principalId,projectId,idempotent:false};},
+ async releaseUnbound({reservationId,principalId,projectId}){
+  releaseUnboundCalls+=1;
+  if(existing?.reservationId===reservationId){
+   return{authorized:false,released:false,outcome:"reserved",reason:"reservation-already-bound-to-execution",executionId:existing.executionId,reservationId,principalId,projectId};
+  }
+  return{authorized:true,released:true,outcome:"released",reservationId,principalId,projectId,idempotent:false};
+ },
  async releaseUnclaimed(){return{authorized:true,released:true,outcome:"released",executionId:"execution-ack",reservationId:"reservation-1",principalId:"creator-ack",projectId:"project-ack",idempotent:false};},
  async reconcile(){throw new Error("settlement not expected");}
 };
@@ -40,7 +46,8 @@ await assert.rejects(()=>runMovieMentorTurn({projectId:"project-ack",creatorSess
 assert.equal(reserveCalls,1,"first transport attempt may create exactly one reservation");
 assert.equal(openCalls,1);
 assert.equal(existing.reservationId,"reservation-1","durable execution must retain the first economic identity despite lost acknowledgement");
-assert.equal(releaseUnboundCalls,0,"a reservation already bound to durable execution must not be released as unbound");
+assert.equal(releaseUnboundCalls,1,"cleanup may ask release authority to inspect the fresh reservation after acknowledgement loss");
+assert.equal(reservations[0].status,"reserved","bound reservation must survive cleanup refusal");
 
 await assert.rejects(()=>runMovieMentorTurn({projectId:"project-ack",creatorSessionId:"session-ack",creatorTurnId:"turn-ack",message:"same creator action"},deps),error=>Boolean(error));
 assert.equal(reserveCalls,1,"same-turn retry must discover durable execution before any second reservation is created");
@@ -48,5 +55,5 @@ assert.equal(openCalls,1,"same-turn retry must not create a second execution");
 assert.equal(reservations.length,1,"one creator action must retain one durable economic reservation identity");
 assert.equal(existing.reservationId,"reservation-1");
 
-console.log("GREEN: acknowledgement loss after durable execution creation cannot make same-turn retry create a second reservation identity.");
+console.log("GREEN: bound-reservation cleanup is refused after acknowledgement loss, and same-turn retry cannot create a second reservation identity.");
 console.log("LAW: RETRY MUST RECOVER DURABLE TURN HISTORY BEFORE CREATING NEW ECONOMIC AUTHORITY. ONE CREATOR TURN MAY NOT BECOME TWO RESERVATIONS BECAUSE AN ACKNOWLEDGEMENT WAS LOST.");
