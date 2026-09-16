@@ -19,7 +19,7 @@ const settlement={
 };
 const executionAuthority={
  async findExecutionByCreatorTurn(){return existing?{...existing,found:true,authorized:true}:{found:false,authorized:false};},
- async openExecution({reservation,creatorTurnId,requestDigest}){openCalls+=1;existing={authorized:true,executionId:"execution-ack",creatorTurnId,principalId:"creator-ack",projectId:"project-ack",reservationId:reservation.reservationId,requestDigest,phase:"active",ownerId:"owner-ack",leaseGeneration:1,leaseReference:"lease-ack",fencingToken:"fence-ack",leaseExpiresAt:"2099-01-01T00:00:00.000Z"};const error=new Error("simulated acknowledgement loss after durable execution creation");error.code="SIMULATED_ACK_LOSS";throw error;},
+ async openExecution({reservationId,creatorTurnId,requestDigest,principalId,projectId,ownerId}){openCalls+=1;existing={authorized:true,executionId:"execution-ack",creatorTurnId,principalId,projectId,reservationId,requestDigest,phase:"active",ownerId,leaseGeneration:1,leaseReference:"lease-ack",fencingToken:"fence-ack",leaseExpiresAt:"2099-01-01T00:00:00.000Z"};const error=new Error("simulated acknowledgement loss after durable execution creation");error.code="SIMULATED_ACK_LOSS";throw error;},
  async acquireExecution(){throw new Error("acquire not expected before acknowledgement-loss verdict");},
  async assertFence(){throw new Error("fence not expected before acknowledgement-loss verdict");},
  async claimProviderCall(){throw new Error("provider claim not expected before acknowledgement-loss verdict");},
