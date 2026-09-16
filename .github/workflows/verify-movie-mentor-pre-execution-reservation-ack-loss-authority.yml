@@ -1,0 +1,26 @@
+name: Verify Movie Mentor Pre-Execution Reservation Ack Loss Authority
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "ai/MovieMentorInferenceSpendAuthority.js"
+      - "ai/MovieMentorTurnRuntime.js"
+      - "scripts/verify-movie-mentor-pre-execution-reservation-ack-loss-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-pre-execution-reservation-ack-loss-authority.yml"
+  workflow_dispatch:
+
+jobs:
+  verify-pre-execution-reservation-ack-loss-authority:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Verify pre-execution reservation acknowledgement-loss authority
+        run: node scripts/verify-movie-mentor-pre-execution-reservation-ack-loss-authority.mjs
