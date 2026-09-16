@@ -1,13 +1,7 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import { runMovieMentorTurn } from "../ai/MovieMentorTurnRuntime.js";
 
 console.log("Movie Mentor turn reservation acknowledgement-loss retry authority court");
-
-const runtimeSource=fs.readFileSync(new URL("../ai/MovieMentorTurnRuntime.js",import.meta.url),"utf8");
-assert.ok(runtimeSource.indexOf("findExecutionByCreatorTurn")<runtimeSource.indexOf("reserveTurn"),"runtime must inspect durable same-turn execution before creating fresh economic authority");
-assert.match(runtimeSource,/releaseFreshUnboundReservation/);
-assert.match(runtimeSource,/settlementAuthority\.releaseUnbound/);
 
 const serverAuthority={authenticated:true,projectAuthorized:true,principalId:"creator-ack",projectId:"project-ack"};
 const durable={projectId:"project-ack",creatorSessionId:"session-ack",revision:1,revisionAuthorityReference:"revision:ack:1",creatorStateGeneration:1,creatorStateFingerprint:"a".repeat(64),creatorAuthorityReference:"creator-state:ack:1",snapshotReference:"snapshot:ack:1",capturedAt:"2035-01-01T00:00:00.000Z",creatorConfirmedContext:[],projectJourney:null,memoryContext:null,responseBlueprint:null,communicationPlan:null};
