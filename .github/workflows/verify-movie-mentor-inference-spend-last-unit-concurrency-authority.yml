@@ -1,0 +1,24 @@
+name: Verify Movie Mentor Inference Spend Last Unit Concurrency Authority
+
+on:
+  pull_request:
+    paths:
+      - "ai/MovieMentorInferenceSpendMongoStore.js"
+      - "scripts/verify-movie-mentor-inference-spend-last-unit-concurrency-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-inference-spend-last-unit-concurrency-authority.yml"
+  workflow_dispatch:
+
+jobs:
+  verify-inference-spend-last-unit-concurrency-authority:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Verify inference spend last-unit concurrency authority
+        run: node scripts/verify-movie-mentor-inference-spend-last-unit-concurrency-authority.mjs
