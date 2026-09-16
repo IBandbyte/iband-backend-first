@@ -761,7 +761,11 @@ async function runMovieMentorTurn(input = {}, deps = {}) {
     }
     execution = await acquireExistingExecution({ existing, inferenceExecutionAuthority, deps });
   } else {
-    reservation = await spendAuthority.reserveTurn({ serverAuthority: deps.serverAuthority, projectId: durableProjectId });
+    reservation = await spendAuthority.reserveTurn({
+  serverAuthority: deps.serverAuthority,
+  projectId: durableProjectId,
+  creatorTurnId,
+});
     if (reservation?.authorized !== true) throw runtimeError("MOVIE_MENTOR_INFERENCE_SPEND_RESERVATION_INVALID", "Movie Mentor inference spend reservation was not authoritative.");
     try {
       execution = await openLiveExecution({ input, creatorMessage, durableProjectId, reservation, serverAuthority: deps.serverAuthority, inferenceExecutionAuthority, deps, requestDigest });
