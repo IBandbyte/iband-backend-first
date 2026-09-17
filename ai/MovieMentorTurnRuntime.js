@@ -781,6 +781,12 @@ async function runMovieMentorTurn(input = {}, deps = {}) {
       }
       if (existing?.found && existing.phase === "active") {
         reservation = await spendAuthority.readReservation({ reservationId: existing.reservationId, principalId, projectId: durableProjectId });
+        if (reservation?.authorized !== true || reservation.status !== "reserved") {
+          throw runtimeError("MOVIE_MENTOR_INFERENCE_SPEND_RESERVATION_REHYDRATION_INVALID", "Existing active execution does not bind a live reserved spend authority.", {
+            executionId: existing.executionId,
+            reservationStatus: reservation?.status || null,
+          });
+        }
         execution = await acquireExistingExecution({ existing, inferenceExecutionAuthority, deps });
       } else {
         throw error;
