@@ -1,0 +1,31 @@
+name: Verify Movie Mentor Turn Conflict Fresh Reservation Release Authority
+
+on:
+  push:
+    paths:
+      - "ai/MovieMentorTurnRuntime.js"
+      - "scripts/verify-movie-mentor-turn-conflict-fresh-reservation-release-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-turn-conflict-fresh-reservation-release-authority.yml"
+  pull_request:
+    paths:
+      - "ai/MovieMentorTurnRuntime.js"
+      - "scripts/verify-movie-mentor-turn-conflict-fresh-reservation-release-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-turn-conflict-fresh-reservation-release-authority.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Syntax check
+        run: node --check scripts/verify-movie-mentor-turn-conflict-fresh-reservation-release-authority.mjs
+      - name: Verify turn-conflict fresh reservation release authority
+        run: node scripts/verify-movie-mentor-turn-conflict-fresh-reservation-release-authority.mjs
