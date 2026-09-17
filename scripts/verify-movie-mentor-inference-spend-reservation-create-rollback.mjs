@@ -17,6 +17,7 @@ const state = {
 
 const clone = (value) => structuredClone(value);
 let activeTx = null;
+let sessionEnded = false;
 
 function txState() {
   if (!activeTx) throw new Error("operation escaped transaction");
@@ -72,7 +73,7 @@ const startSession = async () => ({
       activeTx = null;
     }
   },
-  async endSession() {},
+  async endSession() { sessionEnded = true; },
 });
 
 const store = createMovieMentorInferenceSpendMongoStore({
@@ -88,7 +89,7 @@ await assert.rejects(
     operation: "movie-mentor-turn",
     units: 1,
   }),
-  (error) => error?.code === "MOVIE_MENTOR_INFERENCE_SPEND_AUTHORITY_UNAVAILABLE",
+  (error) => error?.code === "MOVIE_MENTOR_INFERENCE_SPEND_AUTHORITY_UNAVAILABLE" && error?.retryable === true,
 );
 
 assert.deepEqual(state.entitlement, {
@@ -102,7 +103,9 @@ assert.deepEqual(state.entitlement, {
   entitlementRevision: 1,
 }, "failed reservation creation must roll back the preceding entitlement debit");
 assert.equal(state.reservations.size, 0, "failed reservation creation must leave no durable reservation row");
+assert.equal(sessionEnded, true, "failed reservation transaction must always end its Mongo session");
 
 console.log("✓ debit followed by reservation-create failure rolls back atomically");
+console.log("✓ mapped authority failure remains retryable and the Mongo session is ended");
 console.log("LAW: NO DURABLE RESERVATION ROW → NO DURABLE DEBIT.");
 console.log("Movie Mentor inference spend reservation-create rollback: PASS");
