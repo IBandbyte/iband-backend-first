@@ -12,6 +12,7 @@ let findCalls = 0;
 let reserveCalls = 0;
 let openCalls = 0;
 let releaseUnboundCalls = 0;
+let releaseUnclaimedCalls = 0;
 let readReservationCalls = 0;
 let acquireCalls = 0;
 let claimCalls = 0;
@@ -67,10 +68,15 @@ await assert.rejects(
       },
       inferenceSettlementAuthority: {
         reconcile: async () => fail("SETTLEMENT_CROSSED_UNFINISHED_TEST"),
-        releaseUnclaimed: async () => fail("UNCLAIMED_RELEASE_CROSSED_TEST"),
+        releaseUnclaimed: async ({ executionId, reservationId }) => {
+          releaseUnclaimedCalls += 1;
+          assert.equal(executionId, winningExecutionId, "cleanup after the deliberate stop must target the acquired winning execution");
+          assert.equal(reservationId, winningReservationId, "cleanup after the deliberate stop must target the winner reservation");
+          return { authorized: true, released: true, outcome: "released", executionId, reservationId, principalId, projectId };
+        },
         releaseUnbound: async ({ reservationId }) => {
           releaseUnboundCalls += 1;
-          assert.equal(reservationId, losingReservationId, "only the losing fresh reservation may be released");
+          assert.equal(reservationId, losingReservationId, "only the losing fresh reservation may be released as unbound");
           return { authorized: true, released: true, outcome: "released", reservationId, principalId, projectId };
         },
       },
@@ -145,5 +151,6 @@ assert.equal(acquireCalls, 1, "winning execution must be acquired exactly once")
 assert.equal(orchestrationCalls, 1, "orchestration must resume only under winner authority");
 assert.equal(claimCalls, 1, "provider claim must occur exactly once under winner authority");
 assert.equal(providerCalls, 1, "provider work must occur exactly once under winner authority");
+assert.equal(releaseUnclaimedCalls, 1, "the deliberate post-proof stop must clean up the acquired winner exactly once");
 
 console.log("PASS: turn-conflict recovery releases the losing reservation and carries the winning execution plus its own live reservation into provider-call authority.");
