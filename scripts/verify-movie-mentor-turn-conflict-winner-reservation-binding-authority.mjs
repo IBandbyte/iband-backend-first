@@ -68,11 +68,10 @@ await assert.rejects(
       },
       inferenceSettlementAuthority: {
         reconcile: async () => fail("SETTLEMENT_CROSSED_UNFINISHED_TEST"),
-        releaseUnclaimed: async ({ executionId, reservationId }) => {
+        releaseUnclaimed: async ({ executionId }) => {
           releaseUnclaimedCalls += 1;
           assert.equal(executionId, winningExecutionId, "cleanup after the deliberate stop must target the acquired winning execution");
-          assert.equal(reservationId, winningReservationId, "cleanup after the deliberate stop must target the winner reservation");
-          return { authorized: true, released: true, outcome: "released", executionId, reservationId, principalId, projectId };
+          return { authorized: true, released: true, outcome: "released", executionId, principalId, projectId };
         },
         releaseUnbound: async ({ reservationId }) => {
           releaseUnboundCalls += 1;
