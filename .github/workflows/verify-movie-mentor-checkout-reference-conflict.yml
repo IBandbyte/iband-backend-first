@@ -1,0 +1,24 @@
+name: Verify Movie Mentor Checkout Reference Conflict
+
+on:
+  pull_request:
+    paths:
+      - "ai/MovieMentorCommercialCheckoutBindingMongoStore.js"
+      - "scripts/verify-movie-mentor-checkout-reference-conflict.mjs"
+      - ".github/workflows/verify-movie-mentor-checkout-reference-conflict.yml"
+  workflow_dispatch:
+
+jobs:
+  verify-checkout-reference-conflict:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Verify checkout reference conflict
+        run: node scripts/verify-movie-mentor-checkout-reference-conflict.mjs
