@@ -312,6 +312,21 @@ function createFencedInferenceOrchestrationDeps({ execution, inferenceExecutionA
           { providerCallId: decision.providerCallId, slotId, task },
         );
       }
+      if (s(inputBinding?.providerCallId) !== s(decision?.providerCallId)) {
+        throw runtimeError(
+          "MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_BINDING_INVALID",
+          "Provider reconstruction-input authority does not belong to the admitted durable provider call.",
+          {
+            field: "providerCallId",
+            expected: s(decision?.providerCallId) || null,
+            actual: s(inputBinding?.providerCallId) || null,
+            executionId: s(decision?.executionId) || null,
+            slotId,
+            task,
+            retryable: true,
+          },
+        );
+      }
     }
 
     const dispatch = await inferenceExecutionAuthority.beginProviderDispatch({ providerCall: decision });
