@@ -72,7 +72,7 @@ console.log("5A.24 Round Three — Provider Effect Reality + UNKNOWN Preservatio
 
 assert.throws(
   () => createFencedInferenceOrchestrationDeps({
-    execution: { authorized: true },
+    execution: { authorized: true, principalId: "creator-1", projectId: "project-1", creatorTurnId: "turn-1", reservationId: "reservation-1", requestDigest: "digest-1", executionId: "execution-1", ownerId: "worker-1", leaseGeneration: 1, leaseReference: "lease-1", fencingToken: "fence-1" },
     inferenceExecutionAuthority: { claimProviderCall: async () => call("missing-effect-capability") },
   }),
   (error) => error.code === "MOVIE_MENTOR_PROVIDER_EFFECT_AUTHORITY_REQUIRED",
@@ -81,7 +81,7 @@ assert.throws(
 const deniedTrace = [];
 let providerInvoked = false;
 const denied = createFencedInferenceOrchestrationDeps({
-  execution: { authorized: true },
+  execution: { authorized: true, principalId: "creator-1", projectId: "project-1", creatorTurnId: "turn-1", reservationId: "reservation-1", requestDigest: "digest-1", executionId: "execution-1", ownerId: "worker-1", leaseGeneration: 1, leaseReference: "lease-1", fencingToken: "fence-1" },
   inferenceExecutionAuthority: {
     async claimProviderCall() {
       return call("semantic-denied");
@@ -118,7 +118,7 @@ assert.deepEqual(
 const staleTrace = [];
 let staleProviderInvoked = false;
 const stale = createFencedInferenceOrchestrationDeps({
-  execution: { authorized: true },
+  execution: { authorized: true, principalId: "creator-1", projectId: "project-1", creatorTurnId: "turn-1", reservationId: "reservation-1", requestDigest: "digest-1", executionId: "execution-1", ownerId: "worker-1", leaseGeneration: 1, leaseReference: "lease-1", fencingToken: "fence-1" },
   inferenceExecutionAuthority: {
     async claimProviderCall() {
       return call("semantic-stale");
@@ -213,7 +213,7 @@ const runtimeAuthority = {
   },
 };
 const fenced = createFencedInferenceOrchestrationDeps({
-  execution: { authorized: true },
+  execution: { authorized: true, principalId: "creator-1", projectId: "project-1", creatorTurnId: "turn-1", reservationId: "reservation-1", requestDigest: "digest-1", executionId: "execution-1", ownerId: "worker-1", leaseGeneration: 1, leaseReference: "lease-1", fencingToken: "fence-1" },
   inferenceExecutionAuthority: runtimeAuthority,
   deps: {
     interpretSemantics: async () => {
@@ -254,7 +254,7 @@ const lostResponseAuthority = {
   },
 };
 const lost = createFencedInferenceOrchestrationDeps({
-  execution: { authorized: true },
+  execution: { authorized: true, principalId: "creator-1", projectId: "project-1", creatorTurnId: "turn-1", reservationId: "reservation-1", requestDigest: "digest-1", executionId: "execution-1", ownerId: "worker-1", leaseGeneration: 1, leaseReference: "lease-1", fencingToken: "fence-1" },
   inferenceExecutionAuthority: lostResponseAuthority,
   deps: {
     interpretSemantics: async () => {
