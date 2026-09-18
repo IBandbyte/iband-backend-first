@@ -12,4 +12,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      - run: npm install
+      - run: node --check scripts/verify-movie-mentor-provider-reconstruction-input-return-binding-authority.mjs
       - run: node scripts/verify-movie-mentor-provider-reconstruction-input-return-binding-authority.mjs
