@@ -39,7 +39,7 @@ const store = {
 };
 
 const effect = createMovieMentorProviderEffectAuthority({ store, now: () => new Date(clock) });
-const call = (id) => ({
+const call = (id, slotId = "semantic", task = "movie-mentor-semantic") => ({
   authorized: true,
   dispatchAuthorized: true,
   principalId: "creator-1",
@@ -49,8 +49,8 @@ const call = (id) => ({
   requestDigest: "digest-1",
   providerCallId: id,
   executionId: "execution-1",
-  slotId: id,
-  task: `task:${id}`,
+  slotId,
+  task,
   ownerId: "worker-1",
   leaseGeneration: 1,
   leaseReference: "lease-1",
@@ -84,7 +84,7 @@ const denied = createFencedInferenceOrchestrationDeps({
   execution: { authorized: true, principalId: "creator-1", projectId: "project-1", creatorTurnId: "turn-1", reservationId: "reservation-1", requestDigest: "digest-1", executionId: "execution-1", ownerId: "worker-1", leaseGeneration: 1, leaseReference: "lease-1", fencingToken: "fence-1" },
   inferenceExecutionAuthority: {
     async claimProviderCall() {
-      return call("semantic-denied");
+      return call("semantic-denied", "semantic", "movie-mentor-semantic");
     },
     async bindProviderReconstructionInput({ providerCall, reconstructionInput }) {
       return successfulInputBinding(providerCall, reconstructionInput, deniedTrace);
@@ -121,7 +121,7 @@ const stale = createFencedInferenceOrchestrationDeps({
   execution: { authorized: true, principalId: "creator-1", projectId: "project-1", creatorTurnId: "turn-1", reservationId: "reservation-1", requestDigest: "digest-1", executionId: "execution-1", ownerId: "worker-1", leaseGeneration: 1, leaseReference: "lease-1", fencingToken: "fence-1" },
   inferenceExecutionAuthority: {
     async claimProviderCall() {
-      return call("semantic-stale");
+      return call("semantic-stale", "semantic", "movie-mentor-semantic");
     },
     async bindProviderReconstructionInput({ providerCall, reconstructionInput }) {
       return successfulInputBinding(providerCall, reconstructionInput, staleTrace);
