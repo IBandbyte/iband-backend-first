@@ -36,5 +36,5 @@ await assert.rejects(
    && e?.retryable===true,
  "an active same-turn execution whose current lease belongs elsewhere must lend zero provider authority",
 );
-assert.equal(findCalls,1);assert.equal(reserveCalls,0);assert.equal(readReservationCalls,1);assert.equal(acquireCalls,1);assert.equal(providerCalls,0);
+assert.equal(findCalls,2,"runtime performs the legitimate early same-project convergence lookup and the post-state authoritative lookup");assert.equal(reserveCalls,0);assert.equal(readReservationCalls,1);assert.equal(acquireCalls,1);assert.equal(providerCalls,0);
 console.log("PASS: existing active creator-turn history plus live reserved spend does not authorize provider work when current execution lease acquisition is denied.");
