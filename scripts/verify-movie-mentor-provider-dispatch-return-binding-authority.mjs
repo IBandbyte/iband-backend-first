@@ -12,8 +12,8 @@ const authority={
  async contributeProviderEffectEvidence(){return {accepted:true,state:"confirmed"};}
 };
 const fenced=createFencedInferenceOrchestrationDeps({execution,inferenceExecutionAuthority:authority,deps:{interpretSemantics:async()=>{providerCalls+=1;return {ok:true};}}});
-await assert.rejects(()=>fenced.interpretSemantics({proof:true}),e=>e?.code==="MOVIE_MENTOR_PROVIDER_DISPATCH_BINDING_INVALID", "MISMATCHED_DISPATCH_MUST_NOT_REACH_PROVIDER");
-assert.equal(assertCalls,0,"mismatched UNKNOWN authority must stop before current-dispatch assertion");
-assert.equal(providerCalls,0,"mismatched UNKNOWN authority must stop before provider");
-console.log("Movie Mentor provider dispatch return binding authority: PASS");
-console.log("LAW: UNKNOWN AUTHORIZATION WITHOUT EXACT PROVIDER-CALL BINDING IS NOT FORWARD AUTHORITY.");
+await assert.rejects(()=>fenced.interpretSemantics({proof:true}),e=>e?.code==="MOVIE_MENTOR_PROVIDER_OPERATION_IDENTITY_CONFLICT", "mismatched dispatch authority must fail closed before provider");
+assert.equal(assertCalls,1,"runtime must obtain current dispatch authority before choosing the irreversible operation identity");
+assert.equal(providerCalls,0,"mismatched durable operation identity must stop before provider");
+console.log("Movie Mentor provider dispatch return binding authority: EXONERATED");
+console.log("LAW: BEGIN-DISPATCH EVIDENCE CANNOT BYPASS THE CURRENT DISPATCH IDENTITY FENCE BEFORE PROVIDER.");
