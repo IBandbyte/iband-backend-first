@@ -53,7 +53,7 @@ async function runRuntimeCase({ appendEvidence }) {
   });
   const authority = {
     async claimProviderCall() { return providerCall; },
-    async bindProviderReconstructionInput() { return { authorized: true, inputBound: true }; },
+    async bindProviderReconstructionInput() { return { authorized: true, inputBound: true, providerCallId: providerCall.providerCallId }; },
     beginProviderDispatch: ({ providerCall: call }) => effectAuthority.beginDispatch({ providerCall: call }),
     async assertProviderDispatch() { return { authorized: true, dispatchAuthorized: true }; },
     contributeProviderEffectEvidence: (evidence) => effectAuthority.contributeEvidence(evidence),
