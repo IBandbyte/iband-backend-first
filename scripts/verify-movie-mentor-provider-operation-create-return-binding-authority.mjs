@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createMovieMentorProviderOperationMongoStore } from "../ai/MovieMentorProviderOperationMongoStore.js";
 const input={providerCallId:"call-A",executionId:"exec-A",slotId:"slot-A",task:"story",providerTarget:{provider:"generic-http",adapter:"generic-http",routeFingerprint:"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",recoveryMode:"none"},providerModel:null,boundAt:"2035-01-01T00:00:00.000Z"};
-const wrong={domain:"iband.movie-mentor.provider-operation-store",schema:3,...input,providerCallId:"call-OTHER",executionId:"exec-OTHER"};
+const wrong={domain:"iband.movie-mentor.provider-operation-reality",schema:1,...input,providerCallId:"call-OTHER",executionId:"exec-OTHER",reconstructionInputDigest:null,reconstructionInput:null,reconstructionInputBoundAt:null};
 const mongoModel={collection:{async indexes(){return [{key:{providerCallId:1},unique:true},{key:{executionId:1,slotId:1,task:1},unique:true}]}},async create(){return structuredClone(wrong)}};
 const store=createMovieMentorProviderOperationMongoStore({mongoModel});
 let failure=null;try{await store.bindOperation(input)}catch(error){failure=error}
