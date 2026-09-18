@@ -111,7 +111,12 @@ const result = await runMovieMentorTurn(
   },
 );
 
-assert.deepEqual(result, payload, "runtime must return the concurrent terminal winner's exact durable canonical payload");
+assert.equal(result.success, payload.success, "runtime must preserve the concurrent terminal winner success payload");
+assert.equal(result.text, payload.text, "runtime must preserve the concurrent terminal winner text exactly");
+assert.equal(result.metadata?.canonicalResult?.replayedFromDurableResult, true, "runtime must mark the response as durable replay");
+assert.equal(result.metadata?.canonicalResult?.executionId, winningExecutionId, "replay metadata must bind the concurrent winning execution");
+assert.equal(result.metadata?.canonicalResult?.reservationId, winningReservationId, "replay metadata must bind the concurrent winner reservation");
+assert.equal(result.metadata?.canonicalResult?.resultDigest, resultDigest, "replay metadata must bind the exact canonical result digest");
 assert.equal(findCalls, 3, "winner must appear only after the execution-open conflict");
 assert.equal(reserveCalls, 1);
 assert.equal(openCalls, 1);
