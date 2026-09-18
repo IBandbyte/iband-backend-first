@@ -82,6 +82,15 @@ globalThis.fetch = async () => {
 const execution = Object.freeze({
   authorized: true,
   executionId: "execution-post-provider-evidence",
+  projectId: "project-post-provider-evidence",
+  principalId: "creator-post-provider-evidence",
+  creatorTurnId: "turn-post-provider-evidence",
+  reservationId: "reservation-post-provider-evidence",
+  requestDigest: "request-post-provider-evidence",
+  ownerId: "worker-post-provider-evidence",
+  leaseGeneration: 1,
+  leaseReference: "lease-post-provider-evidence",
+  fencingToken: "fence-post-provider-evidence",
 });
 
 const contributedEvidence = [];

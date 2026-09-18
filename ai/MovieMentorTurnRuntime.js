@@ -287,6 +287,39 @@ function createFencedInferenceOrchestrationDeps({ execution, inferenceExecutionA
         slotId,
       });
     }
+    const providerCallBinding = {
+      executionId: s(execution?.executionId),
+      creatorTurnId: s(execution?.creatorTurnId),
+      principalId: s(execution?.principalId),
+      projectId: s(execution?.projectId),
+      reservationId: s(execution?.reservationId),
+      requestDigest: s(execution?.requestDigest),
+      ownerId: s(execution?.ownerId),
+      leaseGeneration: execution?.leaseGeneration,
+      leaseReference: s(execution?.leaseReference),
+      fencingToken: s(execution?.fencingToken),
+      slotId: s(slotId),
+      task: s(task),
+    };
+    const providerCallBindingFields = ["executionId", "creatorTurnId", "principalId", "projectId", "reservationId", "requestDigest", "ownerId", "leaseReference", "fencingToken", "slotId", "task"];
+    const providerCallBindingMismatch = providerCallBindingFields.find((field) => s(decision?.[field]) !== s(providerCallBinding[field]));
+    const providerCallLeaseGenerationMismatch = decision?.leaseGeneration !== providerCallBinding.leaseGeneration;
+    if (providerCallBindingMismatch || providerCallLeaseGenerationMismatch) {
+      const field = providerCallBindingMismatch || "leaseGeneration";
+      throw runtimeError(
+        "MOVIE_MENTOR_INFERENCE_PROVIDER_CALL_BINDING_INVALID",
+        "Provider-call admission does not preserve the exact durable execution and task authority requested by this dispatch.",
+        {
+          field,
+          expected: providerCallBinding[field] ?? null,
+          actual: decision?.[field] ?? null,
+          executionId: s(execution?.executionId) || null,
+          providerCallId: s(decision?.providerCallId) || null,
+          retryable: true,
+        },
+      );
+    }
+
     onClaim?.(decision);
 
     const effectiveInput = typeof prepareFreshInput === "function"

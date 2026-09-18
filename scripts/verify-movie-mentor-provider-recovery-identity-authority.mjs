@@ -159,7 +159,19 @@ try {
     context: { creatorConfirmedContext: [] },
   };
   const fenced = createFencedInferenceOrchestrationDeps({
-    execution: { authorized: true },
+    execution: Object.freeze({
+      authorized: true,
+      executionId: providerCall.executionId,
+      creatorTurnId: providerCall.creatorTurnId,
+      principalId: providerCall.principalId,
+      projectId: providerCall.projectId,
+      reservationId: providerCall.reservationId,
+      requestDigest: providerCall.requestDigest,
+      ownerId: providerCall.ownerId,
+      leaseGeneration: providerCall.leaseGeneration,
+      leaseReference: providerCall.leaseReference,
+      fencingToken: providerCall.fencingToken,
+    }),
     inferenceExecutionAuthority: runtimeAuthority,
   });
 
