@@ -13,7 +13,7 @@ await assert.rejects(()=>runMovieMentorTurn({projectId,creatorTurnId,message:"op
  readAuthoritativeTurnSource:async()=>({projectId,creatorSessionId:"session",revision:1,revisionAuthorityReference:"rev",creatorStateGeneration:1,creatorStateFingerprint:"fp",creatorAuthorityReference:"auth",snapshotReference:"snap",capturedAt:"2026-09-18T10:30:00.000Z",creatorConfirmedContext:[]}),
  readAuthoritativeRevision:async()=>({authorized:true,revision:1}),readAuthoritativeCreatorState:async()=>({authorized:true}),createExecutionOwnerId:()=>"worker-current",
  inferenceSpendAuthority:{reserveTurn:async()=>({authorized:true,reservationId,status:"reserved"}),readReservation:async()=>({authorized:true,reservationId,status:"reserved",principalId,projectId})},
- inferenceExecutionAuthority:authority,inferenceSettlementAuthority:{reconcile:async()=>fail("NO_SETTLE"),releaseUnbound:async()=>({authorized:true,released:true,outcome:"released",executionPhase:"released"})},
+ inferenceExecutionAuthority:authority,inferenceSettlementAuthority:{reconcile:async()=>fail("NO_SETTLE"),consume:async()=>fail("NO_CONSUME"),releaseUnclaimed:async()=>({authorized:true,released:true,outcome:"released",executionPhase:"released"}),releaseUnbound:async()=>({authorized:true,released:true,outcome:"released",executionPhase:"released"})},
  orchestrateTurn:async()=>{orch++;fail("MISMATCHED_OPEN_MUST_NOT_ORCHESTRATE")}
 }),e=>e?.code==="MOVIE_MENTOR_INFERENCE_EXECUTION_OPEN_BINDING_INVALID");
 assert.equal(fence,0);assert.equal(orch,0);
