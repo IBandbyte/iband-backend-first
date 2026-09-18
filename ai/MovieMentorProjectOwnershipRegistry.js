@@ -165,9 +165,9 @@ async function readMovieMentorProjectOwnership({ projectId } = {}) {
   return record ? normalize(record) : null;
 }
 
-async function createMovieMentorProjectOwnership(record = {}) {
-  await ensureConnection();
-  await ensureMovieMentorProjectOwnershipPhysicalUniqueIndexReadiness();
+async function createMovieMentorProjectOwnership(record = {}, { mongoModel = null, ensureConnectionFn = ensureConnection, ensurePhysicalUniqueIndexReadinessFn = ensureMovieMentorProjectOwnershipPhysicalUniqueIndexReadiness } = {}) {
+  await ensureConnectionFn();
+  await ensurePhysicalUniqueIndexReadinessFn();
   const candidate = {
     domain: MOVIE_MENTOR_PROJECT_OWNERSHIP_DOMAIN,
     schema: MOVIE_MENTOR_PROJECT_OWNERSHIP_SCHEMA,
@@ -184,7 +184,7 @@ async function createMovieMentorProjectOwnership(record = {}) {
     fail("MOVIE_MENTOR_PROJECT_OWNERSHIP_RECORD_INVALID", "Project ownership establishment is missing required server evidence.");
   }
   try {
-    return normalize(await getModel().create(candidate));
+    return normalize(await (mongoModel || getModel()).create(candidate));
   } catch (error) {
     if (error?.code === 11000) fail("MOVIE_MENTOR_PROJECT_OWNERSHIP_ALREADY_EXISTS", "Project ownership or its one-time establishment authority already exists and cannot be replayed.");
     throw error;
