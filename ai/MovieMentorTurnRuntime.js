@@ -535,6 +535,17 @@ async function acquireExistingExecution({ existing, inferenceExecutionAuthority,
       reason: acquired?.reason || "lease-not-authorized", executionId: existing.executionId, retryable: true,
     });
   }
+  const bindingFields = ["executionId", "creatorTurnId", "principalId", "projectId", "reservationId", "requestDigest"];
+  const bindingMismatch = bindingFields.find((field) => s(acquired?.[field]) !== s(existing?.[field]));
+  if (bindingMismatch) {
+    throw runtimeError("MOVIE_MENTOR_INFERENCE_EXECUTION_ACQUISITION_BINDING_INVALID", "Acquired inference execution does not preserve the durable creator-turn authority being resumed.", {
+      field: bindingMismatch,
+      expected: s(existing?.[bindingMismatch]) || null,
+      actual: s(acquired?.[bindingMismatch]) || null,
+      executionId: existing.executionId,
+      retryable: true,
+    });
+  }
   return acquired;
 }
 
