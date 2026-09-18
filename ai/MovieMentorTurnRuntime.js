@@ -503,6 +503,24 @@ async function openLiveExecution({ input, creatorMessage, durableProjectId, rese
     ownerId,
   });
   if (opened?.authorized !== true) throw runtimeError("MOVIE_MENTOR_INFERENCE_EXECUTION_OPEN_DENIED", "Durable inference execution could not be opened.");
+  const requestedBinding = {
+    creatorTurnId,
+    principalId: s(serverAuthority?.principalId),
+    projectId: durableProjectId,
+    reservationId: s(reservation?.reservationId),
+    requestDigest: digest,
+  };
+  const openBindingFields = ["creatorTurnId", "principalId", "projectId", "reservationId", "requestDigest"];
+  const openBindingMismatch = openBindingFields.find((field) => s(opened?.[field]) !== s(requestedBinding[field]));
+  if (openBindingMismatch) {
+    throw runtimeError("MOVIE_MENTOR_INFERENCE_EXECUTION_OPEN_BINDING_INVALID", "Opened inference execution does not preserve the durable creator-turn authority requested by this turn.", {
+      field: openBindingMismatch,
+      expected: s(requestedBinding[openBindingMismatch]) || null,
+      actual: s(opened?.[openBindingMismatch]) || null,
+      executionId: opened?.executionId,
+      retryable: true,
+    });
+  }
   if (s(opened.phase) !== "active") {
     throw runtimeError("MOVIE_MENTOR_INFERENCE_EXECUTION_RECOVERY_REQUIRED", "Existing creator turn is no longer executable and must converge through durable recovery.", {
       phase: s(opened.phase), executionId: opened.executionId, retryable: true,
