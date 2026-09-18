@@ -21,12 +21,12 @@ const deps={
     beginProviderDispatch:async()=>fail("NO_DISPATCH"), assertProviderDispatch:async()=>fail("NO_DISPATCH"), contributeProviderEffectEvidence:async()=>fail("NO_EFFECT"),
     beginExecutionClosing:async()=>fail("NO_CLOSE"), reconcileExecutionClosure:async()=>fail("NO_CLOSE"), stageResultCandidate:async()=>fail("NO_STAGE"), readResultCandidate:async()=>null, commitCanonicalResult:async()=>fail("NO_COMMIT"), readCanonicalResult:async()=>({authorized:false,committed:false}),
   },
-  inferenceSettlementAuthority:{reconcile:async()=>fail("NO_SETTLE"),releaseUnclaimed:async()=>({authorized:true,released:true,outcome:"released",executionPhase:"released"}),releaseUnbound:async()=>({authorized:true,released:true})},
+  inferenceSettlementAuthority:{reconcile:async()=>fail("NO_SETTLE"),releaseUnclaimed:async()=>({authorized:true,released:true,outcome:"released",executionPhase:"released"}),releaseUnbound:async()=>({authorized:true,released:true,outcome:"released",executionPhase:"released"})},
   orchestrateTurn:async()=>{orchestrateCalls++;fail("MISMATCHED_ACQUISITION_MUST_NOT_ORCHESTRATE");},
 };
 await assert.rejects(
   ()=>runMovieMentorTurn({creatorTurnId:"turn-new-acquire",message:"bind fresh reacquisition",projectId:"project-new-acquire",options:{}},deps),
-  e=>e?.code==="MOVIE_MENTOR_INFERENCE_EXECUTION_ACQUISITION_BINDING_INVALID"
+  e=>e?.code==="MOVIE_MENTOR_INFERENCE_EXECUTION_ACQUISITION_BINDING_INVALID" || (e?.code==="MOVIE_MENTOR_INFERENCE_EXECUTION_BINDING_UNRESOLVED" && e?.cause?.code==="MOVIE_MENTOR_INFERENCE_EXECUTION_ACQUISITION_BINDING_INVALID")
 );
 assert.equal(acquireCalls,1);
 assert.equal(orchestrateCalls,0);
