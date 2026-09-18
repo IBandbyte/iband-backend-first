@@ -5,8 +5,7 @@ const fail=(m)=>{throw new Error(m)};
 let acquireCalls=0, providerCalls=0, orchestrateCalls=0;
 const good={executionId:"execution-good",creatorTurnId:"turn-new-acquire",principalId:"creator-new-acquire",projectId:"project-new-acquire",reservationId:"reservation-good",requestDigest:"digest-good",phase:"active",ownerId:"worker-A",authorized:true};
 const deps={
-  authenticateRequest:async()=>({authorized:true,principalId:"creator-new-acquire"}),
-  authorizeProjectAccess:async()=>({authorized:true,projectId:"project-new-acquire"}),
+  serverAuthority:{authenticated:true,projectAuthorized:true,principalId:"creator-new-acquire",projectId:"project-new-acquire"},
   readAuthoritativeTurnSource:async()=>({projectId:"project-new-acquire",state:{}}),
   createExecutionOwnerId:()=> "worker-B",
   inferenceSpendAuthority:{
