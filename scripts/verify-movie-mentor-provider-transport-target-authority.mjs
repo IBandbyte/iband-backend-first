@@ -86,7 +86,7 @@ try {
   let runtimeOperation = null;
   const runtimeAuthority = {
     async claimProviderCall() { return providerCall; },
-    async bindProviderReconstructionInput() { return { authorized: true, inputBound: true }; },
+    async bindProviderReconstructionInput() { return { authorized: true, inputBound: true, providerCallId: providerCall.providerCallId }; },
     async beginProviderDispatch() { return { authorized: true, dispatchAuthorized: true, effectState: "unknown", providerOperationIdentity: durableOperation }; },
     async assertProviderDispatch() { return { authorized: true, dispatchAuthorized: true, providerOperationIdentity: durableOperation }; },
     async contributeProviderEffectEvidence() { return { accepted: true, state: "confirmed" }; },
