@@ -99,7 +99,7 @@ function execution({ existing = null } = {}) {
     principalId: "creator-77",
     projectId: "project-77",
     reservationId: "runtime-test-reservation",
-    requestDigest: "digest",
+    requestDigest: null,
     phase: "active",
     ownerId: "owner-77",
     leaseGeneration: 1,
@@ -113,8 +113,8 @@ function execution({ existing = null } = {}) {
     findExecutionByCreatorTurn: async () => existing
       ? { ...existing, found: true, authorized: true }
       : { found: false, authorized: false },
-    openExecution: async () => exec,
-    assertFence: async () => exec,
+    openExecution: async ({ requestDigest }) => ({ ...exec, requestDigest }),
+    assertFence: async (opened) => opened,
     acquireExecution: async () => exec,
     claimProviderCall: async () => ({
       authorized: true,
