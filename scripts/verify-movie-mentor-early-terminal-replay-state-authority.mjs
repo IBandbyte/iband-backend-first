@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { runMovieMentorTurn, buildRequestDigest } from "../ai/MovieMentorTurnRuntime.js";\nimport crypto from "node:crypto";
+import { runMovieMentorTurn, buildRequestDigest } from "../ai/MovieMentorTurnRuntime.js";
+import crypto from "node:crypto";
 
 const principalId="creator-early-replay",projectId="project-early-replay",creatorTurnId="turn-early-replay",executionId="execution-terminal",reservationId="reservation-terminal";
 let stateReads=0,canonicalReads=0,settlementCalls=0,providerCalls=0,reserveCalls=0;
