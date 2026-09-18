@@ -184,7 +184,9 @@ async function createMovieMentorProjectOwnership(record = {}, { mongoModel = nul
     fail("MOVIE_MENTOR_PROJECT_OWNERSHIP_RECORD_INVALID", "Project ownership establishment is missing required server evidence.");
   }
   try {
-    return normalize(await (mongoModel || getModel()).create(candidate));
+    const created = normalize(await (mongoModel || getModel()).create(candidate));
+    if (created.projectId !== candidate.projectId || created.ownerPrincipalId !== candidate.ownerPrincipalId || created.ownershipRevision !== candidate.ownershipRevision || created.ownershipReference !== candidate.ownershipReference || created.establishmentAuthorityId !== candidate.establishmentAuthorityId || created.establishmentSource !== candidate.establishmentSource || created.status !== candidate.status || created.establishedAt !== candidate.establishedAt.toISOString()) fail("MOVIE_MENTOR_PROJECT_OWNERSHIP_CREATE_RETURN_BINDING_INVALID", "Project ownership create returned a different durable ownership universe.", { retryable: true });
+    return created;
   } catch (error) {
     if (error?.code === 11000) fail("MOVIE_MENTOR_PROJECT_OWNERSHIP_ALREADY_EXISTS", "Project ownership or its one-time establishment authority already exists and cannot be replayed.");
     throw error;
