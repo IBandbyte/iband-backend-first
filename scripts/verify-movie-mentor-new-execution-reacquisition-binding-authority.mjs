@@ -10,7 +10,7 @@ const deps={
   readAuthoritativeTurnSource:async()=>({projectId:"project-new-acquire",state:{}}),
   createExecutionOwnerId:()=> "worker-B",
   inferenceSpendAuthority:{
-    reserve:async()=>({authorized:true,reservationId:"reservation-good",status:"reserved"}),
+    reserveTurn:async()=>({authorized:true,reservationId:"reservation-good",status:"reserved"}),
     readReservation:async()=>({authorized:true,reservationId:"reservation-good",status:"reserved"}),
   },
   inferenceExecutionAuthority:{
