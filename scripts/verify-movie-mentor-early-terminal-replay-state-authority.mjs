@@ -32,7 +32,7 @@ const result=await runMovieMentorTurn({projectId,creatorTurnId,message:"Replay t
 });
 assert.equal(stateReads,0,"terminal replay returned before durable creator-state/project authority was re-read");
 assert.equal(result?.text,"durable terminal result");
-assert.equal(result?.metadata?.replayedFromDurableResult,true);
+assert.equal(result?.metadata?.canonicalResult?.replayedFromDurableResult,true);
 assert.equal(canonicalReads,1);assert.equal(settlementCalls,1);assert.equal(reserveCalls,0);assert.equal(providerCalls,0);
 assert.equal(requestDigestSeen.length,1);
 console.log("OBSERVED: terminal creator-turn replay can cross the response boundary before current durable creator-state/project authority is re-read.");
