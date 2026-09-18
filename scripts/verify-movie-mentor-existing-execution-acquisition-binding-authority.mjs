@@ -20,7 +20,7 @@ await assert.rejects(()=>runMovieMentorTurn({projectId,creatorTurnId,message:"Co
  readAuthoritativeTurnSource:async()=>structuredClone(durable),readAuthoritativeRevision:async()=>({authorized:true,revision:1}),readAuthoritativeCreatorState:async()=>({authorized:true}),
  inferenceSpendAuthority:{reserveTurn:async()=>{reserveCalls+=1;return fail("NO_RESERVE");},readReservation:async()=>({authorized:true,status:"reserved",reservationId,principalId,projectId})},
  inferenceExecutionAuthority:methods,
- inferenceSettlementAuthority:{reconcile:async()=>fail("NO_SETTLE"),releaseUnclaimed:async()=>fail("NO_RELEASE"),releaseUnbound:async()=>fail("NO_RELEASE")},
+ inferenceSettlementAuthority:{reconcile:async()=>fail("NO_SETTLE"),releaseUnclaimed:async()=>({authorized:true,released:true,outcome:"released",executionPhase:"released"}),releaseUnbound:async()=>fail("NO_RELEASE")},
  orchestrateTurn:async()=>{providerCalls+=1;return fail("MISMATCHED_ACQUISITION_MUST_NOT_ORCHESTRATE");},
 }),e=>e?.code==="MOVIE_MENTOR_INFERENCE_EXECUTION_ACQUISITION_BINDING_INVALID");
 assert.equal(acquireCalls,1);assert.equal(reserveCalls,0);assert.equal(providerCalls,0);
