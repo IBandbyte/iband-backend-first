@@ -4,7 +4,10 @@ import crypto from "node:crypto";
 
 const principalId="creator-early-replay",projectId="project-early-replay",creatorTurnId="turn-early-replay",executionId="execution-terminal",reservationId="reservation-terminal";
 let stateReads=0,canonicalReads=0,settlementCalls=0,providerCalls=0,reserveCalls=0;
-const requestDigestSeen=[];\nconst stable=v=>Array.isArray(v)?v.map(stable):v&&typeof v==="object"?Object.fromEntries(Object.keys(v).sort().map(k=>[k,stable(v[k])])):v;\nconst payload={success:true,text:"durable terminal result"};\nconst digest=crypto.createHash("sha256").update(JSON.stringify(stable(payload))).digest("hex");
+const requestDigestSeen=[];
+const stable=v=>Array.isArray(v)?v.map(stable):v&&typeof v==="object"?Object.fromEntries(Object.keys(v).sort().map(k=>[k,stable(v[k])])):v;
+const payload={success:true,text:"durable terminal result"};
+const digest=crypto.createHash("sha256").update(JSON.stringify(stable(payload))).digest("hex");
 const fail=m=>{throw new Error(m);};
 
 const result=await runMovieMentorTurn({projectId,creatorTurnId,message:"Replay this turn."},{
