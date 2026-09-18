@@ -126,7 +126,7 @@ function createMovieMentorProviderOperationMongoStore({ mongoModel = null, conne
     const providerModel = normalizeMovieMentorProviderModel(input.providerModel, { provider: providerTarget.provider });
     const candidate = { domain: DOMAIN, schema: SCHEMA, providerCallId: text(input.providerCallId), executionId: text(input.executionId), slotId: text(input.slotId), task: text(input.task), providerTarget, providerModel, boundAt: new Date(input.boundAt) };
     if (!candidate.providerCallId || !candidate.executionId || !candidate.slotId || !candidate.task || Number.isNaN(candidate.boundAt.getTime())) fail("MOVIE_MENTOR_PROVIDER_OPERATION_BINDING_INVALID", "Provider operation identity requires complete immutable call and target provenance.");
-    try { return normalize(await storeModel().create(candidate)); }
+    try { const written = normalize(await storeModel().create(candidate)); if (!sameIdentity(written, candidate)) fail("MOVIE_MENTOR_PROVIDER_OPERATION_CREATE_RETURN_BINDING_INVALID", "Provider operation create returned a different immutable call universe.", { retryable: true }); return written; }
     catch (error) {
       if (error?.code !== 11000) throw error;
       const existing = await readOperation(candidate.providerCallId);
