@@ -13,6 +13,6 @@ const store={
    return structuredClone(operation);
  }
 };
-const authority=createMovieMentorProviderOperationAuthority({store,now:()=>new Date("2036-01-01T00:00:01.000Z")});
+const authority=createMovieMentorProviderOperationAuthority({store,now:()=>new Date("2036-01-01T00:00:01.000Z"),resolveCurrentTarget:()=>operation.providerTarget,resolveCurrentModel:()=>null});
 await assert.rejects(()=>authority.bindReconstructionInput({providerCall:call,reconstructionInput:{universe:"REQUESTED"}}),error=>["MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_INTEGRITY_INVALID","MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_CONFLICT"].includes(error?.code),"successful first binder must reject returned durable bytes that do not reproduce the requested digest");
 console.log("GREEN: successful reconstruction-input binding cannot return different durable bytes.");
