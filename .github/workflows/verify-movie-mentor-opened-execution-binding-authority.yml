@@ -1,0 +1,17 @@
+name: Verify Movie Mentor Opened Execution Binding Authority
+on:
+  push:
+    branches: [verify-opened-execution-binding-authority]
+  pull_request:
+    paths: ["ai/MovieMentorTurnRuntime.js","scripts/verify-movie-mentor-opened-execution-binding-authority.mjs",".github/workflows/verify-movie-mentor-opened-execution-binding-authority.yml"]
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 20}
+      - run: npm install
+      - run: node --check scripts/verify-movie-mentor-opened-execution-binding-authority.mjs
+      - run: node scripts/verify-movie-mentor-opened-execution-binding-authority.mjs

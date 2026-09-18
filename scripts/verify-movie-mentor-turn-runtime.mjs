@@ -99,7 +99,7 @@ function execution({ existing = null } = {}) {
     principalId: "creator-77",
     projectId: "project-77",
     reservationId: "runtime-test-reservation",
-    requestDigest: "digest",
+    requestDigest: null,
     phase: "active",
     ownerId: "owner-77",
     leaseGeneration: 1,
@@ -108,13 +108,14 @@ function execution({ existing = null } = {}) {
     leaseExpiresAt: "2099-01-01T00:00:00.000Z",
   };
   let candidate = null;
+  let openedExecution = exec;
 
   return {
     findExecutionByCreatorTurn: async () => existing
       ? { ...existing, found: true, authorized: true }
       : { found: false, authorized: false },
-    openExecution: async () => exec,
-    assertFence: async () => exec,
+    openExecution: async ({ requestDigest }) => (openedExecution = { ...exec, requestDigest }),
+    assertFence: async (opened) => (openedExecution = opened),
     acquireExecution: async () => exec,
     claimProviderCall: async () => ({
       authorized: true,
@@ -167,7 +168,7 @@ function execution({ existing = null } = {}) {
     }),
     commitCanonicalResult: async ({ result }) => canonicalProof({
       resultPayload: result,
-      executionRecord: exec,
+      executionRecord: openedExecution,
       executionPhase: "finalized",
     }),
     readCanonicalResult: async () => existing
