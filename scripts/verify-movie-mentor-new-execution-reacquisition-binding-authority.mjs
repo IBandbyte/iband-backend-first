@@ -19,8 +19,10 @@ const deps={
     acquireExecution:async()=>{acquireCalls++;return {authorized:true,executionId:"execution-OTHER",creatorTurnId:"turn-OTHER",principalId:"creator-OTHER",projectId:"project-OTHER",reservationId:"reservation-OTHER",requestDigest:"digest-OTHER",phase:"active",ownerId:"worker-B",leaseGeneration:99};},
     assertFence:async(x)=>x,
     claimProviderCall:async()=>{providerCalls++;fail("MISMATCHED_ACQUISITION_MUST_NOT_CLAIM_PROVIDER");},
+    beginProviderDispatch:async()=>fail("NO_DISPATCH"), assertProviderDispatch:async()=>fail("NO_DISPATCH"), contributeProviderEffectEvidence:async()=>fail("NO_EFFECT"),
+    beginExecutionClosing:async()=>fail("NO_CLOSE"), reconcileExecutionClosure:async()=>fail("NO_CLOSE"), stageResultCandidate:async()=>fail("NO_STAGE"), readResultCandidate:async()=>null, commitCanonicalResult:async()=>fail("NO_COMMIT"), readCanonicalResult:async()=>({authorized:false,committed:false}),
   },
-  inferenceSettlementAuthority:{releaseUnclaimed:async()=>({authorized:true,released:true,outcome:"released",executionPhase:"released"}),releaseUnbound:async()=>({authorized:true,released:true})},
+  inferenceSettlementAuthority:{reconcile:async()=>fail("NO_SETTLE"),releaseUnclaimed:async()=>({authorized:true,released:true,outcome:"released",executionPhase:"released"}),releaseUnbound:async()=>({authorized:true,released:true})},
   orchestrateTurn:async()=>{orchestrateCalls++;fail("MISMATCHED_ACQUISITION_MUST_NOT_ORCHESTRATE");},
 };
 await assert.rejects(
