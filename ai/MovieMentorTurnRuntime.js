@@ -511,6 +511,17 @@ async function openLiveExecution({ input, creatorMessage, durableProjectId, rese
   if (s(opened.ownerId) === ownerId) {
     const current = await inferenceExecutionAuthority.assertFence(opened);
     if (current?.authorized !== true) throw runtimeError("MOVIE_MENTOR_INFERENCE_EXECUTION_LEASE_NOT_AUTHORIZED", "New inference execution does not hold a current durable lease.");
+    const bindingFields = ["executionId", "creatorTurnId", "principalId", "projectId", "reservationId", "requestDigest"];
+    const bindingMismatch = bindingFields.find((field) => s(current?.[field]) !== s(opened?.[field]));
+    if (bindingMismatch) {
+      throw runtimeError("MOVIE_MENTOR_INFERENCE_EXECUTION_FENCE_BINDING_INVALID", "Current inference execution fence does not preserve the durable creator-turn authority that was opened.", {
+        field: bindingMismatch,
+        expected: s(opened?.[bindingMismatch]) || null,
+        actual: s(current?.[bindingMismatch]) || null,
+        executionId: opened.executionId,
+        retryable: true,
+      });
+    }
     return current;
   }
   const acquired = await inferenceExecutionAuthority.acquireExecution({ executionId: opened.executionId, ownerId });
