@@ -1,0 +1,12 @@
+import assert from "node:assert/strict";
+import {createMovieMentorEntitlementIssuanceMongoStore} from "../ai/MovieMentorEntitlementIssuanceMongoStore.js";
+console.log("Movie Mentor entitlement issuance CAS return revision authority court");
+const q=v=>({session(){return this},lean(){return this},async exec(){return structuredClone(v)}});
+const entitlementIndexes=[{key:{principalId:1},unique:true}],issuanceIndexes=[{key:{issuanceId:1},unique:true},{key:{evidenceSource:1,evidenceId:1},unique:true}];
+const current={domain:"iband.movie-mentor.inference-spend",schema:1,principalId:"creator-A",status:"active",remainingUnits:10,reservedUnits:0,consumedUnits:0,entitlementRevision:4};
+const E={async createIndexes(){},collection:{async indexes(){return entitlementIndexes}},findOne(){return q(current)},findOneAndUpdate(){return q({...current,remainingUnits:999,entitlementRevision:99})}};
+const I={async createIndexes(){},collection:{async indexes(){return issuanceIndexes}},findOne(){return q(null)},async create(rows){return rows}};
+const session={async withTransaction(fn){await fn()},async endSession(){}};
+const store=createMovieMentorEntitlementIssuanceMongoStore({modelSet:{entitlementModel:E,issuanceModel:I},startSession:async()=>session,createIssuanceId:()=>"issue-A",now:()=>new Date("2036-01-01T00:00:00.000Z")});
+await assert.rejects(()=>store.issue({evidenceId:"evt-A",evidenceSource:"stripe",evidenceKind:"payment-completed",evidenceDigest:"digest-A",principalId:"creator-A",units:20,commercialReference:"intent-A"}),e=>e?.code==="MOVIE_MENTOR_ENTITLEMENT_ISSUANCE_AUTHORITY_UNAVAILABLE","successful entitlement CAS return must bind the requested principal and exact next revision/value universe before receipt mint");
+console.log("GREEN: entitlement CAS return binds exact requested mutation universe.");
