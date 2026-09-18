@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import { createMovieMentorCanonicalResultMongoStore } from "../ai/MovieMentorCanonicalResultMongoStore.js";
 
-const record={resultReference:"result-ack",candidateReference:"candidate-ack",executionId:"exec-ack",creatorTurnId:"turn-ack",principalId:"creator-ack",projectId:"project-ack",reservationId:"reservation-ack",requestDigest:"request-ack",closureReference:"closure-ack",closureCertificateDigest:"certificate-ack",resultDigest:"4062edaf750fb8074e7e83e0c9028c94e32468a8b977ef8c6a0a8c05bceaf96f",resultPayload:{ok:true},committedAt:"2034-01-01T00:00:00.000Z"};
+const payload={ok:true};
+const resultDigest=crypto.createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+const record={resultReference:"result-ack",candidateReference:"candidate-ack",executionId:"exec-ack",creatorTurnId:"turn-ack",principalId:"creator-ack",projectId:"project-ack",reservationId:"reservation-ack",requestDigest:"request-ack",closureReference:"closure-ack",closureCertificateDigest:"certificate-ack",resultDigest,resultPayload:payload,committedAt:"2034-01-01T00:00:00.000Z"};
 const execution={domain:"iband.movie-mentor.inference-execution-store",schema:6,...record,phase:"closed",leaseGeneration:1,leaseReference:"lease-ack",fencingToken:"fence-ack",providerEffectRealityRevision:0};
-const candidate={domain:"iband.movie-mentor.result-candidate-store",schema:2,...record,stagedFromLeaseGeneration:1,stagedFromLeaseReference:"lease-ack",stagedFromFencingToken:"fence-ack",creatorStateRevision:1,creatorStateGeneration:1,creatorStateOwnershipRevision:1,creatorStateFingerprint:"fingerprint",creatorStateOwnershipRef:"ownership",creatorStateOwnershipRevision:1,resultPayload:{ok:true},stagedAt:new Date("2034-01-01T00:00:00.000Z")};
+const candidate={domain:"iband.movie-mentor.result-candidate-store",schema:2,...record,stagedFromLeaseGeneration:1,stagedFromLeaseReference:"lease-ack",stagedFromFencingToken:"fence-ack",creatorStateRevision:1,creatorStateGeneration:1,creatorStateOwnershipRevision:1,creatorStateFingerprint:"fingerprint",creatorStateOwnershipRef:"ownership",resultPayload:payload,stagedAt:new Date("2034-01-01T00:00:00.000Z")};
 let canonical=null;
 const query=()=>({session(){return this},lean(){return this},async exec(){return canonical}});
 const mongoModel={
