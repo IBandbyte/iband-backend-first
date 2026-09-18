@@ -10,7 +10,7 @@ const payload={success:true,text:"durable terminal result"};
 const digest=crypto.createHash("sha256").update(JSON.stringify(stable(payload))).digest("hex");
 const fail=m=>{throw new Error(m);};
 
-const result=await runMovieMentorTurn({projectId,creatorTurnId,message:"Replay this turn."},{
+await assert.rejects(()=>runMovieMentorTurn({projectId,creatorTurnId,message:"Replay this turn."},{
  serverAuthority:{authenticated:true,projectAuthorized:true,principalId,projectId},
  readAuthoritativeTurnSource:async()=>{stateReads+=1;return{projectId:"different-durable-project",creatorSessionId:"session-1",revision:2,revisionAuthorityReference:"rev-2",creatorStateGeneration:2,creatorStateFingerprint:"fp-2",creatorAuthorityReference:"auth-2",snapshotReference:"snap-2",capturedAt:"2026-09-18T00:00:00.000Z",creatorConfirmedContext:[]};},
  readAuthoritativeRevision:async()=>({authorized:true,revision:2}),
@@ -29,10 +29,8 @@ const result=await runMovieMentorTurn({projectId,creatorTurnId,message:"Replay t
   beginExecutionClosing:async()=>fail("NO_CLOSE"),reconcileExecutionClosure:async()=>fail("NO_CLOSE"),commitCanonicalResult:async()=>fail("NO_COMMIT"),
  },
  orchestrateTurn:async()=>{providerCalls+=1;return fail("NO_ORCHESTRATION");},
-});
-assert.equal(stateReads,0,"terminal replay returned before durable creator-state/project authority was re-read");
-assert.equal(result?.text,"durable terminal result");
-assert.equal(result?.metadata?.canonicalResult?.replayedFromDurableResult,true);
+}),e=>e?.code==="MOVIE_MENTOR_INFERENCE_SERVER_PROJECT_CONFLICT");
+assert.equal(stateReads,1,"current durable creator-state/project authority must be re-read before terminal replay crosses the response boundary");
 assert.equal(canonicalReads,1);assert.equal(settlementCalls,1);assert.equal(reserveCalls,0);assert.equal(providerCalls,0);
 assert.equal(requestDigestSeen.length,1);
-console.log("OBSERVED: terminal creator-turn replay can cross the response boundary before current durable creator-state/project authority is re-read.");
+console.log("PASS: terminal creator-turn replay cannot cross the response boundary before current durable creator-state/project authority is re-read.");
