@@ -1,0 +1,21 @@
+name: Verify Movie Mentor Turn Conflict Loser Release Uncertainty Authority
+on:
+  push:
+    branches: [verify-turn-conflict-loser-release-uncertainty-authority]
+  pull_request:
+    paths:
+      - "ai/MovieMentorTurnRuntime.js"
+      - "scripts/verify-movie-mentor-turn-conflict-loser-release-uncertainty-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-turn-conflict-loser-release-uncertainty-authority.yml"
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: node --check scripts/verify-movie-mentor-turn-conflict-loser-release-uncertainty-authority.mjs
+      - run: node scripts/verify-movie-mentor-turn-conflict-loser-release-uncertainty-authority.mjs
