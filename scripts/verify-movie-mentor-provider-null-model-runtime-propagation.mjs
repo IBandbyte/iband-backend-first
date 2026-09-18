@@ -23,7 +23,7 @@ let observedProviderOperation = null;
 
 const inferenceExecutionAuthority = {
   async claimProviderCall() { return providerCall; },
-  async bindProviderReconstructionInput() { return { authorized: true, inputBound: true }; },
+  async bindProviderReconstructionInput() { return { authorized: true, inputBound: true, providerCallId: providerCall.providerCallId }; },
   async beginProviderDispatch() {
     return {
       dispatchAuthorized: true,
