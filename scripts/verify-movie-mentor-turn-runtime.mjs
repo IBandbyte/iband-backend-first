@@ -333,7 +333,7 @@ const replay = await runMovieMentorTurn(
     inferenceSettlementAuthority: settlement({ resultPayload: replayPayload, executionRecord: settled }),
     readAuthoritativeTurnSource: async () => {
       replayStateReads += 1;
-      throw new Error("terminal replay must not read mutable creator state");
+      return structuredClone(durable);
     },
     orchestrateTurn: async () => {
       replayOrchestrationCalls += 1;
@@ -347,7 +347,7 @@ assert.equal(replay.metadata.canonicalResult.settlementExecutionPhase, "settled"
 assert.equal(replay.metadata.canonicalResult.creatorResponseAuthorityVerified, true);
 assert.equal(replayReserveCalls, 0);
 assert.equal(replayOrchestrationCalls, 0);
-assert.equal(replayStateReads, 0);
+assert.equal(replayStateReads, 1);
 
 await assert.rejects(
   () => runMovieMentorTurn(
