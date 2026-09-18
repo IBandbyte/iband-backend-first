@@ -12,9 +12,9 @@ const fail=m=>{throw new Error(m);};
 
 await assert.rejects(()=>runMovieMentorTurn({projectId,creatorTurnId,message:"Replay this turn."},{
  serverAuthority:{authenticated:true,projectAuthorized:true,principalId,projectId},
- readAuthoritativeTurnSource:async()=>{stateReads+=1;return{projectId:"different-durable-project",creatorSessionId:"session-1",revision:2,revisionAuthorityReference:"rev-2",creatorStateGeneration:2,creatorStateFingerprint:"fp-2",creatorAuthorityReference:"auth-2",snapshotReference:"snap-2",capturedAt:"2026-09-18T00:00:00.000Z",creatorConfirmedContext:[]};},
+ readAuthoritativeCreatorState:async()=>{stateReads+=1;return{projectId:"different-durable-project",creatorSessionId:"session-1",revision:2,revisionAuthorityReference:"rev-2",creatorStateGeneration:2,creatorStateFingerprint:"fp-2",creatorAuthorityReference:"auth-2",snapshotReference:"snap-2",capturedAt:"2026-09-18T00:00:00.000Z",creatorConfirmedContext:[]};},
  readAuthoritativeRevision:async()=>({authorized:true,revision:2}),
- readAuthoritativeCreatorState:async()=>({authorized:true}),
+
  inferenceSpendAuthority:{reserveTurn:async()=>{reserveCalls+=1;return fail("TERMINAL_REPLAY_MUST_NOT_RESERVE");},readReservation:async()=>fail("TERMINAL_REPLAY_MUST_NOT_REHYDRATE_SPEND")},
  inferenceSettlementAuthority:{
   releaseUnbound:async()=>fail("NO_RELEASE"),releaseUnclaimed:async()=>fail("NO_RELEASE"),
@@ -31,6 +31,6 @@ await assert.rejects(()=>runMovieMentorTurn({projectId,creatorTurnId,message:"Re
  orchestrateTurn:async()=>{providerCalls+=1;return fail("NO_ORCHESTRATION");},
 }),e=>e?.code==="MOVIE_MENTOR_INFERENCE_SERVER_PROJECT_CONFLICT");
 assert.equal(stateReads,1,"current durable creator-state/project authority must be re-read before terminal replay crosses the response boundary");
-assert.equal(canonicalReads,1);assert.equal(settlementCalls,1);assert.equal(reserveCalls,0);assert.equal(providerCalls,0);
+assert.equal(canonicalReads,0);assert.equal(settlementCalls,0);assert.equal(reserveCalls,0);assert.equal(providerCalls,0);
 assert.equal(requestDigestSeen.length,1);
 console.log("PASS: terminal creator-turn replay cannot cross the response boundary before current durable creator-state/project authority is re-read.");
