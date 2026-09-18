@@ -24,7 +24,7 @@ const deps={
   orchestrateTurn:async()=>{orchestrateCalls++;fail("MISMATCHED_ACQUISITION_MUST_NOT_ORCHESTRATE");},
 };
 await assert.rejects(
-  ()=>runMovieMentorTurn({creatorTurnId:"turn-new-acquire",creatorMessage:"bind fresh reacquisition",projectId:"project-new-acquire",options:{}},deps),
+  ()=>runMovieMentorTurn({creatorTurnId:"turn-new-acquire",message:"bind fresh reacquisition",projectId:"project-new-acquire",options:{}},deps),
   e=>e?.code==="MOVIE_MENTOR_INFERENCE_EXECUTION_ACQUISITION_BINDING_INVALID"
 );
 assert.equal(acquireCalls,1);
