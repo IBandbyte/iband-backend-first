@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { runMovieMentorTurn } from "../ai/MovieMentorTurnRuntime.js";
+import { runMovieMentorTurn, buildRequestDigest } from "../ai/MovieMentorTurnRuntime.js";\nimport crypto from "node:crypto";
 
 const principalId="creator-early-replay",projectId="project-early-replay",creatorTurnId="turn-early-replay",executionId="execution-terminal",reservationId="reservation-terminal";
 let stateReads=0,canonicalReads=0,settlementCalls=0,providerCalls=0,reserveCalls=0;
-const requestDigestSeen=[];
+const requestDigestSeen=[];\nconst stable=v=>Array.isArray(v)?v.map(stable):v&&typeof v==="object"?Object.fromEntries(Object.keys(v).sort().map(k=>[k,stable(v[k])])):v;\nconst payload={success:true,text:"durable terminal result"};\nconst digest=crypto.createHash("sha256").update(JSON.stringify(stable(payload))).digest("hex");
 const fail=m=>{throw new Error(m);};
 
 const result=await runMovieMentorTurn({projectId,creatorTurnId,message:"Replay this turn."},{
@@ -14,11 +14,11 @@ const result=await runMovieMentorTurn({projectId,creatorTurnId,message:"Replay t
  inferenceSpendAuthority:{reserveTurn:async()=>{reserveCalls+=1;return fail("TERMINAL_REPLAY_MUST_NOT_RESERVE");},readReservation:async()=>fail("TERMINAL_REPLAY_MUST_NOT_REHYDRATE_SPEND")},
  inferenceSettlementAuthority:{
   releaseUnbound:async()=>fail("NO_RELEASE"),releaseUnclaimed:async()=>fail("NO_RELEASE"),
-  reconcile:async({executionId:id})=>{settlementCalls+=1;assert.equal(id,executionId);return{authorized:true,settled:true,outcome:"consumed",executionPhase:"settled",reservationId,idempotent:true};},
+  reconcile:async({executionId:id})=>{settlementCalls+=1;assert.equal(id,executionId);return{authorized:true,settled:true,outcome:"consumed",resultFinalizationVerified:true,executionPhase:"settled",providerEffectRealityRevision:7,executionId,principalId,projectId,reservationId,resultReference:"result-1",candidateReference:"candidate-1",resultDigest:digest,closureCertificateDigest:"closure-digest-1",idempotent:true};},
  },
  inferenceExecutionAuthority:{
   findExecutionByCreatorTurn:async({requestDigest})=>{requestDigestSeen.push(requestDigest);return{found:true,authorized:true,phase:"settled",executionId,reservationId,principalId,projectId,creatorTurnId,requestDigest};},
-  readCanonicalResult:async({executionId:id})=>{canonicalReads+=1;assert.equal(id,executionId);return{authorized:true,committed:true,executionId,reservationId,resultDigest:"digest-1",result:{success:true,text:"durable terminal result"}};},
+  readCanonicalResult:async({executionId:id})=>{canonicalReads+=1;assert.equal(id,executionId);return{authorized:true,committed:true,currentRealityVerified:true,candidateLineageVerified:true,resultFinalizationVerified:true,executionPhase:"settled",providerEffectRealityRevision:7,executionId,creatorTurnId,principalId,projectId,reservationId,requestDigest:requestDigestSeen[0],resultReference:"result-1",candidateReference:"candidate-1",closureReference:"closure-1",closureCertificateDigest:"closure-digest-1",resultDigest:digest,resultPayload:structuredClone(payload)};},
   acquireExecution:async()=>fail("NO_ACQUIRE"),openExecution:async()=>fail("NO_OPEN"),assertFence:async()=>fail("NO_FENCE"),
   claimProviderCall:async()=>{providerCalls+=1;return fail("NO_PROVIDER");},beginProviderDispatch:async()=>fail("NO_DISPATCH"),assertProviderDispatch:async()=>fail("NO_DISPATCH"),
   contributeProviderEffectEvidence:async()=>fail("NO_EFFECT"),stageResultCandidate:async()=>fail("NO_STAGE"),readResultCandidate:async()=>null,
