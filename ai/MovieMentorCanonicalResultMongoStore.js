@@ -615,6 +615,30 @@ function createMovieMentorCanonicalResultMongoStore({
 
       return result;
     }catch(error){
+      if(
+        error?.code==="UNKNOWN_TRANSACTION_COMMIT_RESULT"||
+        error?.errorLabels?.includes?.("UnknownTransactionCommitResult")
+      ){
+        const existing=
+          await readByExecution(record.executionId)||
+          await readByCreatorTurn(record);
+
+        if(existing&&currentAuthorityBinding(existing,record)){
+          const durableExecution=await executionLedger().findOne({
+            executionId:text(record.executionId)
+          });
+
+          if(
+            executionBindingMatches(durableExecution,existing)&&
+            finalizedBindingMatches(durableExecution,existing)
+          ){
+            return existing;
+          }
+        }
+
+        throw error;
+      }
+
       if(error?.code===11000){
         const existing=
           await readByExecution(record.executionId)||
