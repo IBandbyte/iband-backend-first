@@ -519,6 +519,17 @@ async function openLiveExecution({ input, creatorMessage, durableProjectId, rese
       reason: acquired?.reason || "lease-not-authorized",
     });
   }
+  const bindingFields = ["executionId", "creatorTurnId", "principalId", "projectId", "reservationId", "requestDigest"];
+  const bindingMismatch = bindingFields.find((field) => s(acquired?.[field]) !== s(opened?.[field]));
+  if (bindingMismatch) {
+    throw runtimeError("MOVIE_MENTOR_INFERENCE_EXECUTION_ACQUISITION_BINDING_INVALID", "Reacquired inference execution does not preserve the durable creator-turn authority that was opened.", {
+      field: bindingMismatch,
+      expected: s(opened?.[bindingMismatch]) || null,
+      actual: s(acquired?.[bindingMismatch]) || null,
+      executionId: opened.executionId,
+      retryable: true,
+    });
+  }
   return acquired;
 }
 
