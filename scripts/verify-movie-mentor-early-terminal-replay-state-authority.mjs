@@ -32,5 +32,5 @@ await assert.rejects(()=>runMovieMentorTurn({projectId,creatorTurnId,message:"Re
 }),e=>e?.code==="MOVIE_MENTOR_INFERENCE_SERVER_PROJECT_CONFLICT");
 assert.equal(stateReads,1,"current durable creator-state/project authority must be re-read before terminal replay crosses the response boundary");
 assert.equal(canonicalReads,0);assert.equal(settlementCalls,0);assert.equal(reserveCalls,0);assert.equal(providerCalls,0);
-assert.equal(requestDigestSeen.length,1);
+assert.equal(requestDigestSeen.length,0,"project conflict must stop before historical execution lookup/replay");
 console.log("PASS: terminal creator-turn replay cannot cross the response boundary before current durable creator-state/project authority is re-read.");
