@@ -12,7 +12,7 @@ const fail=m=>{throw new Error(m);};
 
 await assert.rejects(()=>runMovieMentorTurn({projectId,creatorTurnId,message:"Replay this turn."},{
  serverAuthority:{authenticated:true,projectAuthorized:true,principalId,projectId},
- readAuthoritativeCreatorState:async()=>{stateReads+=1;return{projectId:"different-durable-project",creatorSessionId:"session-1",revision:2,revisionAuthorityReference:"rev-2",creatorStateGeneration:2,creatorStateFingerprint:"fp-2",creatorAuthorityReference:"auth-2",snapshotReference:"snap-2",capturedAt:"2026-09-18T00:00:00.000Z",creatorConfirmedContext:[]};},
+ readAuthoritativeTurnSource:async()=>{stateReads+=1;return{projectId:"different-durable-project",creatorSessionId:"session-1",revision:2,revisionAuthorityReference:"rev-2",creatorStateGeneration:2,creatorStateFingerprint:"fp-2",creatorAuthorityReference:"auth-2",snapshotReference:"snap-2",capturedAt:"2026-09-18T00:00:00.000Z",creatorConfirmedContext:[]};},
  readAuthoritativeRevision:async()=>({authorized:true,revision:2}),
 
  inferenceSpendAuthority:{reserveTurn:async()=>{reserveCalls+=1;return fail("TERMINAL_REPLAY_MUST_NOT_RESERVE");},readReservation:async()=>fail("TERMINAL_REPLAY_MUST_NOT_REHYDRATE_SPEND")},
