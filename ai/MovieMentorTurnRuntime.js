@@ -717,20 +717,6 @@ async function runMovieMentorTurn(input = {}, deps = {}) {
   const runtimeAuthority = assertRuntimeServerAuthority({ serverAuthority: deps.serverAuthority, requestedProjectId: identity.projectId });
   const principalId = runtimeAuthority.principalId;
 
-  if (identity.projectId) {
-    const earlyRequestDigest = buildRequestDigest({ creatorMessage, projectId: identity.projectId, options: input?.options || {} });
-    const earlyExisting = await inferenceExecutionAuthority.findExecutionByCreatorTurn({
-      creatorTurnId,
-      principalId,
-      projectId: identity.projectId,
-      requestDigest: earlyRequestDigest,
-    });
-    if (earlyExisting?.found) {
-      const terminal = await convergeExistingTurn({ earlyExisting, existing: earlyExisting, inferenceExecutionAuthority, settlementAuthority });
-      if (terminal) return terminal;
-    }
-  }
-
   const state = await readSource(identity);
   const envelope = buildTurnEnvelopeFromDurableState({ creatorMessage, state });
   const durableProjectId = s(state?.projectId || envelope?.projectId);
