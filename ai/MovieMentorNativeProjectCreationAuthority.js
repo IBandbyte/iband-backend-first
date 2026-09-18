@@ -56,7 +56,13 @@ function createMovieMentorNativeProjectCreationAuthority({ verifyCredential = nu
       }),
     });
     const ownership = result?.ownership;
-    if (!ownership || text(ownership.projectId) !== inspected.projectId || text(ownership.ownerPrincipalId) !== principalId) fail("MOVIE_MENTOR_NATIVE_PROJECT_CREATION_OWNERSHIP_RESULT_INVALID", "Durable project ownership establishment did not return the exact authenticated creator/project universe.");
+    const expectedOwnershipReference = `movie-mentor-project-ownership:${inspected.projectId}:${authorityId}`;
+    if (
+      !ownership
+      || text(ownership.projectId) !== inspected.projectId
+      || text(ownership.ownerPrincipalId) !== principalId
+      || text(ownership.ownershipReference) !== expectedOwnershipReference
+    ) fail("MOVIE_MENTOR_NATIVE_PROJECT_CREATION_OWNERSHIP_RESULT_INVALID", "Durable project ownership establishment did not return the exact authenticated creator/project/authority universe.");
     return Object.freeze({
       status: text(result?.status) || "established",
       projectId: inspected.projectId,
