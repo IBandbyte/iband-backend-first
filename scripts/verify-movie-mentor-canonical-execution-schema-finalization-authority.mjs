@@ -156,6 +156,7 @@ async function attempt(schema){
     fencingToken:`fence-exec-schema-${schema}`,
     closureReference:record.closureReference,
     closureCertificateDigest:record.closureCertificateDigest,
+    closurePolicyVersion:"5A.24-round-four-v6",
     resultFinalizationBarrierRevision:0
   };
 
