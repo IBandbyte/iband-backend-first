@@ -18,7 +18,7 @@ const collection=name=>{
  if(name==="movie_mentor_result_candidate")return {findOne:async()=>structuredClone(candidate)};
  if(name==="movie_mentor_provider_effect_reality")return {find:()=>({toArray:async()=>[]})};
  if(name==="movie_mentor_inference_spend_reservation")return {findOne:async()=>{reservationReads++;return structuredClone(reservationReads===1?staleReservation:durableReleased)},findOneAndUpdate:async()=>null};
- if(name==="movie_mentor_inference_entitlement")return {findOneAndUpdate:async()=>{entitlementCalls++;return null}};
+ if(name==="movie_mentor_inference_entitlement")return {findOneAndUpdate:async()=>{entitlementCalls++;return {domain:"iband.movie-mentor.inference-spend",schema:1,principalId:"creator-A",status:"active",remainingUnits:8,reservedUnits:0,consumedUnits:2,entitlementRevision:2}}};
  return {};
 };
 const session={async withTransaction(fn){await fn()},async endSession(){}};
