@@ -1,0 +1,21 @@
+import assert from "node:assert/strict";
+import crypto from "node:crypto";
+import {createMovieMentorInferenceExecutionClosureAuthority} from "../ai/MovieMentorInferenceExecutionClosureAuthority.js";
+
+const digest=value=>crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");
+const call={providerCallId:"call-1",slotId:"semantic",task:"movie-mentor-semantic",state:"admitted",leaseGeneration:1,leaseReference:"lease-1",fencingToken:"fence-1",admittedAt:"2032-01-01T00:01:00.000Z"};
+const canonical=[{providerCallId:call.providerCallId,slotId:call.slotId,task:call.task,leaseGeneration:call.leaseGeneration,leaseReference:call.leaseReference,fencingToken:call.fencingToken,admittedAt:call.admittedAt}];
+const execution={schema:6,executionId:"execution-frozen-digest",creatorTurnId:"turn-1",principalId:"creator-1",projectId:"project-1",reservationId:"reservation-1",requestDigest:"request-1",phase:"closing",ownerId:"owner-1",leaseGeneration:1,leaseReference:"lease-1",fencingToken:"fence-1",leaseAcquiredAt:"2032-01-01T00:00:00.000Z",leaseExpiresAt:"2032-01-01T00:10:00.000Z",maxProviderCalls:2,providerCallsClaimed:1,providerCalls:[call],providerEffectRealityRevision:0,frozenProviderCallCount:1,frozenProviderCallSetDigest:"counterfeit-digest",closureReference:"closure-1",closingAt:"2032-01-01T00:05:00.000Z",closedFromExecutionGeneration:1,closurePolicyVersion:"5A.24-round-four-v6"};
+let completeCalls=0,quarantineCalls=0;
+const store={readExecution:async()=>structuredClone(execution),beginClosing:async()=>null,recoverExpiredIntoClosing:async()=>null,completeClosing:async()=>{completeCalls++;return null;},quarantineExecution:async()=>{quarantineCalls++;return {...execution,phase:"quarantined",quarantineReason:"frozen-provider-call-universe-mismatch",quarantinedAt:"2032-01-01T00:06:00.000Z",quarantinedFromPhase:"closing"};}};
+const authority=createMovieMentorInferenceExecutionClosureAuthority({store,effectStore:{readEffect:async()=>null},now:()=>new Date("2032-01-01T00:06:00.000Z")});
+const result=await authority.reconcile({executionId:execution.executionId});
+assert.equal(result.authorized,false);
+assert.equal(result.quarantined,true,"counterfeit frozen digest must be quarantined before closure completion");
+assert.equal(completeCalls,0);
+assert.equal(quarantineCalls,1);
+execution.frozenProviderCallSetDigest=digest(canonical);
+const control=await authority.reconcile({executionId:execution.executionId});
+assert.notEqual(control.quarantined,true,"canonical frozen digest remains eligible for closure completion");
+console.log("✓ closure authority recomputes and binds the frozen provider-call universe digest");
+console.log("LAW: A STORED FROZEN-UNIVERSE DIGEST IS A CLAIM. CLOSURE AUTHORITY MUST RECOMPUTE IT BEFORE IRREVERSIBLE COMPLETION.");
