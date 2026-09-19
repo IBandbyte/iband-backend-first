@@ -1,0 +1,11 @@
+import assert from "node:assert/strict";
+import {createMovieMentorInferenceSettlementMongoStore} from "../ai/MovieMentorInferenceSettlementMongoStore.js";
+console.log("Movie Mentor unclaimed reservation release write return authority court");
+const execution={domain:"iband.movie-mentor.inference-execution-store",schema:6,executionId:"execution-A",reservationId:"reservation-A",principalId:"creator-A",projectId:"project-A",phase:"active",providerCallsClaimed:0,providerCalls:[]};
+const reservation={domain:"iband.movie-mentor.inference-spend",schema:1,reservationId:"reservation-A",principalId:"creator-A",projectId:"project-A",operation:"movie-mentor-turn",units:1,entitlementRevision:1,status:"reserved"};
+const entitlement={domain:"iband.movie-mentor.inference-spend",schema:1,principalId:"creator-A",status:"active",remainingUnits:20,reservedUnits:0,consumedUnits:0,entitlementRevision:2};
+const collection=name=>name==="movie_mentor_inference_execution"?{findOne:async()=>structuredClone(execution),updateOne:async()=>({matchedCount:1})}:name==="movie_mentor_inference_spend_reservation"?{findOne:async()=>structuredClone(reservation),findOneAndUpdate:async()=>({...reservation,reservationId:"OTHER-RESERVATION",principalId:"OTHER-CREATOR",status:"consumed",settlementReason:"counterfeit"})}:name==="movie_mentor_inference_entitlement"?{findOneAndUpdate:async()=>structuredClone(entitlement)}:{};
+const session={async withTransaction(fn){await fn()},async endSession(){}};
+const store=createMovieMentorInferenceSettlementMongoStore({connect:async()=>{},db:()=>({collection}),startSession:async()=>session,now:()=>new Date("2036-01-02T00:00:00Z")});
+await assert.rejects(()=>store.releaseUnclaimedReservation({executionId:"execution-A"}),e=>e?.code==="MOVIE_MENTOR_INFERENCE_RELEASE_RESERVATION_RACE","successful unclaimed reservation release write return must bind exact reservation identity and released state");
+console.log("GREEN: unclaimed reservation release write return binds exact durable release universe.");
