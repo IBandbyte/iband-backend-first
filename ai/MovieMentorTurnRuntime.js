@@ -9,6 +9,7 @@ import { readAuthoritativeTurnSource, readAuthoritativeRevision, readAuthoritati
 import { recoverPreviouslyAdmittedProviderResult } from "./MovieMentorRecoveredProviderResultAuthority.js";
 import { reconstructRecoveredMovieMentorSemanticResult } from "./MovieMentorRecoveredSemanticResult.js";
 import { reconstructRecoveredMovieMentorSpecialistResult, reconstructRecoveredMovieMentorSynthesisResult } from "./MovieMentorRecoveredTaskResult.js";
+import { MOVIE_MENTOR_INFERENCE_EXECUTION_CLOSURE_POLICY_VERSION } from "./MovieMentorInferenceExecutionClosureAuthority.js";
 
 const MOVIE_MENTOR_TURN_RUNTIME_VERSION = "2.15.0";
 const s = (value) => (typeof value === "string" ? value.trim() : "");
@@ -553,6 +554,7 @@ async function replayTerminalTurn({ existing, inferenceExecutionAuthority, settl
 
 async function recoverStagedResultTurn({ existing, inferenceExecutionAuthority, settlementAuthority } = {}) {
   if (!["closing", "closed", "finalized", "settled"].includes(s(existing?.phase))) return null;
+  if (s(existing?.closurePolicyVersion) !== MOVIE_MENTOR_INFERENCE_EXECUTION_CLOSURE_POLICY_VERSION) throw runtimeError("MOVIE_MENTOR_CREATOR_RESPONSE_CLOSURE_POLICY_AUTHORITY_REQUIRED", "Recovered creator-visible result requires the durable execution to carry the current closure policy.", { retryable: false, executionId: s(existing?.executionId) || null });
   const candidate = await inferenceExecutionAuthority.readResultCandidate(existing.executionId);
   if (!candidate) {
     throw runtimeError("MOVIE_MENTOR_RESULT_CANDIDATE_RECOVERY_REQUIRED", "Non-executable inference universe has no durable staged result candidate.", {
