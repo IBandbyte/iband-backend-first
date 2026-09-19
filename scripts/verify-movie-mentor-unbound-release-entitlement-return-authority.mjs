@@ -1,0 +1,11 @@
+import assert from "node:assert/strict";
+import {createMovieMentorInferenceSettlementMongoStore} from "../ai/MovieMentorInferenceSettlementMongoStore.js";
+console.log("Movie Mentor unbound release entitlement CAS return authority court");
+const reservation={domain:"iband.movie-mentor.inference-spend",schema:1,reservationId:"reservation-A",principalId:"creator-A",projectId:"project-A",operation:"movie-mentor-turn",units:1,entitlementRevision:1,status:"reserved",reservedAt:new Date("2036-01-01T00:00:00Z")};
+let reservationReleaseWrites=0;
+const collection=name=>name==="movie_mentor_inference_spend_reservation"?{findOne:async()=>structuredClone(reservation),findOneAndUpdate:async()=>{reservationReleaseWrites++;return {...reservation,status:"released"}}}:name==="movie_mentor_inference_execution"?{findOne:async()=>null}:name==="movie_mentor_inference_entitlement"?{findOneAndUpdate:async()=>({domain:"iband.movie-mentor.inference-spend",schema:1,principalId:"OTHER-CREATOR",status:"active",remainingUnits:999,reservedUnits:999,consumedUnits:0,entitlementRevision:77})}:{};
+const db={collection};const session={async withTransaction(fn){await fn()},async endSession(){}};
+const store=createMovieMentorInferenceSettlementMongoStore({connect:async()=>{},db:()=>db,startSession:async()=>session,now:()=>new Date("2036-01-02T00:00:00Z")});
+await assert.rejects(()=>store.releaseUnboundReservation({reservationId:"reservation-A",principalId:"creator-A",projectId:"project-A"}),e=>e?.code==="MOVIE_MENTOR_INFERENCE_UNBOUND_RELEASE_LEDGER_CONFLICT","successful release entitlement CAS return must bind exact principal and released-credit universe before reservation release");
+assert.equal(reservationReleaseWrites,0,"counterfeit entitlement release return must fail before reservation is marked released");
+console.log("GREEN: unbound release entitlement CAS return binds exact durable release universe.");
