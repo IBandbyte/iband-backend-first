@@ -5,6 +5,7 @@ import {
   digestCreatorResponsePayload,
   runMovieMentorTurn,
 } from "../ai/MovieMentorTurnRuntime.js";
+import { MOVIE_MENTOR_INFERENCE_EXECUTION_CLOSURE_POLICY_VERSION } from "../ai/MovieMentorInferenceExecutionClosureAuthority.js";
 import {
   MOVIE_MENTOR_TURN_CONTEXT_DOMAIN,
   MOVIE_MENTOR_TURN_CONTEXT_SCHEMA,
@@ -100,6 +101,7 @@ function execution({ existing = null } = {}) {
     projectId: "project-77",
     reservationId: "runtime-test-reservation",
     requestDigest: "digest",
+    closurePolicyVersion: MOVIE_MENTOR_INFERENCE_EXECUTION_CLOSURE_POLICY_VERSION,
     phase: "active",
     ownerId: "owner-77",
     leaseGeneration: 1,
