@@ -1,0 +1,10 @@
+import assert from "node:assert/strict";
+import {inspectMovieMentorInferenceExecution} from "../ai/MovieMentorInferenceExecutionMongoStore.js";
+
+console.log("Movie Mentor closure completion chronology authority court");
+const base={domain:"iband.movie-mentor.inference-execution-store",schema:6,executionId:"execution-closure-chrono",creatorTurnId:"turn-closure-chrono",principalId:"creator-closure-chrono",projectId:"project-closure-chrono",reservationId:"reservation-closure-chrono",requestDigest:"request-closure-chrono",phase:"closed",ownerId:"owner-closure-chrono",leaseGeneration:1,leaseReference:"lease-closure-chrono",fencingToken:"fence-closure-chrono",leaseAcquiredAt:"2032-01-01T00:00:00.000Z",leaseExpiresAt:"2032-01-01T00:10:00.000Z",maxProviderCalls:1,providerCallsClaimed:0,providerCalls:[],providerEffectRealityRevision:0,settlementRealityBarrierRevision:0,resultFinalizationBarrierRevision:0,closureReference:"closure-closure-chrono",frozenProviderCallCount:0,frozenProviderCallSetDigest:"digest-empty",closingAt:"2032-01-01T00:05:00.000Z",closedFromExecutionGeneration:1,closurePolicyVersion:"court",closureCertificateDigest:"certificate-closure-chrono",closedAt:"2032-01-01T00:04:59.000Z",finalizedResultReference:"",finalizedCandidateReference:"",finalizedResultDigest:"",resultFinalizedAt:null,settledResultReference:"",settledCandidateReference:"",settledResultDigest:"",settledAt:null,abortedAt:null,abortReason:"",quarantinedAt:null,quarantineReason:"",quarantinedFromPhase:""};
+assert.equal(inspectMovieMentorInferenceExecution(base).valid,false,"closure completion cannot predate the durable closing boundary it completes");
+const control=structuredClone(base);control.closedAt="2032-01-01T00:05:01.000Z";
+assert.equal(inspectMovieMentorInferenceExecution(control).valid,true,"closure completion after closing remains valid");
+console.log("GREEN: closure completion chronology is bound to closing chronology.");
+console.log("LAW: CLOSED AUTHORITY MAY NOT CLAIM TO COMPLETE BEFORE CLOSING AUTHORITY BEGAN.");
