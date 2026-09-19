@@ -1,0 +1,24 @@
+name: Verify Movie Mentor Settlement Reservation Consume Identity Authority
+
+on:
+  pull_request:
+  push:
+    branches:
+      - verify-settlement-reservation-consume-identity-authority
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - name: Run settlement reservation consume identity authority court
+        run: node scripts/verify-movie-mentor-settlement-reservation-consume-identity-authority.mjs
