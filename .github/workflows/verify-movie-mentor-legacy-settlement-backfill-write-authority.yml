@@ -1,0 +1,17 @@
+name: Verify Movie Mentor Legacy Settlement Backfill Write Authority
+on:
+  push:
+    branches: [verify-legacy-settlement-backfill-write-authority]
+  pull_request:
+    branches: [main]
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: node --check scripts/verify-movie-mentor-legacy-settlement-backfill-write-authority.mjs
+      - run: node scripts/verify-movie-mentor-legacy-settlement-backfill-write-authority.mjs
