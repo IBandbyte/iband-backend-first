@@ -1,0 +1,10 @@
+import assert from "node:assert/strict";
+import {inspectMovieMentorInferenceExecution} from "../ai/MovieMentorInferenceExecutionMongoStore.js";
+
+console.log("Movie Mentor closure generation lineage authority court");
+const base={domain:"iband.movie-mentor.inference-execution-store",schema:6,executionId:"execution-closure-generation",creatorTurnId:"turn-closure-generation",principalId:"creator-closure-generation",projectId:"project-closure-generation",reservationId:"reservation-closure-generation",requestDigest:"request-closure-generation",phase:"closing",ownerId:"owner-closure-generation",leaseGeneration:3,leaseReference:"lease-generation-3",fencingToken:"fence-generation-3",leaseAcquiredAt:"2032-01-01T00:00:00.000Z",leaseExpiresAt:"2032-01-01T00:10:00.000Z",maxProviderCalls:1,providerCallsClaimed:0,providerCalls:[],providerEffectRealityRevision:0,settlementRealityBarrierRevision:0,resultFinalizationBarrierRevision:0,closureReference:"closure-generation",frozenProviderCallCount:0,frozenProviderCallSetDigest:"digest-empty",closingAt:"2032-01-01T00:05:00.000Z",closedFromExecutionGeneration:2,closurePolicyVersion:"court",closureCertificateDigest:"",closedAt:null,finalizedResultReference:"",finalizedCandidateReference:"",finalizedResultDigest:"",resultFinalizedAt:null,settledResultReference:"",settledCandidateReference:"",settledResultDigest:"",settledAt:null,abortedAt:null,abortReason:"",quarantinedAt:null,quarantineReason:"",quarantinedFromPhase:""};
+assert.equal(inspectMovieMentorInferenceExecution(base).valid,false,"closure must not claim provenance from a different execution generation than the durable generation it froze");
+const control=structuredClone(base);control.closedFromExecutionGeneration=3;
+assert.equal(inspectMovieMentorInferenceExecution(control).valid,true,"closure bound to its exact durable execution generation remains valid");
+console.log("GREEN: closure generation provenance is bound to the durable execution generation.");
+console.log("LAW: CLOSURE MAY FREEZE ONE EXECUTION GENERATION. IT MAY NOT CLAIM ANOTHER GENERATION'S HISTORY.");
