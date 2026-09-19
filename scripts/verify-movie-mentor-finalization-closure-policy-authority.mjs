@@ -1,0 +1,18 @@
+import assert from "node:assert/strict";
+import {createMovieMentorCanonicalResultMongoStore} from "../ai/MovieMentorCanonicalResultMongoStore.js";
+const execution={domain:"iband.movie-mentor.inference-execution-store",schema:6,phase:"closed",executionId:"exec-policy-finalize",creatorTurnId:"turn-1",principalId:"creator-1",projectId:"project-1",reservationId:"reservation-1",requestDigest:"request-1",closureReference:"closure-1",closureCertificateDigest:"certificate-old-policy",closurePolicyVersion:"superseded-policy",providerEffectRealityRevision:0,leaseGeneration:1,leaseReference:"lease-1",fencingToken:"fence-1"};
+const payload={ok:true}; const crypto=await import("node:crypto"); const stable=v=>{if(Array.isArray(v))return v.map(stable);if(v&&typeof v==="object"){const o={};for(const k of Object.keys(v).sort())o[k]=stable(v[k]);return o;}return v;};const digest=v=>crypto.createHash("sha256").update(JSON.stringify(stable(v))).digest("hex");
+const record={resultReference:"result-1",candidateReference:"candidate-1",executionId:execution.executionId,creatorTurnId:execution.creatorTurnId,principalId:execution.principalId,projectId:execution.projectId,reservationId:execution.reservationId,requestDigest:execution.requestDigest,closureReference:execution.closureReference,closureCertificateDigest:execution.closureCertificateDigest,resultDigest:digest(payload),resultPayload:payload,committedAt:"2032-01-01T00:06:00.000Z"};
+const candidate={domain:"iband.movie-mentor.result-candidate-store",schema:2,...record,stagedFromLeaseGeneration:1,stagedFromLeaseReference:"lease-1",stagedFromFencingToken:"fence-1",creatorStateFingerprint:"fp",creatorStateOwnershipRef:"own",creatorStateRevision:0,creatorStateGeneration:1,creatorStateOwnershipRevision:1,stagedAt:"2032-01-01T00:05:00.000Z"};
+let executionWrites=0;
+const queryResult=v=>({session(){return this},lean(){return this},exec:async()=>v});
+const model={findOne:()=>queryResult(null),create:async docs=>[{domain:"iband.movie-mentor.canonical-result-store",schema:2,...docs[0]}]};
+const executionCollection={findOne:async()=>structuredClone(execution),updateOne:async()=>{executionWrites++;return {matchedCount:1}}};
+const candidateCollection={findOne:async()=>structuredClone(candidate)};
+const session={withTransaction:async fn=>fn(),endSession:async()=>{}};
+const required={movie_mentor_canonical_result:[{unique:true,key:{resultReference:1}},{unique:true,key:{candidateReference:1}},{unique:true,key:{executionId:1}},{unique:true,key:{principalId:1,projectId:1,creatorTurnId:1}},{unique:true,key:{reservationId:1}}],movie_mentor_inference_execution:[{unique:true,key:{executionId:1}}],movie_mentor_result_candidate:[{unique:true,key:{executionId:1}},{unique:true,key:{candidateReference:1}}]};
+const store=createMovieMentorCanonicalResultMongoStore({mongoModel:model,startSession:async()=>session,executionCollection,candidateCollection,readIndexes:async name=>required[name]||[]});
+await assert.rejects(()=>store.commit(record,{expectedProviderEffectRealityRevision:0}),/closure policy|current/i,"canonical finalization must reject CLOSED authority minted under a superseded closure policy");
+assert.equal(executionWrites,0,"superseded closure policy must fail before irreversible FINALIZED transition");
+console.log("GREEN: canonical finalization requires current closure policy authority.");
+console.log("LAW: A CLOSED RECORD FROM A SUPERSEDED POLICY MAY REMAIN HISTORY. IT MAY NOT CROSS THE CURRENT FINALIZATION BOUNDARY.");
