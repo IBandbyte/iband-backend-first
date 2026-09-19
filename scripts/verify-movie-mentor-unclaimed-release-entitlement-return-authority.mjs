@@ -1,0 +1,12 @@
+import assert from "node:assert/strict";
+import {createMovieMentorInferenceSettlementMongoStore} from "../ai/MovieMentorInferenceSettlementMongoStore.js";
+console.log("Movie Mentor unclaimed release entitlement CAS return authority court");
+const execution={domain:"iband.movie-mentor.inference-execution-store",schema:6,executionId:"execution-A",reservationId:"reservation-A",principalId:"creator-A",projectId:"project-A",phase:"active",providerCallsClaimed:0,providerCalls:[]};
+const reservation={domain:"iband.movie-mentor.inference-spend",schema:1,reservationId:"reservation-A",principalId:"creator-A",projectId:"project-A",operation:"movie-mentor-turn",units:1,entitlementRevision:1,status:"reserved"};
+let releaseWrites=0;
+const collection=name=>name==="movie_mentor_inference_execution"?{findOne:async()=>structuredClone(execution),updateOne:async()=>({matchedCount:1})}:name==="movie_mentor_inference_spend_reservation"?{findOne:async()=>structuredClone(reservation),findOneAndUpdate:async()=>{releaseWrites++;return{...reservation,status:"released"}}}:name==="movie_mentor_inference_entitlement"?{findOneAndUpdate:async()=>({domain:"iband.movie-mentor.inference-spend",schema:1,principalId:"OTHER-CREATOR",status:"active",remainingUnits:999,reservedUnits:999,consumedUnits:0,entitlementRevision:77})}:{};
+const session={async withTransaction(fn){await fn()},async endSession(){}};
+const store=createMovieMentorInferenceSettlementMongoStore({connect:async()=>{},db:()=>({collection}),startSession:async()=>session,now:()=>new Date("2036-01-02T00:00:00Z")});
+await assert.rejects(()=>store.releaseUnclaimedReservation({executionId:"execution-A"}),e=>e?.code==="MOVIE_MENTOR_INFERENCE_RELEASE_LEDGER_CONFLICT","successful unclaimed-release entitlement CAS return must bind exact principal and released-credit universe");
+assert.equal(releaseWrites,0,"counterfeit entitlement return must fail before reservation release write");
+console.log("GREEN: unclaimed release entitlement CAS return binds durable credit authority before release write.");
