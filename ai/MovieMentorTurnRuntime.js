@@ -9,6 +9,7 @@ import { readAuthoritativeTurnSource, readAuthoritativeRevision, readAuthoritati
 import { recoverPreviouslyAdmittedProviderResult } from "./MovieMentorRecoveredProviderResultAuthority.js";
 import { reconstructRecoveredMovieMentorSemanticResult } from "./MovieMentorRecoveredSemanticResult.js";
 import { reconstructRecoveredMovieMentorSpecialistResult, reconstructRecoveredMovieMentorSynthesisResult } from "./MovieMentorRecoveredTaskResult.js";
+import { MOVIE_MENTOR_INFERENCE_EXECUTION_CLOSURE_POLICY_VERSION } from "./MovieMentorInferenceExecutionClosureAuthority.js";
 
 const MOVIE_MENTOR_TURN_RUNTIME_VERSION = "2.15.0";
 const s = (value) => (typeof value === "string" ? value.trim() : "");
@@ -540,6 +541,7 @@ async function acquireExistingExecution({ existing, inferenceExecutionAuthority,
 
 async function replayTerminalTurn({ existing, inferenceExecutionAuthority, settlementAuthority } = {}) {
   if (!["closed", "finalized", "settled"].includes(s(existing?.phase))) return null;
+  if (s(existing?.closurePolicyVersion) !== MOVIE_MENTOR_INFERENCE_EXECUTION_CLOSURE_POLICY_VERSION) throw runtimeError("MOVIE_MENTOR_CREATOR_RESPONSE_CLOSURE_POLICY_AUTHORITY_REQUIRED", "Terminal creator-visible replay requires the durable execution to carry the current closure policy.", { retryable: false, executionId: s(existing?.executionId) || null });
   const canonical = await inferenceExecutionAuthority.readCanonicalResult({ executionId: existing.executionId });
   if (canonical?.authorized !== true || canonical?.committed !== true) return null;
   const settlement = await settlementAuthority.reconcile({ executionId: existing.executionId });
