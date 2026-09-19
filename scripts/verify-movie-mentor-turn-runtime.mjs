@@ -309,6 +309,7 @@ const settled = {
   projectId: "project-77",
   reservationId: "runtime-test-reservation",
   requestDigest: "ignored-by-mock",
+  closurePolicyVersion: MOVIE_MENTOR_INFERENCE_EXECUTION_CLOSURE_POLICY_VERSION,
   phase: "settled",
   ownerId: "old",
   leaseGeneration: 1,
