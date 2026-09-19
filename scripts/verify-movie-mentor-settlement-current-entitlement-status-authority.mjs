@@ -83,7 +83,9 @@ const store=createMovieMentorInferenceSettlementMongoStore({
   now:()=>new Date("2036-01-02T00:00:00.000Z"),
 });
 
-const outcome=await store.settleCanonicalResult({executionId:"execution-A"});
+await assert.rejects(
+  ()=>store.settleCanonicalResult({executionId:"execution-A"}),
+  error=>error?.code==="MOVIE_MENTOR_INFERENCE_SETTLEMENT_LEDGER_CONFLICT"
+);
 assert.equal(entitlementMutationCalls,0,"suspended current entitlement must stop before settlement debit mutation");
-assert.equal(outcome?.authorized,false,"suspended current entitlement must not authorize settlement");
 console.log("GREEN: fresh settlement requires current active entitlement authority before irreversible debit.");
