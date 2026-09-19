@@ -2,7 +2,8 @@ import crypto from "node:crypto";
 import mongoose from "mongoose";
 
 const VERSION="1.12.0",DOMAIN="iband.movie-mentor.canonical-result-store",SCHEMA=2,COLLECTION="movie_mentor_canonical_result";
-const EXECUTION_DOMAIN="iband.movie-mentor.inference-execution-store",EXECUTION_COLLECTION="movie_mentor_inference_execution";\nconst CURRENT_CLOSURE_POLICY_VERSION="5A.24-round-four-v6";
+const EXECUTION_DOMAIN="iband.movie-mentor.inference-execution-store",EXECUTION_COLLECTION="movie_mentor_inference_execution";
+const CURRENT_CLOSURE_POLICY_VERSION="5A.24-round-four-v6";
 const CANDIDATE_DOMAIN="iband.movie-mentor.result-candidate-store",CANDIDATE_COLLECTION="movie_mentor_result_candidate";
 const CROSS_LEDGER_PHYSICAL_READINESS_BOUNDARY="before-canonical-cross-ledger-finalization-transaction-authority";
 const EXECUTION_REQUIRED_UNIQUE_INDEX=Object.freeze({executionId:1});
