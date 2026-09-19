@@ -1,0 +1,13 @@
+import assert from "node:assert/strict";
+import {createMovieMentorInferenceSpendMongoStore} from "../ai/MovieMentorInferenceSpendMongoStore.js";
+console.log("Movie Mentor inference spend fresh debit CAS return authority court");
+const q=v=>({session(){return this},lean(){return this},async exec(){return structuredClone(v)}});
+const entitlementIndexes=[{key:{principalId:1},unique:true}],reservationIndexes=[{key:{reservationId:1},unique:true}];
+let reservationMints=0;
+const Entitlement={async createIndexes(){},collection:{async indexes(){return entitlementIndexes}},findOneAndUpdate(){return q({domain:"iband.movie-mentor.inference-spend",schema:1,principalId:"OTHER-CREATOR",status:"active",remainingUnits:999,reservedUnits:999,consumedUnits:0,entitlementRevision:77})}};
+const Reservation={async createIndexes(){},collection:{async indexes(){return reservationIndexes}},findOne(){return q(null)},async create(rows){reservationMints++;return rows}};
+const session={async withTransaction(fn){await fn()},async endSession(){}};
+const store=createMovieMentorInferenceSpendMongoStore({models:{entitlementModel:Entitlement,reservationModel:Reservation},startSession:async()=>session});
+await assert.rejects(()=>store.reserve({reservationId:"reservation-A",principalId:"creator-A",projectId:"project-A",operation:"movie-mentor-turn",units:1}),e=>e?.code==="MOVIE_MENTOR_INFERENCE_SPEND_AUTHORITY_UNAVAILABLE","successful fresh entitlement debit CAS return must bind the requested principal and mutation universe before reservation mint");
+assert.equal(reservationMints,0,"counterfeit entitlement debit return must fail before reservation mint");
+console.log("GREEN: fresh inference-spend debit CAS return binds exact requested entitlement universe.");
