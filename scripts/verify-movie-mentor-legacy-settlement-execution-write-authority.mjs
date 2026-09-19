@@ -1,0 +1,25 @@
+import assert from "node:assert/strict";
+import crypto from "node:crypto";
+import {createMovieMentorInferenceSettlementMongoStore} from "../ai/MovieMentorInferenceSettlementMongoStore.js";
+console.log("Movie Mentor legacy settlement execution write authority court");
+const digest=v=>crypto.createHash("sha256").update(JSON.stringify(v)).digest("hex"),stable=v=>Array.isArray(v)?v.map(stable):v&&typeof v==="object"?Object.fromEntries(Object.keys(v).sort().map(k=>[k,stable(v[k])])):v,stableDigest=v=>crypto.createHash("sha256").update(JSON.stringify(stable(v))).digest("hex");
+const payload={response:"canonical"},resultDigest=stableDigest(payload),frozenProviderCallSetDigest=digest([]);
+const certificate={executionId:"execution-A",creatorTurnId:"turn-A",principalId:"creator-A",projectId:"project-A",reservationId:"reservation-A",requestDigest:"request-A",closureReference:"closure-A",frozenProviderCallSetDigest,closurePolicyVersion:"policy-A",realities:[]},closureCertificateDigest=digest(certificate);
+const execution={domain:"iband.movie-mentor.inference-execution-store",schema:6,executionId:"execution-A",creatorTurnId:"turn-A",principalId:"creator-A",projectId:"project-A",reservationId:"reservation-A",requestDigest:"request-A",phase:"finalized",closureReference:"closure-A",closureCertificateDigest,closurePolicyVersion:"policy-A",finalizedResultReference:"result-A",finalizedCandidateReference:"candidate-A",finalizedResultDigest:resultDigest,resultFinalizedAt:"2036-01-01T23:59:00.000Z",providerCalls:[],providerCallsClaimed:0,frozenProviderCallCount:0,frozenProviderCallSetDigest,providerEffectRealityRevision:0,leaseReference:"lease-A",fencingToken:"fence-A",leaseGeneration:1};
+const result={domain:"iband.movie-mentor.canonical-result-store",schema:2,executionId:"execution-A",creatorTurnId:"turn-A",principalId:"creator-A",projectId:"project-A",reservationId:"reservation-A",requestDigest:"request-A",closureReference:"closure-A",closureCertificateDigest,resultReference:"result-A",candidateReference:"candidate-A",resultDigest,resultPayload:payload};
+const candidate={domain:"iband.movie-mentor.result-candidate-store",schema:2,candidateReference:"candidate-A",executionId:"execution-A",creatorTurnId:"turn-A",principalId:"creator-A",projectId:"project-A",reservationId:"reservation-A",requestDigest:"request-A",resultDigest,resultPayload:payload,stagedFromLeaseReference:"lease-A",stagedFromFencingToken:"fence-A",stagedFromLeaseGeneration:1,creatorStateFingerprint:"fingerprint-A",creatorStateOwnershipRef:"ownership-A",creatorStateRevision:1,creatorStateGeneration:1,creatorStateOwnershipRevision:1,stagedAt:"2036-01-01T23:58:00.000Z"};
+const reservation={domain:"iband.movie-mentor.inference-spend",schema:1,reservationId:"reservation-A",principalId:"creator-A",projectId:"project-A",operation:"movie-mentor-turn",units:2,status:"consumed",settledAt:"2036-01-01T23:57:00.000Z",settlementReason:"canonical-result:result-A"};
+let executionUpdates=0;
+const collection=name=>{
+ if(name==="movie_mentor_inference_execution")return {findOne:async()=>structuredClone(execution),updateOne:async()=>{executionUpdates++;return {matchedCount:1}}};
+ if(name==="movie_mentor_canonical_result")return {findOne:async()=>structuredClone(result)};
+ if(name==="movie_mentor_result_candidate")return {findOne:async()=>structuredClone(candidate)};
+ if(name==="movie_mentor_provider_effect_reality")return {find:()=>({toArray:async()=>[]})};
+ if(name==="movie_mentor_inference_spend_reservation")return {findOne:async()=>structuredClone(reservation),updateOne:async()=>({matchedCount:1})};
+ return {};
+};
+const session={async withTransaction(fn){await fn()},async endSession(){}};
+const store=createMovieMentorInferenceSettlementMongoStore({connect:async()=>{},db:()=>({collection}),startSession:async()=>session,now:()=>new Date("2036-01-02T00:00:00.000Z")});
+await assert.rejects(()=>store.settleCanonicalResult({executionId:"execution-A"}),e=>e?.code==="MOVIE_MENTOR_INFERENCE_SETTLEMENT_REALITY_RACE","successful legacy finalized-to-settled execution write must prove durable execution phase and exact canonical lineage rather than trusting matchedCount alone");
+assert.equal(executionUpdates,1);
+console.log("GREEN: legacy finalized-to-settled execution write is durably revalidated.");
