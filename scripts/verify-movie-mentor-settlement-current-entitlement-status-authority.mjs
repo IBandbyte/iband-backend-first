@@ -74,7 +74,7 @@ const collection=name=>{
   if(name==="movie_mentor_result_candidate")return {findOne:async()=>structuredClone(candidate)};
   if(name==="movie_mentor_provider_effect_reality")return {find:()=>({toArray:async()=>[]})};
   if(name==="movie_mentor_inference_spend_reservation")return {findOne:async()=>structuredClone(reservation),findOneAndUpdate:async()=>structuredClone(consumedReservation)};
-  if(name==="movie_mentor_inference_entitlement")return {findOneAndUpdate:async()=>{entitlementMutationCalls+=1;return structuredClone(suspendedEntitlement)}};
+  if(name==="movie_mentor_inference_entitlement")return {findOneAndUpdate:async filter=>{if(filter?.status!=="active"){entitlementMutationCalls+=1;return structuredClone(suspendedEntitlement)}return null}};
   return {};
 };
 const session={async withTransaction(fn){await fn()},async endSession(){}};
