@@ -204,6 +204,7 @@ function executionBindingMatches(execution,result){
   return execution&&
     execution.domain===EXECUTION_DOMAIN&&
     [6].includes(execution.schema)&&
+    text(execution.closurePolicyVersion)===CURRENT_CLOSURE_POLICY_VERSION&&
     [
       "executionId",
       "creatorTurnId",
