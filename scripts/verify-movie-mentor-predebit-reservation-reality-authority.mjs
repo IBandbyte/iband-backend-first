@@ -23,6 +23,4 @@ const collection=name=>{
 };
 const session={async withTransaction(fn){await fn()},async endSession(){}};
 const store=createMovieMentorInferenceSettlementMongoStore({connect:async()=>{},db:()=>({collection}),startSession:async()=>session,now:()=>new Date("2036-01-02T00:00:00.000Z")});
-await assert.rejects(()=>store.settleCanonicalResult({executionId:"execution-A"}),e=>e?.code==="MOVIE_MENTOR_INFERENCE_SETTLEMENT_RESERVATION_RACE","fresh settlement must revalidate current reservation reality after the SETTLED barrier and before entitlement debit");
-assert.equal(entitlementCalls,0,"released durable reservation must stop before entitlement debit");
-console.log("GREEN: current reservation reality is revalidated before fresh settlement debit.");
+const outcome=await store.settleCanonicalResult({executionId:"execution-A"});\nassert.equal(outcome?.authorized,false,"released durable reservation must not authorize settlement");\nassert.equal(outcome?.reason,"reservation-state-invalid","current released reservation reality must fail closed before debit");\nassert.equal(entitlementCalls,0,"released durable reservation must stop before entitlement debit");\nconsole.log("GREEN: current reservation reality is revalidated before fresh settlement debit.");
