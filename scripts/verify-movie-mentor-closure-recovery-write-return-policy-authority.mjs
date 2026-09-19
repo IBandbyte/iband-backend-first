@@ -1,0 +1,12 @@
+import assert from "node:assert/strict";
+import crypto from "node:crypto";
+import { createMovieMentorInferenceExecutionClosureAuthority, MOVIE_MENTOR_INFERENCE_EXECUTION_CLOSURE_POLICY_VERSION as CURRENT_POLICY } from "../ai/MovieMentorInferenceExecutionClosureAuthority.js";
+const now=new Date("2026-09-20T00:00:00.000Z");
+const active={schema:6,executionId:"execution-recovery-return",creatorTurnId:"turn-recovery-return",principalId:"creator-recovery-return",projectId:"project-recovery-return",reservationId:"reservation-recovery-return",requestDigest:"request-recovery-return",phase:"active",ownerId:"owner-recovery-return",leaseGeneration:7,leaseReference:"lease-recovery-return",fencingToken:"fence-recovery-return",leaseExpiresAt:"2026-09-19T23:00:00.000Z",providerCalls:[],providerCallsClaimed:0};
+let suppliedPolicy=null;
+const authority=createMovieMentorInferenceExecutionClosureAuthority({now:()=>now,randomId:()=>"recovery-return",store:{readExecution:async()=>active,beginClosing:async()=>{throw new Error("unused");},recoverExpiredIntoClosing:async args=>{suppliedPolicy=args.closurePolicyVersion;return {...active,phase:"closing",closureReference:args.closureReference,frozenProviderCallCount:0,frozenProviderCallSetDigest:crypto.createHash("sha256").update(JSON.stringify([])).digest("hex"),closingAt:args.closingAt,closedFromExecutionGeneration:7,closurePolicyVersion:"superseded-policy"};},completeClosing:async()=>{throw new Error("unused");},quarantineExecution:async()=>{throw new Error("unused");}},effectStore:{readEffect:async()=>null}});
+const result=await authority.recoverExpiredIntoClosing({executionId:active.executionId});
+assert.equal(suppliedPolicy,CURRENT_POLICY,"recovery must request current closure policy");
+assert.notEqual(result.authorized,true,"expired recovery must not trust a durable write return carrying superseded closure policy");
+console.log("GREEN: expired closure recovery validates returned durable policy authority.");
+console.log("LAW: RECOVERY MAY RECLAIM EXPIRED EXECUTION; IT MAY NOT ACCEPT OBSOLETE POLICY AS THE WRITE THAT WON.");
