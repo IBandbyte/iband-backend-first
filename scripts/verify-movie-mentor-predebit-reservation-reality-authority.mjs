@@ -13,7 +13,7 @@ const durableReleased={...staleReservation,status:"released",settledAt:"2036-01-
 let entitlementCalls=0,reservationReads=0;
 const settledExecution={...execution,phase:"settled",settledResultReference:"result-A",settledCandidateReference:"candidate-A",settledResultDigest:resultDigest,settledAt:"2036-01-02T00:00:00.000Z",settlementRealityBarrierRevision:1};
 const collection=name=>{
- if(name==="movie_mentor_inference_execution")return {findOne:async()=>structuredClone(settledExecution),updateOne:async()=>({matchedCount:1})};
+ if(name==="movie_mentor_inference_execution")return {findOne:async()=>structuredClone(execution),updateOne:async()=>({matchedCount:1})};
  if(name==="movie_mentor_canonical_result")return {findOne:async()=>structuredClone(result)};
  if(name==="movie_mentor_result_candidate")return {findOne:async()=>structuredClone(candidate)};
  if(name==="movie_mentor_provider_effect_reality")return {find:()=>({toArray:async()=>[]})};
