@@ -1,0 +1,11 @@
+import assert from "node:assert/strict";
+import {createMovieMentorInferenceSpendMongoStore} from "../ai/MovieMentorInferenceSpendMongoStore.js";
+console.log("Movie Mentor inference spend reservation mint return authority court");
+const q=v=>({session(){return this},lean(){return this},async exec(){return structuredClone(v)}});
+const entitlementIndexes=[{key:{principalId:1},unique:true}],reservationIndexes=[{key:{reservationId:1},unique:true}];
+const Entitlement={async createIndexes(){},collection:{async indexes(){return entitlementIndexes}},findOneAndUpdate(){return q({domain:"iband.movie-mentor.inference-spend",schema:1,principalId:"creator-A",status:"active",remainingUnits:19,reservedUnits:1,consumedUnits:0,entitlementRevision:2})}};
+const Reservation={async createIndexes(){},collection:{async indexes(){return reservationIndexes}},findOne(){return q(null)},async create(rows){return [{...rows[0],reservationId:"OTHER-RESERVATION",principalId:"OTHER-CREATOR",entitlementRevision:77}]}};
+const session={async withTransaction(fn){await fn()},async endSession(){}};
+const store=createMovieMentorInferenceSpendMongoStore({models:{entitlementModel:Entitlement,reservationModel:Reservation},startSession:async()=>session});
+await assert.rejects(()=>store.reserve({reservationId:"reservation-A",principalId:"creator-A",projectId:"project-A",operation:"movie-mentor-turn",units:1}),e=>e?.code==="MOVIE_MENTOR_INFERENCE_SPEND_RESERVATION_INVALID","successful reservation mint return must bind exact requested reservation identity and entitlement revision");
+console.log("GREEN: reservation mint return binds exact requested spend universe.");
