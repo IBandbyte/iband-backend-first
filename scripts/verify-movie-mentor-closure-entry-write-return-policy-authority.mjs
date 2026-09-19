@@ -1,0 +1,12 @@
+import assert from "node:assert/strict";
+import crypto from "node:crypto";
+import { createMovieMentorInferenceExecutionClosureAuthority, MOVIE_MENTOR_INFERENCE_EXECUTION_CLOSURE_POLICY_VERSION as CURRENT_POLICY } from "../ai/MovieMentorInferenceExecutionClosureAuthority.js";
+const now=new Date("2026-09-19T20:00:00.000Z");
+const active={schema:6,executionId:"execution-entry-return",creatorTurnId:"turn-entry-return",principalId:"creator-entry-return",projectId:"project-entry-return",reservationId:"reservation-entry-return",requestDigest:"request-entry-return",phase:"active",ownerId:"owner-entry-return",leaseGeneration:7,leaseReference:"lease-entry-return",fencingToken:"fence-entry-return",leaseExpiresAt:"2026-09-19T21:00:00.000Z",providerCalls:[],providerCallsClaimed:0};
+let suppliedPolicy=null;
+const authority=createMovieMentorInferenceExecutionClosureAuthority({now:()=>now,randomId:()=>"entry-return",store:{readExecution:async()=>active,beginClosing:async args=>{suppliedPolicy=args.closurePolicyVersion;return {...active,phase:"closing",closureReference:args.closureReference,frozenProviderCallCount:0,frozenProviderCallSetDigest:crypto.createHash("sha256").update(JSON.stringify([])).digest("hex"),closingAt:args.closingAt,closedFromExecutionGeneration:7,closurePolicyVersion:"superseded-policy"};},recoverExpiredIntoClosing:async()=>{throw new Error("unused");},completeClosing:async()=>{throw new Error("unused");},quarantineExecution:async()=>{throw new Error("unused");}},effectStore:{readEffect:async()=>null}});
+const result=await authority.beginClosing({execution:{authorized:true,executionId:active.executionId,ownerId:active.ownerId,leaseGeneration:7,leaseReference:active.leaseReference,fencingToken:active.fencingToken}});
+assert.equal(suppliedPolicy,CURRENT_POLICY,"authority must request current policy on closure entry");
+assert.notEqual(result.authorized,true,"closure entry must not trust a write return whose durable policy differs from the policy requested");
+console.log("GREEN: closure entry validates returned durable policy authority.");
+console.log("LAW: REQUESTED AUTHORITY IS NOT WRITTEN AUTHORITY; THE RETURNED DURABLE RECORD MUST PROVE THE POLICY ACTUALLY WON.");
