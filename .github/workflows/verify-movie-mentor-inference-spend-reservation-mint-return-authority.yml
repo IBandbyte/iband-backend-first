@@ -1,0 +1,16 @@
+name: Verify Movie Mentor Inference Spend Reservation Mint Return Authority
+on:
+  push:
+    branches: [verify-inference-spend-reservation-mint-return-authority]
+  pull_request:
+    branches: [main]
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 20}
+      - run: npm install
+      - run: node --check scripts/verify-movie-mentor-inference-spend-reservation-mint-return-authority.mjs
+      - run: node scripts/verify-movie-mentor-inference-spend-reservation-mint-return-authority.mjs
