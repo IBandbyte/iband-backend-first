@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { createTurnContextEnvelope } from "./MovieMentorTurnContextControl.js";
+import { MOVIE_MENTOR_INFERENCE_EXECUTION_CLOSURE_POLICY_VERSION } from "./MovieMentorInferenceExecutionClosureAuthority.js";
 import { orchestrateMovieMentorTurn } from "./MovieMentorTurnOrchestrator.js";
 import { interpretMovieMentorSemantics } from "./MovieMentorSemanticInterpreter.js";
 import { executeMovieMentorSpecialistWorkOrder, prepareContinuityHistoricalInput, LIVE_AGENT_IDS, MOVIE_MENTOR_SPECIALIST_EXECUTOR_VERSION, SPECIALIST_CONTRACT_VERSION } from "./MovieMentorSpecialistExecutor.js";
@@ -56,6 +57,13 @@ function digestCreatorResponsePayload(value) {
 
 function assertCreatorResponseAuthority({ canonical = null, settlement = null, execution = null } = {}) {
   const canonicalPhase = s(canonical?.executionPhase);
+  if (s(execution?.closurePolicyVersion) !== MOVIE_MENTOR_INFERENCE_EXECUTION_CLOSURE_POLICY_VERSION) {
+    throw runtimeError(
+      "MOVIE_MENTOR_CREATOR_RESPONSE_CLOSURE_POLICY_AUTHORITY_REQUIRED",
+      "Creator-visible result requires the durable execution to carry the current closure policy.",
+      { retryable: false, executionId: s(execution?.executionId) || s(canonical?.executionId) || null },
+    );
+  }
   if (
     canonical?.authorized !== true
     || canonical?.committed !== true
