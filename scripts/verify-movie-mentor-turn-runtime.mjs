@@ -9,6 +9,7 @@ import {
   MOVIE_MENTOR_TURN_CONTEXT_DOMAIN,
   MOVIE_MENTOR_TURN_CONTEXT_SCHEMA,
 } from "../ai/MovieMentorTurnContextControl.js";
+import { MOVIE_MENTOR_INFERENCE_EXECUTION_CLOSURE_POLICY_VERSION } from "../ai/MovieMentorInferenceExecutionClosureAuthority.js";
 
 const durable = {
   projectId: "project-77",
@@ -308,6 +309,7 @@ const settled = {
   reservationId: "runtime-test-reservation",
   requestDigest: "ignored-by-mock",
   phase: "settled",
+  closurePolicyVersion: MOVIE_MENTOR_INFERENCE_EXECUTION_CLOSURE_POLICY_VERSION,
   ownerId: "old",
   leaseGeneration: 1,
   leaseReference: "lease",
