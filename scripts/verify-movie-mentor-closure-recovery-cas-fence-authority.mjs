@@ -1,0 +1,13 @@
+import assert from "node:assert/strict";
+import { createMovieMentorInferenceExecutionMongoStore } from "../ai/MovieMentorInferenceExecutionMongoStore.js";
+const at="2026-09-20T00:00:00.000Z";
+const current={domain:"iband.movie-mentor.inference-execution-store",schema:6,executionId:"execution-recovery-cas",creatorTurnId:"turn",principalId:"creator",projectId:"project",reservationId:"reservation",requestDigest:"request",phase:"active",ownerId:"owner-a",leaseGeneration:7,leaseReference:"lease-7",fencingToken:"fence-original",leaseAcquiredAt:"2026-09-19T22:00:00.000Z",leaseExpiresAt:"2026-09-19T23:00:00.000Z",maxProviderCalls:3,providerCallsClaimed:0,providerCalls:[],providerEffectRealityRevision:0,settlementRealityBarrierRevision:0,resultFinalizationBarrierRevision:0};
+let durable={...current}; let recoveryFilter=null;
+const chain=value=>({lean(){return this},exec:async()=>value});
+const model={findOne(filter){return chain(durable&&durable.executionId===filter.executionId?{...durable}:null)},findOneAndUpdate(filter,update){recoveryFilter=filter;durable={...durable,fencingToken:"fence-replaced"};const matches=durable.executionId===filter.executionId&&durable.phase===filter.phase&&durable.leaseGeneration===filter.leaseGeneration&&durable.leaseReference===filter.leaseReference&&durable.fencingToken===filter.fencingToken&&durable.providerCallsClaimed===filter.providerCallsClaimed&&new Date(durable.leaseExpiresAt)<=filter.leaseExpiresAt.$lte;if(matches)durable={...durable,...update.$set};return chain(matches?{...durable}:null);}};
+const store=createMovieMentorInferenceExecutionMongoStore({mongoModel:model,reservationCollection:false});
+const result=await store.recoverExpiredIntoClosing({executionId:current.executionId,closureReference:"closure-recovery-cas",frozenProviderCallCount:0,frozenProviderCallSetDigest:"digest",closingAt:at,closurePolicyVersion:"5A.24-round-four-v6"});
+assert.equal(recoveryFilter.fencingToken,current.fencingToken,"recovery CAS must bind the exact fencing token observed by its authority read");
+assert.equal(result.phase,"active","replacement fencing authority must defeat stale recovery");
+console.log("GREEN: expired recovery CAS binds the exact fencing identity it read.");
+console.log("LAW: EXPIRY PERMITS RECOVERY; IT DOES NOT PERMIT A STALE READ TO CROSS A REPLACED DURABLE FENCE.");
