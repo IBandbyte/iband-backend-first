@@ -1,0 +1,13 @@
+import assert from "node:assert/strict";
+import {createMovieMentorInferenceExecutionMongoStore} from "../ai/MovieMentorInferenceExecutionMongoStore.js";
+const current={domain:"iband.movie-mentor.inference-execution-store",schema:6,executionId:"execution-replace",creatorTurnId:"turn",principalId:"creator",projectId:"project",reservationId:"reservation",requestDigest:"request",phase:"active",ownerId:"owner-A",leaseGeneration:4,leaseReference:"lease-4",fencingToken:"fence-A",leaseAcquiredAt:"2026-09-20T00:00:00.000Z",leaseExpiresAt:"2026-09-20T02:00:00.000Z",maxProviderCalls:3,providerCallsClaimed:0,providerCalls:[],providerEffectRealityRevision:0,settlementRealityBarrierRevision:0,resultFinalizationBarrierRevision:0};
+const next={...current,leaseExpiresAt:"2026-09-20T03:00:00.000Z"};
+let durable={...current},filter=null;const chain=v=>({lean(){return this},exec:async()=>v});
+const model={findOne(f){return chain(durable&&durable.executionId===f.executionId?{...durable}:null)},findOneAndUpdate(f,u){filter=f;durable={...durable,fencingToken:"fence-replaced"};const matches=durable.executionId===f.executionId&&durable.phase===f.phase&&durable.leaseGeneration===f.leaseGeneration&&durable.leaseReference===f.leaseReference&&durable.fencingToken===f.fencingToken&&durable.providerCallsClaimed===f.providerCallsClaimed;if(matches)durable={...durable,...u.$set};return chain(matches?{...durable}:null)}};
+const store=createMovieMentorInferenceExecutionMongoStore({mongoModel:model,reservationCollection:false});
+const result=await store.replaceExecution(next,{expectedPhase:"active",expectedLeaseGeneration:4,expectedLeaseReference:"lease-4"});
+assert.equal(filter.fencingToken,current.fencingToken,"replaceExecution CAS must bind the fencing token observed by its durable read");
+assert.equal(result,null,"replacement fencing identity must defeat stale generic lease replacement");
+assert.equal(durable.fencingToken,"fence-replaced");
+console.log("GREEN: generic execution replacement CAS binds the exact durable fencing identity it read.");
+console.log("LAW: A GENERIC LEASE REPLACEMENT MAY NOT CROSS A FENCE REPLACED AFTER ITS AUTHORITY READ.");
