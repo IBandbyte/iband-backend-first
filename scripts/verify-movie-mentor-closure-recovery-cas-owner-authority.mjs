@@ -1,0 +1,12 @@
+import assert from "node:assert/strict";
+import {createMovieMentorInferenceExecutionMongoStore} from "../ai/MovieMentorInferenceExecutionMongoStore.js";
+const at="2026-09-20T00:00:00.000Z";
+const current={domain:"iband.movie-mentor.inference-execution-store",schema:6,executionId:"execution-recovery-owner",creatorTurnId:"turn",principalId:"creator",projectId:"project",reservationId:"reservation",requestDigest:"request",phase:"active",ownerId:"owner-original",leaseGeneration:7,leaseReference:"lease-7",fencingToken:"fence-7",leaseAcquiredAt:"2026-09-19T22:00:00.000Z",leaseExpiresAt:"2026-09-19T23:00:00.000Z",maxProviderCalls:3,providerCallsClaimed:0,providerCalls:[],providerEffectRealityRevision:0,settlementRealityBarrierRevision:0,resultFinalizationBarrierRevision:0};
+let durable={...current},recoveryFilter=null;const chain=v=>({lean(){return this},exec:async()=>v});
+const model={findOne(f){return chain(durable&&durable.executionId===f.executionId?{...durable}:null)},findOneAndUpdate(f,u){recoveryFilter=f;durable={...durable,ownerId:"owner-replaced"};const matches=durable.executionId===f.executionId&&durable.phase===f.phase&&durable.ownerId===f.ownerId&&durable.leaseGeneration===f.leaseGeneration&&durable.leaseReference===f.leaseReference&&durable.providerCallsClaimed===f.providerCallsClaimed&&new Date(durable.leaseExpiresAt)<=f.leaseExpiresAt.$lte;if(matches)durable={...durable,...u.$set};return chain(matches?{...durable}:null)}};
+const store=createMovieMentorInferenceExecutionMongoStore({mongoModel:model,reservationCollection:false});
+const result=await store.recoverExpiredIntoClosing({executionId:current.executionId,closureReference:"closure-owner",frozenProviderCallCount:0,frozenProviderCallSetDigest:"digest",closingAt:at,closurePolicyVersion:"5A.24-round-four-v6"});
+assert.equal(recoveryFilter.ownerId,current.ownerId,"recovery CAS must bind the owner identity observed by its authority read");
+assert.equal(result.phase,"active","replaced durable owner identity must defeat stale recovery");
+console.log("GREEN: expired recovery CAS binds the exact owner identity it read.");
+console.log("LAW: EXPIRY PERMITS RECOVERY; IT DOES NOT AUTHORIZE A STALE READ ACROSS REPLACED DURABLE OWNERSHIP.");

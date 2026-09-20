@@ -1,0 +1,16 @@
+name: Verify Movie Mentor Closure Recovery CAS Owner Authority
+on:
+  push:
+    branches: [verify-closure-recovery-cas-owner-authority]
+  pull_request:
+    branches: [main]
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - run: node scripts/verify-movie-mentor-closure-recovery-cas-owner-authority.mjs
