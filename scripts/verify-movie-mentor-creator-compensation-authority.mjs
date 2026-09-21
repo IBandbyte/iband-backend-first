@@ -124,9 +124,9 @@ function collectionFor(rows,name){
 }
 const physicalRows={
   movie_mentor_inference_execution:{domain:"iband.movie-mentor.inference-execution-store",schema:6,executionId:execution.executionId,creatorTurnId:execution.creatorTurnId,principalId:execution.principalId,projectId:execution.projectId,reservationId:execution.reservationId,requestDigest:"request-comp-1",phase:"active",providerCallsClaimed:1,providerCalls:[{providerCallId:"call-comp-1",slotId:"semantic",task:"semantic"}],settlementRealityBarrierRevision:0},
-  movie_mentor_provider_effect:[{domain:"iband.movie-mentor.provider-effect-store",schema:1,providerCallId:"call-comp-1",executionId:execution.executionId,slotId:"semantic",task:"semantic",state:"confirmed",revision:2,evidence:[{externalEffectId:"provider-effect-comp-1",provider:"test-provider",observedAt:"2035-01-01T00:00:01.000Z",source:"provider-ack"}]}],
+  movie_mentor_provider_effect_reality:[{domain:"iband.movie-mentor.provider-effect-reality",schema:1,providerCallId:"call-comp-1",executionId:execution.executionId,slotId:"semantic",task:"semantic",state:"confirmed",revision:2,evidence:[{externalEffectId:"provider-effect-comp-1",provider:"test-provider",observedAt:"2035-01-01T00:00:01.000Z",source:"provider-ack"}]}],
   movie_mentor_inference_spend_reservation:{domain:"iband.movie-mentor.inference-spend",schema:1,reservationId:execution.reservationId,principalId:execution.principalId,projectId:execution.projectId,operation:"movie-mentor-turn",units:1,status:"reserved"},
-  movie_mentor_inference_spend_entitlement:{domain:"iband.movie-mentor.inference-spend",schema:1,principalId:execution.principalId,remainingUnits:4,reservedUnits:1,consumedUnits:0,entitlementRevision:3},
+  movie_mentor_inference_entitlement:{domain:"iband.movie-mentor.inference-spend",schema:1,principalId:execution.principalId,remainingUnits:4,reservedUnits:1,consumedUnits:0,entitlementRevision:3},
 };
 const physicalDb={collection(name){return collectionFor(physicalRows,name);}};
 const physicalSession={async withTransaction(fn){return fn();},async endSession(){}};
@@ -135,13 +135,13 @@ const physicalFirst=await physicalStore.compensateSupersededCreatorState({execut
 assert.equal(physicalFirst.authorized,true,"RED: production Mongo compensation store must physically authorize the exact proven superseded-state disposition.");
 assert.equal(physicalRows.movie_mentor_inference_execution.phase,"compensated","production transaction must durably terminate as COMPENSATED, never ABORTED.");
 assert.equal(physicalRows.movie_mentor_inference_spend_reservation.status,"released");
-assert.equal(physicalRows.movie_mentor_inference_spend_entitlement.remainingUnits,5);
-assert.equal(physicalRows.movie_mentor_inference_spend_entitlement.reservedUnits,0);
+assert.equal(physicalRows.movie_mentor_inference_entitlement.remainingUnits,5);
+assert.equal(physicalRows.movie_mentor_inference_entitlement.reservedUnits,0);
 const physicalSecond=await physicalStore.compensateSupersededCreatorState({execution,recoveryConflict,providerEffects:[confirmedEffect]});
 assert.equal(physicalSecond.idempotent,true,"retry must recognize the same durable Creator Compensation disposition.");
 assert.equal(physicalRows.movie_mentor_inference_spend_entitlement.remainingUnits,5,"production retry must never restore Creator value twice.");
 assert.equal(physicalRows.movie_mentor_inference_spend_entitlement.reservedUnits,0);
-assert.equal(physicalRows.movie_mentor_provider_effect[0].state,"confirmed","provider work history must survive Creator Compensation.");
+assert.equal(physicalRows.movie_mentor_provider_effect_reality[0].state,"confirmed","provider work history must survive Creator Compensation.");
 const postCompensationSettlement=await physicalStore.settleCanonicalResult({executionId:execution.executionId});
 assert.equal(postCompensationSettlement.authorized,false,"compensated execution must never later authorize canonical consumption.");
 assert.equal(postCompensationSettlement.outcome,"reserved");
