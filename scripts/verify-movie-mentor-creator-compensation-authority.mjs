@@ -142,7 +142,7 @@ const physicalDb={collection(name){return collectionFor(physicalRows,name);}};
 const physicalSession={async withTransaction(fn){return fn();},async endSession(){}};
 const physicalStore=createMovieMentorInferenceSettlementMongoStore({connect:async()=>{},startSession:async()=>physicalSession,db:()=>physicalDb,now:()=>new Date("2035-01-01T00:00:02.000Z")});
 const physicalFirst=await physicalStore.compensateSupersededCreatorState({execution,recoveryConflict,providerEffects:[confirmedEffect]});
-assert.equal(physicalFirst.authorized,true,"RED: production Mongo compensation store must physically authorize the exact proven superseded-state disposition.");
+assert.equal(physicalFirst.authorized,true,`RED: production Mongo compensation store must physically authorize the exact proven superseded-state disposition; actual=${JSON.stringify(physicalFirst)}`);
 assert.equal(physicalRows.movie_mentor_inference_execution.phase,"compensated","production transaction must durably terminate as COMPENSATED, never ABORTED.");
 assert.equal(physicalRows.movie_mentor_inference_spend_reservation.status,"released");
 assert.equal(physicalRows.movie_mentor_inference_entitlement.remainingUnits,5);
