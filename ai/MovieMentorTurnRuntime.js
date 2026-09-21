@@ -606,6 +606,11 @@ async function convergeExistingTurn({ existing, inferenceExecutionAuthority, set
       executionId: existing.executionId, retryable: false,
     });
   }
+  if (s(existing.phase) === "compensated") {
+    throw runtimeError("MOVIE_MENTOR_INFERENCE_EXECUTION_COMPENSATED", "Creator turn was durably compensated after confirmed provider work became unusable under superseded Creator state; use a new creatorTurnId for current work.", {
+      executionId: existing.executionId, retryable: false,
+    });
+  }
   if (s(existing.phase) === "quarantined") {
     throw runtimeError("MOVIE_MENTOR_INFERENCE_EXECUTION_QUARANTINED", "Creator turn belongs to a durably quarantined inference universe whose current proof is revoked; historical settlement remains preserved but cannot authorize replay or new provider work.", {
       executionId: existing.executionId,
