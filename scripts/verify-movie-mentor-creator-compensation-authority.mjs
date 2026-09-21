@@ -104,4 +104,7 @@ assert.match(runtimeSource,/MOVIE_MENTOR_PROVIDER_RECOVERY_CREATOR_STATE_UNIVERS
 assert.match(runtimeSource,/recoverProviderOutcome\(\{ providerCallId:[^\n]+recoveryAuthority: execution \}\)/,"RED: compensation handoff must freshly reread durable provider-effect reality after the semantic-universe conflict.");
 assert.match(runtimeSource,/recovery\?\.outcome !== "CONFIRMED_EFFECT"/,"RED: compensation handoff must require CONFIRMED provider effect, never inferred work.");
 assert.match(runtimeSource,/error\.providerEffects = \[Object\.freeze/,"RED: live conflict must carry proof-bearing provider-effect evidence into compensation.");
+
+assert.match(settlementStoreSource,/phase:"aborted",abortedAt:at,abortReason:"creator-compensated-superseded-creator-state"/,"RED: current Creator Compensation physically reuses ABORTED for an execution with confirmed provider work; compensation needs its own durable terminal disposition.");
+assert.doesNotMatch(executionStoreSource,/phase==="aborted"&&\(calls\.length!==0\|\|v\.providerCallsClaimed!==0/,"RED: ABORTED remains canonically defined as zero-provider-claim; claimed-work compensation cannot masquerade as abort.");
 console.log("GREEN: live runtime owns the exact compensation handoff instead of leaving the new durable capability orphaned.");
