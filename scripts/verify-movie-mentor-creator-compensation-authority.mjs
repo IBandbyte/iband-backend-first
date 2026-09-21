@@ -26,8 +26,8 @@ const recoveryConflict = Object.freeze({
   creatorStateUniverseConflictAuthority:Object.freeze({
     domain:"iband.movie-mentor.provider-recovery-creator-state-universe-conflict",schema:1,
     providerCallId:"call-comp-1",task:"movie-mentor-semantic",
-    historicalCreatorStateUniverse:Object.freeze({revision:7,snapshotReference:"snapshot:7",creatorStateGeneration:7,creatorStateFingerprint:"a".repeat(64)}),
-    currentCreatorStateUniverse:Object.freeze({revision:8,snapshotReference:"snapshot:8",creatorStateGeneration:8,creatorStateFingerprint:"b".repeat(64)}),
+    historicalCreatorStateUniverse:Object.freeze({revision:7,revisionAuthorityReference:null,snapshotFingerprint:null,snapshotReference:"snapshot:7",creatorStateGeneration:7,creatorStateFingerprint:"a".repeat(64),creatorStateAuthorityReference:null}),
+    currentCreatorStateUniverse:Object.freeze({revision:8,revisionAuthorityReference:null,snapshotFingerprint:null,snapshotReference:"snapshot:8",creatorStateGeneration:8,creatorStateFingerprint:"b".repeat(64),creatorStateAuthorityReference:null}),
   }),
 });
 
