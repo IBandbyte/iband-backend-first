@@ -1,0 +1,15 @@
+name: Verify Movie Mentor Late Provider Conflict Quarantine Admission
+on:
+  push:
+    branches: [verify-late-provider-conflict-quarantine-admission]
+  pull_request:
+    branches: [main]
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node scripts/verify-movie-mentor-late-provider-conflict-quarantine-admission.mjs
