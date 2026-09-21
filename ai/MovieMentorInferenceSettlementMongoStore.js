@@ -45,7 +45,7 @@ function createMovieMentorInferenceSettlementMongoStore({connect=ensureConnectio
     const byId=new Map(rows.map(row=>[text(row.providerCallId),normalizeEffect(row)]));
     for(const call of calls){const effect=byId.get(text(call.providerCallId));if(!effect||effect.state!=="confirmed"||effect.slotId!==text(call.slotId)||effect.task!==text(call.task)){outcome=Object.freeze({authorized:false,compensated:false,outcome:"reserved",reason:"provider-effect-not-confirmed",executionId:id,providerCallId:text(call.providerCallId)});return;}}
     const supplied=new Map((Array.isArray(providerEffects)?providerEffects:[]).map(effect=>[text(effect?.providerCallId),effect]));
-    if(supplied.size!==calls.length||calls.some(call=>text(supplied.get(text(call.providerCallId))?.state)!=="confirmed")){outcome=Object.freeze({authorized:false,compensated:false,outcome:"reserved",reason:"provider-effect-proof-binding-invalid",executionId:id});return;}
+    if(supplied.size<1||[...supplied.entries()].some(([callId,effect])=>!calls.some(call=>text(call.providerCallId)===callId)||text(effect?.executionId)!==id||text(effect?.state)!=="confirmed"||!byId.has(callId))){outcome=Object.freeze({authorized:false,compensated:false,outcome:"reserved",reason:"provider-effect-proof-binding-invalid",executionId:id});return;}
     const reservation=await reservations.findOne({reservationId:text(execution.reservationId)},{session});
     if(!reservationBindingValid(reservation,execution)){outcome=Object.freeze({authorized:false,compensated:false,outcome:"reserved",reason:"reservation-binding-invalid",executionId:id});return;}
     const reason="creator-compensation:superseded-creator-state";
