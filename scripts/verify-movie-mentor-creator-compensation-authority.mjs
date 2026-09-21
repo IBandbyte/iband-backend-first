@@ -147,3 +147,24 @@ assert.equal(postCompensationSettlement.authorized,false,"compensated execution 
 assert.equal(postCompensationSettlement.outcome,"reserved");
 console.log("GREEN: production Mongo compensation transaction restores Creator value exactly once, preserves provider history, and cannot later consume the compensated turn.");
 
+const multiExecution={...execution,executionId:"exec-comp-multi",creatorTurnId:"turn-comp-multi",reservationId:"res-comp-multi"};
+const multiRows={
+  movie_mentor_inference_execution:{domain:"iband.movie-mentor.inference-execution-store",schema:6,executionId:multiExecution.executionId,creatorTurnId:multiExecution.creatorTurnId,principalId:multiExecution.principalId,projectId:multiExecution.projectId,reservationId:multiExecution.reservationId,requestDigest:"request-comp-multi",phase:"active",providerCallsClaimed:2,providerCalls:[{providerCallId:"call-comp-a",slotId:"semantic",task:"semantic"},{providerCallId:"call-comp-b",slotId:"continuity",task:"continuity"}],settlementRealityBarrierRevision:0},
+  movie_mentor_provider_effect_reality:[
+    {domain:"iband.movie-mentor.provider-effect-reality",schema:1,providerCallId:"call-comp-a",executionId:multiExecution.executionId,slotId:"semantic",task:"semantic",state:"confirmed",revision:2,evidence:[{externalEffectId:"effect-comp-a",provider:"test-provider",observedAt:"2035-01-01T00:00:01.000Z",source:"provider-ack"}]},
+    {domain:"iband.movie-mentor.provider-effect-reality",schema:1,providerCallId:"call-comp-b",executionId:multiExecution.executionId,slotId:"continuity",task:"continuity",state:"confirmed",revision:2,evidence:[{externalEffectId:"effect-comp-b",provider:"test-provider",observedAt:"2035-01-01T00:00:01.000Z",source:"provider-ack"}]},
+  ],
+  movie_mentor_inference_spend_reservation:{domain:"iband.movie-mentor.inference-spend",schema:1,reservationId:multiExecution.reservationId,principalId:multiExecution.principalId,projectId:multiExecution.projectId,operation:"movie-mentor-turn",units:1,status:"reserved"},
+  movie_mentor_inference_entitlement:{domain:"iband.movie-mentor.inference-spend",schema:1,principalId:multiExecution.principalId,remainingUnits:4,reservedUnits:1,consumedUnits:0,entitlementRevision:3},
+};
+const multiDb={collection(name){return collectionFor(multiRows,name);}};
+const multiStore=createMovieMentorInferenceSettlementMongoStore({connect:async()=>{},startSession:async()=>physicalSession,db:()=>multiDb,now:()=>new Date("2035-01-01T00:00:02.000Z")});
+const liveSingleConflictProof=[{providerCallId:"call-comp-b",executionId:multiExecution.executionId,slotId:"continuity",task:"continuity",state:"confirmed",evidence:structuredClone(multiRows.movie_mentor_provider_effect_reality[1].evidence)}];
+const multiDecision=await multiStore.compensateSupersededCreatorState({execution:multiExecution,recoveryConflict,providerEffects:liveSingleConflictProof});
+assert.equal(multiDecision.authorized,true,"RED: a multi-call turn with durable CONFIRMED provider reality must not strand Creator value merely because the live semantic-universe conflict carries proof for the exact failed call while the transaction can reread the full provider-effect universe.");
+assert.equal(multiDecision.compensated,true);
+assert.equal(multiRows.movie_mentor_inference_execution.phase,"compensated");
+assert.equal(multiRows.movie_mentor_inference_entitlement.remainingUnits,5);
+console.log("GREEN: multi-call Creator Compensation derives the complete confirmed provider-effect universe durably while binding the live conflict to its exact failed provider call.");
+
+
