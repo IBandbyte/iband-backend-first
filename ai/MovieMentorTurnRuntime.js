@@ -271,16 +271,32 @@ function createFencedInferenceOrchestrationDeps({ execution, inferenceExecutionA
     const decision = await inferenceExecutionAuthority.claimProviderCall({ execution, slotId, task });
     if (decision?.dispatchAuthorized !== true) {
       if (decision?.reason === "provider-call-slot-already-admitted") {
-        return recoverPreviouslyAdmittedProviderResult({
-          decision,
-          execution,
-          slotId,
-          task,
-          input,
-          recoverProviderOutcome: inferenceExecutionAuthority?.recoverProviderOutcome,
-          readProviderOperation: inferenceExecutionAuthority?.readProviderOperation,
-          reconstructRecoveredResult,
-        });
+        try {
+          return await recoverPreviouslyAdmittedProviderResult({
+            decision,
+            execution,
+            slotId,
+            task,
+            input,
+            recoverProviderOutcome: inferenceExecutionAuthority?.recoverProviderOutcome,
+            readProviderOperation: inferenceExecutionAuthority?.readProviderOperation,
+            reconstructRecoveredResult,
+          });
+        } catch (error) {
+          if (error?.code !== "MOVIE_MENTOR_PROVIDER_RECOVERY_CREATOR_STATE_UNIVERSE_CONFLICT") throw error;
+          const recovery = await inferenceExecutionAuthority.recoverProviderOutcome({ providerCallId: s(error?.providerCallId || decision?.providerCallId), recoveryAuthority: execution });
+          const evidence = Array.isArray(recovery?.evidence) ? recovery.evidence : [];
+          if (recovery?.outcome !== "CONFIRMED_EFFECT" || recovery?.refundAuthorized !== false || recovery?.redispatchAuthorized !== false || !s(recovery?.providerCallId) || evidence.length !== 1 || !s(evidence[0]?.externalEffectId)) throw error;
+          error.providerEffects = [Object.freeze({
+            providerCallId: s(recovery.providerCallId),
+            executionId: s(recovery.executionId || execution?.executionId),
+            slotId: s(recovery.slotId || decision?.slotId || slotId),
+            task: s(recovery.task || decision?.task || task),
+            state: "confirmed",
+            evidence: clone(evidence),
+          })];
+          throw error;
+        }
       }
       throw runtimeError("MOVIE_MENTOR_INFERENCE_PROVIDER_CALL_NOT_AUTHORIZED", "Provider call was not admitted under the current durable execution lease.", {
         reason: decision?.reason || "provider-call-not-authorized",
