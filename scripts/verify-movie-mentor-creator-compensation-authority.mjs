@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createMovieMentorInferenceSettlementReconciliationAuthority } from "../ai/MovieMentorInferenceSettlementReconciliationAuthority.js";
+import fs from "node:fs";
 
 console.log("Movie Mentor Creator Compensation authority court");
 
@@ -96,3 +97,8 @@ await assert.rejects(()=>authority.compensateSupersededCreatorState({
 }),e=>e.code==="MOVIE_MENTOR_CREATOR_COMPENSATION_PROVIDER_EFFECT_REQUIRED");
 
 console.log("GREEN: Creator Compensation refuses missing capability, wrong cause, and non-confirmed provider reality.");
+
+const runtimeSource=fs.readFileSync(new URL("../ai/MovieMentorTurnRuntime.js",import.meta.url),"utf8");
+assert.match(runtimeSource,/compensateSupersededCreatorState/,"RED: Creator Compensation is durable but not reachable from the live failed-orchestration path that owns superseded Creator-state recovery conflict.");
+assert.match(runtimeSource,/MOVIE_MENTOR_PROVIDER_RECOVERY_CREATOR_STATE_UNIVERSE_CONFLICT/,"RED: live runtime must select compensation only for the exact superseded Creator-state recovery conflict.");
+console.log("GREEN: live runtime owns the exact compensation handoff instead of leaving the new durable capability orphaned.");
