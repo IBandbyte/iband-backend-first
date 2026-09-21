@@ -1,0 +1,12 @@
+import assert from "node:assert/strict";
+import {createMovieMentorInferenceExecutionMongoStore} from "../ai/MovieMentorInferenceExecutionMongoStore.js";
+const current={domain:"iband.movie-mentor.inference-execution-store",schema:6,executionId:"execution-q-race",creatorTurnId:"turn",principalId:"creator",projectId:"project",reservationId:"reservation",requestDigest:"request",phase:"closed",ownerId:"owner",leaseGeneration:4,leaseReference:"lease-4",fencingToken:"fence-4",leaseAcquiredAt:"2026-09-20T00:00:00.000Z",leaseExpiresAt:"2026-09-20T01:00:00.000Z",maxProviderCalls:2,providerCallsClaimed:0,providerCalls:[],providerEffectRealityRevision:2,settlementRealityBarrierRevision:0,resultFinalizationBarrierRevision:0,closureReference:"closure-A",frozenProviderCallCount:0,frozenProviderCallSetDigest:"set-A",closingAt:"2026-09-20T01:01:00.000Z",closedFromExecutionGeneration:4,closurePolicyVersion:"5A.24-round-four-v6",closureCertificateDigest:"certificate-A",closedAt:"2026-09-20T01:02:00.000Z"};
+let durable={...current},filter=null;const chain=v=>({lean(){return this},exec:async()=>v});
+const model={findOne(f){return chain(durable&&durable.executionId===f.executionId?{...durable}:null)},findOneAndUpdate(f,u){filter=f;durable={...durable,closureCertificateDigest:"certificate-replaced"};const matches=durable.executionId===f.executionId&&durable.phase===f.phase&&durable.closureReference===f.closureReference&&durable.closureCertificateDigest===f.closureCertificateDigest;if(matches)durable={...durable,...u.$set};return chain(matches?{...durable}:null)}};
+const store=createMovieMentorInferenceExecutionMongoStore({mongoModel:model,reservationCollection:false});
+const result=await store.quarantineExecution({executionId:current.executionId,closureReference:current.closureReference,reason:"current-reality-invalid",quarantinedAt:"2026-09-20T01:03:00.000Z"});
+assert.equal(filter.closureCertificateDigest,current.closureCertificateDigest,"quarantine CAS must bind the closure certificate identity observed by its durable read");
+assert.equal(result.phase,"closed","replacement closure certificate must defeat stale quarantine write");
+assert.equal(durable.closureCertificateDigest,"certificate-replaced");
+console.log("GREEN: quarantine CAS binds the exact closure certificate identity it read.");
+console.log("LAW: QUARANTINE MAY REVOKE CURRENT AUTHORITY; A STALE CLOSURE READ MAY NOT REVOKE A REPLACED CLOSURE IDENTITY.");
