@@ -50,7 +50,7 @@ assert.equal(reservation.status,"reserved");
 assert.deepEqual(entitlement,{remainingUnits:4,reservedUnits:1,consumedUnits:0});
 
 assert.equal(typeof authority.compensateSupersededCreatorState,"function",
-  "RED: current settlement authority has no exact-once Creator Compensation disposition for CONFIRMED provider work made unusable solely by a superseded Creator-state universe");
+  "Creator Compensation authority must exist for CONFIRMED provider work made unusable solely by a superseded Creator-state universe");
 
 const first=await authority.compensateSupersededCreatorState({execution,recoveryConflict,providerEffects:[confirmedEffect]});
 assert.equal(first.authorized,true);
@@ -73,3 +73,26 @@ assert.equal(compensationWrites,1,"retry must not create a second compensation d
 
 console.log("GREEN: confirmed provider cost remains historical while the undelivered superseded Creator-state turn restores exactly one Creator unit exactly once.");
 console.log("LAW: PROVIDER COST MAY SURVIVE; AN UNDELIVERED SUPERSEDED CREATOR-STATE TURN MUST NOT STRAND OR DOUBLE-CHARGE CREATOR VALUE. COMPENSATION IS DURABLE AND EXACTLY ONCE.");
+
+const noCapability=createMovieMentorInferenceSettlementReconciliationAuthority({store:{
+  settleCanonicalResult:store.settleCanonicalResult,
+  releaseUnclaimedReservation:store.releaseUnclaimedReservation,
+  releaseUnboundReservation:store.releaseUnboundReservation,
+}});
+const refused=await noCapability.compensateSupersededCreatorState({execution,recoveryConflict,providerEffects:[confirmedEffect]});
+assert.equal(refused.authorized,false);
+assert.equal(refused.reason,"creator-compensation-store-capability-unavailable");
+
+await assert.rejects(()=>authority.compensateSupersededCreatorState({
+  execution,
+  recoveryConflict:{code:"SOME_OTHER_FAILURE"},
+  providerEffects:[confirmedEffect],
+}),e=>e.code==="MOVIE_MENTOR_CREATOR_COMPENSATION_BINDING_REQUIRED");
+
+await assert.rejects(()=>authority.compensateSupersededCreatorState({
+  execution,
+  recoveryConflict,
+  providerEffects:[{...confirmedEffect,state:"unknown",evidence:[]}],
+}),e=>e.code==="MOVIE_MENTOR_CREATOR_COMPENSATION_PROVIDER_EFFECT_REQUIRED");
+
+console.log("GREEN: Creator Compensation refuses missing capability, wrong cause, and non-confirmed provider reality.");
