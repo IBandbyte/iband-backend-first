@@ -174,7 +174,7 @@ const multiStore=createMovieMentorInferenceSettlementMongoStore({connect:async()
 const liveSingleConflictProof=[{providerCallId:"call-comp-b",executionId:multiExecution.executionId,slotId:"continuity",task:"continuity",state:"confirmed",evidence:structuredClone(multiRows.movie_mentor_provider_effect_reality[1].evidence)}];
 const multiRecoveryConflict={...recoveryConflict,creatorStateUniverseConflictAuthority:{...recoveryConflict.creatorStateUniverseConflictAuthority,providerCallId:"call-comp-b",task:"continuity"}};
 const multiDecision=await multiStore.compensateSupersededCreatorState({execution:multiExecution,recoveryConflict:multiRecoveryConflict,providerEffects:liveSingleConflictProof});
-assert.equal(multiDecision.authorized,true,"RED: a multi-call turn with durable CONFIRMED provider reality must not strand Creator value merely because the live semantic-universe conflict carries proof for the exact failed call while the transaction can reread the full provider-effect universe.");
+assert.equal(multiDecision.authorized,true,`RED: a multi-call turn with durable CONFIRMED provider reality must not strand Creator value merely because the live semantic-universe conflict carries proof for the exact failed call while the transaction can reread the full provider-effect universe; actual=${JSON.stringify(multiDecision)}`);
 assert.equal(multiDecision.compensated,true);
 assert.equal(multiRows.movie_mentor_inference_execution.phase,"compensated");
 assert.equal(multiRows.movie_mentor_inference_entitlement.remainingUnits,5);
