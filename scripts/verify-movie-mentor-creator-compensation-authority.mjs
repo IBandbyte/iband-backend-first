@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { createMovieMentorInferenceSettlementReconciliationAuthority } from "../ai/MovieMentorInferenceSettlementReconciliationAuthority.js";
 import { createMovieMentorInferenceSettlementMongoStore } from "../ai/MovieMentorInferenceSettlementMongoStore.js";
 import fs from "node:fs";
+import crypto from "node:crypto";
+const inputDigest=value=>crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");
 
 console.log("Movie Mentor Creator Compensation authority court");
 
@@ -130,10 +132,12 @@ function collectionFor(rows,name){
 }
 const physicalRows={
   movie_mentor_inference_execution:{domain:"iband.movie-mentor.inference-execution-store",schema:6,executionId:execution.executionId,creatorTurnId:execution.creatorTurnId,principalId:execution.principalId,projectId:execution.projectId,reservationId:execution.reservationId,requestDigest:"request-comp-1",phase:"active",providerCallsClaimed:1,providerCalls:[{providerCallId:"call-comp-1",slotId:"semantic",task:"semantic"}],settlementRealityBarrierRevision:0},
+  movie_mentor_provider_operation_reality:{providerCallId:"call-comp-1",executionId:execution.executionId,slotId:"semantic",task:"semantic",reconstructionInput:{context:{turnContextAuthority:{revision:7,snapshotReference:"snapshot:7",creatorState:{generation:7,fingerprint:"a".repeat(64)}}}}},
   movie_mentor_provider_effect_reality:[{domain:"iband.movie-mentor.provider-effect-reality",schema:1,providerCallId:"call-comp-1",executionId:execution.executionId,slotId:"semantic",task:"semantic",state:"confirmed",revision:2,evidence:[{externalEffectId:"provider-effect-comp-1",provider:"test-provider",observedAt:"2035-01-01T00:00:01.000Z",source:"provider-ack"}]}],
   movie_mentor_inference_spend_reservation:{domain:"iband.movie-mentor.inference-spend",schema:1,reservationId:execution.reservationId,principalId:execution.principalId,projectId:execution.projectId,operation:"movie-mentor-turn",units:1,status:"reserved"},
   movie_mentor_inference_entitlement:{domain:"iband.movie-mentor.inference-spend",schema:1,principalId:execution.principalId,remainingUnits:4,reservedUnits:1,consumedUnits:0,entitlementRevision:3},
 };
+physicalRows.movie_mentor_provider_operation_reality.reconstructionInputDigest=inputDigest(physicalRows.movie_mentor_provider_operation_reality.reconstructionInput);
 const physicalDb={collection(name){return collectionFor(physicalRows,name);}};
 const physicalSession={async withTransaction(fn){return fn();},async endSession(){}};
 const physicalStore=createMovieMentorInferenceSettlementMongoStore({connect:async()=>{},startSession:async()=>physicalSession,db:()=>physicalDb,now:()=>new Date("2035-01-01T00:00:02.000Z")});
@@ -156,6 +160,7 @@ console.log("GREEN: production Mongo compensation transaction restores Creator v
 const multiExecution={...execution,executionId:"exec-comp-multi",creatorTurnId:"turn-comp-multi",reservationId:"res-comp-multi"};
 const multiRows={
   movie_mentor_inference_execution:{domain:"iband.movie-mentor.inference-execution-store",schema:6,executionId:multiExecution.executionId,creatorTurnId:multiExecution.creatorTurnId,principalId:multiExecution.principalId,projectId:multiExecution.projectId,reservationId:multiExecution.reservationId,requestDigest:"request-comp-multi",phase:"active",providerCallsClaimed:2,providerCalls:[{providerCallId:"call-comp-a",slotId:"semantic",task:"semantic"},{providerCallId:"call-comp-b",slotId:"continuity",task:"continuity"}],settlementRealityBarrierRevision:0},
+  movie_mentor_provider_operation_reality:{providerCallId:"call-comp-b",executionId:multiExecution.executionId,slotId:"continuity",task:"continuity",reconstructionInput:{input:{turnContextAuthority:{revision:7,snapshotReference:"snapshot:7",creatorState:{generation:7,fingerprint:"a".repeat(64)}}}}},
   movie_mentor_provider_effect_reality:[
     {domain:"iband.movie-mentor.provider-effect-reality",schema:1,providerCallId:"call-comp-a",executionId:multiExecution.executionId,slotId:"semantic",task:"semantic",state:"confirmed",revision:2,evidence:[{externalEffectId:"effect-comp-a",provider:"test-provider",observedAt:"2035-01-01T00:00:01.000Z",source:"provider-ack"}]},
     {domain:"iband.movie-mentor.provider-effect-reality",schema:1,providerCallId:"call-comp-b",executionId:multiExecution.executionId,slotId:"continuity",task:"continuity",state:"confirmed",revision:2,evidence:[{externalEffectId:"effect-comp-b",provider:"test-provider",observedAt:"2035-01-01T00:00:01.000Z",source:"provider-ack"}]},
@@ -163,6 +168,7 @@ const multiRows={
   movie_mentor_inference_spend_reservation:{domain:"iband.movie-mentor.inference-spend",schema:1,reservationId:multiExecution.reservationId,principalId:multiExecution.principalId,projectId:multiExecution.projectId,operation:"movie-mentor-turn",units:1,status:"reserved"},
   movie_mentor_inference_entitlement:{domain:"iband.movie-mentor.inference-spend",schema:1,principalId:multiExecution.principalId,remainingUnits:4,reservedUnits:1,consumedUnits:0,entitlementRevision:3},
 };
+multiRows.movie_mentor_provider_operation_reality.reconstructionInputDigest=inputDigest(multiRows.movie_mentor_provider_operation_reality.reconstructionInput);
 const multiDb={collection(name){return collectionFor(multiRows,name);}};
 const multiStore=createMovieMentorInferenceSettlementMongoStore({connect:async()=>{},startSession:async()=>physicalSession,db:()=>multiDb,now:()=>new Date("2035-01-01T00:00:02.000Z")});
 const liveSingleConflictProof=[{providerCallId:"call-comp-b",executionId:multiExecution.executionId,slotId:"continuity",task:"continuity",state:"confirmed",evidence:structuredClone(multiRows.movie_mentor_provider_effect_reality[1].evidence)}];
