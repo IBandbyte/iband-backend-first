@@ -21,6 +21,12 @@ const recoveryConflict = Object.freeze({
   code:"MOVIE_MENTOR_PROVIDER_RECOVERY_CREATOR_STATE_UNIVERSE_CONFLICT",
   historicalCreatorState:Object.freeze({revision:7,generation:7,fingerprint:"a".repeat(64),snapshotReference:"snapshot:7"}),
   currentCreatorState:Object.freeze({revision:8,generation:8,fingerprint:"b".repeat(64),snapshotReference:"snapshot:8"}),
+  creatorStateUniverseConflictAuthority:Object.freeze({
+    domain:"iband.movie-mentor.provider-recovery-creator-state-universe-conflict",schema:1,
+    providerCallId:"call-comp-1",task:"semantic",
+    historicalCreatorStateUniverse:Object.freeze({revision:7,snapshotReference:"snapshot:7",creatorStateGeneration:7,creatorStateFingerprint:"a".repeat(64)}),
+    currentCreatorStateUniverse:Object.freeze({revision:8,snapshotReference:"snapshot:8",creatorStateGeneration:8,creatorStateFingerprint:"b".repeat(64)}),
+  }),
 });
 
 let compensationWrites=0;
@@ -160,17 +166,17 @@ const multiRows={
 const multiDb={collection(name){return collectionFor(multiRows,name);}};
 const multiStore=createMovieMentorInferenceSettlementMongoStore({connect:async()=>{},startSession:async()=>physicalSession,db:()=>multiDb,now:()=>new Date("2035-01-01T00:00:02.000Z")});
 const liveSingleConflictProof=[{providerCallId:"call-comp-b",executionId:multiExecution.executionId,slotId:"continuity",task:"continuity",state:"confirmed",evidence:structuredClone(multiRows.movie_mentor_provider_effect_reality[1].evidence)}];
-const multiDecision=await multiStore.compensateSupersededCreatorState({execution:multiExecution,recoveryConflict,providerEffects:liveSingleConflictProof});
+const multiRecoveryConflict={...recoveryConflict,creatorStateUniverseConflictAuthority:{...recoveryConflict.creatorStateUniverseConflictAuthority,providerCallId:"call-comp-b",task:"continuity"}};\nconst multiDecision=await multiStore.compensateSupersededCreatorState({execution:multiExecution,recoveryConflict:multiRecoveryConflict,providerEffects:liveSingleConflictProof});
 assert.equal(multiDecision.authorized,true,"RED: a multi-call turn with durable CONFIRMED provider reality must not strand Creator value merely because the live semantic-universe conflict carries proof for the exact failed call while the transaction can reread the full provider-effect universe.");
 assert.equal(multiDecision.compensated,true);
 assert.equal(multiRows.movie_mentor_inference_execution.phase,"compensated");
 assert.equal(multiRows.movie_mentor_inference_entitlement.remainingUnits,5);
 console.log("GREEN: multi-call Creator Compensation derives the complete confirmed provider-effect universe durably while binding the live conflict to its exact failed provider call.");
 
-const wrongCallDecision=await multiStore.compensateSupersededCreatorState({execution:multiExecution,recoveryConflict,providerEffects:[{...liveSingleConflictProof[0],providerCallId:"call-not-admitted"}]});
+const wrongCallDecision=await multiStore.compensateSupersededCreatorState({execution:multiExecution,recoveryConflict:multiRecoveryConflict,providerEffects:[{...liveSingleConflictProof[0],providerCallId:"call-not-admitted"}]});
 assert.equal(wrongCallDecision.authorized,false,"caller proof for a non-admitted call must fail closed.");
 assert.equal(wrongCallDecision.reason,"provider-effect-proof-binding-invalid");
-const wrongExecutionDecision=await multiStore.compensateSupersededCreatorState({execution:multiExecution,recoveryConflict,providerEffects:[{...liveSingleConflictProof[0],executionId:"exec-other"}]});
+const wrongExecutionDecision=await multiStore.compensateSupersededCreatorState({execution:multiExecution,recoveryConflict:multiRecoveryConflict,providerEffects:[{...liveSingleConflictProof[0],executionId:"exec-other"}]});
 assert.equal(wrongExecutionDecision.authorized,false,"caller proof from another execution must fail closed.");
 assert.equal(wrongExecutionDecision.reason,"provider-effect-proof-binding-invalid");
 console.log("GREEN: multi-call proof relaxation remains fenced to a confirmed call admitted by this exact execution.");
