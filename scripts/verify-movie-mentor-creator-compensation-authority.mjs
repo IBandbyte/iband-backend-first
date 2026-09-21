@@ -183,9 +183,12 @@ assert.equal(wrongExecutionDecision.reason,"provider-effect-proof-binding-invali
 console.log("GREEN: multi-call proof relaxation remains fenced to a confirmed call admitted by this exact execution.");
 
 const forgedConflict={code:"MOVIE_MENTOR_PROVIDER_RECOVERY_CREATOR_STATE_UNIVERSE_CONFLICT"};
-const forgedCauseDecision=await multiStore.compensateSupersededCreatorState({execution:multiExecution,recoveryConflict:forgedConflict,providerEffects:liveSingleConflictProof});
-assert.equal(forgedCauseDecision.authorized,false,"RED: a caller must not mint Creator Compensation merely by supplying the universe-conflict error code; the superseded Creator-state cause must carry proof owned by the recovery authority.");
-console.log("GREEN: Creator Compensation requires proof-bearing superseded Creator-state cause authority, not a forgeable error-code label.");
+let forgedBareCauseRejected=false;
+try{await multiStore.compensateSupersededCreatorState({execution:multiExecution,recoveryConflict:forgedConflict,providerEffects:liveSingleConflictProof});}catch(error){forgedBareCauseRejected=error?.code==="MOVIE_MENTOR_CREATOR_COMPENSATION_BINDING_REQUIRED";}
+assert.equal(forgedBareCauseRejected,true,"Bare universe-conflict error code must fail closed without recovery-owned cause proof.");
+const structurallyForgedConflict={code:"MOVIE_MENTOR_PROVIDER_RECOVERY_CREATOR_STATE_UNIVERSE_CONFLICT",creatorStateUniverseConflictAuthority:{domain:"iband.movie-mentor.provider-recovery-creator-state-universe-conflict",schema:1,providerCallId:"call-comp-b",task:"continuity",historicalCreatorStateUniverse:{revision:999,revisionAuthorityReference:"forged:historical",snapshotFingerprint:"forged-historical",snapshotReference:"snapshot:forged-historical",creatorStateGeneration:999,creatorStateFingerprint:"forged-historical",creatorStateAuthorityReference:"forged:historical"},currentCreatorStateUniverse:{revision:1000,revisionAuthorityReference:"forged:current",snapshotFingerprint:"forged-current",snapshotReference:"snapshot:forged-current",creatorStateGeneration:1000,creatorStateFingerprint:"forged-current",creatorStateAuthorityReference:"forged:current"}}};
+const structurallyForgedDecision=await multiStore.compensateSupersededCreatorState({execution:multiExecution,recoveryConflict:structurallyForgedConflict,providerEffects:liveSingleConflictProof});
+assert.equal(structurallyForgedDecision.authorized,false,"RED: structurally valid but fabricated Creator-state universe conflict proof must not mint Creator Compensation.");console.log("GREEN: Creator Compensation requires proof-bearing superseded Creator-state cause authority, not a forgeable error-code label.");
 
 
 
