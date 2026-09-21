@@ -126,6 +126,14 @@ function assertCurrentCreatorStateUniverse({ historical, historicalInput, curren
       task: text(historical?.task) || null,
       historicalCreatorStateUniverse: clone(historicalUniverse),
       currentCreatorStateUniverse: clone(currentUniverse),
+      creatorStateUniverseConflictAuthority: Object.freeze({
+        domain: "iband.movie-mentor.provider-recovery-creator-state-universe-conflict",
+        schema: 1,
+        providerCallId: text(historical?.providerCallId) || null,
+        task: text(historical?.task) || null,
+        historicalCreatorStateUniverse: clone(historicalUniverse),
+        currentCreatorStateUniverse: clone(currentUniverse),
+      }),
     });
   }
   return true;
