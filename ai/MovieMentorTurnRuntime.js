@@ -610,6 +610,33 @@ async function convergeExistingTurn({ existing, inferenceExecutionAuthority, set
   return null;
 }
 
+async function reconcileFailedExecution({ execution, settlementAuthority, error } = {}) {
+  if (error?.code === "MOVIE_MENTOR_PROVIDER_RECOVERY_CREATOR_STATE_UNIVERSE_CONFLICT") {
+    if (typeof settlementAuthority?.compensateSupersededCreatorState !== "function") {
+      throw runtimeError("MOVIE_MENTOR_CREATOR_COMPENSATION_AUTHORITY_REQUIRED", "Superseded Creator-state recovery requires durable Creator Compensation authority.", {
+        cause: error, retryable: true, executionId: execution?.executionId || null,
+      });
+    }
+    let compensation;
+    try {
+      compensation = await settlementAuthority.compensateSupersededCreatorState({
+        execution,
+        recoveryConflict: error,
+        providerEffects: Array.isArray(error?.providerEffects) ? error.providerEffects : [],
+      });
+    } catch (compensationError) {
+      throw runtimeError("MOVIE_MENTOR_CREATOR_COMPENSATION_RECONCILIATION_UNCERTAIN", "Creator Compensation could not be durably proven; spend remains reserved.", {
+        cause: compensationError, originalCause: error, retryable: true, executionId: execution?.executionId || null,
+      });
+    }
+    if (compensation?.authorized === true && compensation?.compensated === true && compensation?.outcome === "creator-compensated") return compensation;
+    throw runtimeError("MOVIE_MENTOR_CREATOR_COMPENSATION_UNRESOLVED", "Superseded Creator-state recovery was not authorized for compensation; spend remains reserved.", {
+      cause: error, retryable: true, executionId: execution?.executionId || null, reason: compensation?.reason || "creator-compensation-not-authoritative",
+    });
+  }
+  return releaseFailedUnclaimedExecution({ execution, settlementAuthority, error });
+}
+
 async function releaseFailedUnclaimedExecution({ execution, settlementAuthority, error } = {}) {
   if (typeof settlementAuthority?.releaseUnclaimed !== "function") {
     throw runtimeError("MOVIE_MENTOR_INFERENCE_RELEASE_AUTHORITY_REQUIRED", "Failed inference may release spend only through atomic durable zero-claim execution authority.", {
@@ -706,7 +733,8 @@ async function runMovieMentorTurn(input = {}, deps = {}) {
   const settlementEnabled = resultEnabled
     && typeof settlementAuthority?.reconcile === "function"
     && typeof settlementAuthority?.releaseUnclaimed === "function"
-    && typeof settlementAuthority?.releaseUnbound === "function";
+    && typeof settlementAuthority?.releaseUnbound === "function"
+    && typeof settlementAuthority?.compensateSupersededCreatorState === "function";
 
   if (!executionEnabled) throw runtimeError("MOVIE_MENTOR_INFERENCE_EXECUTION_AUTHORITY_REQUIRED", "Paid Movie Mentor inference cannot run without complete durable creator-turn convergence, lease fencing and provider-effect dispatch authority.");
   if (!closureEnabled) throw runtimeError("MOVIE_MENTOR_INFERENCE_EXECUTION_CLOSURE_AUTHORITY_REQUIRED", "Paid Movie Mentor inference cannot run without durable closure authority.");
@@ -805,7 +833,10 @@ async function runMovieMentorTurn(input = {}, deps = {}) {
   try {
     result = await orchestrate({ message: creatorMessage, authoritativeTurnContext: envelope, options: clone(input?.options || {}) }, orchestrationDeps);
   } catch (error) {
-    await releaseFailedUnclaimedExecution({ execution, settlementAuthority, error });
+    const disposition = await reconcileFailedExecution({ execution, settlementAuthority, error });
+    if (disposition?.outcome === "creator-compensated") {
+      throw runtimeError("MOVIE_MENTOR_CREATOR_STATE_SUPERSEDED_RETRY_REQUIRED", "Historical provider work was compensated because current Creator state superseded its semantic universe. Retry from current Creator state.", { cause: error, retryable: true, executionId: execution?.executionId || null, creatorCompensated: true });
+    }
     throw error;
   }
 
