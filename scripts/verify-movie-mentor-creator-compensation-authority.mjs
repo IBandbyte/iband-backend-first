@@ -166,7 +166,8 @@ const multiRows={
 const multiDb={collection(name){return collectionFor(multiRows,name);}};
 const multiStore=createMovieMentorInferenceSettlementMongoStore({connect:async()=>{},startSession:async()=>physicalSession,db:()=>multiDb,now:()=>new Date("2035-01-01T00:00:02.000Z")});
 const liveSingleConflictProof=[{providerCallId:"call-comp-b",executionId:multiExecution.executionId,slotId:"continuity",task:"continuity",state:"confirmed",evidence:structuredClone(multiRows.movie_mentor_provider_effect_reality[1].evidence)}];
-const multiRecoveryConflict={...recoveryConflict,creatorStateUniverseConflictAuthority:{...recoveryConflict.creatorStateUniverseConflictAuthority,providerCallId:"call-comp-b",task:"continuity"}};\nconst multiDecision=await multiStore.compensateSupersededCreatorState({execution:multiExecution,recoveryConflict:multiRecoveryConflict,providerEffects:liveSingleConflictProof});
+const multiRecoveryConflict={...recoveryConflict,creatorStateUniverseConflictAuthority:{...recoveryConflict.creatorStateUniverseConflictAuthority,providerCallId:"call-comp-b",task:"continuity"}};
+const multiDecision=await multiStore.compensateSupersededCreatorState({execution:multiExecution,recoveryConflict:multiRecoveryConflict,providerEffects:liveSingleConflictProof});
 assert.equal(multiDecision.authorized,true,"RED: a multi-call turn with durable CONFIRMED provider reality must not strand Creator value merely because the live semantic-universe conflict carries proof for the exact failed call while the transaction can reread the full provider-effect universe.");
 assert.equal(multiDecision.compensated,true);
 assert.equal(multiRows.movie_mentor_inference_execution.phase,"compensated");
