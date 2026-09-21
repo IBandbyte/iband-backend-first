@@ -10,10 +10,10 @@ console.log("Movie Mentor Creator Compensation authority court");
 const execution = Object.freeze({
   executionId:"execution-comp-1", creatorTurnId:"turn-comp-1", principalId:"creator-comp-1",
   projectId:"project-comp-1", reservationId:"reservation-comp-1", phase:"active",
-  providerCallsClaimed:1, providerCalls:[Object.freeze({providerCallId:"call-comp-1",slotId:"semantic",task:"semantic"})],
+  providerCallsClaimed:1, providerCalls:[Object.freeze({providerCallId:"call-comp-1",slotId:"semantic",task:"movie-mentor-semantic"})],
 });
 const confirmedEffect = Object.freeze({
-  providerCallId:"call-comp-1", executionId:"execution-comp-1", slotId:"semantic", task:"semantic",
+  providerCallId:"call-comp-1", executionId:"execution-comp-1", slotId:"semantic", task:"movie-mentor-semantic",
   state:"confirmed", revision:2,
   evidence:[Object.freeze({externalEffectId:"provider-effect-comp-1",provider:"test-provider",observedAt:"2035-01-01T00:00:01.000Z",source:"provider-ack"})],
 });
@@ -25,7 +25,7 @@ const recoveryConflict = Object.freeze({
   currentCreatorState:Object.freeze({revision:8,generation:8,fingerprint:"b".repeat(64),snapshotReference:"snapshot:8"}),
   creatorStateUniverseConflictAuthority:Object.freeze({
     domain:"iband.movie-mentor.provider-recovery-creator-state-universe-conflict",schema:1,
-    providerCallId:"call-comp-1",task:"semantic",
+    providerCallId:"call-comp-1",task:"movie-mentor-semantic",
     historicalCreatorStateUniverse:Object.freeze({revision:7,snapshotReference:"snapshot:7",creatorStateGeneration:7,creatorStateFingerprint:"a".repeat(64)}),
     currentCreatorStateUniverse:Object.freeze({revision:8,snapshotReference:"snapshot:8",creatorStateGeneration:8,creatorStateFingerprint:"b".repeat(64)}),
   }),
@@ -131,8 +131,8 @@ function collectionFor(rows,name){
   };
 }
 const physicalRows={
-  movie_mentor_inference_execution:{domain:"iband.movie-mentor.inference-execution-store",schema:6,executionId:execution.executionId,creatorTurnId:execution.creatorTurnId,principalId:execution.principalId,projectId:execution.projectId,reservationId:execution.reservationId,requestDigest:"request-comp-1",phase:"active",providerCallsClaimed:1,providerCalls:[{providerCallId:"call-comp-1",slotId:"semantic",task:"semantic"}],settlementRealityBarrierRevision:0},
-  movie_mentor_provider_operation_reality:{providerCallId:"call-comp-1",executionId:execution.executionId,slotId:"semantic",task:"semantic",reconstructionInput:{context:{turnContextAuthority:{revision:7,snapshotReference:"snapshot:7",creatorState:{generation:7,fingerprint:"a".repeat(64)}}}}},
+  movie_mentor_inference_execution:{domain:"iband.movie-mentor.inference-execution-store",schema:6,executionId:execution.executionId,creatorTurnId:execution.creatorTurnId,principalId:execution.principalId,projectId:execution.projectId,reservationId:execution.reservationId,requestDigest:"request-comp-1",phase:"active",providerCallsClaimed:1,providerCalls:[{providerCallId:"call-comp-1",slotId:"semantic",task:"movie-mentor-semantic"}],settlementRealityBarrierRevision:0},
+  movie_mentor_provider_operation_reality:{providerCallId:"call-comp-1",executionId:execution.executionId,slotId:"semantic",task:"movie-mentor-semantic",reconstructionInput:{context:{turnContextAuthority:{revision:7,snapshotReference:"snapshot:7",creatorState:{generation:7,fingerprint:"a".repeat(64)}}}}},
   movie_mentor_provider_effect_reality:[{domain:"iband.movie-mentor.provider-effect-reality",schema:1,providerCallId:"call-comp-1",executionId:execution.executionId,slotId:"semantic",task:"semantic",state:"confirmed",revision:2,evidence:[{externalEffectId:"provider-effect-comp-1",provider:"test-provider",observedAt:"2035-01-01T00:00:01.000Z",source:"provider-ack"}]}],
   movie_mentor_inference_spend_reservation:{domain:"iband.movie-mentor.inference-spend",schema:1,reservationId:execution.reservationId,principalId:execution.principalId,projectId:execution.projectId,operation:"movie-mentor-turn",units:1,status:"reserved"},
   movie_mentor_inference_entitlement:{domain:"iband.movie-mentor.inference-spend",schema:1,principalId:execution.principalId,remainingUnits:4,reservedUnits:1,consumedUnits:0,entitlementRevision:3},
