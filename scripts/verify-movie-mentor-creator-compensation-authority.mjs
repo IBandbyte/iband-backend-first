@@ -167,4 +167,13 @@ assert.equal(multiRows.movie_mentor_inference_execution.phase,"compensated");
 assert.equal(multiRows.movie_mentor_inference_entitlement.remainingUnits,5);
 console.log("GREEN: multi-call Creator Compensation derives the complete confirmed provider-effect universe durably while binding the live conflict to its exact failed provider call.");
 
+const wrongCallDecision=await multiStore.compensateSupersededCreatorState({execution:multiExecution,recoveryConflict,providerEffects:[{...liveSingleConflictProof[0],providerCallId:"call-not-admitted"}]});
+assert.equal(wrongCallDecision.authorized,false,"caller proof for a non-admitted call must fail closed.");
+assert.equal(wrongCallDecision.reason,"provider-effect-proof-binding-invalid");
+const wrongExecutionDecision=await multiStore.compensateSupersededCreatorState({execution:multiExecution,recoveryConflict,providerEffects:[{...liveSingleConflictProof[0],executionId:"exec-other"}]});
+assert.equal(wrongExecutionDecision.authorized,false,"caller proof from another execution must fail closed.");
+assert.equal(wrongExecutionDecision.reason,"provider-effect-proof-binding-invalid");
+console.log("GREEN: multi-call proof relaxation remains fenced to a confirmed call admitted by this exact execution.");
+
+
 
