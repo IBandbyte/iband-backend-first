@@ -246,6 +246,12 @@ function settlement({ resultPayload = livePayload, executionRecord = null } = {}
         idempotent: false,
       };
     },
+    compensateSupersededCreatorState: async () => ({
+      authorized: false,
+      compensated: false,
+      outcome: "reserved",
+      reason: "not-a-compensation-test-path",
+    }),
   };
 }
 
