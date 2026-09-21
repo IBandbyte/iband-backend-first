@@ -26,6 +26,20 @@ const store={
   settleCanonicalResult:async()=>({authorized:false,settled:false,outcome:"reserved",reason:"execution-not-finalized",executionId:execution.executionId,reservationId:reservation.reservationId}),
   releaseUnclaimedReservation:async()=>({authorized:false,released:false,outcome:"reserved",reason:"provider-call-claims-exist",executionId:execution.executionId,reservationId:reservation.reservationId,providerCallsClaimed:1}),
   releaseUnboundReservation:async()=>({authorized:false,released:false,outcome:"reserved",reason:"reservation-already-bound-to-execution",executionId:execution.executionId,reservationId:reservation.reservationId}),
+  compensateSupersededCreatorState:async({execution:current,recoveryConflict:conflict,providerEffects})=>{
+    assert.equal(current.executionId,execution.executionId);
+    assert.equal(conflict.code,recoveryConflict.code);
+    assert.equal(providerEffects[0].state,"confirmed");
+    if(reservation.status==="released"){
+      return {authorized:true,compensated:true,outcome:"creator-compensated",executionId:execution.executionId,reservationId:reservation.reservationId,principalId:reservation.principalId,projectId:reservation.projectId,providerCostAbsorbedBy:"iband",creatorUnitsRestored:reservation.units,idempotent:true};
+    }
+    assert.equal(reservation.status,"reserved");
+    compensationWrites++;
+    entitlement.reservedUnits-=reservation.units;
+    entitlement.remainingUnits+=reservation.units;
+    reservation.status="released";
+    return {authorized:true,compensated:true,outcome:"creator-compensated",executionId:execution.executionId,reservationId:reservation.reservationId,principalId:reservation.principalId,projectId:reservation.projectId,providerCostAbsorbedBy:"iband",creatorUnitsRestored:reservation.units,idempotent:false};
+  },
 };
 
 const authority=createMovieMentorInferenceSettlementReconciliationAuthority({store});
