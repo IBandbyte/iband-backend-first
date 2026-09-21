@@ -175,5 +175,11 @@ assert.equal(wrongExecutionDecision.authorized,false,"caller proof from another 
 assert.equal(wrongExecutionDecision.reason,"provider-effect-proof-binding-invalid");
 console.log("GREEN: multi-call proof relaxation remains fenced to a confirmed call admitted by this exact execution.");
 
+const forgedConflict={code:"MOVIE_MENTOR_PROVIDER_RECOVERY_CREATOR_STATE_UNIVERSE_CONFLICT"};
+const forgedCauseDecision=await multiStore.compensateSupersededCreatorState({execution:multiExecution,recoveryConflict:forgedConflict,providerEffects:liveSingleConflictProof});
+assert.equal(forgedCauseDecision.authorized,false,"RED: a caller must not mint Creator Compensation merely by supplying the universe-conflict error code; the superseded Creator-state cause must carry proof owned by the recovery authority.");
+console.log("GREEN: Creator Compensation requires proof-bearing superseded Creator-state cause authority, not a forgeable error-code label.");
+
+
 
 
