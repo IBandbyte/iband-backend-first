@@ -5,6 +5,7 @@ import { createMovieMentorInferenceExecutionMongoStore } from "../ai/MovieMentor
 import { digestMovieMentorProviderReconstructionInput } from "../ai/MovieMentorProviderOperationAuthority.js";
 import fs from "node:fs";
 import crypto from "node:crypto";
+import { convergeExistingTurn } from "../ai/MovieMentorTurnRuntime.js";
 const inputDigest=value=>digestMovieMentorProviderReconstructionInput(value);
 
 console.log("Movie Mentor Creator Compensation authority court");
@@ -211,6 +212,25 @@ console.log("GREEN: Creator Compensation uses canonical provider-operation recon
   assert.equal(decision.authorized,true,`RED: a genuine recovered current turn-context universe carries a non-null snapshotFingerprint, while durable Creator state owns its revision/reference/generation/fingerprint/snapshotReference but does not persist that derived turn-envelope fingerprint; compensation must not strand Creator value solely because the raw Creator-state row cannot reproduce a non-durable derived fingerprint. actual=${JSON.stringify(decision)}`);
 }
 console.log("GREEN: compensation current-state provenance does not require the Creator-state row to invent a non-durable turn-context snapshot fingerprint.");
+{
+  let reserveCalls=0;
+  const oldExecution={found:true,executionId:"execution-comp-old",creatorTurnId:"turn-comp-old",principalId:"creator-comp-1",projectId:"project-comp-1",reservationId:"reservation-comp-old",requestDigest:"digest-old",phase:"compensated"};
+  await assert.rejects(
+    ()=>convergeExistingTurn({existing:oldExecution,inferenceExecutionAuthority:{},settlementAuthority:{}}),
+    error=>error?.code==="MOVIE_MENTOR_INFERENCE_EXECUTION_COMPENSATED"&&error?.retryable===false,
+    "COMPENSATED creatorTurnId must remain terminal before any new reservation or provider work."
+  );
+  const freshTurnId="turn-comp-fresh";
+  const byTurn=new Map([[oldExecution.creatorTurnId,oldExecution]]);
+  const spendAuthority={reserveTurn:async({creatorTurnId})=>{reserveCalls++;return{authorized:true,reservationId:`reservation:${creatorTurnId}`,creatorTurnId,status:"reserved"};}};
+  const existing=byTurn.get(freshTurnId)||null;
+  assert.equal(existing,null,"fresh creatorTurnId must not inherit the compensated execution identity");
+  const freshReservation=await spendAuthority.reserveTurn({creatorTurnId:freshTurnId});
+  assert.equal(freshReservation.authorized,true);
+  assert.equal(freshReservation.creatorTurnId,freshTurnId);
+  assert.equal(reserveCalls,1,"fresh N+1 may reserve exactly once independently of terminal compensated N");
+}
+console.log("GREEN: compensated N is terminal while fresh N+1 owns an independent reservation identity.");
 
 const multiExecution={...execution,executionId:"exec-comp-multi",creatorTurnId:"turn-comp-multi",reservationId:"res-comp-multi"};
 const multiRows={
