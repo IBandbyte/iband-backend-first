@@ -204,6 +204,30 @@ console.log("GREEN: physical compensation retry is exactly-once for its own dura
   assert.equal(raceRows.movie_mentor_inference_entitlement.reservedUnits,1);
 }
 console.log("GREEN: compensation terminalization is CAS-fenced against an execution phase race before any Creator ledger restoration.");
+{
+  const ledgerRows=structuredClone(physicalRows);
+  ledgerRows.movie_mentor_inference_execution.phase="active";ledgerRows.movie_mentor_inference_execution.compensatedAt=null;ledgerRows.movie_mentor_inference_execution.compensationReason="";
+  ledgerRows.movie_mentor_inference_spend_reservation.status="reserved";ledgerRows.movie_mentor_inference_spend_reservation.settlementReason="";ledgerRows.movie_mentor_inference_spend_reservation.settlementExecutionId="";
+  ledgerRows.movie_mentor_inference_entitlement.remainingUnits=4;ledgerRows.movie_mentor_inference_entitlement.reservedUnits=0;
+  const db={collection(name){return collectionFor(ledgerRows,name);}};
+  const store=createMovieMentorInferenceSettlementMongoStore({connect:async()=>{},startSession:async()=>physicalSession,db:()=>db,now:()=>new Date("2035-01-01T00:00:02.350Z")});
+  let ledgerConflict=false;try{await store.compensateSupersededCreatorState({execution,recoveryConflict,providerEffects:[confirmedEffect]});}catch(error){ledgerConflict=error?.code==="MOVIE_MENTOR_CREATOR_COMPENSATION_LEDGER_CONFLICT";}
+  assert.equal(ledgerConflict,true,"RED: compensation must fail closed if the reserved-unit ledger no longer owns the restoration.");
+  assert.equal(ledgerRows.movie_mentor_inference_spend_reservation.status,"reserved");
+  assert.equal(ledgerRows.movie_mentor_inference_entitlement.remainingUnits,4);
+}
+{
+  const reservationRows=structuredClone(physicalRows);
+  reservationRows.movie_mentor_inference_execution.phase="active";reservationRows.movie_mentor_inference_execution.compensatedAt=null;reservationRows.movie_mentor_inference_execution.compensationReason="";
+  reservationRows.movie_mentor_inference_spend_reservation.status="reserved";reservationRows.movie_mentor_inference_spend_reservation.settlementReason="";reservationRows.movie_mentor_inference_spend_reservation.settlementExecutionId="";
+  reservationRows.movie_mentor_inference_entitlement.remainingUnits=4;reservationRows.movie_mentor_inference_entitlement.reservedUnits=1;
+  let injected=false;
+  const db={collection(name){const base=collectionFor(reservationRows,name);if(name!=="movie_mentor_inference_spend_reservation")return base;return {...base,async findOneAndUpdate(filter,update){if(!injected){injected=true;reservationRows.movie_mentor_inference_spend_reservation.status="consumed";}return base.findOneAndUpdate(filter,update);}};}};
+  const store=createMovieMentorInferenceSettlementMongoStore({connect:async()=>{},startSession:async()=>physicalSession,db:()=>db,now:()=>new Date("2035-01-01T00:00:02.400Z")});
+  let reservationRace=false;try{await store.compensateSupersededCreatorState({execution,recoveryConflict,providerEffects:[confirmedEffect]});}catch(error){reservationRace=error?.code==="MOVIE_MENTOR_CREATOR_COMPENSATION_RESERVATION_RACE";}
+  assert.equal(reservationRace,true,"RED: compensation must fail closed if reservation authority changes before release.");
+}
+console.log("GREEN: compensation fails closed on ledger-ownership loss and reservation-release race; transaction authority must own the whole terminal disposition.");
 const postCompensationSettlement=await physicalStore.settleCanonicalResult({executionId:execution.executionId});
 assert.equal(postCompensationSettlement.authorized,false,"compensated execution must never later authorize canonical consumption.");
 assert.equal(postCompensationSettlement.outcome,"reserved");
