@@ -175,6 +175,35 @@ assert.equal(physicalRows.movie_mentor_provider_effect_reality[0].state,"confirm
   assert.equal(conflictRows.movie_mentor_inference_entitlement.reservedUnits,0);
 }
 console.log("GREEN: physical compensation retry is exactly-once for its own durable disposition and rejects a released reservation owned by another execution.");
+{
+  const raceRows=structuredClone(physicalRows);
+  raceRows.movie_mentor_inference_execution.phase="active";
+  raceRows.movie_mentor_inference_execution.compensatedAt=null;
+  raceRows.movie_mentor_inference_execution.compensationReason="";
+  raceRows.movie_mentor_inference_spend_reservation.status="reserved";
+  raceRows.movie_mentor_inference_spend_reservation.settlementReason="";
+  raceRows.movie_mentor_inference_spend_reservation.settlementExecutionId="";
+  raceRows.movie_mentor_inference_entitlement.remainingUnits=4;
+  raceRows.movie_mentor_inference_entitlement.reservedUnits=1;
+  let injected=false;
+  const db={collection(name){
+    const base=collectionFor(raceRows,name);
+    if(name!=="movie_mentor_inference_execution")return base;
+    return {...base,async updateOne(filter,update){
+      if(!injected){injected=true;raceRows.movie_mentor_inference_execution.phase="closing";}
+      return base.updateOne(filter,update);
+    }};
+  }};
+  const raceStore=createMovieMentorInferenceSettlementMongoStore({connect:async()=>{},startSession:async()=>physicalSession,db:()=>db,now:()=>new Date("2035-01-01T00:00:02.300Z")});
+  let executionRace=false;
+  try{await raceStore.compensateSupersededCreatorState({execution,recoveryConflict,providerEffects:[confirmedEffect]});}catch(error){executionRace=error?.code==="MOVIE_MENTOR_CREATOR_COMPENSATION_EXECUTION_RACE";}
+  assert.equal(executionRace,true,"RED: compensation must fail closed if execution authority changes after snapshot validation but before terminalization.");
+  assert.equal(raceRows.movie_mentor_inference_execution.phase,"closing");
+  assert.equal(raceRows.movie_mentor_inference_spend_reservation.status,"reserved");
+  assert.equal(raceRows.movie_mentor_inference_entitlement.remainingUnits,4);
+  assert.equal(raceRows.movie_mentor_inference_entitlement.reservedUnits,1);
+}
+console.log("GREEN: compensation terminalization is CAS-fenced against an execution phase race before any Creator ledger restoration.");
 const postCompensationSettlement=await physicalStore.settleCanonicalResult({executionId:execution.executionId});
 assert.equal(postCompensationSettlement.authorized,false,"compensated execution must never later authorize canonical consumption.");
 assert.equal(postCompensationSettlement.outcome,"reserved");
