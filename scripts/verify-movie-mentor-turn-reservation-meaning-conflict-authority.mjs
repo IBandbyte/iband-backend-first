@@ -33,7 +33,8 @@ const execution={
 const settlement={
   async reconcile(){throw new Error("conflicting turn must not settle");},
   async releaseUnclaimed(){throw new Error("conflicting turn must not release execution");},
-  async releaseUnbound(){released+=1;return{authorized:true,released:true,outcome:"released",reservationId,principalId,projectId};},\n  async compensateSupersededCreatorState(){throw new Error("conflicting turn must not compensate");}
+  async releaseUnbound(){released+=1;return{authorized:true,released:true,outcome:"released",reservationId,principalId,projectId};},
+  async compensateSupersededCreatorState(){throw new Error("conflicting turn must not compensate");}
 };
 const state={projectId,revision:1,creatorStateGeneration:1,creatorStateFingerprint:"state-309",creatorConfirmedContext:[],memoryContext:{projectMemories:[]},projectJourney:{activeProjectId:projectId}};
 await assert.rejects(
