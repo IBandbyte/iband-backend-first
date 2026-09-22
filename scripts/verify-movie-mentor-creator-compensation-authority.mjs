@@ -195,6 +195,21 @@ assert.equal(forgedBareCauseRejected,true,"Bare universe-conflict error code mus
 const structurallyForgedConflict={code:"MOVIE_MENTOR_PROVIDER_RECOVERY_CREATOR_STATE_UNIVERSE_CONFLICT",creatorStateUniverseConflictAuthority:{domain:"iband.movie-mentor.provider-recovery-creator-state-universe-conflict",schema:1,providerCallId:"call-comp-b",task:"continuity",historicalCreatorStateUniverse:{revision:999,revisionAuthorityReference:"forged:historical",snapshotFingerprint:"forged-historical",snapshotReference:"snapshot:forged-historical",creatorStateGeneration:999,creatorStateFingerprint:"forged-historical",creatorStateAuthorityReference:"forged:historical"},currentCreatorStateUniverse:{revision:1000,revisionAuthorityReference:"forged:current",snapshotFingerprint:"forged-current",snapshotReference:"snapshot:forged-current",creatorStateGeneration:1000,creatorStateFingerprint:"forged-current",creatorStateAuthorityReference:"forged:current"}}};
 const structurallyForgedDecision=await multiStore.compensateSupersededCreatorState({execution:multiExecution,recoveryConflict:structurallyForgedConflict,providerEffects:liveSingleConflictProof});
 assert.equal(structurallyForgedDecision.authorized,false,"RED: structurally valid but fabricated Creator-state universe conflict proof must not mint Creator Compensation.");console.log("GREEN: Creator Compensation requires proof-bearing superseded Creator-state cause authority, not a forgeable error-code label.");
+const genuineHistoricalForgedCurrentConflict={...multiRecoveryConflict,creatorStateUniverseConflictAuthority:{...multiRecoveryConflict.creatorStateUniverseConflictAuthority,currentCreatorStateUniverse:{revision:1000,revisionAuthorityReference:"forged:current",snapshotFingerprint:null,snapshotReference:"snapshot:forged-current",creatorStateGeneration:1000,creatorStateFingerprint:"c".repeat(64),creatorStateAuthorityReference:"forged:current"}}};
+const forgedCurrentRows=structuredClone(multiRows);
+forgedCurrentRows.movie_mentor_inference_execution.phase="active";
+forgedCurrentRows.movie_mentor_inference_execution.compensatedAt=null;
+forgedCurrentRows.movie_mentor_inference_execution.compensationReason="";
+forgedCurrentRows.movie_mentor_inference_spend_reservation.status="reserved";
+forgedCurrentRows.movie_mentor_inference_spend_reservation.releasedAt=null;
+forgedCurrentRows.movie_mentor_inference_spend_reservation.settlementReason="";
+forgedCurrentRows.movie_mentor_inference_entitlement.remainingUnits=4;
+forgedCurrentRows.movie_mentor_inference_entitlement.reservedUnits=1;
+const forgedCurrentDb={collection(name){return collectionFor(forgedCurrentRows,name);}};
+const forgedCurrentStore=createMovieMentorInferenceSettlementMongoStore({connect:async()=>{},startSession:async()=>physicalSession,db:()=>forgedCurrentDb,now:()=>new Date("2035-01-01T00:00:03.000Z")});
+const forgedCurrentDecision=await forgedCurrentStore.compensateSupersededCreatorState({execution:multiExecution,recoveryConflict:genuineHistoricalForgedCurrentConflict,providerEffects:liveSingleConflictProof});
+assert.equal(forgedCurrentDecision.authorized,false,"RED: genuine historical recovery provenance plus a fabricated CURRENT Creator-state universe must not mint Creator Compensation.");
+console.log("GREEN: Creator Compensation binds both historical recovery provenance and CURRENT Creator-state authority.");
 
 
 
