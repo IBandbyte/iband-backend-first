@@ -355,6 +355,34 @@ const wrongExecutionDecision=await multiStore.compensateSupersededCreatorState({
 assert.equal(wrongExecutionDecision.authorized,false,"caller proof from another execution must fail closed.");
 assert.equal(wrongExecutionDecision.reason,"provider-effect-proof-binding-invalid");
 console.log("GREEN: multi-call proof relaxation remains fenced to a confirmed call admitted by this exact execution.");
+{
+  for(const [label,mutate,expectedReason] of [
+    ["unknown",rows=>{rows.movie_mentor_provider_effect_reality[1].state="unknown";},"provider-effect-not-confirmed"],
+    ["conflict",rows=>{rows.movie_mentor_provider_effect_reality[1].state="conflict";},"provider-effect-not-confirmed"],
+    ["missing",rows=>{rows.movie_mentor_provider_effect_reality=rows.movie_mentor_provider_effect_reality.slice(0,1);},"provider-effect-universe-incomplete"],
+  ]){
+    const rows=structuredClone(multiRows);
+    rows.movie_mentor_inference_execution.phase="active";
+    rows.movie_mentor_inference_execution.compensatedAt=null;
+    rows.movie_mentor_inference_execution.compensationReason="";
+    rows.movie_mentor_inference_spend_reservation.status="reserved";
+    rows.movie_mentor_inference_spend_reservation.settledAt=null;
+    rows.movie_mentor_inference_spend_reservation.settlementReason="";
+    rows.movie_mentor_inference_entitlement.remainingUnits=4;
+    rows.movie_mentor_inference_entitlement.reservedUnits=1;
+    mutate(rows);
+    const db={collection(name){return collectionFor(rows,name);}};
+    const store=createMovieMentorInferenceSettlementMongoStore({connect:async()=>{},startSession:async()=>physicalSession,db:()=>db,now:()=>new Date("2035-01-01T00:00:02.500Z")});
+    const decision=await store.compensateSupersededCreatorState({execution:multiExecution,recoveryConflict:multiRecoveryConflict,providerEffects:liveSingleConflictProof});
+    assert.equal(decision.authorized,false,`RED: stale caller CONFIRMED proof must not authorize compensation after durable provider-effect reality becomes ${label}.`);
+    assert.equal(decision.compensated,false);
+    assert.equal(decision.reason,expectedReason);
+    assert.equal(rows.movie_mentor_inference_spend_reservation.status,"reserved");
+    assert.equal(rows.movie_mentor_inference_entitlement.remainingUnits,4);
+    assert.equal(rows.movie_mentor_inference_entitlement.reservedUnits,1);
+  }
+}
+console.log("GREEN: stale caller provider-effect proof cannot outrank transaction-time durable effect reality; unknown, conflict, or incomplete universes fail closed without restoring Creator value.");
 
 const forgedConflict={code:"MOVIE_MENTOR_PROVIDER_RECOVERY_CREATOR_STATE_UNIVERSE_CONFLICT"};
 let forgedBareCauseRejected=false;
