@@ -820,7 +820,7 @@ async function runMovieMentorTurn(input = {}, deps = {}) {
       execution = await openLiveExecution({ input, creatorMessage, durableProjectId, reservation, serverAuthority: deps.serverAuthority, inferenceExecutionAuthority, deps, requestDigest });
     } catch (error) {
       const turnConflict = error?.code === "MOVIE_MENTOR_INFERENCE_EXECUTION_TURN_IDENTITY_CONFLICT";
-      if (!turnConflict) await releaseFreshUnboundReservation({ reservation, settlementAuthority, error });
+      await releaseFreshUnboundReservation({ reservation, settlementAuthority, error });
       if (!turnConflict) throw error;
 
       existing = await inferenceExecutionAuthority.findExecutionByCreatorTurn({ creatorTurnId, principalId, projectId: durableProjectId, requestDigest });
