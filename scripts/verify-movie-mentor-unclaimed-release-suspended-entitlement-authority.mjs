@@ -8,13 +8,15 @@ const end=source.indexOf("async function releaseUnboundReservation",start);
 assert.ok(start>=0&&end>start);
 const release=source.slice(start,end);
 
-assert.match(release,/providerCallsClaimed!==0/);
-assert.match(release,/entitlementRevision:\{\$gte:reservation\.entitlementRevision\}/);
-assert.match(
+assert.match(release,/providerCallsClaimed!==0/,"release remains zero-provider-claim only");
+assert.match(release,/entitlementRevision:\{\$gte:reservation\.entitlementRevision\}/,"restitution remains fenced to reservation chronology");
+assert.match(release,/reservedUnits:\{\$gte:reservation\.units\}/,"restitution remains fenced to already-reserved value");
+assert.doesNotMatch(
   release,
-  /principalId:text\(reservation\.principalId\),domain:SPEND_DOMAIN,schema:1,status:"active",entitlementRevision:\{\$gte:reservation\.entitlementRevision\}/,
-  "RED: zero-claim refund must not restore spendable Creator value into a currently suspended entitlement."
+  /entitlements\.findOneAndUpdate\(\{[^}]*status:"active"/,
+  "Suspension revokes new/forward authority; it must not confiscate already-reserved Creator value during zero-claim restitution."
 );
-assert.match(release,/remainingUnits:reservation\.units/);
-console.log("GREEN: zero-claim refund restores Creator value only while current entitlement remains active.");
-console.log("LAW: RELEASE MAY UNWIND AN UNUSED RESERVATION; IT MAY NOT TURN A CURRENTLY SUSPENDED ENTITLEMENT BACK INTO SPENDABLE CREATOR AUTHORITY.");
+assert.match(release,/\$inc:\{reservedUnits:-reservation\.units,remainingUnits:reservation\.units,entitlementRevision:1\}/);
+
+console.log("GREEN: zero-claim release is restitution of already-reserved Creator value and remains chronology/capacity fenced without borrowing new active spend authority.");
+console.log("LAW: SUSPENSION REVOKES NEW/FORWARD SPEND AUTHORITY; IT DOES NOT CONFISCATE ALREADY-RESERVED CREATOR VALUE WHEN A ZERO-CLAIM EXECUTION IS ATOMICALLY UNWOUND.");
