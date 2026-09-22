@@ -20,3 +20,5 @@ assert.match(release,/\$inc:\{reservedUnits:-reservation\.units,remainingUnits:r
 
 console.log("GREEN: zero-claim release is restitution of already-reserved Creator value and remains chronology/capacity fenced without borrowing new active spend authority.");
 console.log("LAW: SUSPENSION REVOKES NEW/FORWARD SPEND AUTHORITY; IT DOES NOT CONFISCATE ALREADY-RESERVED CREATOR VALUE WHEN A ZERO-CLAIM EXECUTION IS ATOMICALLY UNWOUND.");
+
+// Court retrigger: same verifier law; no production change.
