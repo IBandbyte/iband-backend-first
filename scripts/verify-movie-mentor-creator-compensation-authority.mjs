@@ -228,6 +228,24 @@ console.log("GREEN: compensation terminalization is CAS-fenced against an execut
   assert.equal(reservationRace,true,"RED: compensation must fail closed if reservation authority changes before release.");
 }
 console.log("GREEN: compensation fails closed on ledger-ownership loss and reservation-release race; transaction authority must own the whole terminal disposition.");
+{
+  const retryRows=structuredClone(physicalRows);
+  retryRows.movie_mentor_inference_execution.phase="active";retryRows.movie_mentor_inference_execution.compensatedAt=null;retryRows.movie_mentor_inference_execution.compensationReason="";
+  retryRows.movie_mentor_inference_spend_reservation.status="reserved";retryRows.movie_mentor_inference_spend_reservation.settlementReason="";retryRows.movie_mentor_inference_spend_reservation.settlementExecutionId="";
+  retryRows.movie_mentor_inference_entitlement.remainingUnits=4;retryRows.movie_mentor_inference_entitlement.reservedUnits=1;
+  const db={collection(name){return collectionFor(retryRows,name);}};
+  let callbacks=0;
+  const retrySession={async withTransaction(fn){const first=await fn();callbacks+=1;const second=await fn();callbacks+=1;return second??first;},async endSession(){}};
+  const store=createMovieMentorInferenceSettlementMongoStore({connect:async()=>{},startSession:async()=>retrySession,db:()=>db,now:()=>new Date("2035-01-01T00:00:02.450Z")});
+  const outcome=await store.compensateSupersededCreatorState({execution,recoveryConflict,providerEffects:[confirmedEffect]});
+  assert.equal(callbacks,2,"fixture must re-enter the transaction callback after the first durable disposition.");
+  assert.equal(outcome.authorized,true);
+  assert.equal(outcome.idempotent,true,"RED: transaction callback re-entry must converge on the already-owned compensation disposition.");
+  assert.equal(retryRows.movie_mentor_inference_entitlement.remainingUnits,5,"RED: transaction callback re-entry must not restore Creator value twice.");
+  assert.equal(retryRows.movie_mentor_inference_entitlement.reservedUnits,0);
+  assert.equal(retryRows.movie_mentor_inference_spend_reservation.status,"released");
+}
+console.log("GREEN: compensation transaction callback re-entry converges on the same durable disposition without double-restoring Creator value.");
 const postCompensationSettlement=await physicalStore.settleCanonicalResult({executionId:execution.executionId});
 assert.equal(postCompensationSettlement.authorized,false,"compensated execution must never later authorize canonical consumption.");
 assert.equal(postCompensationSettlement.outcome,"reserved");
