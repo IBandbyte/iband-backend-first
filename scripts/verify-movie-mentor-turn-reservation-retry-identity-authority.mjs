@@ -20,7 +20,9 @@ const store={
 const authority=createMovieMentorInferenceSpendAuthority({store,createReservationId:()=>ids.shift()});
 
 const first=await authority.reserveTurn({serverAuthority,projectId:"project-308",creatorTurnId:"turn-308"});
-const stableReservationId=first.reservationId;\nassert.ok(stableReservationId);\nassert.notEqual(stableReservationId,"reservation-A","stable Creator turn must own a derived durable reservation identity, not a per-attempt random identity.");
+const stableReservationId=first.reservationId;
+assert.ok(stableReservationId);
+assert.notEqual(stableReservationId,"reservation-A","stable Creator turn must own a derived durable reservation identity, not a per-attempt random identity.");
 assert.equal(rows.size,1);
 
 // Simulate transport/process loss after durable reservation but before execution binding.
