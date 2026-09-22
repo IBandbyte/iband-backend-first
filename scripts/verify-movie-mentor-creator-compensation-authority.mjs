@@ -5,7 +5,7 @@ import { createMovieMentorInferenceExecutionMongoStore } from "../ai/MovieMentor
 import { digestMovieMentorProviderReconstructionInput } from "../ai/MovieMentorProviderOperationAuthority.js";
 import fs from "node:fs";
 import crypto from "node:crypto";
-const inputDigest=value=>crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");
+const inputDigest=value=>digestMovieMentorProviderReconstructionInput(value);
 
 console.log("Movie Mentor Creator Compensation authority court");
 
