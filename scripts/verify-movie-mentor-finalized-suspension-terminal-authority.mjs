@@ -43,9 +43,9 @@ const store=createMovieMentorInferenceSettlementMongoStore({connect:async()=>{},
 
 let settlementError=null;
 try{await store.settleCanonicalResult({executionId:execution.executionId});}catch(error){settlementError=error;}
-assert.equal(settlementError?.code,"MOVIE_MENTOR_INFERENCE_SETTLEMENT_LEDGER_CONFLICT","court precondition: #302 current-ACTIVE fence must deny FINALIZED→SETTLED debit after current entitlement suspension");
-assert.equal(rows.movie_mentor_inference_execution.phase,"finalized","failed transaction must leave the already-finalized execution intact");
-assert.equal(rows.movie_mentor_inference_spend_reservation.status,"reserved","failed settlement must leave the reservation durably reserved");
+assert.equal(settlementError,null,"a legitimately FINALIZED canonical result must retain terminal debit authority after later suspension");
+assert.equal(rows.movie_mentor_inference_execution.phase,"settled");
+assert.equal(rows.movie_mentor_inference_spend_reservation.status,"consumed");
 
 const recoveryConflict={code:"MOVIE_MENTOR_PROVIDER_RECOVERY_CREATOR_STATE_UNIVERSE_CONFLICT",creatorStateUniverseConflictAuthority:{domain:"iband.movie-mentor.provider-recovery-creator-state-universe-conflict",schema:1,providerCallId:"historical-call",task:"movie-mentor-semantic",historicalCreatorStateUniverse:{revision:1},currentCreatorStateUniverse:{revision:2}}};
 const compensation=await store.compensateSupersededCreatorState({execution:structuredClone(rows.movie_mentor_inference_execution),recoveryConflict,providerEffects:[]});
