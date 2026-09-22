@@ -357,8 +357,8 @@ assert.equal(wrongExecutionDecision.reason,"provider-effect-proof-binding-invali
 console.log("GREEN: multi-call proof relaxation remains fenced to a confirmed call admitted by this exact execution.");
 {
   for(const [label,mutate,expectedReason] of [
-    ["unknown",rows=>{rows.movie_mentor_provider_effect_reality[1].state="unknown";},"provider-effect-not-confirmed"],
-    ["conflict",rows=>{rows.movie_mentor_provider_effect_reality[1].state="conflict";},"provider-effect-not-confirmed"],
+    ["unknown",rows=>{rows.movie_mentor_provider_effect_reality[1].evidence=[];rows.movie_mentor_provider_effect_reality[1].state="unknown";},"provider-effect-not-confirmed"],
+    ["conflict",rows=>{rows.movie_mentor_provider_effect_reality[1].evidence.push({...structuredClone(rows.movie_mentor_provider_effect_reality[1].evidence[0]),externalEffectId:"effect-comp-b-conflict"});rows.movie_mentor_provider_effect_reality[1].state="conflict";},"provider-effect-not-confirmed"],
     ["missing",rows=>{rows.movie_mentor_provider_effect_reality=rows.movie_mentor_provider_effect_reality.slice(0,1);},"provider-effect-universe-incomplete"],
   ]){
     const rows=structuredClone(multiRows);
