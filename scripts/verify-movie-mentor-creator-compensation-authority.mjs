@@ -231,6 +231,34 @@ console.log("GREEN: compensation current-state provenance does not require the C
   assert.equal(reserveCalls,1,"fresh N+1 may reserve exactly once independently of terminal compensated N");
 }
 console.log("GREEN: compensated N is terminal while fresh N+1 owns an independent reservation identity.");
+{
+  const compensated={found:true,authorized:true,executionId:"execution-comp-phase",creatorTurnId:"turn-comp-phase",principalId:"creator-comp-1",projectId:"project-comp-1",reservationId:"reservation-comp-phase",requestDigest:"digest-comp-phase",phase:"compensated",schema:6,closureReference:""};
+  let closureReads=0;
+  const closureAuthority=(await import("../ai/MovieMentorInferenceExecutionClosureAuthority.js")).createMovieMentorInferenceExecutionClosureAuthority({
+    store:{
+      readExecution:async()=>{closureReads++;return compensated;},
+      beginClosing:async()=>assert.fail("COMPENSATED execution must never re-enter CLOSING"),
+      recoverExpiredIntoClosing:async()=>assert.fail("COMPENSATED execution must never recover into CLOSING"),
+      completeClosing:async()=>assert.fail("COMPENSATED execution must never complete closure"),
+      quarantineExecution:async()=>assert.fail("COMPENSATED execution must not be reclassified by closure"),
+    },
+    providerEffectRealityAuthority:{inspectExecutionReality:async()=>assert.fail("COMPENSATED execution must not inspect provider reality for closure")},
+  });
+  const begin=await closureAuthority.beginClosing({execution:{authorized:true,executionId:compensated.executionId,ownerId:"owner",leaseGeneration:1,leaseReference:"lease",fencingToken:"fence"}});
+  assert.equal(begin.authorized,false);
+  assert.equal(begin.reason,"execution-not-active");
+  assert.equal(begin.phase,"compensated");
+  const recover=await closureAuthority.recoverExpiredIntoClosing({executionId:compensated.executionId});
+  assert.equal(recover.authorized,false);
+  assert.equal(recover.reason,"execution-not-active");
+  assert.equal(recover.phase,"compensated");
+  const reconcile=await closureAuthority.reconcile({executionId:compensated.executionId});
+  assert.equal(reconcile.authorized,false);
+  assert.equal(reconcile.reason,"execution-not-closing");
+  assert.equal(reconcile.phase,"compensated");
+  assert.equal(closureReads,3);
+}
+console.log("GREEN: schema-6 COMPENSATED is terminal across closure begin, expired recovery, and reconciliation; it cannot borrow CLOSED/FINALIZED/SETTLED authority.");
 
 const multiExecution={...execution,executionId:"exec-comp-multi",creatorTurnId:"turn-comp-multi",reservationId:"res-comp-multi"};
 const multiRows={
