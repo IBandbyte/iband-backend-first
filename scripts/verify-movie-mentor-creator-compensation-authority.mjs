@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createMovieMentorInferenceSettlementReconciliationAuthority } from "../ai/MovieMentorInferenceSettlementReconciliationAuthority.js";
-import { createMovieMentorInferenceSettlementMongoStore } from "../ai/MovieMentorInferenceSettlementMongoStore.js";
+import { createMovieMentorInferenceSettlementMongoStore } from "../ai/MovieMentorInferenceSettlementMongoStore.js";\nimport { createMovieMentorInferenceExecutionMongoStore } from "../ai/MovieMentorInferenceExecutionMongoStore.js";
 import fs from "node:fs";
 import crypto from "node:crypto";
 const inputDigest=value=>crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -157,6 +157,20 @@ const postCompensationSettlement=await physicalStore.settleCanonicalResult({exec
 assert.equal(postCompensationSettlement.authorized,false,"compensated execution must never later authorize canonical consumption.");
 assert.equal(postCompensationSettlement.outcome,"reserved");
 console.log("GREEN: production Mongo compensation transaction restores Creator value exactly once, preserves provider history, and cannot later consume the compensated turn.");
+{
+  const compensatedDoc=structuredClone(physicalRows.movie_mentor_inference_execution);
+  const leanExec=()=>({lean(){return{exec:async()=>structuredClone(compensatedDoc)}}});
+  const executionReaderModel={findOne:leanExec};
+  const canonicalExecutionStore=createMovieMentorInferenceExecutionMongoStore({mongoModel:executionReaderModel,reservationCollection:false});
+  const canonicalCompensated=await canonicalExecutionStore.readExecution(execution.executionId);
+  assert.equal(canonicalCompensated.phase,"compensated","RED: canonical execution reader must accept the exact COMPENSATED record written by the physical settlement transaction.");
+  assert.equal(canonicalCompensated.compensationReason,"superseded-creator-state");
+  const malformed={...compensatedDoc,providerCallsClaimed:0};
+  const malformedModel={findOne(){return{lean(){return{exec:async()=>structuredClone(malformed)}}}}};
+  const malformedStore=createMovieMentorInferenceExecutionMongoStore({mongoModel:malformedModel,reservationCollection:false});
+  await assert.rejects(()=>malformedStore.readExecution(execution.executionId),error=>error?.code==="MOVIE_MENTOR_INFERENCE_EXECUTION_COMPENSATION_RECORD_INVALID","RED: canonical execution reader must reject a COMPENSATED record that does not preserve its claimed provider-work universe.");
+}
+console.log("GREEN: canonical execution reader accepts the exact physical COMPENSATED disposition and rejects malformed compensation history.");
 
 const multiExecution={...execution,executionId:"exec-comp-multi",creatorTurnId:"turn-comp-multi",reservationId:"res-comp-multi"};
 const multiRows={
