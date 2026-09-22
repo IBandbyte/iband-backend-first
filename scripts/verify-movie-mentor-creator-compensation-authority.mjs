@@ -193,6 +193,24 @@ console.log("GREEN: canonical execution reader accepts the exact physical COMPEN
   assert.equal(decision.authorized,true,`RED: Creator Compensation must validate historical reconstruction provenance with the canonical provider-operation digest; semantically identical input key order cannot strand Creator value. actual=${JSON.stringify(decision)}`);
 }
 console.log("GREEN: Creator Compensation uses canonical provider-operation reconstruction digest semantics.");
+{
+  const rows=structuredClone(physicalRows);
+  rows.movie_mentor_inference_execution.phase="active";
+  rows.movie_mentor_inference_execution.compensatedAt=null;
+  rows.movie_mentor_inference_execution.compensationReason="";
+  rows.movie_mentor_inference_spend_reservation.status="reserved";
+  rows.movie_mentor_inference_spend_reservation.settledAt=null;
+  rows.movie_mentor_inference_spend_reservation.settlementReason="";
+  rows.movie_mentor_inference_entitlement.remainingUnits=4;
+  rows.movie_mentor_inference_entitlement.reservedUnits=1;
+  const genuineCurrentFingerprint="c".repeat(64);
+  const conflict={...recoveryConflict,creatorStateUniverseConflictAuthority:{...recoveryConflict.creatorStateUniverseConflictAuthority,currentCreatorStateUniverse:{...recoveryConflict.creatorStateUniverseConflictAuthority.currentCreatorStateUniverse,snapshotFingerprint:genuineCurrentFingerprint}}};
+  const db={collection(name){return collectionFor(rows,name);}};
+  const store=createMovieMentorInferenceSettlementMongoStore({connect:async()=>{},startSession:async()=>physicalSession,db:()=>db,now:()=>new Date("2035-01-01T00:00:04.000Z")});
+  const decision=await store.compensateSupersededCreatorState({execution,recoveryConflict:conflict,providerEffects:[confirmedEffect]});
+  assert.equal(decision.authorized,true,`RED: a genuine recovered current turn-context universe carries a non-null snapshotFingerprint, while durable Creator state owns its revision/reference/generation/fingerprint/snapshotReference but does not persist that derived turn-envelope fingerprint; compensation must not strand Creator value solely because the raw Creator-state row cannot reproduce a non-durable derived fingerprint. actual=${JSON.stringify(decision)}`);
+}
+console.log("GREEN: compensation current-state provenance does not require the Creator-state row to invent a non-durable turn-context snapshot fingerprint.");
 
 const multiExecution={...execution,executionId:"exec-comp-multi",creatorTurnId:"turn-comp-multi",reservationId:"res-comp-multi"};
 const multiRows={
