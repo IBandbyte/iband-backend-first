@@ -10,7 +10,7 @@ const delegate={
  async compensateSupersededCreatorState(){delegated+=1;return{compensated:true};}
 };
 const completeIndexes=new Map();
-for(const requirement of MOVIE_MENTOR_INFERENCE_SETTLEMENT_REQUIRED_UNIQUE_INDEXES){const list=completeIndexes.get(requirement.collection)||[];list.push({key:{...requirement.key},unique:true});completeIndexes.set(requirement.collection,list);}
+for(const requirement of MOVIE_MENTOR_INFERENCE_SETTLEMENT_REQUIRED_UNIQUE_INDEXES){const list=completeIndexes.get(requirement.collection)||[];list.push({key:{...requirement.key},unique:true,...(requirement.partialFilterExpression?{partialFilterExpression:structuredClone(requirement.partialFilterExpression)}:{})});completeIndexes.set(requirement.collection,list);}
 const reads=[];
 const authority=createMovieMentorInferenceSettlementPhysicalAuthority({store:delegate,readIndexes:async collection=>{reads.push(collection);return completeIndexes.get(collection)||[];}});
 const status=authority.getStatus();
