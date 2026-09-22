@@ -246,6 +246,12 @@ function settlement({ resultPayload = livePayload, executionRecord = null } = {}
         idempotent: false,
       };
     },
+    compensateSupersededCreatorState: async () => ({
+      authorized: false,
+      compensated: false,
+      outcome: "reserved",
+      reason: "not-a-compensation-test-path",
+    }),
   };
 }
 
@@ -413,6 +419,12 @@ const heldSettlement = {
     outcome: "reserved",
     reason: "reservation-already-bound-to-execution",
     executionId: "exec-77",
+  }),
+  compensateSupersededCreatorState: async () => ({
+    authorized: false,
+    compensated: false,
+    outcome: "reserved",
+    reason: "not-a-compensation-test-path",
   }),
 };
 await assert.rejects(
