@@ -27,6 +27,10 @@ assert.equal(reads.length,readsAfterFirst,"successful physical readiness may be 
 await authority.compensateSupersededCreatorState({execution:{executionId:"execution-1"}});
 assert.equal(delegated,3,"Creator Compensation may delegate only behind the same proven physical authority");
 
+const creatorStateIndexes=completeIndexes.get("movie_mentor_creator_state")||[];
+assert.ok(creatorStateIndexes.some(index=>index.unique===true&&index.key?.projectId===1&&index.partialFilterExpression?.projectId?.$type==="string"),
+  "RED: Creator Compensation raw-reads movie_mentor_creator_state as current authority, so settlement physical authority must independently prove the Creator-state store's unique partial projectId identity before delegation.");
+
 const brokenIndexes=new Map(completeIndexes);
 const reservationIndexes=(brokenIndexes.get("movie_mentor_inference_spend_reservation")||[]).filter(index=>index.key?.reservationId!==1);
 brokenIndexes.set("movie_mentor_inference_spend_reservation",reservationIndexes);
