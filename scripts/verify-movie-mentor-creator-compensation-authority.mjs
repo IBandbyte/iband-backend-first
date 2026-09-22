@@ -112,8 +112,7 @@ const settlementStoreSource=fs.readFileSync(new URL("../ai/MovieMentorInferenceS
 const executionStoreSource=fs.readFileSync(new URL("../ai/MovieMentorInferenceExecutionMongoStore.js",import.meta.url),"utf8");
 assert.match(runtimeSource,/compensateSupersededCreatorState/,"RED: Creator Compensation is durable but not reachable from the live failed-orchestration path that owns superseded Creator-state recovery conflict.");
 assert.match(runtimeSource,/MOVIE_MENTOR_PROVIDER_RECOVERY_CREATOR_STATE_UNIVERSE_CONFLICT/,"live runtime must select compensation only for the exact superseded Creator-state recovery conflict.");
-assert.match(runtimeSource,/recoverProviderOutcome\(\{ providerCallId:[^
-]+recoveryAuthority: execution \}\)/,"RED: compensation handoff must freshly reread durable provider-effect reality after the semantic-universe conflict.");
+assert.match(runtimeSource,/recoverProviderOutcome\(\{ providerCallId:[^\\n]+recoveryAuthority: execution \}\)/,"RED: compensation handoff must freshly reread durable provider-effect reality after the semantic-universe conflict.");
 assert.match(runtimeSource,/recovery\?\.outcome !== "CONFIRMED_EFFECT"/,"RED: compensation handoff must require CONFIRMED provider effect, never inferred work.");
 assert.match(runtimeSource,/error\.providerEffects = \[Object\.freeze/,"RED: live conflict must carry proof-bearing provider-effect evidence into compensation.");
 
