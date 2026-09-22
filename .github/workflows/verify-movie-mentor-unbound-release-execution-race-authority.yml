@@ -1,0 +1,18 @@
+name: Verify Movie Mentor Unbound Release Execution Race Authority
+on:
+  pull_request:
+  push:
+    branches:
+      - verify-unbound-release-execution-race-authority
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: node --check scripts/verify-movie-mentor-unbound-release-execution-race-authority.mjs
+      - run: node scripts/verify-movie-mentor-unbound-release-execution-race-authority.mjs
