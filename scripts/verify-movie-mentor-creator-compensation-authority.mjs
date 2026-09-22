@@ -156,6 +156,25 @@ assert.equal(physicalSecond.idempotent,true,"retry must recognize the same durab
 assert.equal(physicalRows.movie_mentor_inference_entitlement.remainingUnits,5,"production retry must never restore Creator value twice.");
 assert.equal(physicalRows.movie_mentor_inference_entitlement.reservedUnits,0);
 assert.equal(physicalRows.movie_mentor_provider_effect_reality[0].state,"confirmed","provider work history must survive Creator Compensation.");
+{
+  const conflictRows=structuredClone(physicalRows);
+  conflictRows.movie_mentor_inference_execution.phase="active";
+  conflictRows.movie_mentor_inference_execution.compensatedAt=null;
+  conflictRows.movie_mentor_inference_execution.compensationReason="";
+  conflictRows.movie_mentor_inference_spend_reservation.status="released";
+  conflictRows.movie_mentor_inference_spend_reservation.settlementReason="creator-compensation:superseded-creator-state";
+  conflictRows.movie_mentor_inference_spend_reservation.settlementExecutionId="execution-other";
+  conflictRows.movie_mentor_inference_entitlement.remainingUnits=5;
+  conflictRows.movie_mentor_inference_entitlement.reservedUnits=0;
+  const db={collection(name){return collectionFor(conflictRows,name);}};
+  const conflictStore=createMovieMentorInferenceSettlementMongoStore({connect:async()=>{},startSession:async()=>physicalSession,db:()=>db,now:()=>new Date("2035-01-01T00:00:02.250Z")});
+  let releaseConflict=false;
+  try{await conflictStore.compensateSupersededCreatorState({execution,recoveryConflict,providerEffects:[confirmedEffect]});}catch(error){releaseConflict=error?.code==="MOVIE_MENTOR_CREATOR_COMPENSATION_RELEASE_CONFLICT";}
+  assert.equal(releaseConflict,true,"RED: a released reservation owned by another execution/disposition must not borrow Creator Compensation retry idempotency.");
+  assert.equal(conflictRows.movie_mentor_inference_entitlement.remainingUnits,5);
+  assert.equal(conflictRows.movie_mentor_inference_entitlement.reservedUnits,0);
+}
+console.log("GREEN: physical compensation retry is exactly-once for its own durable disposition and rejects a released reservation owned by another execution.");
 const postCompensationSettlement=await physicalStore.settleCanonicalResult({executionId:execution.executionId});
 assert.equal(postCompensationSettlement.authorized,false,"compensated execution must never later authorize canonical consumption.");
 assert.equal(postCompensationSettlement.outcome,"reserved");
