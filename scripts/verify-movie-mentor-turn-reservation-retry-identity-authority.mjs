@@ -20,13 +20,13 @@ const store={
 const authority=createMovieMentorInferenceSpendAuthority({store,createReservationId:()=>ids.shift()});
 
 const first=await authority.reserveTurn({serverAuthority,projectId:"project-308",creatorTurnId:"turn-308"});
-assert.equal(first.reservationId,"reservation-A");
+const stableReservationId=first.reservationId;\nassert.ok(stableReservationId);\nassert.notEqual(stableReservationId,"reservation-A","stable Creator turn must own a derived durable reservation identity, not a per-attempt random identity.");
 assert.equal(rows.size,1);
 
 // Simulate transport/process loss after durable reservation but before execution binding.
 // The same stable Creator turn retries through the public reservation authority.
 const retry=await authority.reserveTurn({serverAuthority,projectId:"project-308",creatorTurnId:"turn-308"});
-assert.equal(retry.reservationId,"reservation-A","RED: same stable creatorTurnId must converge on its existing pre-execution reservation instead of minting a second reservation universe.");
+assert.equal(retry.reservationId,stableReservationId,"RED: same stable creatorTurnId must converge on its existing pre-execution reservation instead of minting a second reservation universe.");
 assert.equal(rows.size,1,"RED: one Creator turn must not own two simultaneously reserved spend universes before execution binding.");
 assert.equal(retry.idempotent,true);
 
