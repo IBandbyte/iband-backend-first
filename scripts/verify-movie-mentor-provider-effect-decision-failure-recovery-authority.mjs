@@ -1,0 +1,27 @@
+import assert from "node:assert/strict";
+import { runMovieMentorTurn } from "../ai/MovieMentorTurnRuntime.js";
+console.log("5A.next — provider-effect / Creator-decision failure recovery authority");
+const durable={projectId:"project-305",creatorSessionId:"session-305",revision:30,revisionAuthorityReference:"revision:project-305:30",creatorStateGeneration:15,creatorStateFingerprint:"a".repeat(64),creatorAuthorityReference:"creator-state:project-305:g15",snapshotReference:"snapshot:project-305:r30:g15",capturedAt:"2026-09-22T12:00:00.000Z",creatorConfirmedContext:[],projectJourney:{stageId:"build",taskId:"continue"},memoryContext:{projectId:"project-305"},responseBlueprint:{depth:"guided"},communicationPlan:{tone:"warm"}};
+const serverAuthority={authenticated:true,projectAuthorized:true,principalId:"creator-305",projectId:"project-305"};
+const reservation={authorized:true,reservationId:"reservation-305",principalId:"creator-305",projectId:"project-305",operation:"movie-mentor-turn",units:1,status:"reserved"};
+let existing=false,providerClaims=0,providerDispatches=0,providerEffects=0,releaseAttempts=0,reserveCalls=0,acquireCalls=0;
+const exec={authorized:true,executionId:"execution-305",creatorTurnId:"turn-305",principalId:"creator-305",projectId:"project-305",reservationId:"reservation-305",requestDigest:"test-digest",phase:"active",ownerId:"owner-305",leaseGeneration:1,leaseReference:"lease-305",fencingToken:"fence-305",leaseExpiresAt:"2099-01-01T00:00:00.000Z"};
+const executionAuthority={
+ async findExecutionByCreatorTurn(){return existing?{...exec,found:true}:{found:false,authorized:false};},async openExecution(){existing=true;return exec;},async acquireExecution(){acquireCalls+=1;return exec;},async assertFence(){return exec;},
+ async claimProviderCall(){providerClaims+=1;return{authorized:true,dispatchAuthorized:true,executionId:exec.executionId,providerCallId:"provider-call-305",slotId:"semantic",task:"movie-mentor-semantic",ownerId:exec.ownerId,leaseGeneration:1,leaseReference:exec.leaseReference,fencingToken:exec.fencingToken};},
+ async beginProviderDispatch(){providerDispatches+=1;return{authorized:true,dispatchAuthorized:true,effectState:"unknown"};},async assertProviderDispatch(){return{authorized:true,dispatchAuthorized:true};},async contributeProviderEffectEvidence(){providerEffects+=1;return{accepted:true,state:"confirmed"};},
+ async stageResultCandidate(){throw new Error("candidate must not stage after decision failure");},async readResultCandidate(){return null;},async beginExecutionClosing(){return{};},async reconcileExecutionClosure(){return{};},async commitCanonicalResult(){return{};},async readCanonicalResult(){return{authorized:false,committed:false};}
+};
+const spendAuthority={async reserveTurn(){reserveCalls+=1;return reservation;},async readReservation(){return{...reservation,rehydrated:true};}};
+const settlementAuthority={async reconcile(){return{authorized:false,settled:false,outcome:"reserved"};},async releaseUnclaimed(){releaseAttempts+=1;return{authorized:false,released:false,outcome:"reserved",reason:"provider-call-claims-exist",providerCallsClaimed:1};},async releaseUnbound(){return{authorized:false,released:false,outcome:"reserved",reason:"reservation-already-bound-to-execution",executionId:exec.executionId};},async compensateSupersededCreatorState(){return{authorized:false,compensated:false,outcome:"reserved"};}};
+let attempt=0;
+async function orchestrate(_input,deps){attempt+=1;const claimed=await deps.claimProviderCall({slotId:"semantic",task:"movie-mentor-semantic"});await deps.beginProviderDispatch({providerCall:claimed});await deps.assertProviderDispatch({providerCall:claimed});await deps.contributeProviderEffectEvidence({providerCall:claimed,evidence:{state:"confirmed"}});if(attempt===1){const e=new Error("Creator decision commit failed after provider effect");e.code="TEST_CREATOR_DECISION_COMMIT_FAILED";throw e;}throw new Error("retry must recover admitted provider reality instead of minting a second provider universe");}
+const input={projectId:"project-305",creatorSessionId:"session-305",creatorTurnId:"turn-305",message:"continue"};
+const deps={serverAuthority,inferenceSpendAuthority:spendAuthority,inferenceExecutionAuthority:executionAuthority,inferenceSettlementAuthority:settlementAuthority,createExecutionOwnerId:()=>"owner-305",readAuthoritativeTurnSource:async()=>structuredClone(durable),orchestrateTurn:orchestrate};
+await assert.rejects(()=>runMovieMentorTurn(input,deps),e=>e?.code==="MOVIE_MENTOR_INFERENCE_EXECUTION_UNRESOLVED"&&e?.providerCallsClaimed===1);
+assert.equal(releaseAttempts,1);assert.equal(providerClaims,1);assert.equal(providerEffects,1);assert.equal(reserveCalls,1);
+await assert.rejects(()=>runMovieMentorTurn(input,deps),e=>/recover admitted provider reality/.test(e?.message||""));
+assert.equal(reserveCalls,1);assert.equal(acquireCalls,1);assert.equal(providerClaims,1,"same-turn retry must not mint a second provider claim");assert.equal(providerDispatches,1,"same-turn retry must not dispatch a second provider effect");assert.equal(providerEffects,1,"same-turn retry must not admit a second provider effect");
+console.log("✓ post-effect Creator-decision failure cannot release reserved value");
+console.log("✓ same-turn retry recovers existing execution without reminting provider reality");
+console.log("LAW: durable provider reality survives a later Creator-decision failure; retry must recover that exact universe, never mint another.");
