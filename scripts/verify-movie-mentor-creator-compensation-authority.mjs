@@ -284,6 +284,21 @@ console.log("GREEN: ambiguous compensation commit acknowledgement converges on r
   assert.equal(generationRows.movie_mentor_inference_entitlement.reservedUnits,1);
 }
 console.log("GREEN: compensation rejects entitlement reality that chronologically predates the reservation's bound entitlement revision.");
+{
+  const suspendedRows=structuredClone(physicalRows);
+  suspendedRows.movie_mentor_inference_execution.phase="active";suspendedRows.movie_mentor_inference_execution.compensatedAt=null;suspendedRows.movie_mentor_inference_execution.compensationReason="";
+  suspendedRows.movie_mentor_inference_spend_reservation.status="reserved";suspendedRows.movie_mentor_inference_spend_reservation.settlementReason="";suspendedRows.movie_mentor_inference_spend_reservation.settlementExecutionId="";
+  suspendedRows.movie_mentor_inference_entitlement.status="suspended";suspendedRows.movie_mentor_inference_entitlement.remainingUnits=4;suspendedRows.movie_mentor_inference_entitlement.reservedUnits=1;suspendedRows.movie_mentor_inference_entitlement.entitlementRevision=suspendedRows.movie_mentor_inference_spend_reservation.entitlementRevision+1;
+  const db={collection(name){return collectionFor(suspendedRows,name);}};
+  const store=createMovieMentorInferenceSettlementMongoStore({connect:async()=>{},startSession:async()=>physicalSession,db:()=>db,now:()=>new Date("2035-01-01T00:00:02.650Z")});
+  let denied=false;let result=null;try{result=await store.compensateSupersededCreatorState({execution,recoveryConflict,providerEffects:[confirmedEffect]});denied=result?.authorized!==true;}catch{denied=true;}
+  assert.equal(denied,true,"RED: Creator Compensation must not restore spendable value through a currently suspended entitlement merely because its revision is chronologically newer than the reservation; actual="+JSON.stringify(result));
+  assert.equal(suspendedRows.movie_mentor_inference_spend_reservation.status,"reserved");
+  assert.equal(suspendedRows.movie_mentor_inference_entitlement.status,"suspended");
+  assert.equal(suspendedRows.movie_mentor_inference_entitlement.remainingUnits,4);
+  assert.equal(suspendedRows.movie_mentor_inference_entitlement.reservedUnits,1);
+}
+console.log("GREEN: current entitlement suspension independently fences Creator Compensation even when revision chronology is valid.");
 const postCompensationSettlement=await physicalStore.settleCanonicalResult({executionId:execution.executionId});
 assert.equal(postCompensationSettlement.authorized,false,"compensated execution must never later authorize canonical consumption.");
 assert.equal(postCompensationSettlement.outcome,"reserved");
