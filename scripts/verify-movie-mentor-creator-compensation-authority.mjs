@@ -246,6 +246,29 @@ console.log("GREEN: compensation fails closed on ledger-ownership loss and reser
   assert.equal(retryRows.movie_mentor_inference_spend_reservation.status,"released");
 }
 console.log("GREEN: compensation transaction callback re-entry converges on the same durable disposition without double-restoring Creator value.");
+{
+  const uncertainRows=structuredClone(physicalRows);
+  uncertainRows.movie_mentor_inference_execution.phase="active";uncertainRows.movie_mentor_inference_execution.compensatedAt=null;uncertainRows.movie_mentor_inference_execution.compensationReason="";
+  uncertainRows.movie_mentor_inference_spend_reservation.status="reserved";uncertainRows.movie_mentor_inference_spend_reservation.settlementReason="";uncertainRows.movie_mentor_inference_spend_reservation.settlementExecutionId="";
+  uncertainRows.movie_mentor_inference_entitlement.remainingUnits=4;uncertainRows.movie_mentor_inference_entitlement.reservedUnits=1;
+  const db={collection(name){return collectionFor(uncertainRows,name);}};
+  let first=true;
+  const ambiguousSession={async withTransaction(fn){const result=await fn();if(first){first=false;const error=new Error("simulated lost commit acknowledgement");error.errorLabels=["UnknownTransactionCommitResult"];throw error;}return result;},async endSession(){}};
+  const store=createMovieMentorInferenceSettlementMongoStore({connect:async()=>{},startSession:async()=>ambiguousSession,db:()=>db,now:()=>new Date("2035-01-01T00:00:02.500Z")});
+  let uncertain=false;try{await store.compensateSupersededCreatorState({execution,recoveryConflict,providerEffects:[confirmedEffect]});}catch(error){uncertain=error?.code==="MOVIE_MENTOR_CREATOR_COMPENSATION_STORE_UNAVAILABLE";}
+  assert.equal(uncertain,true,"fixture must expose ambiguous post-commit acknowledgement as retryable uncertainty.");
+  assert.equal(uncertainRows.movie_mentor_inference_entitlement.remainingUnits,5);
+  assert.equal(uncertainRows.movie_mentor_inference_entitlement.reservedUnits,0);
+  assert.equal(uncertainRows.movie_mentor_inference_spend_reservation.status,"released");
+  const retrySession={async withTransaction(fn){return fn();},async endSession(){}};
+  const retryStore=createMovieMentorInferenceSettlementMongoStore({connect:async()=>{},startSession:async()=>retrySession,db:()=>db,now:()=>new Date("2035-01-01T00:00:02.550Z")});
+  const reconciled=await retryStore.compensateSupersededCreatorState({execution,recoveryConflict,providerEffects:[confirmedEffect]});
+  assert.equal(reconciled.authorized,true);
+  assert.equal(reconciled.idempotent,true,"RED: retry after ambiguous commit acknowledgement must reconcile the already-durable compensation.");
+  assert.equal(uncertainRows.movie_mentor_inference_entitlement.remainingUnits,5,"RED: ambiguous commit retry must never double-restore Creator value.");
+  assert.equal(uncertainRows.movie_mentor_inference_entitlement.reservedUnits,0);
+}
+console.log("GREEN: ambiguous compensation commit acknowledgement converges on retry to the exact durable disposition without double restoration.");
 const postCompensationSettlement=await physicalStore.settleCanonicalResult({executionId:execution.executionId});
 assert.equal(postCompensationSettlement.authorized,false,"compensated execution must never later authorize canonical consumption.");
 assert.equal(postCompensationSettlement.outcome,"reserved");
