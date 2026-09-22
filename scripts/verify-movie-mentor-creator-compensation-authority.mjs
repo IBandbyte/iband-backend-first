@@ -274,16 +274,16 @@ console.log("GREEN: ambiguous compensation commit acknowledgement converges on r
   generationRows.movie_mentor_inference_execution.phase="active";generationRows.movie_mentor_inference_execution.compensatedAt=null;generationRows.movie_mentor_inference_execution.compensationReason="";
   generationRows.movie_mentor_inference_spend_reservation.status="reserved";generationRows.movie_mentor_inference_spend_reservation.settlementReason="";generationRows.movie_mentor_inference_spend_reservation.settlementExecutionId="";
   generationRows.movie_mentor_inference_entitlement.remainingUnits=4;generationRows.movie_mentor_inference_entitlement.reservedUnits=1;
-  generationRows.movie_mentor_inference_entitlement.entitlementRevision=generationRows.movie_mentor_inference_spend_reservation.entitlementRevision+100;
+  generationRows.movie_mentor_inference_entitlement.entitlementRevision=generationRows.movie_mentor_inference_spend_reservation.entitlementRevision-1;
   const db={collection(name){return collectionFor(generationRows,name);}};
   const store=createMovieMentorInferenceSettlementMongoStore({connect:async()=>{},startSession:async()=>physicalSession,db:()=>db,now:()=>new Date("2035-01-01T00:00:02.600Z")});
   let denied=false;let result=null;try{result=await store.compensateSupersededCreatorState({execution,recoveryConflict,providerEffects:[confirmedEffect]});denied=result?.authorized!==true;}catch{denied=true;}
-  assert.equal(denied,true,"RED: compensation must not restore a reservation against an entitlement commercial generation that no longer matches the reservation's bound entitlement revision; actual="+JSON.stringify(result));
+  assert.equal(denied,true,"RED: compensation must not restore a reservation against entitlement reality whose revision predates the reservation's own bound entitlement revision; actual="+JSON.stringify(result));
   assert.equal(generationRows.movie_mentor_inference_spend_reservation.status,"reserved");
   assert.equal(generationRows.movie_mentor_inference_entitlement.remainingUnits,4);
   assert.equal(generationRows.movie_mentor_inference_entitlement.reservedUnits,1);
 }
-console.log("GREEN: compensation binds reservation restoration to the exact entitlement commercial generation that originally reserved Creator value.");
+console.log("GREEN: compensation rejects entitlement reality that chronologically predates the reservation's bound entitlement revision.");
 const postCompensationSettlement=await physicalStore.settleCanonicalResult({executionId:execution.executionId});
 assert.equal(postCompensationSettlement.authorized,false,"compensated execution must never later authorize canonical consumption.");
 assert.equal(postCompensationSettlement.outcome,"reserved");
