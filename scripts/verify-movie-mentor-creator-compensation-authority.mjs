@@ -159,7 +159,7 @@ assert.equal(postCompensationSettlement.authorized,false,"compensated execution 
 assert.equal(postCompensationSettlement.outcome,"reserved");
 console.log("GREEN: production Mongo compensation transaction restores Creator value exactly once, preserves provider history, and cannot later consume the compensated turn.");
 {
-  const compensatedDoc=structuredClone(physicalRows.movie_mentor_inference_execution);
+  const compensatedDoc={...structuredClone(physicalRows.movie_mentor_inference_execution),requestDigest:"request-comp-1",ownerId:"owner-comp-1",leaseGeneration:1,leaseReference:"lease-comp-1",fencingToken:"fence-comp-1",leaseAcquiredAt:"2034-12-31T23:59:00.000Z",leaseExpiresAt:"2035-01-01T00:05:00.000Z",maxProviderCalls:4,providerCalls:[{providerCallId:"call-comp-1",slotId:"semantic",task:"movie-mentor-semantic",state:"admitted",leaseGeneration:1,leaseReference:"lease-comp-1",fencingToken:"fence-comp-1",admittedAt:"2035-01-01T00:00:00.000Z"}]};
   const leanExec=()=>({lean(){return{exec:async()=>structuredClone(compensatedDoc)}}});
   const executionReaderModel={findOne:leanExec};
   const canonicalExecutionStore=createMovieMentorInferenceExecutionMongoStore({mongoModel:executionReaderModel,reservationCollection:false});
