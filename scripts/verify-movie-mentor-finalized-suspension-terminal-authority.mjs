@@ -53,6 +53,7 @@ assert.equal(compensation.authorized,false);
 assert.equal(compensation.reason,"canonical-result-authority-exists","existing Creator Compensation deliberately refuses an already-FINALIZED canonical result");
 
 assert.equal(rows.movie_mentor_inference_entitlement.status,"suspended");
-assert.equal(rows.movie_mentor_inference_entitlement.reservedUnits,0);\nassert.equal(rows.movie_mentor_inference_entitlement.consumedUnits,1);
+assert.equal(rows.movie_mentor_inference_entitlement.reservedUnits,0);
+assert.equal(rows.movie_mentor_inference_entitlement.consumedUnits,1);
 console.log("GREEN: FINALIZED canonical authority owns the terminal debit even if current entitlement was subsequently suspended; no new provider/spend authority is granted.");
 console.log("LAW: SUSPENSION REVOKES FORWARD COMMERCIAL AUTHORITY, BUT IT DOES NOT ERASE A DEBIT ALREADY OWNED BY A LEGITIMATELY FINALIZED CANONICAL RESULT.");
