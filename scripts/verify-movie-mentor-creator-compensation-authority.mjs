@@ -204,6 +204,29 @@ console.log("GREEN: Creator Compensation uses canonical provider-operation recon
   rows.movie_mentor_inference_spend_reservation.settlementReason="";
   rows.movie_mentor_inference_entitlement.remainingUnits=4;
   rows.movie_mentor_inference_entitlement.reservedUnits=1;
+  rows.movie_mentor_provider_operation_reality.reconstructionInput.context.turnContextAuthority.revision=999;
+  rows.movie_mentor_provider_operation_reality.reconstructionInputDigest=digestMovieMentorProviderReconstructionInput(rows.movie_mentor_provider_operation_reality.reconstructionInput);
+  const db={collection(name){return collectionFor(rows,name);}};
+  const store=createMovieMentorInferenceSettlementMongoStore({connect:async()=>{},startSession:async()=>physicalSession,db:()=>db,now:()=>new Date("2035-01-01T00:00:03.500Z")});
+  const decision=await store.compensateSupersededCreatorState({execution,recoveryConflict,providerEffects:[confirmedEffect]});
+  assert.equal(decision.authorized,false,"RED: canonical digest validity alone must not let changed historical reconstruction content impersonate the recovery-owned historical Creator-state universe.");
+  assert.equal(decision.compensated,false);
+  assert.equal(decision.reason,"creator-state-conflict-cause-provenance-invalid");
+  assert.equal(rows.movie_mentor_inference_spend_reservation.status,"reserved");
+  assert.equal(rows.movie_mentor_inference_entitlement.remainingUnits,4);
+  assert.equal(rows.movie_mentor_inference_entitlement.reservedUnits,1);
+}
+console.log("GREEN: changed canonical historical reconstruction content cannot authorize Creator Compensation merely by carrying a valid recomputed digest.");
+{
+  const rows=structuredClone(physicalRows);
+  rows.movie_mentor_inference_execution.phase="active";
+  rows.movie_mentor_inference_execution.compensatedAt=null;
+  rows.movie_mentor_inference_execution.compensationReason="";
+  rows.movie_mentor_inference_spend_reservation.status="reserved";
+  rows.movie_mentor_inference_spend_reservation.settledAt=null;
+  rows.movie_mentor_inference_spend_reservation.settlementReason="";
+  rows.movie_mentor_inference_entitlement.remainingUnits=4;
+  rows.movie_mentor_inference_entitlement.reservedUnits=1;
   const genuineCurrentFingerprint="c".repeat(64);
   const conflict={...recoveryConflict,creatorStateUniverseConflictAuthority:{...recoveryConflict.creatorStateUniverseConflictAuthority,currentCreatorStateUniverse:{...recoveryConflict.creatorStateUniverseConflictAuthority.currentCreatorStateUniverse,snapshotFingerprint:genuineCurrentFingerprint}}};
   const db={collection(name){return collectionFor(rows,name);}};
