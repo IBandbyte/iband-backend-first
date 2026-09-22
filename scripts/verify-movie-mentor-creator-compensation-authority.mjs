@@ -259,6 +259,16 @@ console.log("GREEN: compensated N is terminal while fresh N+1 owns an independen
   assert.equal(closureReads,3);
 }
 console.log("GREEN: schema-6 COMPENSATED is terminal across closure begin, expired recovery, and reconciliation; it cannot borrow CLOSED/FINALIZED/SETTLED authority.");
+{
+  const source=fs.readFileSync(new URL("../ai/MovieMentorInferenceExecutionMongoStore.js",import.meta.url),"utf8");
+  assert.match(source,/current\.phase!==\"active\"\|\|text\(record\.phase\)!==\"active\"/,"RED: generic execution replacement must remain ACTIVE-only so COMPENSATED cannot be rewritten by lease CAS");
+  assert.match(source,/executionId:text\(input\.executionId\),schema:SCHEMA,phase:\"active\"/,"RED: provider-call admission must remain ACTIVE-only so COMPENSATED cannot mint new provider work");
+  assert.match(source,/findOneAndUpdate\(\{executionId:text\(executionId\),phase:\"active\"/,"RED: physical closure entry must remain ACTIVE-only");
+  assert.match(source,/if\(current\.phase!==\"active\"\)return current;/,"RED: expired closure recovery must return COMPENSATED unchanged");
+  assert.match(source,/findOneAndUpdate\(\{executionId:text\(executionId\),phase:\"closing\"/,"RED: closure completion must require CLOSING and cannot rewrite COMPENSATED");
+  assert.match(source,/!\[\"closing\",\"closed\",\"finalized\",\"settled\"\]\.includes\(current\.phase\)/,"RED: quarantine transition must exclude COMPENSATED");
+}
+console.log("GREEN: physical execution CAS primitives cannot rewrite COMPENSATED back into active/provider/closure/quarantine authority.");
 
 const multiExecution={...execution,executionId:"exec-comp-multi",creatorTurnId:"turn-comp-multi",reservationId:"res-comp-multi"};
 const multiRows={
