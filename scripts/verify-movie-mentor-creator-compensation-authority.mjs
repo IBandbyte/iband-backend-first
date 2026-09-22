@@ -166,7 +166,7 @@ console.log("GREEN: production Mongo compensation transaction restores Creator v
   const canonicalCompensated=await canonicalExecutionStore.readExecution(execution.executionId);
   assert.equal(canonicalCompensated.phase,"compensated","RED: canonical execution reader must accept the exact COMPENSATED record written by the physical settlement transaction.");
   assert.equal(canonicalCompensated.compensationReason,"superseded-creator-state");
-  const malformed={...compensatedDoc,providerCallsClaimed:0};
+  const malformed={...compensatedDoc,providerCalls:[],providerCallsClaimed:0};
   const malformedModel={findOne(){return{lean(){return{exec:async()=>structuredClone(malformed)}}}}};
   const malformedStore=createMovieMentorInferenceExecutionMongoStore({mongoModel:malformedModel,reservationCollection:false});
   await assert.rejects(()=>malformedStore.readExecution(execution.executionId),error=>error?.code==="MOVIE_MENTOR_INFERENCE_EXECUTION_COMPENSATION_RECORD_INVALID","RED: canonical execution reader must reject a COMPENSATED record that does not preserve its claimed provider-work universe.");
