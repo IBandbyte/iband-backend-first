@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createMovieMentorInferenceSettlementReconciliationAuthority } from "../ai/MovieMentorInferenceSettlementReconciliationAuthority.js";
 import { createMovieMentorInferenceSettlementMongoStore } from "../ai/MovieMentorInferenceSettlementMongoStore.js";
 import { createMovieMentorInferenceExecutionMongoStore } from "../ai/MovieMentorInferenceExecutionMongoStore.js";
+import { digestMovieMentorProviderReconstructionInput } from "../ai/MovieMentorProviderOperationAuthority.js";
 import fs from "node:fs";
 import crypto from "node:crypto";
 const inputDigest=value=>crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -172,6 +173,26 @@ console.log("GREEN: production Mongo compensation transaction restores Creator v
   await assert.rejects(()=>malformedStore.readExecution(execution.executionId),error=>error?.code==="MOVIE_MENTOR_INFERENCE_EXECUTION_COMPENSATION_RECORD_INVALID","RED: canonical execution reader must reject a COMPENSATED record that does not preserve its claimed provider-work universe.");
 }
 console.log("GREEN: canonical execution reader accepts the exact physical COMPENSATED disposition and rejects malformed compensation history.");
+{
+  const reorderedInput={context:{turnContextAuthority:{creatorState:{fingerprint:"a".repeat(64),generation:7},snapshotReference:"snapshot:7",revision:7}}};
+  assert.equal(digestMovieMentorProviderReconstructionInput(reorderedInput),digestMovieMentorProviderReconstructionInput(physicalRows.movie_mentor_provider_operation_reality.reconstructionInput),"court precondition: canonical provider-operation digest must ignore object key insertion order.");
+  const rows=structuredClone(physicalRows);
+  rows.movie_mentor_inference_execution.phase="active";
+  rows.movie_mentor_inference_execution.compensatedAt=null;
+  rows.movie_mentor_inference_execution.compensationReason="";
+  rows.movie_mentor_inference_spend_reservation.status="reserved";
+  rows.movie_mentor_inference_spend_reservation.settledAt=null;
+  rows.movie_mentor_inference_spend_reservation.settlementReason="";
+  rows.movie_mentor_inference_entitlement.remainingUnits=4;
+  rows.movie_mentor_inference_entitlement.reservedUnits=1;
+  rows.movie_mentor_provider_operation_reality.reconstructionInput=reorderedInput;
+  rows.movie_mentor_provider_operation_reality.reconstructionInputDigest=digestMovieMentorProviderReconstructionInput(reorderedInput);
+  const db={collection(name){return collectionFor(rows,name);}};
+  const store=createMovieMentorInferenceSettlementMongoStore({connect:async()=>{},startSession:async()=>physicalSession,db:()=>db,now:()=>new Date("2035-01-01T00:00:03.000Z")});
+  const decision=await store.compensateSupersededCreatorState({execution,recoveryConflict,providerEffects:[confirmedEffect]});
+  assert.equal(decision.authorized,true,`RED: Creator Compensation must validate historical reconstruction provenance with the canonical provider-operation digest; semantically identical input key order cannot strand Creator value. actual=${JSON.stringify(decision)}`);
+}
+console.log("GREEN: Creator Compensation uses canonical provider-operation reconstruction digest semantics.");
 
 const multiExecution={...execution,executionId:"exec-comp-multi",creatorTurnId:"turn-comp-multi",reservationId:"res-comp-multi"};
 const multiRows={
