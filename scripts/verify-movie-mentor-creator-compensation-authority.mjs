@@ -477,7 +477,7 @@ const multiRows={
   ],
   movie_mentor_creator_state:{projectId:multiExecution.projectId,revision:8,revisionAuthorityReference:"",snapshotReference:"snapshot:8",creatorStateGeneration:8,creatorStateFingerprint:"b".repeat(64),creatorAuthorityReference:""},
   movie_mentor_inference_spend_reservation:{domain:"iband.movie-mentor.inference-spend",schema:1,reservationId:multiExecution.reservationId,principalId:multiExecution.principalId,projectId:multiExecution.projectId,operation:"movie-mentor-turn",units:1,entitlementRevision:3,status:"reserved"},
-  movie_mentor_inference_entitlement:{domain:"iband.movie-mentor.inference-spend",schema:1,principalId:multiExecution.principalId,remainingUnits:4,reservedUnits:1,consumedUnits:0,entitlementRevision:3},
+  movie_mentor_inference_entitlement:{domain:"iband.movie-mentor.inference-spend",schema:1,principalId:multiExecution.principalId,status:"active",remainingUnits:4,reservedUnits:1,consumedUnits:0,entitlementRevision:3},
 };
 multiRows.movie_mentor_provider_operation_reality.reconstructionInputDigest=inputDigest(multiRows.movie_mentor_provider_operation_reality.reconstructionInput);
 const multiDb={collection(name){return collectionFor(multiRows,name);}};
