@@ -236,6 +236,37 @@ console.log("GREEN: changed canonical historical reconstruction content cannot a
 }
 console.log("GREEN: compensation current-state provenance does not require the Creator-state row to invent a non-durable turn-context snapshot fingerprint.");
 {
+  for(const [field,value] of [
+    ["revision",999],
+    ["revisionAuthorityReference","revision-authority-forged"],
+    ["snapshotReference","snapshot:forged"],
+    ["creatorStateGeneration",999],
+    ["creatorStateFingerprint","d".repeat(64)],
+    ["creatorAuthorityReference","creator-authority-forged"],
+  ]){
+    const rows=structuredClone(physicalRows);
+    rows.movie_mentor_inference_execution.phase="active";
+    rows.movie_mentor_inference_execution.compensatedAt=null;
+    rows.movie_mentor_inference_execution.compensationReason="";
+    rows.movie_mentor_inference_spend_reservation.status="reserved";
+    rows.movie_mentor_inference_spend_reservation.settledAt=null;
+    rows.movie_mentor_inference_spend_reservation.settlementReason="";
+    rows.movie_mentor_inference_entitlement.remainingUnits=4;
+    rows.movie_mentor_inference_entitlement.reservedUnits=1;
+    rows.movie_mentor_creator_state[field]=value;
+    const db={collection(name){return collectionFor(rows,name);}};
+    const store=createMovieMentorInferenceSettlementMongoStore({connect:async()=>{},startSession:async()=>physicalSession,db:()=>db,now:()=>new Date("2035-01-01T00:00:04.500Z")});
+    const decision=await store.compensateSupersededCreatorState({execution,recoveryConflict,providerEffects:[confirmedEffect]});
+    assert.equal(decision.authorized,false,`RED: changed durable current Creator-state ${field} must not authorize compensation against a different recovery-owned current universe.`);
+    assert.equal(decision.compensated,false);
+    assert.equal(decision.reason,"creator-state-conflict-current-provenance-invalid");
+    assert.equal(rows.movie_mentor_inference_spend_reservation.status,"reserved");
+    assert.equal(rows.movie_mentor_inference_entitlement.remainingUnits,4);
+    assert.equal(rows.movie_mentor_inference_entitlement.reservedUnits,1);
+  }
+}
+console.log("GREEN: every durable current Creator-state provenance dimension is bound before compensation; changed current authority cannot borrow a recovery conflict from another universe.");
+{
   let reserveCalls=0;
   const oldExecution={found:true,executionId:"execution-comp-old",creatorTurnId:"turn-comp-old",principalId:"creator-comp-1",projectId:"project-comp-1",reservationId:"reservation-comp-old",requestDigest:"digest-old",phase:"compensated"};
   await assert.rejects(
