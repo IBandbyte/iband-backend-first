@@ -4,7 +4,7 @@ import { runMovieMentorTurn } from "../ai/MovieMentorTurnRuntime.js";
 console.log("Movie Mentor same-turn changed-meaning reservation conflict court");
 
 const creatorTurnId="turn-309", principalId="creator-309", projectId="project-309", reservationId="reservation-309";
-let released=0, reads=0, reserves=0, orchestration=0;
+let releaseCalls=0, released=0, reads=0, reserves=0, orchestration=0;
 const serverAuthority={authenticated:true,projectAuthorized:true,principalId,projectId};
 const spend={
   async reserveTurn({creatorTurnId:turn}){reserves+=1;assert.equal(turn,creatorTurnId);return{authorized:true,reservationId,principalId,projectId,operation:"movie-mentor-turn",units:1,status:"reserved"};},
@@ -33,7 +33,7 @@ const execution={
 const settlement={
   async reconcile(){throw new Error("conflicting turn must not settle");},
   async releaseUnclaimed(){throw new Error("conflicting turn must not release execution");},
-  async releaseUnbound(){released+=1;return{authorized:true,released:true,outcome:"released",reservationId,principalId,projectId};},
+  async releaseUnbound(){releaseCalls+=1;return{authorized:false,released:false,outcome:"reserved",reason:"reservation-already-bound-to-execution",reservationId,executionId:"execution-existing"};},
   async compensateSupersededCreatorState(){throw new Error("conflicting turn must not compensate");}
 };
 const state={projectId,revision:1,creatorStateGeneration:1,creatorStateFingerprint:"state-309",creatorConfirmedContext:[],memoryContext:{projectMemories:[]},projectJourney:{activeProjectId:projectId}};
@@ -49,10 +49,11 @@ await assert.rejects(
     readAuthoritativeCreatorState:async()=>({generation:1,fingerprint:"state-309"}),
     orchestrateTurn:async()=>{orchestration+=1;throw new Error("must not orchestrate");}
   }),
-  e=>e?.code==="MOVIE_MENTOR_INFERENCE_EXECUTION_TURN_IDENTITY_CONFLICT"
+  e=>e?.code==="MOVIE_MENTOR_INFERENCE_EXECUTION_BINDING_UNRESOLVED"&&e?.reason==="reservation-already-bound-to-execution"
 );
 assert.equal(reserves,1);
 assert.equal(orchestration,0);
-assert.equal(released,0,"RED: a same-turn changed-meaning identity conflict must not release the stable turn reservation that may belong to the already-durable execution universe.");
-console.log("GREEN: changed meaning under the same stable Creator turn fails closed without releasing its turn-bound reservation universe.");
-console.log("LAW: STABLE TURN IDENTITY MAY REJECT CHANGED MEANING; THE REJECTION MAY NOT RELEASE COMMERCIAL AUTHORITY OWNED BY THAT TURN'S DURABLE EXECUTION.");
+assert.equal(releaseCalls,1,"The conflict path must ask the atomic durable release authority rather than trust process-local binding belief.");
+assert.equal(released,0,"A reservation already bound to the durable execution must remain reserved.");
+console.log("GREEN: changed meaning under the same stable Creator turn is reconciled against durable binding reality and cannot restore bound commercial authority.");
+console.log("LAW: STABLE TURN IDENTITY MAY REJECT CHANGED MEANING; RELEASE AUTHORITY MUST SERIALIZE AGAINST DURABLE EXECUTION BINDING, AND BOUND COMMERCIAL AUTHORITY MAY NOT BE RESTORED.");
