@@ -12,7 +12,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-      - run: npm ci
+      - run: npm install --no-audit --no-fund --ignore-scripts
       - run: node --check scripts/verify-movie-mentor-unbound-release-execution-race-authority.mjs
       - run: node scripts/verify-movie-mentor-unbound-release-execution-race-authority.mjs
