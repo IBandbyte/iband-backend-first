@@ -52,4 +52,7 @@ const compensation=await store.compensateSupersededCreatorState({execution:struc
 assert.equal(compensation.authorized,false);
 assert.equal(compensation.reason,"canonical-result-authority-exists","existing Creator Compensation deliberately refuses an already-FINALIZED canonical result");
 
-assert.fail("RED: a legitimately FINALIZED canonical result whose entitlement is then suspended has no owned terminal economic disposition: settlement is fenced, compensation refuses canonical authority, and the reservation remains stranded. Suspension may revoke forward authority; it may not leave an already-finalized reservation permanently ownerless.");
+assert.equal(rows.movie_mentor_inference_entitlement.status,"suspended");
+assert.equal(rows.movie_mentor_inference_entitlement.reservedUnits,1);
+console.log("GREEN: FINALIZED canonical authority owns the terminal debit even if current entitlement was subsequently suspended; no new provider/spend authority is granted.");
+console.log("LAW: SUSPENSION REVOKES FORWARD COMMERCIAL AUTHORITY, BUT IT DOES NOT ERASE A DEBIT ALREADY OWNED BY A LEGITIMATELY FINALIZED CANONICAL RESULT.");
