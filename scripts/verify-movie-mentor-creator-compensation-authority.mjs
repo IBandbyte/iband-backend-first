@@ -242,7 +242,7 @@ console.log("GREEN: compensated N is terminal while fresh N+1 owns an independen
       completeClosing:async()=>assert.fail("COMPENSATED execution must never complete closure"),
       quarantineExecution:async()=>assert.fail("COMPENSATED execution must not be reclassified by closure"),
     },
-    providerEffectRealityAuthority:{inspectExecutionReality:async()=>assert.fail("COMPENSATED execution must not inspect provider reality for closure")},
+    effectStore:{readEffect:async()=>assert.fail("COMPENSATED execution must not inspect provider reality for closure")},
   });
   const begin=await closureAuthority.beginClosing({execution:{authorized:true,executionId:compensated.executionId,ownerId:"owner",leaseGeneration:1,leaseReference:"lease",fencingToken:"fence"}});
   assert.equal(begin.authorized,false);
