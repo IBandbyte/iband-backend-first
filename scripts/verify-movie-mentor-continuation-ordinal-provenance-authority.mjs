@@ -16,7 +16,9 @@ const resolution=resolveContinuationReferences({creatorMessage:"I prefer the sec
 assert.equal(resolution.references[0]?.type,"ordinal-option","reachability witness: numbered Mentor testimony can resolve an ordinal");
 assert.equal(resolution.references[0]?.resolvedValue?.index,2,"reachability witness: forged option two is selected");
 const decision=buildCreatorDecisionCandidate({creatorMessage:"I prefer the second idea.",semanticIntelligence:{understoodContext:[],continuationReferences:resolution.references},projectId,actorRole:"creator"});
-assert.ok(["candidate","committed","ready"].includes(decision.status)||decision.candidate||decision.creatorDecisionCandidate,"reachability witness: a fresh Creator ordinal adoption reaches Creator-decision interpretation");
+assert.equal(decision.status,"none","reachability witness: wording without an explicit commitment verb is intentionally not a durable Creator decision");
+const adopted=buildCreatorDecisionCandidate({creatorMessage:"Use the second option.",semanticIntelligence:{understoodContext:[],continuationReferences:resolution.references},projectId,actorRole:"creator"});
+assert.equal(adopted.status,"candidate","reachability witness: an explicit fresh Creator ordinal adoption can become a decision candidate");
 
 console.log("LAW: FRESH CREATOR ORDINAL ADOPTION MAY SELECT REAL MENTOR OPTIONS; GENERIC STATE SYNC MAY NOT INVENT THE OPTION LIST.");
 console.log("ROUND TEN continuation ordinal provenance authority torture: GREEN");
