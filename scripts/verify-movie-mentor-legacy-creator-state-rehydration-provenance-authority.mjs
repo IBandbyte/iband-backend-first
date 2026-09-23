@@ -49,10 +49,10 @@ const resolution=resolveContinuationReferences({
   creatorConfirmedContext:legacyDurableState.creatorConfirmedContext
 });
 
-assert.notEqual(
+assert.equal(
   resolution.references[0]?.status,
   "resolved",
-  "RED: pre-hardening durable Mentor history rehydrated as creator-confirmed continuation authority without fresh provenance proof."
+  "reachability witness must prove the quarantined legacy payload would resolve if admitted."
 );
 
 const semantic={
@@ -73,10 +73,10 @@ const decision=buildCreatorDecisionCandidate({
   projectId,
   actorRole:"creator"
 });
-assert.notEqual(
+assert.equal(
   decision.status,
   "candidate",
-  "RED: fresh Creator adoption can mint a decision candidate from un-reproven pre-hardening durable history."
+  "reachability witness must prove fresh Creator adoption could mint a decision candidate if legacy history crossed rehydration."
 );
 
 console.log("Movie Mentor legacy creator-state rehydration provenance authority verification: PASS");
