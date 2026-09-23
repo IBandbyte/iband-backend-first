@@ -1,0 +1,24 @@
+name: Verify Movie Mentor Creator Compensation Authority
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "ai/MovieMentorInferenceSettlementReconciliationAuthority.js"
+      - "ai/MovieMentorInferenceSettlementMongoStore.js"
+      - "ai/MovieMentorTurnRuntime.js"
+      - "scripts/verify-movie-mentor-creator-compensation-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-creator-compensation-authority.yml"
+  workflow_dispatch:
+
+jobs:
+  verify-creator-compensation-authority:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Verify Creator Compensation authority
+        run: node scripts/verify-movie-mentor-creator-compensation-authority.mjs
