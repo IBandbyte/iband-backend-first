@@ -1,0 +1,17 @@
+name: Verify Movie Mentor Compensated Turn Terminal Re-entry Authority
+on:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Syntax check compensated-turn terminal re-entry authority
+        run: node --check scripts/verify-movie-mentor-compensated-turn-terminal-reentry-authority.mjs
+      - name: Verify compensated-turn terminal re-entry authority
+        run: node scripts/verify-movie-mentor-compensated-turn-terminal-reentry-authority.mjs
