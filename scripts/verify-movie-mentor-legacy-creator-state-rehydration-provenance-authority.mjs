@@ -36,6 +36,11 @@ const legacyDurableState={
 // write-admission provenance courts existed. Rehydration must not silently
 // promote its historical semantic payload into current continuation authority.
 const creatorMessage="Yes, do that.";
+assert.throws(
+  ()=>buildTurnEnvelopeFromDurableState({creatorMessage,state:legacyDurableState}),
+  error=>error?.code==="MOVIE_MENTOR_LEGACY_CREATOR_STATE_REHYDRATION_PROVENANCE_REQUIRED",
+  "pre-hardening semantic history must be rejected at current turn rehydration."
+);
 const resolution=resolveContinuationReferences({
   creatorMessage,
   projectId,
