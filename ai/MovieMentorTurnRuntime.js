@@ -214,7 +214,8 @@ function assertDurableSemanticHistoryProvenance(state = {}) {
   );
 }
 
-function buildTurnEnvelopeFromDurableState({ creatorMessage, state } = {}) {\n  assertDurableSemanticHistoryProvenance(state);
+function buildTurnEnvelopeFromDurableState({ creatorMessage, state } = {}) {
+  assertDurableSemanticHistoryProvenance(state);
   if (!s(creatorMessage)) throw runtimeError("MOVIE_MENTOR_TURN_MESSAGE_REQUIRED", "A creator message is required for a Movie Mentor turn.");
   if (!state || typeof state !== "object") throw runtimeError("MOVIE_MENTOR_CREATOR_STATE_INVALID", "Durable creator state is required to build a Movie Mentor turn.");
   const currentCreatorTruth = buildCurrentCreatorTruthView(state.creatorConfirmedContext || []);
