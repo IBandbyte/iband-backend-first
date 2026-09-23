@@ -1,0 +1,34 @@
+name: Verify Movie Mentor Creator State Sync Truth Provenance Authority
+
+on:
+  push:
+    branches:
+      - verify-creator-state-sync-truth-provenance
+    paths:
+      - "movieMentorTurn.js"
+      - "ai/MovieMentorCreatorStateTransition.js"
+      - "ai/MovieMentorCreatorStateMutationAuthority.js"
+      - "scripts/verify-movie-mentor-creator-state-sync-truth-provenance-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-creator-state-sync-truth-provenance-authority.yml"
+  pull_request:
+    paths:
+      - "movieMentorTurn.js"
+      - "ai/MovieMentorCreatorStateTransition.js"
+      - "ai/MovieMentorCreatorStateMutationAuthority.js"
+      - "scripts/verify-movie-mentor-creator-state-sync-truth-provenance-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-creator-state-sync-truth-provenance-authority.yml"
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Check creator state sync truth provenance verifier syntax
+        run: node --check scripts/verify-movie-mentor-creator-state-sync-truth-provenance-authority.mjs
+      - name: Verify creator state sync truth provenance authority
+        run: node scripts/verify-movie-mentor-creator-state-sync-truth-provenance-authority.mjs
