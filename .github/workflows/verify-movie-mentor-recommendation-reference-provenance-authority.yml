@@ -1,0 +1,30 @@
+name: Verify Movie Mentor Recommendation Reference Provenance Authority
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "ai/MovieMentorRecommendationReferenceControl.js"
+      - "ai/MovieMentorContinuationReferenceControl.js"
+      - "ai/MovieMentorCreatorDecisionAuthority.js"
+      - "ai/MovieMentorCreatorStateTransition.js"
+      - "movieMentorTurn.js"
+      - "scripts/verify-movie-mentor-recommendation-reference-provenance-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-recommendation-reference-provenance-authority.yml"
+  push:
+    branches:
+      - "verify-recommendation-reference-provenance-authority"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Check recommendation reference provenance verifier syntax
+        run: node --check scripts/verify-movie-mentor-recommendation-reference-provenance-authority.mjs
+      - name: Verify recommendation reference provenance authority
+        run: node scripts/verify-movie-mentor-recommendation-reference-provenance-authority.mjs
