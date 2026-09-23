@@ -1,0 +1,17 @@
+name: Verify Movie Mentor Legacy Non-Decision Creator Truth Rehydration Provenance Authority
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - run: node --check scripts/verify-movie-mentor-legacy-nondecision-creator-truth-rehydration-provenance-authority.mjs
+      - run: node scripts/verify-movie-mentor-legacy-nondecision-creator-truth-rehydration-provenance-authority.mjs
