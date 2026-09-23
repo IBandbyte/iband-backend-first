@@ -4,7 +4,7 @@ import { orchestrateMovieMentorTurn } from "./MovieMentorTurnOrchestrator.js";
 import { interpretMovieMentorSemantics } from "./MovieMentorSemanticInterpreter.js";
 import { executeMovieMentorSpecialistWorkOrder, prepareContinuityHistoricalInput, LIVE_AGENT_IDS, MOVIE_MENTOR_SPECIALIST_EXECUTOR_VERSION, SPECIALIST_CONTRACT_VERSION } from "./MovieMentorSpecialistExecutor.js";
 import { synthesizeMovieMentorResponse } from "./MovieMentorSynthesisEngine.js";
-import { buildCurrentCreatorTruthView } from "./MovieMentorCreatorTruthViewControl.js";
+import { buildCurrentCreatorTruthView, isDecision } from "./MovieMentorCreatorTruthViewControl.js";
 import { readAuthoritativeTurnSource, readAuthoritativeRevision, readAuthoritativeCreatorState } from "./MovieMentorCreatorStateStore.js";
 import { recoverPreviouslyAdmittedProviderResult } from "./MovieMentorRecoveredProviderResultAuthority.js";
 import { reconstructRecoveredMovieMentorSemanticResult } from "./MovieMentorRecoveredSemanticResult.js";
@@ -188,10 +188,37 @@ function assertRuntimeServerAuthority({ serverAuthority = null, requestedProject
   return Object.freeze({ principalId, projectId });
 }
 
+function containsUnprovenLegacySemanticHistory(memoryContext = {}) {
+  const conversations = Array.isArray(memoryContext?.conversations) ? memoryContext.conversations : [];
+  const handoffs = Array.isArray(memoryContext?.sessionHandoffs) ? memoryContext.sessionHandoffs : [];
+  const memories = Array.isArray(memoryContext?.projectMemories) ? memoryContext.projectMemories : [];
+  const entityRef = (item) => Array.isArray(item?.metadata?.entityReferences) && item.metadata.entityReferences.some((ref) => s(ref?.name) || s(ref?.label));
+  const recommendation = (value, seen = new Set()) => {
+    if (!value || typeof value !== "object" || seen.has(value)) return false;
+    seen.add(value);
+    if (value?.domain === "iband.movie-mentor.journey-recommendation-reference") return true;
+    return Object.values(value).some((child) => recommendation(child, seen));
+  };
+  return conversations.some((item) => s(item?.creatorMessage) || s(item?.mentorResponse) || entityRef(item))
+    || handoffs.some((item) => s(item?.content) || s(item?.value?.lastCreatorMessage) || s(item?.value?.lastMentorResponse))
+    || memories.some((item) => s(item?.metadata?.entityName) || entityRef(item) || (/character/i.test(s(item?.category) || s(item?.title)) && s(item?.value?.name)))
+    || recommendation(memoryContext);
+}
+
+function assertDurableSemanticHistoryProvenance(state = {}) {
+  if (!containsUnprovenLegacySemanticHistory(state?.memoryContext)) return true;
+  throw runtimeError(
+    "MOVIE_MENTOR_LEGACY_CREATOR_STATE_REHYDRATION_PROVENANCE_REQUIRED",
+    "Durable creator state contains semantic history that cannot be re-established as current continuation authority from legacy storage alone.",
+    { retryable: false, projectId: s(state?.projectId) || null, revision: state?.revision ?? null },
+  );
+}
+
 function buildTurnEnvelopeFromDurableState({ creatorMessage, state } = {}) {
+  assertDurableSemanticHistoryProvenance(state);
   if (!s(creatorMessage)) throw runtimeError("MOVIE_MENTOR_TURN_MESSAGE_REQUIRED", "A creator message is required for a Movie Mentor turn.");
   if (!state || typeof state !== "object") throw runtimeError("MOVIE_MENTOR_CREATOR_STATE_INVALID", "Durable creator state is required to build a Movie Mentor turn.");
-  const currentCreatorTruth = buildCurrentCreatorTruthView(state.creatorConfirmedContext || []);
+  const currentCreatorTruth = buildCurrentCreatorTruthView(state.creatorConfirmedContext || []).filter((item) => isDecision(item));
   return createTurnContextEnvelope({
     projectId: state.projectId || null,
     creatorSessionId: state.creatorSessionId || null,
@@ -271,16 +298,32 @@ function createFencedInferenceOrchestrationDeps({ execution, inferenceExecutionA
     const decision = await inferenceExecutionAuthority.claimProviderCall({ execution, slotId, task });
     if (decision?.dispatchAuthorized !== true) {
       if (decision?.reason === "provider-call-slot-already-admitted") {
-        return recoverPreviouslyAdmittedProviderResult({
-          decision,
-          execution,
-          slotId,
-          task,
-          input,
-          recoverProviderOutcome: inferenceExecutionAuthority?.recoverProviderOutcome,
-          readProviderOperation: inferenceExecutionAuthority?.readProviderOperation,
-          reconstructRecoveredResult,
-        });
+        try {
+          return await recoverPreviouslyAdmittedProviderResult({
+            decision,
+            execution,
+            slotId,
+            task,
+            input,
+            recoverProviderOutcome: inferenceExecutionAuthority?.recoverProviderOutcome,
+            readProviderOperation: inferenceExecutionAuthority?.readProviderOperation,
+            reconstructRecoveredResult,
+          });
+        } catch (error) {
+          if (error?.code !== "MOVIE_MENTOR_PROVIDER_RECOVERY_CREATOR_STATE_UNIVERSE_CONFLICT") throw error;
+          const recovery = await inferenceExecutionAuthority.recoverProviderOutcome({ providerCallId: s(error?.providerCallId || decision?.providerCallId), recoveryAuthority: execution });
+          const evidence = Array.isArray(recovery?.evidence) ? recovery.evidence : [];
+          if (recovery?.outcome !== "CONFIRMED_EFFECT" || recovery?.refundAuthorized !== false || recovery?.redispatchAuthorized !== false || !s(recovery?.providerCallId) || evidence.length !== 1 || !s(evidence[0]?.externalEffectId)) throw error;
+          error.providerEffects = [Object.freeze({
+            providerCallId: s(recovery.providerCallId),
+            executionId: s(recovery.executionId || execution?.executionId),
+            slotId: s(recovery.slotId || decision?.slotId || slotId),
+            task: s(recovery.task || decision?.task || task),
+            state: "confirmed",
+            evidence: clone(evidence),
+          })];
+          throw error;
+        }
       }
       throw runtimeError("MOVIE_MENTOR_INFERENCE_PROVIDER_CALL_NOT_AUTHORIZED", "Provider call was not admitted under the current durable execution lease.", {
         reason: decision?.reason || "provider-call-not-authorized",
@@ -590,6 +633,11 @@ async function convergeExistingTurn({ existing, inferenceExecutionAuthority, set
       executionId: existing.executionId, retryable: false,
     });
   }
+  if (s(existing.phase) === "compensated") {
+    throw runtimeError("MOVIE_MENTOR_INFERENCE_EXECUTION_COMPENSATED", "Creator turn was durably compensated after confirmed provider work became unusable under superseded Creator state; use a new creatorTurnId for current work.", {
+      executionId: existing.executionId, retryable: false,
+    });
+  }
   if (s(existing.phase) === "quarantined") {
     throw runtimeError("MOVIE_MENTOR_INFERENCE_EXECUTION_QUARANTINED", "Creator turn belongs to a durably quarantined inference universe whose current proof is revoked; historical settlement remains preserved but cannot authorize replay or new provider work.", {
       executionId: existing.executionId,
@@ -608,6 +656,33 @@ async function convergeExistingTurn({ existing, inferenceExecutionAuthority, set
     });
   }
   return null;
+}
+
+async function reconcileFailedExecution({ execution, settlementAuthority, error } = {}) {
+  if (error?.code === "MOVIE_MENTOR_PROVIDER_RECOVERY_CREATOR_STATE_UNIVERSE_CONFLICT") {
+    if (typeof settlementAuthority?.compensateSupersededCreatorState !== "function") {
+      throw runtimeError("MOVIE_MENTOR_CREATOR_COMPENSATION_AUTHORITY_REQUIRED", "Superseded Creator-state recovery requires durable Creator Compensation authority.", {
+        cause: error, retryable: true, executionId: execution?.executionId || null,
+      });
+    }
+    let compensation;
+    try {
+      compensation = await settlementAuthority.compensateSupersededCreatorState({
+        execution,
+        recoveryConflict: error,
+        providerEffects: Array.isArray(error?.providerEffects) ? error.providerEffects : [],
+      });
+    } catch (compensationError) {
+      throw runtimeError("MOVIE_MENTOR_CREATOR_COMPENSATION_RECONCILIATION_UNCERTAIN", "Creator Compensation could not be durably proven; spend remains reserved.", {
+        cause: compensationError, originalCause: error, retryable: true, executionId: execution?.executionId || null,
+      });
+    }
+    if (compensation?.authorized === true && compensation?.compensated === true && compensation?.outcome === "creator-compensated") return compensation;
+    throw runtimeError("MOVIE_MENTOR_CREATOR_COMPENSATION_UNRESOLVED", "Superseded Creator-state recovery was not authorized for compensation; spend remains reserved.", {
+      cause: error, retryable: true, executionId: execution?.executionId || null, reason: compensation?.reason || "creator-compensation-not-authoritative",
+    });
+  }
+  return releaseFailedUnclaimedExecution({ execution, settlementAuthority, error });
 }
 
 async function releaseFailedUnclaimedExecution({ execution, settlementAuthority, error } = {}) {
@@ -706,7 +781,8 @@ async function runMovieMentorTurn(input = {}, deps = {}) {
   const settlementEnabled = resultEnabled
     && typeof settlementAuthority?.reconcile === "function"
     && typeof settlementAuthority?.releaseUnclaimed === "function"
-    && typeof settlementAuthority?.releaseUnbound === "function";
+    && typeof settlementAuthority?.releaseUnbound === "function"
+    && typeof settlementAuthority?.compensateSupersededCreatorState === "function";
 
   if (!executionEnabled) throw runtimeError("MOVIE_MENTOR_INFERENCE_EXECUTION_AUTHORITY_REQUIRED", "Paid Movie Mentor inference cannot run without complete durable creator-turn convergence, lease fencing and provider-effect dispatch authority.");
   if (!closureEnabled) throw runtimeError("MOVIE_MENTOR_INFERENCE_EXECUTION_CLOSURE_AUTHORITY_REQUIRED", "Paid Movie Mentor inference cannot run without durable closure authority.");
@@ -805,7 +881,10 @@ async function runMovieMentorTurn(input = {}, deps = {}) {
   try {
     result = await orchestrate({ message: creatorMessage, authoritativeTurnContext: envelope, options: clone(input?.options || {}) }, orchestrationDeps);
   } catch (error) {
-    await releaseFailedUnclaimedExecution({ execution, settlementAuthority, error });
+    const disposition = await reconcileFailedExecution({ execution, settlementAuthority, error });
+    if (disposition?.outcome === "creator-compensated") {
+      throw runtimeError("MOVIE_MENTOR_CREATOR_STATE_SUPERSEDED_RETRY_REQUIRED", "Historical provider work was compensated because current Creator state superseded its semantic universe. Retry from current Creator state.", { cause: error, retryable: true, executionId: execution?.executionId || null, creatorCompensated: true });
+    }
     throw error;
   }
 
