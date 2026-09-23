@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { resolveContinuationReferences, mergeContinuationIntoSemanticIntelligence } from "../ai/MovieMentorContinuationReferenceControl.js";
+import { resolveContinuationReferences, mergeContinuationIntoSemanticIntelligence } from "../ai/MovieMentorContinuationReferenceControl.js";\nimport { buildTurnEnvelopeFromDurableState } from "../ai/MovieMentorTurnRuntime.js";
 import { buildCreatorDecisionCandidate } from "../ai/MovieMentorCreatorDecisionAuthority.js";
 
 console.log("ROUND SEVEN — legacy creator-state rehydration provenance authority court");
