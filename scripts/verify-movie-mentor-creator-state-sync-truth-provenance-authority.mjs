@@ -94,6 +94,23 @@ await assert.rejects(
 );
 
 assert.equal(writes, 0, "unproven creator truth must fail before the irreversible creator-state write");
+
+await assert.rejects(
+  () => applyMovieMentorCreatorStateTransition(
+    {
+      projectId: durable.projectId,
+      creatorSessionId: durable.creatorSessionId,
+      source: "creator-decision",
+      expectedRevision: durable.revision,
+      state: { creatorConfirmedContext: injectedMentorTruth },
+    },
+    { readAuthoritativeTurnSource, writeAuthoritativeCreatorState, creatorStateMutationAuthority },
+  ),
+  (error) => error?.code === "MOVIE_MENTOR_CREATOR_STATE_TRUTH_PROVENANCE_REQUIRED",
+  "authenticated /state/sync must not be able to self-assert the reserved creator-decision source and mint creator-confirmed truth",
+);
+
+assert.equal(writes, 0, "forged creator-decision source must fail before the irreversible creator-state write");
 assert.equal(durable.revision, 7, "rejected truth injection must not advance creator-state revision");
 
 console.log("LAW: CURRENT OWNERSHIP AUTHORIZES WHO MAY MUTATE. IT DOES NOT PROVE THE PROVENANCE OF WHAT IS BEING PROMOTED TO CREATOR TRUTH.");
