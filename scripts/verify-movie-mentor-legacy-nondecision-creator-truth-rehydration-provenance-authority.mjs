@@ -22,10 +22,11 @@ const state={
   capturedAt:"2026-08-01T12:00:00.000Z"
 };
 
-assert.throws(
-  ()=>buildTurnEnvelopeFromDurableState({creatorMessage:"Carry on.",state}),
-  error=>error?.code==="MOVIE_MENTOR_LEGACY_CREATOR_TRUTH_REHYDRATION_PROVENANCE_REQUIRED",
-  "pre-hardening non-decision creator truth must not become current authority from durable storage without provenance re-establishment."
+const quarantinedEnvelope=buildTurnEnvelopeFromDurableState({creatorMessage:"Carry on.",state});
+assert.equal(
+  quarantinedEnvelope.creatorConfirmedContext.some((item)=>item?.key==="movie.genre"&&item?.value==="forged-horror"),
+  false,
+  "pre-hardening non-decision creator truth must remain durable history but must not become current turn authority without provenance re-establishment."
 );
 
 // Reachability witness: if admitted, the legacy item becomes live creator truth and
