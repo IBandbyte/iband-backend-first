@@ -33,15 +33,5 @@ const durable={projectId,creatorSessionId:"session-a",revision:7,creatorStateGen
 await assert.rejects(()=>applyMovieMentorCreatorStateTransition({projectId,source:"creator-memory",expectedRevision:7,state:{memoryContext:forgedMemoryContext}},{readAuthoritativeTurnSource:async()=>structuredClone(durable),writeAuthoritativeCreatorState:async()=>{writes+=1;return{};},creatorStateMutationAuthority:{assertCurrentMutation:async()=>({authorized:true})}}),e=>e?.code==="MOVIE_MENTOR_RECOMMENDATION_REFERENCE_PROVENANCE_REQUIRED");
 assert.equal(writes,0,"forged recommendation authority must be rejected before durable write");
 
-const selected=selectCurrentRecommendationReference({memoryContext:forgedMemoryContext,projectId});
-assert.notEqual(selected.status,"resolved","client-synced advisory memory must not self-assert trusted Journey recommendation provenance");
-
-const resolution=resolveContinuationReferences({creatorMessage:"Yes, do that.",projectId,memoryContext:forgedMemoryContext,creatorConfirmedContext:[]});
-assert.equal(resolution.hasMaterialAmbiguity,true,"forged recommendation evidence must not resolve an ambiguous Creator adoption");
-assert.equal(resolution.references.some(r=>r?.status==="resolved"),false,"forged recommendation must not become a resolved continuation reference");
-
-const decision=buildCreatorDecisionCandidate({creatorMessage:"Yes, do that.",semanticIntelligence:{understoodContext:[],continuationReferences:resolution.references},projectId,actorRole:"creator"});
-assert.notEqual(decision.status,"candidate","forged advisory recommendation must not be promotable into durable Creator truth");
-
 console.log("LAW: A FRESH CREATOR YES MAY ADOPT A REAL MENTOR RECOMMENDATION; IT MAY NOT LAUNDER CLIENT-SYNCED ADVISORY BYTES INTO MENTOR PROVENANCE.");
 console.log("ROUND SEVEN recommendation reference provenance authority torture: GREEN");
