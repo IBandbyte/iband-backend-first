@@ -4,7 +4,7 @@ import { orchestrateMovieMentorTurn } from "./MovieMentorTurnOrchestrator.js";
 import { interpretMovieMentorSemantics } from "./MovieMentorSemanticInterpreter.js";
 import { executeMovieMentorSpecialistWorkOrder, prepareContinuityHistoricalInput, LIVE_AGENT_IDS, MOVIE_MENTOR_SPECIALIST_EXECUTOR_VERSION, SPECIALIST_CONTRACT_VERSION } from "./MovieMentorSpecialistExecutor.js";
 import { synthesizeMovieMentorResponse } from "./MovieMentorSynthesisEngine.js";
-import { buildCurrentCreatorTruthView } from "./MovieMentorCreatorTruthViewControl.js";
+import { buildCurrentCreatorTruthView, isDecision } from "./MovieMentorCreatorTruthViewControl.js";
 import { readAuthoritativeTurnSource, readAuthoritativeRevision, readAuthoritativeCreatorState } from "./MovieMentorCreatorStateStore.js";
 import { recoverPreviouslyAdmittedProviderResult } from "./MovieMentorRecoveredProviderResultAuthority.js";
 import { reconstructRecoveredMovieMentorSemanticResult } from "./MovieMentorRecoveredSemanticResult.js";
@@ -218,7 +218,7 @@ function buildTurnEnvelopeFromDurableState({ creatorMessage, state } = {}) {
   assertDurableSemanticHistoryProvenance(state);
   if (!s(creatorMessage)) throw runtimeError("MOVIE_MENTOR_TURN_MESSAGE_REQUIRED", "A creator message is required for a Movie Mentor turn.");
   if (!state || typeof state !== "object") throw runtimeError("MOVIE_MENTOR_CREATOR_STATE_INVALID", "Durable creator state is required to build a Movie Mentor turn.");
-  const currentCreatorTruth = buildCurrentCreatorTruthView(state.creatorConfirmedContext || []);
+  const currentCreatorTruth = buildCurrentCreatorTruthView(state.creatorConfirmedContext || []).filter((item) => isDecision(item));
   return createTurnContextEnvelope({
     projectId: state.projectId || null,
     creatorSessionId: state.creatorSessionId || null,
