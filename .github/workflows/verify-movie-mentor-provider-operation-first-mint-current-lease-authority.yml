@@ -1,0 +1,18 @@
+name: Verify Movie Mentor Provider Operation First-Mint Current Lease Authority
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify provider operation first-mint current lease authority
+        run: node scripts/verify-movie-mentor-provider-operation-first-mint-current-lease-authority.mjs
