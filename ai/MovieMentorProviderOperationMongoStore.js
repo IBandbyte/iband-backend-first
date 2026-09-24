@@ -97,7 +97,8 @@ function sameIdentity(record, candidate) {
   return text(record?.providerCallId) === text(candidate?.providerCallId) && text(record?.executionId) === text(candidate?.executionId) && text(record?.slotId) === text(candidate?.slotId) && text(record?.task) === text(candidate?.task);
 }
 
-function createMovieMentorProviderOperationMongoStore({ mongoModel = null, connect = ensureConnection, readPhysicalIndexes = null, startSession = null, executionCollection = null } = {}) {\n  const sessionFactory = typeof startSession === "function" ? startSession : () => mongoose.startSession();
+function createMovieMentorProviderOperationMongoStore({ mongoModel = null, connect = ensureConnection, readPhysicalIndexes = null, startSession = null, executionCollection = null } = {}) {
+  const sessionFactory = typeof startSession === "function" ? startSession : () => mongoose.startSession();
   const executionLedger = () => executionCollection || mongoose.connection.collection(EXECUTION_COLLECTION);
   const storeModel = () => mongoModel || getModel();
   let physicalUniqueIndexReadinessPromise = null;
