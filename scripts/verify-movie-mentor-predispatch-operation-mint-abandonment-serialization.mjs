@@ -17,7 +17,11 @@ assert.match(operationAuthority,/const operation = await providerOperationAuthor
 assert.match(effectStore,/executionLedger\(\)\.updateOne\([\s\S]*phase:"active"[\s\S]*providerCalls:\{\$elemMatch:/,"UNKNOWN creation must serialize through the exact live execution row");
 assert.match(release,/OPERATION_COLLECTION\)\.find\(\{executionId:id\},\{session\}\)\.toArray\(\)/,"abandonment must inspect provider-operation reality in its transaction");
 assert.match(release,/executions\.updateOne\(\{executionId:id,phase:"active"/,"abandonment must serialize its terminal transition through the execution row");
-const operationMintSerializesWithExecution=/withTransaction/.test(bind)&&/execution/.test(bind)&&/(updateOne|findOneAndUpdate)/.test(bind);
-assert.equal(operationMintSerializesWithExecution,true,"durable provider-operation mint must physically serialize with the execution row so a concurrent predispatch abandonment cannot prove operation absence from an earlier snapshot and then release Creator value");
+assert.match(bind,/session\.withTransaction\(/,"provider-operation mint must execute inside a Mongo transaction");
+assert.match(bind,/executionLedger\(\)\.updateOne\(\{/,"provider-operation mint must physically touch the execution row in that transaction");
+assert.match(bind,/phase: "active"/,"provider-operation mint must require live execution phase");
+assert.match(bind,/providerCalls: \{ \$elemMatch: \{ providerCallId: candidate\.providerCallId, slotId: candidate\.slotId, task: candidate\.task \} \}/,"operation mint must bind the exact admitted provider call");
+assert.match(bind,/settlementRealityBarrierRevision: 1/,"operation mint must contend on the settlement reality barrier before durable create");
+assert.match(bind,/storeModel\(\)\.create\(\[candidate\], \{ session \}\)/,"operation mint must occur in the same transaction as execution serialization");
 console.log("GREEN: provider-operation mint and predispatch abandonment share a physical execution-row serialization boundary.");
 console.log("LAW: ABSENCE OF DURABLE PROVIDER-OPERATION REALITY MAY AUTHORIZE REFUND ONLY IF CONCURRENT OPERATION MINT CANNOT COMMIT OUTSIDE THE SAME EXECUTION SERIALIZATION COURT.");
