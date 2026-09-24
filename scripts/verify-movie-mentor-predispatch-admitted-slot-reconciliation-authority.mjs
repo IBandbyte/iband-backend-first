@@ -18,7 +18,7 @@ assert.match(settlement, /reason:"provider-call-claims-exist"/);
 assert.match(settlement, /allowPredispatchClaimAbandonment/);
 assert.match(settlement, /effects\.find\(\{executionId:id\}/);
 assert.match(settlement, /providerEffectRealityRevision:realityRevision/);
-assert.match(settlement, /abortReason:predispatchClaimAbandoned\?"predispatch-claim-abandoned"/);
+assert.match(settlement, /abortReason:"predispatch-claim-abandoned"/);
 assert.match(effectStore, /phase:"active".*\$inc:\{providerEffectRealityRevision:1\}/s,
   "UNKNOWN creation must serialize on the same execution row/reality revision as abandonment");
 
