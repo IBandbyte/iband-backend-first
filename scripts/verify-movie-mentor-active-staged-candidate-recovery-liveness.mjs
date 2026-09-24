@@ -10,12 +10,23 @@ assert.match(runtime,/MOVIE_MENTOR_ACTIVE_RESULT_CANDIDATE_RECOVERY_REQUIRED/,"#
 assert.match(closure,/async function recoverExpiredIntoClosing/,"closure authority has a durable expired-ACTIVE recovery primitive");
 assert.match(closure,/return freeze\(\{beginClosing,recoverExpiredIntoClosing,reconcile,assertCurrentClosure/,"closure authority exposes expired-ACTIVE recovery");
 
-assert.doesNotMatch(
+assert.match(
   runtime,
-  /recoverExpiredIntoClosing/,
-  "runtime currently has no path that invokes the existing expired-ACTIVE closure recovery primitive"
+  /recoverExpiredExecutionIntoClosing\(\{ executionId: existing\.executionId \}\)/,
+  "runtime must invoke production-composed expired-ACTIVE closure recovery for a durable candidate"
+);
+assert.match(
+  runtime,
+  /recoveredClosing\?\.authorized !== true \|\| s\(recoveredClosing\.phase\) !== "closing"/,
+  "runtime must fail closed unless expired-ACTIVE recovery actually owns CLOSING"
+);
+assert.match(
+  runtime,
+  /return recoverStagedResultTurn\(\{[\s\S]*phase: "closing"/,
+  "successful ACTIVE candidate recovery must continue through the existing staged-result closure/canonical/settlement path"
 );
 
-assert.fail(
-  "ACTIVE execution with a durable candidate is now fail-closed by #335, but runtime never invokes recoverExpiredIntoClosing; after the lease expires the preserved candidate can remain permanently ACTIVE instead of advancing into CLOSING/closure."
-);
+console.log("✓ ACTIVE durable candidate invokes expired-execution closure recovery");
+console.log("✓ recovery must prove authoritative CLOSING before candidate continuation");
+console.log("✓ preserved candidate resumes existing closure/canonical/settlement convergence");
+console.log("LAW: ACTIVE + DURABLE CANDIDATE + EXPIRED LEASE → RECOVER SAME EXECUTION INTO CLOSING → SAME CANDIDATE UNIVERSE CONTINUES.");
