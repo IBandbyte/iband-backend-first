@@ -17,7 +17,7 @@ const activeStart=release.indexOf('if(text(execution.phase)!=="active")',aborted
 const aborted=release.slice(abortedStart,activeStart);
 assert.ok(abortedStart>=0&&activeStart>abortedStart);
 
-assert.match(release,/executions\.updateOne\(\{executionId:id,phase:"active",reservationId:text\(reservation\.reservationId\),providerCallsClaimed:0,"providerCalls\.0":\{\$exists:false\}\},\{\$set:\{phase:"aborted",abortedAt,abortReason:"unclaimed-reservation-released"\}/,
+assert.match(release,/executions\.updateOne\(\{executionId:id,phase:"active",reservationId:text\(reservation\.reservationId\),providerCallsClaimed:0,"providerCalls\.0":\{\$exists:false\},resultCandidateBarrierRevision:candidateBarrierRevision\},\{\$set:\{phase:"aborted",abortedAt,abortReason:"unclaimed-reservation-released"\}/,
   "the production abort transition must be owned by the atomic unclaimed-release transaction");
 assert.match(release,/reservations\.findOneAndUpdate\(\{reservationId:text\(reservation\.reservationId\),status:"reserved"\},\{\$set:\{status:"released",settledAt:abortedAt,settlementReason:"execution-aborted-before-provider-claim"\}/,
   "the paired reservation release must be written in that same transaction");
