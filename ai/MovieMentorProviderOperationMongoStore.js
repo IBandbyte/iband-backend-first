@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import { normalizeMovieMentorProviderModel, normalizeMovieMentorProviderTarget } from "./MovieMentorProviderTargetAuthority.js";
 
-const VERSION = "1.5.0";
+const VERSION = "1.6.0";
 const DOMAIN = "iband.movie-mentor.provider-operation-reality";
 const SCHEMA = 1;
 const COLLECTION = "movie_mentor_provider_operation_reality";
@@ -128,7 +128,12 @@ function createMovieMentorProviderOperationMongoStore({ mongoModel = null, conne
     const providerTarget = normalizeMovieMentorProviderTarget(input.providerTarget);
     const providerModel = normalizeMovieMentorProviderModel(input.providerModel, { provider: providerTarget.provider });
     const candidate = { domain: DOMAIN, schema: SCHEMA, providerCallId: text(input.providerCallId), executionId: text(input.executionId), slotId: text(input.slotId), task: text(input.task), providerTarget, providerModel, boundAt: new Date(input.boundAt) };
+    const ownerId = text(input.ownerId);
+    const leaseGeneration = Number(input.leaseGeneration);
+    const leaseReference = text(input.leaseReference);
+    const fencingToken = text(input.fencingToken);
     if (!candidate.providerCallId || !candidate.executionId || !candidate.slotId || !candidate.task || Number.isNaN(candidate.boundAt.getTime())) fail("MOVIE_MENTOR_PROVIDER_OPERATION_BINDING_INVALID", "Provider operation identity requires complete immutable call and target provenance.");
+    if (!ownerId || !leaseReference || !fencingToken || !Number.isSafeInteger(leaseGeneration) || leaseGeneration < 1) fail("MOVIE_MENTOR_PROVIDER_OPERATION_EXECUTION_FENCE_REQUIRED", "First provider operation mint requires the exact durable execution fence that admitted the provider call.");
     if (mongoModel || executionCollection === false) {
       try { return normalize(await storeModel().create(candidate)); }
       catch (error) {
@@ -153,7 +158,12 @@ function createMovieMentorProviderOperationMongoStore({ mongoModel = null, conne
           executionId: candidate.executionId,
           schema: CURRENT_EXECUTION_SCHEMA,
           phase: "active",
-          providerCalls: { $elemMatch: { providerCallId: candidate.providerCallId, slotId: candidate.slotId, task: candidate.task } },
+          ownerId,
+          leaseGeneration,
+          leaseReference,
+          fencingToken,
+          leaseExpiresAt: { $gt: candidate.boundAt },
+          providerCalls: { $elemMatch: { providerCallId: candidate.providerCallId, slotId: candidate.slotId, task: candidate.task, leaseGeneration, leaseReference, fencingToken } },
         }, { $inc: { settlementRealityBarrierRevision: 1 } }, { session });
         if (touch.matchedCount !== 1) fail("MOVIE_MENTOR_PROVIDER_OPERATION_EXECUTION_FENCED", "Provider operation cannot be minted unless its exact admitted call remains under live execution authority.", { retryable: false });
         const created = await storeModel().create([candidate], { session });
