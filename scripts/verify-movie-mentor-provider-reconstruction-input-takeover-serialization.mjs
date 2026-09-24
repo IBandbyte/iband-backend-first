@@ -105,7 +105,7 @@ const executionCollection = {
   },
 };
 
-const store = createMovieMentorProviderOperationMongoStore({ mongoModel, executionCollection });
+const store = createMovieMentorProviderOperationMongoStore({ mongoModel, executionCollection, startSession: async () => session });
 const staleInput = Object.freeze({ universe: "generation-1-input", revision: 1 });
 
 await assert.rejects(
@@ -115,7 +115,7 @@ await assert.rejects(
     reconstructionInput: staleInput,
     boundAt: "2037-01-01T00:00:01.000Z",
   }),
-  error => error?.code === "MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_EXECUTION_FENCED",
+  error => error?.code === "MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_EXECUTION_FENCED" || error?.code === "WRITE_CONFLICT",
   "a writer whose execution authority is superseded between proof and immutable input mutation must not first-bind recovery input",
 );
 
