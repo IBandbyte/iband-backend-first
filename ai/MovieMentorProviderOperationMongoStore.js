@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import { normalizeMovieMentorProviderModel, normalizeMovieMentorProviderTarget } from "./MovieMentorProviderTargetAuthority.js";
 
-const VERSION = "1.6.0";
+const VERSION = "1.7.0";
 const DOMAIN = "iband.movie-mentor.provider-operation-reality";
 const SCHEMA = 1;
 const COLLECTION = "movie_mentor_provider_operation_reality";
@@ -180,14 +180,29 @@ function createMovieMentorProviderOperationMongoStore({ mongoModel = null, conne
     }
   }
 
-  async function bindReconstructionInput({ providerCallId, executionId, slotId, task, reconstructionInputDigest, reconstructionInput, boundAt } = {}) {
+  async function bindReconstructionInput({ providerCallId, executionId, slotId, task, ownerId, leaseGeneration, leaseReference, fencingToken, reconstructionInputDigest, reconstructionInput, boundAt } = {}) {
     await ready();
     const callId = text(providerCallId); const digest = text(reconstructionInputDigest); const timestamp = new Date(boundAt);
+    const owner = text(ownerId); const generation = Number(leaseGeneration); const leaseRef = text(leaseReference); const fence = text(fencingToken);
     if (!callId || !text(executionId) || !text(slotId) || !text(task) || !digest || reconstructionInput === undefined || Number.isNaN(timestamp.getTime())) fail("MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_BINDING_INVALID", "Provider reconstruction input requires complete immutable call, digest, payload and time provenance.");
+    if (!owner || !Number.isSafeInteger(generation) || generation < 1 || !leaseRef || !fence) fail("MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_EXECUTION_FENCE_REQUIRED", "First provider reconstruction-input bind requires the exact durable execution fence that admitted the provider call.");
     const identity = { providerCallId: callId, executionId: text(executionId), slotId: text(slotId), task: text(task) };
     const existing = await readOperation(callId);
     if (!existing || !sameIdentity(existing, identity)) fail("MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_OPERATION_INVALID", "Provider reconstruction input may bind only to the exact durable provider operation universe.");
     if (existing.reconstructionInputDigest) return existing;
+    if (!executionCollection) fail("MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_EXECUTION_FENCED", "Provider reconstruction input cannot first-bind without current execution serialization.");
+    const touch = await executionLedger().updateOne({
+      executionId: identity.executionId,
+      schema: CURRENT_EXECUTION_SCHEMA,
+      phase: "active",
+      ownerId: owner,
+      leaseGeneration: generation,
+      leaseReference: leaseRef,
+      fencingToken: fence,
+      leaseExpiresAt: { $gt: timestamp },
+      providerCalls: { $elemMatch: { providerCallId: callId, slotId: identity.slotId, task: identity.task, leaseGeneration: generation, leaseReference: leaseRef, fencingToken: fence } },
+    }, { $inc: { settlementRealityBarrierRevision: 1 } });
+    if (touch.matchedCount !== 1) fail("MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_EXECUTION_FENCED", "Provider reconstruction input cannot first-bind unless its exact admitted call remains under live execution authority.", { retryable: false });
     const result = await storeModel().updateOne({ providerCallId: callId, executionId: identity.executionId, slotId: identity.slotId, task: identity.task, $or: [{ reconstructionInputDigest: null }, { reconstructionInputDigest: { $exists: false } }] }, { $set: { reconstructionInputDigest: digest, reconstructionInput: clone(reconstructionInput), reconstructionInputBoundAt: timestamp } }).exec();
     const durable = await readOperation(callId);
     if (!durable?.reconstructionInputDigest) fail("MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_NOT_DURABLE", "Provider reconstruction input did not become durable.", { modifiedCount: result?.modifiedCount ?? null });
