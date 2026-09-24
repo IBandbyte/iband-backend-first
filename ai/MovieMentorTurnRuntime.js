@@ -10,7 +10,7 @@ import { recoverPreviouslyAdmittedProviderResult } from "./MovieMentorRecoveredP
 import { reconstructRecoveredMovieMentorSemanticResult } from "./MovieMentorRecoveredSemanticResult.js";
 import { reconstructRecoveredMovieMentorSpecialistResult, reconstructRecoveredMovieMentorSynthesisResult } from "./MovieMentorRecoveredTaskResult.js";
 
-const MOVIE_MENTOR_TURN_RUNTIME_VERSION = "2.15.0";
+const MOVIE_MENTOR_TURN_RUNTIME_VERSION = "2.16.0";
 const s = (value) => (typeof value === "string" ? value.trim() : "");
 
 function clone(value) {
@@ -654,6 +654,15 @@ async function convergeExistingTurn({ existing, inferenceExecutionAuthority, set
     throw runtimeError("MOVIE_MENTOR_INFERENCE_EXECUTION_RECOVERY_REQUIRED", "Creator turn already belongs to a non-executable durable universe.", {
       phase: s(existing.phase), executionId: existing.executionId, retryable: true,
     });
+  }
+
+  const staged = await inferenceExecutionAuthority.readResultCandidate(existing.executionId);
+  if (staged) {
+    throw runtimeError(
+      "MOVIE_MENTOR_ACTIVE_RESULT_CANDIDATE_RECOVERY_REQUIRED",
+      "Active execution already owns a durable result candidate and must resume candidate closure instead of orchestrating another result.",
+      { executionId: existing.executionId, retryable: true },
+    );
   }
   return null;
 }
