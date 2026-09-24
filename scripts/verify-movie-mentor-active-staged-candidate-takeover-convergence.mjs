@@ -37,6 +37,17 @@ assert.match(
   "ACTIVE retry can reacquire the singleton execution after lease expiry",
 );
 
-assert.fail(
-  "ACTIVE execution with an already durable immutable result candidate has no explicit convergence path before reacquisition/orchestration; after takeover a newly reconstructed result can collide with the historical candidate instead of deterministically resuming candidate -> closure."
+assert.match(
+  converge,
+  /const staged = await inferenceExecutionAuthority\.readResultCandidate\(existing\.executionId\);[\s\S]*MOVIE_MENTOR_ACTIVE_RESULT_CANDIDATE_RECOVERY_REQUIRED/,
+  "ACTIVE existing execution must detect a durable candidate before lease reacquisition/orchestration",
 );
+assert.match(
+  converge,
+  /Active execution already owns a durable result candidate and must resume candidate closure instead of orchestrating another result\./,
+  "ACTIVE staged candidate must fail closed into explicit recovery rather than create a second result attempt",
+);
+
+console.log("✓ ACTIVE existing execution inspects durable candidate before reacquisition/orchestration");
+console.log("✓ durable candidate blocks a second orchestration/result universe");
+console.log("LAW: ACTIVE + DURABLE CANDIDATE IS RECOVERY STATE, NOT FRESH ORCHESTRATION AUTHORITY.");
