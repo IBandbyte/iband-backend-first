@@ -629,7 +629,7 @@ async function recoverStagedResultTurn({ existing, inferenceExecutionAuthority, 
 async function convergeExistingTurn({ existing, inferenceExecutionAuthority, settlementAuthority } = {}) {
   if (!existing?.found) return null;
   if (s(existing.phase) === "aborted") {
-    throw runtimeError("MOVIE_MENTOR_INFERENCE_EXECUTION_ABORTED", "Creator turn was durably aborted before any provider claim; use a new creatorTurnId for a new attempt.", {
+    throw runtimeError("MOVIE_MENTOR_INFERENCE_EXECUTION_ABORTED", "Creator turn was durably aborted before provider dispatch became authoritative; use a new creatorTurnId for a new attempt.", {
       executionId: existing.executionId, retryable: false,
     });
   }
@@ -693,7 +693,7 @@ async function releaseFailedUnclaimedExecution({ execution, settlementAuthority,
   }
   let release;
   try {
-    release = await settlementAuthority.releaseUnclaimed({ executionId: execution?.executionId, allowPredispatchClaimAbandonment: error?.refundAuthorized === true && error?.refundReason === "provider-operation-never-became-durable" });
+    release = await settlementAuthority.releaseUnclaimed({ executionId: execution?.executionId, allowPredispatchClaimAbandonment: error?.refundAuthorized === true && error?.refundReason === "provider-operation-never-became-durable", predispatchProviderCallId: error?.refundAuthorized === true ? s(error?.providerCallId) : null });
   } catch (releaseError) {
     throw runtimeError("MOVIE_MENTOR_INFERENCE_RELEASE_RECONCILIATION_UNCERTAIN", "Durable zero-claim release could not be proven; spend remains reserved.", {
       cause: releaseError, originalCause: error, retryable: true, executionId: execution?.executionId || null,
