@@ -20,7 +20,7 @@ assert.match(release,/executions\.updateOne\(\{executionId:id,phase:"active"/,"a
 assert.match(bind,/session\.withTransaction\(/,"provider-operation mint must execute inside a Mongo transaction");
 assert.match(bind,/executionLedger\(\)\.updateOne\(\{/,"provider-operation mint must physically touch the execution row in that transaction");
 assert.match(bind,/phase: "active"/,"provider-operation mint must require live execution phase");
-assert.match(bind,/providerCalls: \{ \$elemMatch: \{ providerCallId: candidate\.providerCallId, slotId: candidate\.slotId, task: candidate\.task \} \}/,"operation mint must bind the exact admitted provider call");
+assert.match(bind,/providerCalls: \{ \$elemMatch: \{ providerCallId: candidate\.providerCallId, slotId: candidate\.slotId, task: candidate\.task, leaseGeneration, leaseReference, fencingToken \} \}/,"operation mint must bind the exact admitted provider call and its lease fence");
 assert.match(bind,/settlementRealityBarrierRevision: 1/,"operation mint must contend on the settlement reality barrier before durable create");
 assert.match(bind,/storeModel\(\)\.create\(\[candidate\], \{ session \}\)/,"operation mint must occur in the same transaction as execution serialization");
 console.log("GREEN: provider-operation mint and predispatch abandonment share a physical execution-row serialization boundary.");
