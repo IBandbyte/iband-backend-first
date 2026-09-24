@@ -59,7 +59,7 @@ function createMovieMentorProviderOutcomeRecoveryAuthority({ readProviderOperati
     const callId = text(providerCallId);
     if (!callId) fail("MOVIE_MENTOR_PROVIDER_OUTCOME_CALL_ID_REQUIRED", "Provider outcome recovery requires an exact durable provider call ID.");
     const operation = await readProviderOperation(callId);
-    if (!operation) return freeze({ authorized: false, domain: DOMAIN, outcome: OUTCOMES.STILL_UNKNOWN, providerCallId: callId, providerOperationId: callId, recoveryAuthorized: false, recovered: false, redispatchAuthorized: false, refundAuthorized: false, reason: "provider-operation-not-found" });
+    if (!operation) return freeze({ authorized: false, domain: DOMAIN, outcome: OUTCOMES.STILL_UNKNOWN, providerCallId: callId, providerOperationId: callId, recoveryAuthorized: false, recovered: false, redispatchAuthorized: false, refundAuthorized: true, refundReason: "provider-operation-never-became-durable", reason: "provider-operation-not-found" });
     const binding = operationBinding(operation);
     if (binding.providerCallId !== callId) fail("MOVIE_MENTOR_PROVIDER_OUTCOME_OPERATION_IDENTITY_CONFLICT", "Recovered provider operation identity does not match the requested historical provider call.");
 

@@ -1,0 +1,22 @@
+name: Verify Movie Mentor Predispatch Abort Terminal Rehydration Authority
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "ai/MovieMentorInferenceSettlementMongoStore.js"
+      - "ai/MovieMentorInferenceExecutionMongoStore.js"
+      - "ai/MovieMentorTurnRuntime.js"
+      - "scripts/verify-movie-mentor-predispatch-abort-terminal-rehydration-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-predispatch-abort-terminal-rehydration-authority.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - run: node scripts/verify-movie-mentor-predispatch-abort-terminal-rehydration-authority.mjs

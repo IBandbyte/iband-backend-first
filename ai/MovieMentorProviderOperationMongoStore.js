@@ -1,10 +1,12 @@
 import mongoose from "mongoose";
 import { normalizeMovieMentorProviderModel, normalizeMovieMentorProviderTarget } from "./MovieMentorProviderTargetAuthority.js";
 
-const VERSION = "1.4.0";
+const VERSION = "1.5.0";
 const DOMAIN = "iband.movie-mentor.provider-operation-reality";
 const SCHEMA = 1;
 const COLLECTION = "movie_mentor_provider_operation_reality";
+const EXECUTION_COLLECTION = "movie_mentor_inference_execution";
+const CURRENT_EXECUTION_SCHEMA = 6;
 const PHYSICAL_AUTHORITY_BOUNDARY = "before-provider-operation-read-or-irreversible-mint";
 const REQUIRED_UNIQUE_INDEXES = Object.freeze([
   Object.freeze({ key: Object.freeze({ providerCallId: 1 }), unique: true }),
@@ -95,7 +97,8 @@ function sameIdentity(record, candidate) {
   return text(record?.providerCallId) === text(candidate?.providerCallId) && text(record?.executionId) === text(candidate?.executionId) && text(record?.slotId) === text(candidate?.slotId) && text(record?.task) === text(candidate?.task);
 }
 
-function createMovieMentorProviderOperationMongoStore({ mongoModel = null, connect = ensureConnection, readPhysicalIndexes = null } = {}) {
+function createMovieMentorProviderOperationMongoStore({ mongoModel = null, connect = ensureConnection, readPhysicalIndexes = null, startSession = () => mongoose.startSession(), executionCollection = null } = {}) {
+  const executionLedger = () => executionCollection || mongoose.connection.collection(EXECUTION_COLLECTION);
   const storeModel = () => mongoModel || getModel();
   let physicalUniqueIndexReadinessPromise = null;
 
@@ -126,12 +129,44 @@ function createMovieMentorProviderOperationMongoStore({ mongoModel = null, conne
     const providerModel = normalizeMovieMentorProviderModel(input.providerModel, { provider: providerTarget.provider });
     const candidate = { domain: DOMAIN, schema: SCHEMA, providerCallId: text(input.providerCallId), executionId: text(input.executionId), slotId: text(input.slotId), task: text(input.task), providerTarget, providerModel, boundAt: new Date(input.boundAt) };
     if (!candidate.providerCallId || !candidate.executionId || !candidate.slotId || !candidate.task || Number.isNaN(candidate.boundAt.getTime())) fail("MOVIE_MENTOR_PROVIDER_OPERATION_BINDING_INVALID", "Provider operation identity requires complete immutable call and target provenance.");
-    try { return normalize(await storeModel().create(candidate)); }
-    catch (error) {
+    if (mongoModel || executionCollection === false) {
+      try { return normalize(await storeModel().create(candidate)); }
+      catch (error) {
+        if (error?.code !== 11000) throw error;
+        const existing = await readOperation(candidate.providerCallId);
+        if (!existing || !sameIdentity(existing, candidate)) fail("MOVIE_MENTOR_PROVIDER_OPERATION_IDENTITY_CONFLICT", "Provider operation ID is already bound to a different call universe.");
+        return existing;
+      }
+    }
+    const session = await startSession();
+    let outcome = null;
+    try {
+      await session.withTransaction(async () => {
+        const existing = await storeModel().findOne({ providerCallId: candidate.providerCallId }).session(session).lean().exec();
+        if (existing) {
+          const durable = normalize(existing);
+          if (!sameIdentity(durable, candidate)) fail("MOVIE_MENTOR_PROVIDER_OPERATION_IDENTITY_CONFLICT", "Provider operation ID is already bound to a different call universe.");
+          outcome = durable;
+          return;
+        }
+        const touch = await executionLedger().updateOne({
+          executionId: candidate.executionId,
+          schema: CURRENT_EXECUTION_SCHEMA,
+          phase: "active",
+          providerCalls: { $elemMatch: { providerCallId: candidate.providerCallId, slotId: candidate.slotId, task: candidate.task } },
+        }, { $inc: { settlementRealityBarrierRevision: 1 } }, { session });
+        if (touch.matchedCount !== 1) fail("MOVIE_MENTOR_PROVIDER_OPERATION_EXECUTION_FENCED", "Provider operation cannot be minted unless its exact admitted call remains under live execution authority.", { retryable: false });
+        const created = await storeModel().create([candidate], { session });
+        outcome = normalize(created[0]);
+      }, { readConcern: { level: "snapshot" }, writeConcern: { w: "majority" } });
+      return outcome;
+    } catch (error) {
       if (error?.code !== 11000) throw error;
       const existing = await readOperation(candidate.providerCallId);
       if (!existing || !sameIdentity(existing, candidate)) fail("MOVIE_MENTOR_PROVIDER_OPERATION_IDENTITY_CONFLICT", "Provider operation ID is already bound to a different call universe.");
       return existing;
+    } finally {
+      await session.endSession();
     }
   }
 

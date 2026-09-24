@@ -9,11 +9,12 @@ async function write(state,{expectedRevision}){const k=key(state),current=memory
 function mutationAuthority(projectId="p1"){return Object.freeze({domain:MOVIE_MENTOR_CREATOR_STATE_MUTATION_AUTHORITY_DOMAIN,schema:MOVIE_MENTOR_CREATOR_STATE_MUTATION_SCHEMA,principalId:"creator-1",projectId,assertCurrentMutation:async target=>Object.freeze({domain:MOVIE_MENTOR_CREATOR_STATE_MUTATION_PROOF_DOMAIN,schema:MOVIE_MENTOR_CREATOR_STATE_MUTATION_SCHEMA,authorized:true,currentOwnershipVerified:true,principalId:"creator-1",projectId,ownershipRef:`ownership:${projectId}`,ownershipRevision:1,source:target.source,expectedRevision:target.expectedRevision,revision:target.revision,creatorStateGeneration:target.creatorStateGeneration,creatorStateFingerprint:target.creatorStateFingerprint})});}
 const deps={readAuthoritativeTurnSource:read,writeAuthoritativeCreatorState:write,creatorStateMutationAuthority:mutationAuthority()};
 
-const first=await applyMovieMentorCreatorStateTransition({projectId:"p1",creatorSessionId:"s1",source:"creator-memory",expectedRevision:0,state:{creatorConfirmedContext:[{key:"genre",value:"mystery"}],memoryContext:{beat:"opening"}}},deps);
-assert.equal(first.revision,1);assert.equal(first.creatorStateGeneration,1);assert.equal(first.creatorConfirmedContext[0].value,"mystery");assert.match(first.creatorStateFingerprint,/^[a-f0-9]{64}$/);
+const first=await applyMovieMentorCreatorStateTransition({projectId:"p1",creatorSessionId:"s1",source:"creator-memory",expectedRevision:0,state:{memoryContext:{beat:"opening"}}},deps);
+assert.equal(first.revision,1);assert.equal(first.creatorStateGeneration,1);assert.deepEqual(first.creatorConfirmedContext,[]);assert.match(first.creatorStateFingerprint,/^[a-f0-9]{64}$/);
+await assert.rejects(()=>applyMovieMentorCreatorStateTransition({projectId:"p1",creatorSessionId:"s1",source:"creator-memory",expectedRevision:1,state:{creatorConfirmedContext:[{key:"genre",value:"mystery"}]}},deps),e=>e.code==="MOVIE_MENTOR_CREATOR_STATE_TRUTH_PROVENANCE_REQUIRED");
 
 const second=await applyMovieMentorCreatorStateTransition({projectId:"p1",creatorSessionId:"s1",source:"creator-journey",expectedRevision:1,state:{projectJourney:{stageId:"story-foundation",taskId:"premise"}}},deps);
-assert.equal(second.revision,2);assert.equal(second.creatorConfirmedContext[0].value,"mystery");assert.equal(second.projectJourney.stageId,"story-foundation");
+assert.equal(second.revision,2);assert.deepEqual(second.creatorConfirmedContext,[]);assert.equal(second.projectJourney.stageId,"story-foundation");
 
 await assert.rejects(()=>applyMovieMentorCreatorStateTransition({projectId:"p1",source:"creator-memory",expectedRevision:1,state:{memoryContext:{bad:true}}},deps),e=>e.code==="MOVIE_MENTOR_CREATOR_STATE_REVISION_CONFLICT");
 await assert.rejects(()=>applyMovieMentorCreatorStateTransition({projectId:"p1",source:"specialist-agent",expectedRevision:2,state:{memoryContext:{bad:true}}},deps),e=>e.code==="MOVIE_MENTOR_CREATOR_STATE_SOURCE_NOT_AUTHORIZED");
