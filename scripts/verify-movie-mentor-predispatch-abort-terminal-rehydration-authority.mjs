@@ -12,21 +12,29 @@ const releaseEnd=settlement.indexOf("async function releaseUnboundReservation",r
 assert.ok(releaseStart>=0&&releaseEnd>releaseStart);
 const release=settlement.slice(releaseStart,releaseEnd);
 
-assert.match(release,/predispatchClaimAbandoned=true/,"production must expose the #329 predispatch claimed-abandonment path");
-assert.match(release,/providerCallsClaimed:claimed,providerEffectRealityRevision:realityRevision/,"predispatch abandonment must bind the admitted claim universe and provider-reality revision");
-assert.match(release,/abortReason:"predispatch-claim-abandoned"/,"predispatch abandonment currently writes a durable terminal identity");
+assert.match(release,/predispatchProviderCallId=null/,"release authority must receive exact recovered provider-call identity");
+assert.match(release,/claimedCall=calls\.find\(call=>text\(call\?\.providerCallId\)===exactCallId\)/,
+  "refund proof must bind the exact admitted provider call");
+assert.match(release,/OPERATION_COLLECTION\)\.find\(\{executionId:id\}/,
+  "terminal release must re-prove absence of durable provider operation reality inside settlement transaction");
+assert.match(release,/effects\.find\(\{executionId:id\}/,
+  "terminal release must re-prove absence of provider effect reality inside settlement transaction");
+assert.match(release,/providerCallsClaimed:0,providerCalls:\[\],abandonedPredispatchProviderCalls:calls/,
+  "claimed-before-dispatch history must be archived while canonical terminal claim authority returns to zero");
+assert.match(release,/abortReason:"predispatch-claim-abandoned"/);
 
-assert.match(executionStore,/if\(phase==="aborted"&&\(calls\.length!==0\|\|v\.providerCallsClaimed!==0\|\|!iso\(v\.abortedAt\)\|\|!text\(v\.abortReason\)\)\)fail\("MOVIE_MENTOR_INFERENCE_EXECUTION_ABORT_RECORD_INVALID"/,
-  "canonical execution rehydration rejects aborted records carrying any provider claim");
-
-const writerCanEmitClaimedAbort=/if\(predispatchClaimAbandoned\)\{barrier=await executions\.updateOne\(\{executionId:id,phase:"active",reservationId:text\(reservation\.reservationId\),providerCallsClaimed:claimed,providerEffectRealityRevision:realityRevision\},\{\$set:\{phase:"aborted",abortedAt,abortReason:"predispatch-claim-abandoned"\}/.test(release);
-const canonicalReaderAcceptsClaimedAbort=!/if\(phase==="aborted"&&\(calls\.length!==0\|\|v\.providerCallsClaimed!==0/.test(executionStore);
-assert.equal(writerCanEmitClaimedAbort,true,"court setup requires the reachable #329 claimed-abort writer");
-assert.equal(canonicalReaderAcceptsClaimedAbort,true,
-  "a terminal record emitted by the authorized predispatch abandonment writer must be readable by the canonical execution store on same-turn retry/rehydration");
-
+assert.match(executionStore,/abandonedPredispatchProviderCalls:\{type:\[callSchema\],default:\[\]\}/,
+  "execution schema must durably preserve abandoned predispatch admission history");
+assert.match(executionStore,/if\(phase==="aborted"&&\(calls\.length!==0\|\|v\.providerCallsClaimed!==0/,
+  "historical terminal law must remain: aborted execution has zero live provider claims");
+assert.match(runtime,/predispatchProviderCallId: error\?\.refundAuthorized === true \? s\(error\?\.providerCallId\) : null/,
+  "runtime must carry the exact recovered historical claim into release authority");
 assert.doesNotMatch(runtime,/Creator turn was durably aborted before any provider claim/,
-  "runtime terminal semantics must not falsely describe a claimed-before-dispatch abandonment as a zero-claim abort");
+  "runtime must not misdescribe admitted-before-dispatch history as no provider claim");
 
-console.log("GREEN: predispatch claimed abandonment has one canonical durable terminal identity that survives authoritative rehydration.");
-console.log("LAW: AN AUTHORIZED TERMINAL WRITER MAY NOT COMMIT A DURABLE EXECUTION RECORD THAT THE CANONICAL EXECUTION READER REJECTS OR MISDESCRIBES ON RETRY.");
+const claimedAbortWriter=/\$set:\{phase:"aborted",abortedAt,abortReason:"predispatch-claim-abandoned"\}(?![^}]*providerCallsClaimed:0)/.test(release);
+assert.equal(claimedAbortWriter,false,
+  "authorized predispatch abandonment must never commit an aborted terminal with live provider claims");
+
+console.log("GREEN: claimed-before-dispatch abandonment is exact-claim bound, re-proves no operation/effect reality, archives admission history, and commits canonical zero-live-claim terminal state.");
+console.log("LAW: AN AUTHORIZED TERMINAL WRITER MAY NOT COMMIT A DURABLE EXECUTION RECORD THAT THE CANONICAL EXECUTION READER REJECTS OR MISDESCRIBES ON RETRY; HISTORICAL ADMISSION MAY BE PRESERVED WITHOUT RETAINING LIVE CLAIM AUTHORITY.");
