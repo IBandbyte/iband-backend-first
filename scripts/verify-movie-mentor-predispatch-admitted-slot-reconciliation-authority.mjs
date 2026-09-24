@@ -4,6 +4,7 @@ import { createMovieMentorProviderOutcomeRecoveryAuthority } from "../ai/MovieMe
 
 const runtime = fs.readFileSync(new URL("../ai/MovieMentorTurnRuntime.js", import.meta.url), "utf8");
 const settlement = fs.readFileSync(new URL("../ai/MovieMentorInferenceSettlementMongoStore.js", import.meta.url), "utf8");
+const effectStore = fs.readFileSync(new URL("../ai/MovieMentorProviderEffectMongoStore.js", import.meta.url), "utf8");
 
 const claim = runtime.indexOf("claimProviderCall({ execution, slotId, task })");
 const bind = runtime.indexOf("bindProviderReconstructionInput({", claim);
@@ -14,6 +15,12 @@ assert.ok(claim >= 0 && bind > claim && begin > bind && network > begin,
 
 assert.match(settlement, /providerCallsClaimed!==0\|\|\(execution\.providerCalls\|\|\[\]\)\.length!==0/);
 assert.match(settlement, /reason:"provider-call-claims-exist"/);
+assert.match(settlement, /allowPredispatchClaimAbandonment/);
+assert.match(settlement, /effects\.find\(\{executionId:id\}/);
+assert.match(settlement, /providerEffectRealityRevision:realityRevision/);
+assert.match(settlement, /abortReason:predispatchClaimAbandoned\?"predispatch-claim-abandoned"/);
+assert.match(effectStore, /phase:"active".*\$inc:\{providerEffectRealityRevision:1\}/s,
+  "UNKNOWN creation must serialize on the same execution row/reality revision as abandonment");
 
 const recovery = createMovieMentorProviderOutcomeRecoveryAuthority({
   readProviderOperation: async () => null,
