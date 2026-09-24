@@ -9,6 +9,10 @@ const call = Object.freeze({
   executionId: "execution-reconstruction-cas",
   slotId: "semantic",
   task: "movie-mentor-semantic",
+  ownerId: "worker-reconstruction-cas",
+  leaseGeneration: 3,
+  leaseReference: "lease-reconstruction-cas",
+  fencingToken: "fence-reconstruction-cas",
 });
 const target = Object.freeze({
   provider: "openai",
@@ -64,7 +68,26 @@ const mongoModel = {
   },
 };
 
-const store = createMovieMentorProviderOperationMongoStore({ mongoModel });
+const executionCollection = {
+  async updateOne(filter) {
+    const admitted = filter.providerCalls?.$elemMatch || {};
+    const exact = filter.executionId === call.executionId
+      && filter.schema === 6
+      && filter.phase === "active"
+      && filter.ownerId === call.ownerId
+      && filter.leaseGeneration === call.leaseGeneration
+      && filter.leaseReference === call.leaseReference
+      && filter.fencingToken === call.fencingToken
+      && admitted.providerCallId === call.providerCallId
+      && admitted.slotId === call.slotId
+      && admitted.task === call.task
+      && admitted.leaseGeneration === call.leaseGeneration
+      && admitted.leaseReference === call.leaseReference
+      && admitted.fencingToken === call.fencingToken;
+    return { matchedCount: exact ? 1 : 0, modifiedCount: exact ? 1 : 0 };
+  },
+};
+const store = createMovieMentorProviderOperationMongoStore({ mongoModel, executionCollection });
 const inputA = Object.freeze({ universe: "A", revision: 1 });
 const inputB = Object.freeze({ universe: "B", revision: 2 });
 const bindA = store.bindReconstructionInput({ ...call, reconstructionInputDigest: "digest-A", reconstructionInput: inputA, boundAt: "2033-01-01T00:00:01.000Z" });
