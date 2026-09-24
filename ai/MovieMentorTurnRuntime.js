@@ -10,7 +10,7 @@ import { recoverPreviouslyAdmittedProviderResult } from "./MovieMentorRecoveredP
 import { reconstructRecoveredMovieMentorSemanticResult } from "./MovieMentorRecoveredSemanticResult.js";
 import { reconstructRecoveredMovieMentorSpecialistResult, reconstructRecoveredMovieMentorSynthesisResult } from "./MovieMentorRecoveredTaskResult.js";
 
-const MOVIE_MENTOR_TURN_RUNTIME_VERSION = "2.16.0";
+const MOVIE_MENTOR_TURN_RUNTIME_VERSION = "2.17.0";
 const s = (value) => (typeof value === "string" ? value.trim() : "");
 
 function clone(value) {
@@ -658,11 +658,26 @@ async function convergeExistingTurn({ existing, inferenceExecutionAuthority, set
 
   const staged = await inferenceExecutionAuthority.readResultCandidate(existing.executionId);
   if (staged) {
-    throw runtimeError(
-      "MOVIE_MENTOR_ACTIVE_RESULT_CANDIDATE_RECOVERY_REQUIRED",
-      "Active execution already owns a durable result candidate and must resume candidate closure instead of orchestrating another result.",
-      { executionId: existing.executionId, retryable: true },
-    );
+    if (typeof inferenceExecutionAuthority?.recoverExpiredExecutionIntoClosing !== "function") {
+      throw runtimeError(
+        "MOVIE_MENTOR_ACTIVE_RESULT_CANDIDATE_RECOVERY_AUTHORITY_REQUIRED",
+        "Active execution already owns a durable result candidate but expired-execution closure recovery authority is unavailable.",
+        { executionId: existing.executionId, retryable: true },
+      );
+    }
+    const recoveredClosing = await inferenceExecutionAuthority.recoverExpiredExecutionIntoClosing({ executionId: existing.executionId });
+    if (recoveredClosing?.authorized !== true || s(recoveredClosing.phase) !== "closing") {
+      throw runtimeError(
+        "MOVIE_MENTOR_ACTIVE_RESULT_CANDIDATE_RECOVERY_REQUIRED",
+        "Active execution already owns a durable result candidate and must resume candidate closure instead of orchestrating another result.",
+        { executionId: existing.executionId, reason: recoveredClosing?.reason || "candidate-closure-recovery-pending", retryable: true },
+      );
+    }
+    return recoverStagedResultTurn({
+      existing: { ...existing, phase: "closing" },
+      inferenceExecutionAuthority,
+      settlementAuthority,
+    });
   }
   return null;
 }
