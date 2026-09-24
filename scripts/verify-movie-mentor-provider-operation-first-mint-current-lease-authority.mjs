@@ -61,11 +61,21 @@ const executionCollection = {
     const admitted = execution.providerCalls.find(call =>
       call.providerCallId === expected?.providerCallId &&
       call.slotId === expected?.slotId &&
-      call.task === expected?.task
+      call.task === expected?.task &&
+      call.leaseGeneration === expected?.leaseGeneration &&
+      call.leaseReference === expected?.leaseReference &&
+      call.fencingToken === expected?.fencingToken
     );
+    const leaseExpiry = filter.leaseExpiresAt?.$gt;
     const matches = execution.executionId === filter.executionId &&
       execution.schema === filter.schema &&
       execution.phase === filter.phase &&
+      execution.ownerId === filter.ownerId &&
+      execution.leaseGeneration === filter.leaseGeneration &&
+      execution.leaseReference === filter.leaseReference &&
+      execution.fencingToken === filter.fencingToken &&
+      leaseExpiry instanceof Date &&
+      new Date(execution.leaseExpiresAt) > leaseExpiry &&
       admitted;
     if (matches) {
       touches += 1;
