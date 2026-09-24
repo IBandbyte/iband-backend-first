@@ -1,0 +1,26 @@
+name: Verify provider reconstruction-input takeover serialization
+
+on:
+  pull_request:
+    branches:
+      - verify-provider-reconstruction-input-first-bind-current-lease-authority
+    paths:
+      - "ai/MovieMentorProviderOperationMongoStore.js"
+      - "scripts/verify-movie-mentor-provider-reconstruction-input-takeover-serialization.mjs"
+      - ".github/workflows/verify-provider-reconstruction-input-takeover-serialization.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-provider-reconstruction-input-takeover-serialization:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Verify reconstruction-input takeover serialization
+        run: node scripts/verify-movie-mentor-provider-reconstruction-input-takeover-serialization.mjs

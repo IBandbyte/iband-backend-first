@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import { normalizeMovieMentorProviderModel, normalizeMovieMentorProviderTarget } from "./MovieMentorProviderTargetAuthority.js";
 
-const VERSION = "1.7.0";
+const VERSION = "1.8.0";
 const DOMAIN = "iband.movie-mentor.provider-operation-reality";
 const SCHEMA = 1;
 const COLLECTION = "movie_mentor_provider_operation_reality";
@@ -97,7 +97,8 @@ function sameIdentity(record, candidate) {
   return text(record?.providerCallId) === text(candidate?.providerCallId) && text(record?.executionId) === text(candidate?.executionId) && text(record?.slotId) === text(candidate?.slotId) && text(record?.task) === text(candidate?.task);
 }
 
-function createMovieMentorProviderOperationMongoStore({ mongoModel = null, connect = ensureConnection, readPhysicalIndexes = null, startSession = () => mongoose.startSession(), executionCollection = null } = {}) {
+function createMovieMentorProviderOperationMongoStore({ mongoModel = null, connect = ensureConnection, readPhysicalIndexes = null, startSession = null, executionCollection = null } = {}) {
+  const sessionFactory = typeof startSession === "function" ? startSession : () => mongoose.startSession();
   const executionLedger = () => executionCollection || mongoose.connection.collection(EXECUTION_COLLECTION);
   const storeModel = () => mongoModel || getModel();
   let physicalUniqueIndexReadinessPromise = null;
@@ -143,7 +144,7 @@ function createMovieMentorProviderOperationMongoStore({ mongoModel = null, conne
         return existing;
       }
     }
-    const session = await startSession();
+    const session = await sessionFactory();
     let outcome = null;
     try {
       await session.withTransaction(async () => {
@@ -191,7 +192,8 @@ function createMovieMentorProviderOperationMongoStore({ mongoModel = null, conne
     if (!existing || !sameIdentity(existing, identity)) fail("MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_OPERATION_INVALID", "Provider reconstruction input may bind only to the exact durable provider operation universe.");
     if (existing.reconstructionInputDigest) return existing;
     if (!executionCollection) fail("MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_EXECUTION_FENCED", "Provider reconstruction input cannot first-bind without current execution serialization.");
-    const touch = await executionLedger().updateOne({
+
+    const executionFilter = {
       executionId: identity.executionId,
       schema: CURRENT_EXECUTION_SCHEMA,
       phase: "active",
@@ -201,12 +203,44 @@ function createMovieMentorProviderOperationMongoStore({ mongoModel = null, conne
       fencingToken: fence,
       leaseExpiresAt: { $gt: timestamp },
       providerCalls: { $elemMatch: { providerCallId: callId, slotId: identity.slotId, task: identity.task, leaseGeneration: generation, leaseReference: leaseRef, fencingToken: fence } },
-    }, { $inc: { settlementRealityBarrierRevision: 1 } });
-    if (touch.matchedCount !== 1) fail("MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_EXECUTION_FENCED", "Provider reconstruction input cannot first-bind unless its exact admitted call remains under live execution authority.", { retryable: false });
-    const result = await storeModel().updateOne({ providerCallId: callId, executionId: identity.executionId, slotId: identity.slotId, task: identity.task, $or: [{ reconstructionInputDigest: null }, { reconstructionInputDigest: { $exists: false } }] }, { $set: { reconstructionInputDigest: digest, reconstructionInput: clone(reconstructionInput), reconstructionInputBoundAt: timestamp } }).exec();
-    const durable = await readOperation(callId);
-    if (!durable?.reconstructionInputDigest) fail("MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_NOT_DURABLE", "Provider reconstruction input did not become durable.", { modifiedCount: result?.modifiedCount ?? null });
-    return durable;
+    };
+    const operationFilter = { providerCallId: callId, executionId: identity.executionId, slotId: identity.slotId, task: identity.task, $or: [{ reconstructionInputDigest: null }, { reconstructionInputDigest: { $exists: false } }] };
+    const operationUpdate = { $set: { reconstructionInputDigest: digest, reconstructionInput: clone(reconstructionInput), reconstructionInputBoundAt: timestamp } };
+
+    if (mongoModel && typeof startSession !== "function") {
+      const touch = await executionLedger().updateOne(executionFilter, { $inc: { settlementRealityBarrierRevision: 1 } });
+      if (touch.matchedCount !== 1) fail("MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_EXECUTION_FENCED", "Provider reconstruction input cannot first-bind unless its exact admitted call remains under live execution authority.", { retryable: false });
+      const result = await storeModel().updateOne(operationFilter, operationUpdate).exec();
+      const durable = await readOperation(callId);
+      if (!durable?.reconstructionInputDigest) fail("MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_NOT_DURABLE", "Provider reconstruction input did not become durable.", { modifiedCount: result?.modifiedCount ?? null });
+      return durable;
+    }
+
+    const session = await sessionFactory();
+    let outcome = null;
+    try {
+      await session.withTransaction(async () => {
+        const current = await storeModel().findOne({ providerCallId: callId }).session(session).lean().exec();
+        if (!current || !sameIdentity(current, identity)) fail("MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_OPERATION_INVALID", "Provider reconstruction input may bind only to the exact durable provider operation universe.");
+        const durableCurrent = normalize(current);
+        if (durableCurrent.reconstructionInputDigest) { outcome = durableCurrent; return; }
+        const touch = await executionLedger().updateOne(executionFilter, { $inc: { settlementRealityBarrierRevision: 1 } }, { session });
+        if (touch.matchedCount !== 1) fail("MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_EXECUTION_FENCED", "Provider reconstruction input cannot first-bind unless its exact admitted call remains under live execution authority.", { retryable: false });
+        const result = await storeModel().updateOne(operationFilter, operationUpdate, { session }).exec();
+        if (result?.matchedCount !== 1) {
+          const winner = await storeModel().findOne({ providerCallId: callId }).session(session).lean().exec();
+          if (!winner) fail("MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_NOT_DURABLE", "Provider reconstruction input did not become durable.");
+          outcome = normalize(winner);
+          return;
+        }
+        const written = await storeModel().findOne({ providerCallId: callId }).session(session).lean().exec();
+        outcome = written ? normalize(written) : null;
+        if (!outcome?.reconstructionInputDigest) fail("MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_NOT_DURABLE", "Provider reconstruction input did not become durable.", { modifiedCount: result?.modifiedCount ?? null });
+      }, { readConcern: { level: "snapshot" }, writeConcern: { w: "majority" } });
+      return outcome;
+    } finally {
+      await session.endSession();
+    }
   }
 
   return Object.freeze({ readOperation, bindOperation, bindReconstructionInput });
