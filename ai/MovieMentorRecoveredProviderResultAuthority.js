@@ -41,7 +41,7 @@ function assertExactHistoricalBinding({ decision, execution, slotId, task } = {}
 
 function assertRecoveredOutcomeBinding({ recovery, historical } = {}) {
   if (recovery?.outcome !== "CONFIRMED_EFFECT" || recovery?.recovered !== true || recovery?.recoveryAuthorized !== true || recovery?.redispatchAuthorized !== false || recovery?.refundAuthorized !== false || !recovery?.recoveredProviderResponse) {
-    if (recovery?.outcome === "STILL_UNKNOWN") fail("MOVIE_MENTOR_PROVIDER_RECOVERY_STILL_UNKNOWN", "Historical provider effect remains unknown and cannot be reconstructed or redispatched.", { retryable: true, providerCallId: historical.providerCallId });
+    if (recovery?.outcome === "STILL_UNKNOWN") fail("MOVIE_MENTOR_PROVIDER_RECOVERY_STILL_UNKNOWN", "Historical provider effect remains unknown and cannot be reconstructed or redispatched.", { retryable: true, providerCallId: historical.providerCallId, refundAuthorized: recovery?.refundAuthorized === true, refundReason: text(recovery?.refundReason) || null });
     fail("MOVIE_MENTOR_PROVIDER_RECOVERY_RESULT_NOT_AUTHORIZED", "Historical provider outcome did not establish same-operation recovered response authority.", { retryable: true, providerCallId: historical.providerCallId, outcome: text(recovery?.outcome) || null, reason: text(recovery?.reason) || null });
   }
   const recoveryProviderCallId = text(recovery?.providerCallId), recoveryExecutionId = text(recovery?.executionId), recoverySlotId = text(recovery?.slotId || historical.slotId), recoveryTask = text(recovery?.task || historical.task);
