@@ -46,8 +46,13 @@ let currentExecution = {
 let takeoverOccurred = false;
 let operationMutationCount = 0;
 
+const session = {
+  async withTransaction(work) { await work(); },
+  async endSession() {},
+};
+
 function query(value) {
-  return { lean(){ return this; }, async exec(){ return clone(value); } };
+  return { session(){ return this; }, lean(){ return this; }, async exec(){ return clone(value); } };
 }
 
 const mongoModel = {
@@ -55,8 +60,13 @@ const mongoModel = {
   findOne(filter) {
     return query(filter.providerCallId === row.providerCallId ? row : null);
   },
-  updateOne(filter, update) {
+  updateOne(filter, update, options = {}) {
     return { async exec(){
+      if (takeoverOccurred && options?.session === session) {
+        const error = new Error("transaction lost serialization race to newer execution generation");
+        error.code = "WRITE_CONFLICT";
+        throw error;
+      }
       operationMutationCount += 1;
       const identityMatches = filter.providerCallId === row.providerCallId
         && filter.executionId === row.executionId
