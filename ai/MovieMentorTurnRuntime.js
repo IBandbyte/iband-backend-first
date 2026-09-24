@@ -693,7 +693,7 @@ async function releaseFailedUnclaimedExecution({ execution, settlementAuthority,
   }
   let release;
   try {
-    release = await settlementAuthority.releaseUnclaimed({ executionId: execution?.executionId });
+    release = await settlementAuthority.releaseUnclaimed({ executionId: execution?.executionId, allowPredispatchClaimAbandonment: error?.refundAuthorized === true && error?.refundReason === "provider-operation-never-became-durable" });
   } catch (releaseError) {
     throw runtimeError("MOVIE_MENTOR_INFERENCE_RELEASE_RECONCILIATION_UNCERTAIN", "Durable zero-claim release could not be proven; spend remains reserved.", {
       cause: releaseError, originalCause: error, retryable: true, executionId: execution?.executionId || null,
