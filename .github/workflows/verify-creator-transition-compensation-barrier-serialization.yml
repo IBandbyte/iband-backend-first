@@ -1,0 +1,21 @@
+name: Verify Movie Mentor Creator Transition Compensation Barrier Serialization
+
+on:
+  pull_request:
+    paths:
+      - "ai/MovieMentorCreatorStateStore.js"
+      - "ai/MovieMentorCreatorStateTransition.js"
+      - "ai/MovieMentorInferenceSettlementMongoStore.js"
+      - "scripts/verify-movie-mentor-creator-transition-compensation-barrier-serialization.mjs"
+      - ".github/workflows/verify-creator-transition-compensation-barrier-serialization.yml"
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: node scripts/verify-movie-mentor-creator-transition-compensation-barrier-serialization.mjs
