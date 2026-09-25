@@ -36,8 +36,8 @@ async function productionSemanticsWrite(state,{expectedRevision}){
   // Model Mongo equality semantics of the repaired #343 CAS:
   // { revision: expected, compensationBarrierRevision: state.compensationBarrierRevision }.
   // A physically missing field does not equal numeric zero.
-  const barrierMatches=Object.hasOwn(durable,"compensationBarrierRevision")
-    && durable.compensationBarrierRevision===state.compensationBarrierRevision;
+  const barrierMatches=durable.compensationBarrierRevision===state.compensationBarrierRevision
+    || (state.compensationBarrierRevision===0&&!Object.hasOwn(durable,"compensationBarrierRevision"));
   if(durable.projectId!==state.projectId||durable.revision!==expectedRevision||!barrierMatches){
     const error=new Error("revision/barrier conflict");
     error.code="MOVIE_MENTOR_CREATOR_STATE_REVISION_CONFLICT";
@@ -64,8 +64,17 @@ assert.equal(written.compensationBarrierRevision,0,
 const storeSource=fs.readFileSync(new URL("../ai/MovieMentorCreatorStateStore.js",import.meta.url),"utf8");
 assert.match(storeSource,/compensationBarrierRevision:n\(doc\.compensationBarrierRevision\)\?\?0/,
   "court must remain bound to production normalizing physically missing barrier as logical zero");
-assert.match(storeSource,/compensationBarrierRevision:doc\.compensationBarrierRevision/,
-  "court must remain bound to the #343 physical compensation barrier fence");
+assert.match(storeSource,/doc\.compensationBarrierRevision===0\?\{\$or:\[\{compensationBarrierRevision:0\},\{compensationBarrierRevision:\{\$exists:false\}\}\]\}:\{compensationBarrierRevision:doc\.compensationBarrierRevision\}/,
+  "legacy compatibility may admit missing only for logical zero while nonzero barriers remain exact");
 
 console.log("GREEN: pre-barrier Creator-state documents remain writable while preserving the #343 compensation serialization fence.");
 console.log("LAW: LEGACY MISSING BARRIER MAY REPRESENT ZERO, BUT MUST NEVER WEAKEN NONZERO COMPENSATION SERIALIZATION.");
+
+{
+  const nonzeroPhysical={...legacyPhysical,compensationBarrierRevision:4};
+  const staleState={...normalize(nonzeroPhysical),revision:9,compensationBarrierRevision:3};
+  const barrierMatches=nonzeroPhysical.compensationBarrierRevision===staleState.compensationBarrierRevision
+    || (staleState.compensationBarrierRevision===0&&!Object.hasOwn(nonzeroPhysical,"compensationBarrierRevision"));
+  assert.equal(barrierMatches,false,"legacy compatibility must never let a stale nonzero compensation barrier match");
+  console.log("✓ nonzero compensation barrier remains exact; missing-field compatibility is zero-only");
+}
