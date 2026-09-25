@@ -98,6 +98,26 @@ for(let i=0;i<40;i++){
   }
 }
 
+// A separate irreversible result-candidate barrier may physically materialize while
+// compensationBarrierRevision is still missing. It must not destroy that missing
+// representation before the first compensation/transition race.
+await resetLegacy();
+const candidateBarrier=await collection.updateOne(
+  {projectId,revision:8,creatorStateGeneration:8,creatorStateFingerprint:"b".repeat(64)},
+  {$inc:{resultCandidateBarrierRevision:1}}
+);
+assert.equal(candidateBarrier.matchedCount,1,"adjacent candidate barrier must touch the exact legacy Creator universe");
+let adjacent=await collection.findOne({projectId});
+assert.equal(adjacent.resultCandidateBarrierRevision,1);
+assert.equal(Object.hasOwn(adjacent,"compensationBarrierRevision"),false,
+  "independent barrier materialization must preserve the physically missing compensation barrier");
+const compensationAfterAdjacent=await collection.updateOne(compensationFilter(),{$inc:{compensationBarrierRevision:1}});
+assert.equal(compensationAfterAdjacent.matchedCount,1,
+  "first compensation must still materialize missing→1 after an unrelated Creator-state barrier touch");
+adjacent=await collection.findOne({projectId});
+assert.equal(adjacent.compensationBarrierRevision,1);
+assert.equal(adjacent.resultCandidateBarrierRevision,1);
+
 const store=fs.readFileSync(new URL("../ai/MovieMentorCreatorStateStore.js",import.meta.url),"utf8");
 const settlement=fs.readFileSync(new URL("../ai/MovieMentorInferenceSettlementMongoStore.js",import.meta.url),"utf8");
 assert.match(store,/doc\.compensationBarrierRevision===0\?\{\$or:\[\{compensationBarrierRevision:0\},\{compensationBarrierRevision:\{\$exists:false\}\}\]\}:\{compensationBarrierRevision:doc\.compensationBarrierRevision\}/,
