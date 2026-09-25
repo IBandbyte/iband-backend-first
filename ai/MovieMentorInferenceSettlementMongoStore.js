@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import mongoose from "mongoose";
 
-const VERSION="1.15.0",DOMAIN="iband.movie-mentor.inference-settlement-store";
+const VERSION="1.16.0",DOMAIN="iband.movie-mentor.inference-settlement-store";
 const EXECUTION_DOMAIN="iband.movie-mentor.inference-execution-store",RESULT_DOMAIN="iband.movie-mentor.canonical-result-store",CANDIDATE_DOMAIN="iband.movie-mentor.result-candidate-store",SPEND_DOMAIN="iband.movie-mentor.inference-spend",EFFECT_DOMAIN="iband.movie-mentor.provider-effect-reality";
 const EXECUTION_COLLECTION="movie_mentor_inference_execution",RESULT_COLLECTION="movie_mentor_canonical_result",CANDIDATE_COLLECTION="movie_mentor_result_candidate",RESERVATION_COLLECTION="movie_mentor_inference_spend_reservation",ENTITLEMENT_COLLECTION="movie_mentor_inference_entitlement",EFFECT_COLLECTION="movie_mentor_provider_effect_reality",OPERATION_COLLECTION="movie_mentor_provider_operation_reality",CREATOR_STATE_COLLECTION="movie_mentor_creator_state";
 let connectionPromise=null;
@@ -68,7 +68,7 @@ function createMovieMentorInferenceSettlementMongoStore({connect=ensureConnectio
     if(text(reservation.status)==="consumed")fail("MOVIE_MENTOR_CREATOR_COMPENSATION_CONSUMED_CONFLICT","Consumed Creator value cannot be compensated as an undelivered reservation.",{retryable:false});
     if(text(reservation.status)!=="reserved"){outcome=Object.freeze({authorized:false,compensated:false,outcome:"reserved",reason:"reservation-state-invalid",executionId:id});return;}
     const at=settlementInstant(now());
-    const terminal=await executions.updateOne({executionId:id,phase:text(execution.phase),reservationId:text(reservation.reservationId),providerCallsClaimed:execution.providerCallsClaimed},{$set:{phase:"compensated",compensatedAt:at,compensationReason:"superseded-creator-state"},$inc:{settlementRealityBarrierRevision:1}},{session});
+    const realityRevision=Number.isSafeInteger(execution.providerEffectRealityRevision)?execution.providerEffectRealityRevision:0,candidateBarrierRevision=Number.isSafeInteger(execution.resultCandidateBarrierRevision)?execution.resultCandidateBarrierRevision:0;\n    const terminal=await executions.updateOne({executionId:id,phase:text(execution.phase),reservationId:text(reservation.reservationId),providerCallsClaimed:execution.providerCallsClaimed,providerEffectRealityRevision:realityRevision,resultCandidateBarrierRevision:candidateBarrierRevision},{$set:{phase:"compensated",compensatedAt:at,compensationReason:"superseded-creator-state"},$inc:{settlementRealityBarrierRevision:1}},{session});
     if(terminal.matchedCount!==1)fail("MOVIE_MENTOR_CREATOR_COMPENSATION_EXECUTION_RACE","Execution changed during Creator Compensation.",{retryable:true});
     const entitlement=await entitlements.findOneAndUpdate({principalId:text(reservation.principalId),domain:SPEND_DOMAIN,schema:1,status:"active",entitlementRevision:{$gte:reservation.entitlementRevision},reservedUnits:{$gte:reservation.units}},{$inc:{reservedUnits:-reservation.units,remainingUnits:reservation.units,entitlementRevision:1}},{returnDocument:"after",session});
     if(!entitlement)fail("MOVIE_MENTOR_CREATOR_COMPENSATION_LEDGER_CONFLICT","Entitlement cannot atomically restore Creator value.",{retryable:true});
