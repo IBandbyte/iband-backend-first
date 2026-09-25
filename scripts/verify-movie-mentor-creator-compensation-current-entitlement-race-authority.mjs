@@ -11,10 +11,10 @@ const compensation=settlement.slice(start);
 assert.match(compensation,/session\.withTransaction/,"compensation must be one Mongo transaction");
 assert.match(compensation,/creatorStates\.updateOne\([\s\S]*?compensationBarrierRevision:1/,"current Creator state must be fenced before disposition");
 assert.match(compensation,/executions\.updateOne\([\s\S]*?phase:"compensated"/,"execution must transition terminally in the same transaction");
-assert.match(compensation,/entitlements\.findOneAndUpdate\(\{principalId:text\(reservation\.principalId\),domain:SPEND_DOMAIN,schema:1,status:"active",entitlementRevision:\{\$gte:reservation\.entitlementRevision\},reservedUnits:\{\$gte:reservation\.units\}\}/,
- "Creator value restoration must reacquire a current active entitlement at the write boundary");
+assert.match(compensation,/entitlements\.findOneAndUpdate\(\{principalId:text\(reservation\.principalId\),domain:SPEND_DOMAIN,schema:1,status:\{\$in:\["active","suspended"\]\},entitlementRevision:\{\$gte:reservation\.entitlementRevision\},reservedUnits:\{\$gte:reservation\.units\}\}/,
+ "Creator compensation must reacquire the same current entitlement and exact reserved obligation at the write boundary");
 assert.match(compensation,/if\(!entitlement\)fail\("MOVIE_MENTOR_CREATOR_COMPENSATION_LEDGER_CONFLICT"/,
- "changed or suspended entitlement must fail compensation");
+ "missing, contradictory, or insufficient entitlement reality must fail compensation");
 assert.match(compensation,/reservations\.findOneAndUpdate\(\{reservationId:text\(reservation\.reservationId\),status:"reserved"\}/,
  "reservation release must occur only after entitlement restoration");
 const terminal=compensation.indexOf("const terminal=await executions.updateOne");
@@ -38,8 +38,8 @@ const result=transaction(tx=>{
  tx.creatorBarrier++;
  tx.executionPhase="compensated";
  // adversarial current-authority change at the entitlement boundary
- tx.entitlement.status="suspended";
- const matches=tx.entitlement.status==="active"&&tx.entitlement.revision>=12&&tx.entitlement.reserved>=1;
+ tx.entitlement.reserved=0;
+ const matches=["active","suspended"].includes(tx.entitlement.status)&&tx.entitlement.revision>=12&&tx.entitlement.reserved>=1;
  if(!matches){const e=new Error("ledger conflict");e.code="MOVIE_MENTOR_CREATOR_COMPENSATION_LEDGER_CONFLICT";throw e;}
  tx.entitlement.reserved--;tx.entitlement.remaining++;tx.entitlement.revision++;
  tx.reservation="released";
@@ -48,5 +48,5 @@ assert.equal(result.committed,false);
 assert.equal(result.error?.code,"MOVIE_MENTOR_CREATOR_COMPENSATION_LEDGER_CONFLICT");
 assert.deepEqual(durable,before,"failed current-entitlement reacquisition must leave zero partial compensation disposition");
 
-console.log("GREEN: compensation reacquires active entitlement at its write boundary and transaction rollback prevents partial restoration.");
-console.log("LAW: CREATOR COMPENSATION MAY RESTORE VALUE ONLY THROUGH CURRENT ACTIVE ENTITLEMENT AUTHORITY; LOSS OF THAT AUTHORITY MUST LEAVE CREATOR STATE, EXECUTION, ENTITLEMENT, AND RESERVATION UNCHANGED.");
+console.log("GREEN: compensation reacquires the same current entitlement and exact reserved obligation; contradictory ledger reality rolls the transaction back.");
+console.log("LAW: SUSPENSION REVOKES FORWARD SPEND AUTHORITY; IT DOES NOT ERASE AN ALREADY-RESERVED CREATOR-COMPENSATION OBLIGATION. CONTRADICTORY LEDGER REALITY MUST STILL ROLL BACK ATOMICALLY.");
