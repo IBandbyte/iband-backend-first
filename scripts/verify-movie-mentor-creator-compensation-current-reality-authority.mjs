@@ -17,12 +17,16 @@ assert.match(
   "late provider evidence must advance execution reality revision",
 );
 assert.ok(
-  compensation.includes("providerEffectRealityRevision"),
-  "Creator Compensation terminal mutation must bind the exact provider-reality revision proved by its transaction",
+  compensation.includes("realityRevision=Number.isSafeInteger(execution.providerEffectRealityRevision)?execution.providerEffectRealityRevision:0"),
+  "Creator Compensation must snapshot current provider reality",
 );
 assert.ok(
-  compensation.includes("resultCandidateBarrierRevision"),
-  "Creator Compensation must serialize against candidate authority while proving that no candidate lineage exists",
+  compensation.includes("candidateBarrierRevision=Number.isSafeInteger(execution.resultCandidateBarrierRevision)?execution.resultCandidateBarrierRevision:0"),
+  "Creator Compensation must snapshot current candidate barrier",
+);
+assert.ok(
+  compensation.includes("providerEffectRealityRevision:realityRevision,resultCandidateBarrierRevision:candidateBarrierRevision"),
+  "terminal compensation CAS must bind both proved revisions",
 );
 
 console.log("LAW: CREATOR COMPENSATION MAY RESTORE ENTITLEMENT ONLY FROM THE SAME PROVIDER-REALITY/CANDIDATE UNIVERSE IT PROVED.");
