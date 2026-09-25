@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createCreatorStateConsumptionRuntimeDeps } from "../ai/MovieMentorCreatorStateConsumptionRuntime.js";
 
-console.log("5A.34 — provider dispatch post-proof Creator-state race authority");
+console.log("5A.34 — provider dispatch post-proof Creator-state chronology authority");
 
 const projectId="project-post-proof-race";
 let durableState={
@@ -16,7 +16,9 @@ let durableState={
   creatorConfirmedContext:[],
 };
 let providerEffects=0;
+let stagedCandidates=0;
 let providerDispatchProofs=0;
+let unknownDurable=false;
 
 const authority=Object.freeze({
   domain:"iband.movie-mentor.creator-state-consumption-authority",
@@ -42,8 +44,11 @@ const authority=Object.freeze({
     });
     if(target.stage==="provider-dispatch"){
       providerDispatchProofs+=1;
-      // Adversarial concurrent writer commits immediately after the final
-      // current-state reread/proof, before the external provider effect.
+      // Production has already durably crossed provider-effect UNKNOWN before
+      // this final current-state proof. A concurrent Creator transition may
+      // therefore make the eventual external effect historical, but it must
+      // never let that historical universe become current result authority.
+      assert.equal(unknownDurable,true,"provider-effect UNKNOWN must precede the final dispatch proof");
       durableState={
         ...durableState,
         revision:13,
@@ -58,33 +63,52 @@ const authority=Object.freeze({
   },
 });
 
+const baseExecutionAuthority={
+  async beginProviderDispatch({providerCall}={}){
+    unknownDurable=true;
+    return {dispatchAuthorized:true,executionId:providerCall.executionId,providerCallId:providerCall.providerCallId,providerEffectState:"unknown"};
+  },
+  async assertProviderDispatch({providerCall}={}){
+    return {dispatchAuthorized:true,executionId:providerCall.executionId,providerCallId:providerCall.providerCallId};
+  },
+  async stageResultCandidate({execution,resultPayload}={}){
+    stagedCandidates+=1;
+    return {candidateReference:"candidate-race",executionId:execution.executionId,resultPayload};
+  },
+};
+
 const guarded=createCreatorStateConsumptionRuntimeDeps({
   creatorStateConsumptionAuthority:authority,
   readAuthoritativeTurnSource:async()=>structuredClone(durableState),
-  inferenceExecutionAuthority:{
-    async assertProviderDispatch({providerCall}={}){
-      return {dispatchAuthorized:true,executionId:providerCall.executionId,providerCallId:providerCall.providerCallId};
-    },
-  },
+  inferenceExecutionAuthority:baseExecutionAuthority,
 });
 
 await guarded.readAuthoritativeTurnSource({projectId});
-const dispatch=await guarded.inferenceExecutionAuthority.assertProviderDispatch({
-  providerCall:{executionId:"execution-race",providerCallId:"provider-race"},
-});
+const providerCall={executionId:"execution-race",providerCallId:"provider-race"};
+const unknown=await guarded.inferenceExecutionAuthority.beginProviderDispatch({providerCall});
+assert.equal(unknown.dispatchAuthorized,true);
+assert.equal(unknownDurable,true);
 
+const dispatch=await guarded.inferenceExecutionAuthority.assertProviderDispatch({providerCall});
+assert.equal(dispatch.dispatchAuthorized,true);
 assert.equal(providerDispatchProofs,1,"court must reach the final provider-dispatch Creator-state proof");
 assert.equal(durableState.revision,13,"adversary must advance Creator state only after the final proof is granted");
 assert.equal(durableState.creatorStateGeneration,9);
-if(dispatch?.dispatchAuthorized===true) providerEffects+=1;
 
-// Security law: a Creator-state universe superseded before irreversible network
-// dispatch must produce zero provider effects.
-assert.equal(
-  providerEffects,
-  0,
-  "post-proof Creator-state advance must revoke provider dispatch before irreversible external effect",
+// The external call may now complete under the already-durable UNKNOWN
+// operation. That effect is historical evidence, not current Creator authority.
+providerEffects+=1;
+assert.equal(providerEffects,1,"post-UNKNOWN external effect may exist as historical provider reality");
+
+await assert.rejects(
+  ()=>guarded.inferenceExecutionAuthority.stageResultCandidate({
+    execution:{executionId:"execution-race"},
+    resultPayload:{success:true,text:"historical result"},
+  }),
+  error=>error?.code==="MOVIE_MENTOR_CREATOR_STATE_CONSUMPTION_STALE",
+  "historical post-proof provider effect must not cross into a result candidate after Creator state advances",
 );
+assert.equal(stagedCandidates,0,"superseded Creator-state provider output must produce zero durable result-candidate writes");
 
-console.log("GREEN: post-proof Creator-state advance cannot cross into irreversible provider effect.");
-console.log("LAW: CURRENT-STATE PROOF MUST REMAIN PHYSICALLY SERIALIZED THROUGH THE IRREVERSIBLE PROVIDER BOUNDARY.");
+console.log("GREEN: post-proof Creator-state advance may leave historical provider evidence, but cannot promote it into current result authority.");
+console.log("LAW: UNKNOWN MAY BECOME HISTORICAL EFFECT REALITY; CURRENT RESULT AUTHORITY MUST RE-EARN THE CREATOR-STATE UNIVERSE AFTER THAT EFFECT.");
