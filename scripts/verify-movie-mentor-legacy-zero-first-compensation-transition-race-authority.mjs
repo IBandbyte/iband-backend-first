@@ -1,59 +1,101 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import mongoose from "mongoose";
+import { writeAuthoritativeCreatorState } from "../ai/MovieMentorCreatorStateStore.js";
+import {
+  MOVIE_MENTOR_CREATOR_STATE_MUTATION_AUTHORITY_DOMAIN,
+  MOVIE_MENTOR_CREATOR_STATE_MUTATION_PROOF_DOMAIN,
+  MOVIE_MENTOR_CREATOR_STATE_MUTATION_SCHEMA
+} from "../ai/MovieMentorCreatorStateMutationAuthority.js";
 
-console.log("5A.46 — Legacy zero ↔ first compensation / Creator transition serialization");
+console.log("5A.46 — Legacy zero ↔ first compensation / Creator transition physical serialization");
 
+const projectId="project-345";
 const legacy=Object.freeze({
-  projectId:"project-345",revision:8,revisionAuthorityReference:"revision-8",
+  projectId,creatorSessionId:"session-345",revision:8,revisionAuthorityReference:"revision-8",
   snapshotReference:"snapshot-8",creatorStateGeneration:8,
-  creatorStateFingerprint:"b".repeat(64),creatorAuthorityReference:"creator-8"
+  creatorStateFingerprint:"b".repeat(64),creatorAuthorityReference:"creator-8",
+  creatorConfirmedContext:[],projectJourney:null,memoryContext:null,responseBlueprint:null,
+  communicationPlan:null,capturedAt:new Date("2026-01-01T00:00:00.000Z")
 });
-assert.equal(Object.hasOwn(legacy,"compensationBarrierRevision"),false,
-  "fixture must be physically pre-barrier");
+assert.equal(Object.hasOwn(legacy,"compensationBarrierRevision"),false,"fixture must be physically pre-barrier");
 
-function transitionFilter(expectedBarrier=0){
-  return row=>row.projectId===legacy.projectId&&row.revision===8&&
-    (expectedBarrier===0
-      ? row.compensationBarrierRevision===0||!Object.hasOwn(row,"compensationBarrierRevision")
-      : row.compensationBarrierRevision===expectedBarrier);
-}
-function compensationFilter(row){
-  return row.projectId===legacy.projectId&&row.revision===8&&
-    row.revisionAuthorityReference==="revision-8"&&row.snapshotReference==="snapshot-8"&&
-    row.creatorStateGeneration===8&&row.creatorStateFingerprint==="b".repeat(64)&&
-    row.creatorAuthorityReference==="creator-8";
-}
-function creatorWrite(row){
-  if(!transitionFilter(0)(row))return false;
-  Object.assign(row,{revision:9,revisionAuthorityReference:"revision-9",
+const authority=Object.freeze({
+  domain:MOVIE_MENTOR_CREATOR_STATE_MUTATION_AUTHORITY_DOMAIN,
+  schema:MOVIE_MENTOR_CREATOR_STATE_MUTATION_SCHEMA,
+  principalId:"creator-345",projectId,
+  assertCurrentMutation:async target=>Object.freeze({
+    domain:MOVIE_MENTOR_CREATOR_STATE_MUTATION_PROOF_DOMAIN,
+    schema:MOVIE_MENTOR_CREATOR_STATE_MUTATION_SCHEMA,
+    authorized:true,currentOwnershipVerified:true,principalId:"creator-345",projectId,
+    ownershipRef:"ownership-345",ownershipRevision:1,...target
+  })
+});
+
+function nextState(barrier=0){
+  return {
+    ...legacy,revision:9,revisionAuthorityReference:"revision-9",
     snapshotReference:"snapshot-9",creatorStateGeneration:9,
     creatorStateFingerprint:"c".repeat(64),creatorAuthorityReference:"creator-9",
-    compensationBarrierRevision:0});
-  return true;
+    compensationBarrierRevision:barrier,capturedAt:new Date().toISOString(),
+    transition:{source:"creator-memory"}
+  };
 }
-function compensationWrite(row){
-  if(!compensationFilter(row))return false;
-  row.compensationBarrierRevision=(Number.isSafeInteger(row.compensationBarrierRevision)?row.compensationBarrierRevision:0)+1;
-  return true;
+function compensationFilter(){
+  return {
+    projectId,revision:8,revisionAuthorityReference:"revision-8",snapshotReference:"snapshot-8",
+    creatorStateGeneration:8,creatorStateFingerprint:"b".repeat(64),creatorAuthorityReference:"creator-8"
+  };
 }
 
-// Mongo single-document writes are atomic: model both legal winner orders.
-{
-  const row=structuredClone(legacy);
-  assert.equal(creatorWrite(row),true,"legacy transition may win and materialize zero");
-  assert.equal(compensationWrite(row),false,
-    "compensation carrying the old Creator universe must lose after transition wins");
-  assert.equal(row.revision,9); assert.equal(row.compensationBarrierRevision,0);
+const uri=process.env.MONGO_URI||process.env.MONGODB_URI;
+assert.ok(uri,"physical court requires MONGO_URI");
+await mongoose.connect(uri);
+const collection=mongoose.connection.db.collection("movie_mentor_creator_state");
+await collection.createIndex({projectId:1},{unique:true,partialFilterExpression:{projectId:{$type:"string"}}});
+
+async function resetLegacy(){
+  await collection.deleteMany({projectId});
+  await collection.insertOne(structuredClone(legacy));
+  const physical=await collection.findOne({projectId});
+  assert.equal(Object.hasOwn(physical,"compensationBarrierRevision"),false,"Mongo fixture must remain physically missing");
 }
-{
-  const row=structuredClone(legacy);
-  assert.equal(compensationWrite(row),true,"first compensation may win and materialize one");
-  assert.equal(creatorWrite(row),false,
-    "zero-compatible transition must lose after compensation materializes nonzero fence");
-  assert.equal(row.revision,8); assert.equal(row.compensationBarrierRevision,1);
-  // A retry/read sees one; it cannot use the legacy-missing arm.
-  assert.equal(transitionFilter(1)(row),true,"retry carrying current barrier one may proceed exactly");
-  assert.equal(transitionFilter(0)(row),false,"stale logical zero may never match barrier one");
+async function transition(){
+  try {
+    const value=await writeAuthoritativeCreatorState(nextState(0),{expectedRevision:8,creatorStateMutationAuthority:authority});
+    return {won:true,value};
+  } catch(error) {
+    if(error?.code==="MOVIE_MENTOR_CREATOR_STATE_REVISION_CONFLICT")return {won:false,error};
+    throw error;
+  }
+}
+async function compensation(){
+  const result=await collection.updateOne(compensationFilter(),{$inc:{compensationBarrierRevision:1}});
+  return {won:result.matchedCount===1,result};
+}
+
+for(let i=0;i<40;i++){
+  await resetLegacy();
+  const [creator,comp]=await Promise.all([transition(),compensation()]);
+  assert.notEqual(creator.won,comp.won,"exactly one competing first materializer must win");
+  const row=await collection.findOne({projectId});
+  if(creator.won){
+    assert.equal(row.revision,9);
+    assert.equal(row.compensationBarrierRevision,0);
+    assert.equal((await collection.updateOne(compensationFilter(),{$inc:{compensationBarrierRevision:1}})).matchedCount,0,
+      "old-universe compensation must remain rejected after Creator transition wins");
+  }else{
+    assert.equal(row.revision,8);
+    assert.equal(row.compensationBarrierRevision,1);
+    await assert.rejects(
+      ()=>writeAuthoritativeCreatorState(nextState(0),{expectedRevision:8,creatorStateMutationAuthority:authority}),
+      e=>e?.code==="MOVIE_MENTOR_CREATOR_STATE_REVISION_CONFLICT",
+      "stale logical-zero transition must remain rejected after compensation materializes one"
+    );
+    const retry=await writeAuthoritativeCreatorState(nextState(1),{expectedRevision:8,creatorStateMutationAuthority:authority});
+    assert.equal(retry.revision,9);
+    assert.equal(retry.compensationBarrierRevision,1);
+  }
 }
 
 const store=fs.readFileSync(new URL("../ai/MovieMentorCreatorStateStore.js",import.meta.url),"utf8");
@@ -63,5 +105,6 @@ assert.match(store,/doc\.compensationBarrierRevision===0\?\{\$or:\[\{compensatio
 assert.match(settlement,/creatorStates\.updateOne\(\{projectId:text\(execution\.projectId\),revision:durableCurrentUniverse\.revision,[\s\S]*?creatorAuthorityReference:text\(durableCurrentUniverse\.creatorStateAuthorityReference\)\},\{\$inc:\{compensationBarrierRevision:1\}\},\{session\}\)/,
   "compensation must atomically increment the exact Creator-state universe inside its transaction");
 
-console.log("GREEN: either legacy-zero transition or first compensation may win, but the loser cannot commit stale authority.");
-console.log("LAW: MISSING MAY REPRESENT ZERO ONLY UNTIL THE FIRST ATOMIC WRITER MATERIALIZES ZERO OR ONE; AFTER THAT, CURRENT PHYSICAL AUTHORITY DECIDES.");
+await mongoose.disconnect();
+console.log("GREEN: real Mongo physical races permit exactly one first materializer; the stale loser is rejected and barrier-one retry is exact.");
+console.log("LAW: MISSING MAY REPRESENT ZERO ONLY UNTIL THE FIRST ATOMIC MONGO WRITER MATERIALIZES ZERO OR ONE; AFTER THAT, CURRENT PHYSICAL AUTHORITY DECIDES.");
