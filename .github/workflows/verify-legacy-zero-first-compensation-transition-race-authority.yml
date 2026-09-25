@@ -1,0 +1,31 @@
+name: Verify Movie Mentor Legacy Zero First Compensation Transition Race Authority
+on:
+  pull_request:
+    paths:
+      - "ai/MovieMentorCreatorStateStore.js"
+      - "ai/MovieMentorInferenceSettlementMongoStore.js"
+      - "scripts/verify-movie-mentor-legacy-zero-first-compensation-transition-race-authority.mjs"
+      - ".github/workflows/verify-legacy-zero-first-compensation-transition-race-authority.yml"
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok' localhost:27017/test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      MONGO_URI: mongodb://127.0.0.1:27017/iband_pr345
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install --ignore-scripts --no-audit --no-fund
+      - run: node scripts/verify-movie-mentor-legacy-zero-first-compensation-transition-race-authority.mjs
