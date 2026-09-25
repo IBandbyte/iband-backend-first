@@ -11,8 +11,18 @@ const end = execution.indexOf("return Object.freeze({readExecution", start);
 assert.ok(start >= 0 && end > start, "quarantine writer must be present");
 const quarantine = execution.slice(start, end);
 
-assert.match(effects, /executionLedger\(\)\.updateOne\(\{executionId:current\.executionId\},\{\$inc:\{providerEffectRealityRevision:1\}\}/,
-  "late provider evidence must mutate execution provider-reality revision");
-assert.ok(quarantine.includes("providerEffectRealityRevision:Number.isSafeInteger(current.providerEffectRealityRevision)?current.providerEffectRealityRevision:0"),\n  "quarantine must CAS the exact provider-reality revision it inspected");\nassert.ok(quarantine.includes("resultFinalizationBarrierRevision:Number.isSafeInteger(current.resultFinalizationBarrierRevision)?current.resultFinalizationBarrierRevision:0"),\n  "quarantine must CAS the exact finalization barrier it inspected");
+assert.match(
+  effects,
+  /executionLedger\(\)\.updateOne\(\{executionId:current\.executionId\},\{\$inc:\{providerEffectRealityRevision:1\}\}/,
+  "late provider evidence must mutate execution provider-reality revision",
+);
+assert.ok(
+  quarantine.includes("providerEffectRealityRevision:Number.isSafeInteger(current.providerEffectRealityRevision)?current.providerEffectRealityRevision:0"),
+  "quarantine must CAS the exact provider-reality revision it inspected",
+);
+assert.ok(
+  quarantine.includes("resultFinalizationBarrierRevision:Number.isSafeInteger(current.resultFinalizationBarrierRevision)?current.resultFinalizationBarrierRevision:0"),
+  "quarantine must CAS the exact finalization barrier it inspected",
+);
 
 console.log("LAW: QUARANTINE MUST BE ONE SERIALIZED DECISION WITH THE PROVIDER-REALITY AND FINALIZATION UNIVERSE IT REVOKES.");
