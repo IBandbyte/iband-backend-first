@@ -15,8 +15,8 @@ const consumedStart=compensation.indexOf('if(text(reservation.status)==="consume
 assert.ok(releasedStart>=0&&consumedStart>releasedStart);
 const released=compensation.slice(releasedStart,consumedStart);
 
-assert.match(compensation,/executions\.updateOne\(\{executionId:id,phase:text\(execution\.phase\),reservationId:text\(reservation\.reservationId\),providerCallsClaimed:execution\.providerCallsClaimed\},\{\$set:\{phase:"compensated",compensatedAt:at,compensationReason:"superseded-creator-state"\}/,
-  "production compensation must own the terminal execution transition");
+assert.match(compensation,/executions\.updateOne\(\{executionId:id,phase:text\(execution\.phase\),reservationId:text\(reservation\.reservationId\),providerCallsClaimed:execution\.providerCallsClaimed,providerEffectRealityRevision:realityRevision,resultCandidateBarrierRevision:candidateBarrierRevision\},\{\$set:\{phase:"compensated",compensatedAt:at,compensationReason:"superseded-creator-state"\}/,
+  "production compensation must own the terminal execution transition with current reality and candidate barriers");
 assert.match(compensation,/reservations\.findOneAndUpdate\(\{reservationId:text\(reservation\.reservationId\),status:"reserved"\},\{\$set:\{status:"released",settledAt:at,settlementReason:reason,settlementExecutionId:id\}/,
   "the exact reservation disposition must be paired in the same compensation transaction");
 assert.match(compensation,/session\.withTransaction/,"execution compensation and reservation release must be one transaction");
