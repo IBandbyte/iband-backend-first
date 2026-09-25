@@ -9,8 +9,8 @@ const start=settlement.indexOf("async function compensateSupersededCreatorState"
 assert.ok(start>=0);
 const compensation=settlement.slice(start);
 
-assert.match(compensation,/status:"active"/,"compensation restoration currently requires active entitlement");
-assert.match(compensation,/MOVIE_MENTOR_CREATOR_COMPENSATION_LEDGER_CONFLICT/,"suspended entitlement must fail closed");
+assert.match(compensation,/status:\{\$in:\["active","suspended"\]\}/,"compensation must discharge reserved value against the same current entitlement even after forward authority is suspended");
+assert.match(compensation,/MOVIE_MENTOR_CREATOR_COMPENSATION_LEDGER_CONFLICT/,"missing, contradictory, or insufficient entitlement reality must still fail closed");
 assert.match(spend,/status:\{type:String,enum:\["active","suspended"\]/,"durable entitlement supports suspension");
 assert.match(spend,/reservedUnits:\{type:Number,min:0,required:true\}/,"suspension can coexist with durable reserved value");
 
@@ -19,10 +19,7 @@ assert.match(spend,/reservedUnits:\{type:Number,min:0,required:true\}/,"suspensi
 // can discharge an already-reserved compensation obligation without reactivating
 // forward spend authority?
 const settlementTail=compensation;
-const suspendedCompensationDisposition =
- /status:"suspended"[\s\S]{0,1200}(remainingUnits|reservedUnits)/.test(settlementTail) ||
- /creator-compensation[\s\S]{0,1200}status:"suspended"/.test(settlementTail) ||
- /compensation[\s\S]{0,1200}(reconcile|pending)[\s\S]{0,1200}suspend/i.test(settlementTail);
+const suspendedCompensationDisposition = /status:\{\$in:\["active","suspended"\]\}[\s\S]{0,500}reservedUnits:\{\$gte:reservation\.units\}[\s\S]{0,500}remainingUnits:reservation\.units/.test(settlementTail);
 
 assert.equal(
  suspendedCompensationDisposition,
