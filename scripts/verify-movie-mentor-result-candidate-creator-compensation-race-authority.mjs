@@ -10,7 +10,8 @@ const settlementSource=fs.readFileSync(new URL("../ai/MovieMentorInferenceSettle
 // document inside their transactions. Candidate additionally touches the exact
 // current Creator-state document before minting immutable result lineage.
 assert.match(candidateSource,/creatorStateLedger\(\)\.updateOne\([\s\S]*?resultCandidateBarrierRevision:1/);
-assert.match(candidateSource,/executionLedger\(\)\.updateOne\([\s\S]*?phase:"active"[\s\S]*?resultCandidateBarrierRevision:1/);
+assert.match(candidateSource,/const filter=\{executionId:record\.executionId[\s\S]*?phase:"active"[\s\S]*?fencingToken:text\(execution\.fencingToken\)/);
+assert.match(candidateSource,/executionLedger\(\)\.updateOne\(filter,\{\$inc:\{resultCandidateBarrierRevision:1\}\}/);
 assert.match(candidateSource,/storeModel\(\)\.create\(\[record\],\{session\}\)/);
 assert.match(settlementSource,/const canonical=await results\.findOne\(\{executionId:id\},\{session\}\),candidate=await candidates\.findOne/);
 assert.match(settlementSource,/if\(canonical\|\|candidate\).*creator-result-lineage-exists/);
