@@ -1,0 +1,21 @@
+name: Verify Movie Mentor Creator State Legacy Compensation Barrier Compatibility
+
+on:
+  pull_request:
+    paths:
+      - "ai/MovieMentorCreatorStateStore.js"
+      - "ai/MovieMentorCreatorStateTransition.js"
+      - "scripts/verify-movie-mentor-creator-state-legacy-compensation-barrier-compatibility.mjs"
+      - ".github/workflows/verify-creator-state-legacy-compensation-barrier-compatibility.yml"
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install --ignore-scripts --no-audit --no-fund
+      - run: node scripts/verify-movie-mentor-creator-state-legacy-compensation-barrier-compatibility.mjs
