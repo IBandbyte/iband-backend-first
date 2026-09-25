@@ -36,34 +36,34 @@ async function productionSemanticsWrite(state,{expectedRevision}){
     durable.compensationBarrierRevision+=1;
     compensationCommitted=true;
   }
-  // Model the production Creator-state CAS exactly: identity + revision only,
-  // followed by $set of writeDocument(state), which includes the stale barrier.
-  if(durable.projectId!==state.projectId||durable.revision!==expectedRevision){
-    const error=new Error("revision conflict");error.code="MOVIE_MENTOR_CREATOR_STATE_REVISION_CONFLICT";throw error;
+  // Model the repaired production CAS: semantic revision plus the exact
+  // physical compensation barrier carried by the transition.
+  if(durable.projectId!==state.projectId||durable.revision!==expectedRevision||durable.compensationBarrierRevision!==state.compensationBarrierRevision){
+    const error=new Error("revision/barrier conflict");error.code="MOVIE_MENTOR_CREATOR_STATE_REVISION_CONFLICT";throw error;
   }
   durable={...durable,...structuredClone(state)};
   return structuredClone(durable);
 }
 
-const written=await applyMovieMentorCreatorStateTransition({
+await assert.rejects(
+  () => applyMovieMentorCreatorStateTransition({
   projectId:"project-343",creatorSessionId:"session-343",source:"creator-workspace",
   expectedRevision:8,state:{projectJourney:{stageId:"characters"}}
 },{
   readAuthoritativeTurnSource,
   writeAuthoritativeCreatorState:productionSemanticsWrite,
   creatorStateMutationAuthority:mutationAuthority
-});
-
-assert.equal(compensationCommitted,true);
-assert.equal(written.revision,9);
-assert.equal(
-  written.compensationBarrierRevision,4,
-  "RED: a Creator transition built before compensation must not overwrite the compensation barrier committed before its authoritative write"
+  }),
+  error => error?.code==="MOVIE_MENTOR_CREATOR_STATE_REVISION_CONFLICT",
+  "stale Creator transition must lose after compensation advances the physical barrier"
 );
+assert.equal(compensationCommitted,true);
+assert.equal(durable.revision,8,"failed stale transition must not advance semantic revision");
+assert.equal(durable.compensationBarrierRevision,4,"failed stale transition must preserve committed compensation barrier");
 
 const storeSource=fs.readFileSync(new URL("../ai/MovieMentorCreatorStateStore.js",import.meta.url),"utf8");
-assert.match(storeSource,/findOneAndUpdate\(\{\.\.\.identity,revision:expected\},\{\$set:doc\}/,
-  "court must remain bound to the production revision-only CAS shape");
+assert.match(storeSource,/findOneAndUpdate\(\{\.\.\.identity,revision:expected,compensationBarrierRevision:doc\.compensationBarrierRevision\},\{\$set:doc\}/,
+  "authoritative Creator-state CAS must bind the exact compensation barrier carried by the transition");
 assert.match(storeSource,/compensationBarrierRevision:n\(state\.compensationBarrierRevision\)\?\?0/,
   "court must remain bound to production writing the carried barrier through $set");
 
