@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { readAuthoritativeTurnSource,writeAuthoritativeCreatorState } from "./MovieMentorCreatorStateStore.js";
 import { assertMovieMentorCreatorStateMutationAuthority } from "./MovieMentorCreatorStateMutationAuthority.js";
 
-const MOVIE_MENTOR_CREATOR_STATE_TRANSITION_VERSION="1.2.0";
+const MOVIE_MENTOR_CREATOR_STATE_TRANSITION_VERSION="1.3.0";
 const ALLOWED_FIELDS=Object.freeze(["creatorConfirmedContext","projectJourney","memoryContext","responseBlueprint","communicationPlan"]);
 const CREATOR_DECISION_PROVENANCE_CAPABILITY=Symbol("movie-mentor-creator-decision-provenance");
 const TRUSTED_RECOMMENDATION_REFERENCE_DOMAIN="iband.movie-mentor.journey-recommendation-reference";
@@ -37,7 +37,7 @@ function buildNextState({current,input,identity}={}){
  const patch=proposedFields(input);if(!Object.keys(patch).length)throw fail("MOVIE_MENTOR_CREATOR_STATE_TRANSITION_EMPTY","Creator state transition contains no permitted state fields.");
  const base=current||{projectId:identity.projectId,creatorSessionId:identity.creatorSessionId,revision:0,creatorStateGeneration:0,creatorConfirmedContext:[],projectJourney:null,memoryContext:null,responseBlueprint:null,communicationPlan:null};
  const revision=current?current.revision+1:1,generation=current?current.creatorStateGeneration+1:1,capturedAt=new Date().toISOString();
- const state={projectId:identity.projectId||base.projectId||null,creatorSessionId:identity.creatorSessionId||base.creatorSessionId||null,creatorConfirmedContext:clone(base.creatorConfirmedContext||[]),projectJourney:clone(base.projectJourney??null),memoryContext:clone(base.memoryContext??null),responseBlueprint:clone(base.responseBlueprint??null),communicationPlan:clone(base.communicationPlan??null),...patch};
+ const state={projectId:identity.projectId||base.projectId||null,creatorSessionId:identity.creatorSessionId||base.creatorSessionId||null,creatorConfirmedContext:clone(base.creatorConfirmedContext||[]),projectJourney:clone(base.projectJourney??null),memoryContext:clone(base.memoryContext??null),responseBlueprint:clone(base.responseBlueprint??null),communicationPlan:clone(base.communicationPlan??null),compensationBarrierRevision:n(base.compensationBarrierRevision)??0,...patch};
  const transitionId=randomUUID(),source=transitionSource(input),fingerprint=digest({projectId:state.projectId,creatorSessionId:state.creatorSessionId,generation,state});
  return{...state,revision,revisionAuthorityReference:`movie-mentor:revision:${revision}:${transitionId}`,creatorStateGeneration:generation,creatorStateFingerprint:fingerprint,creatorAuthorityReference:`movie-mentor:creator-state:${generation}:${transitionId}`,snapshotReference:`movie-mentor:snapshot:${revision}:${fingerprint.slice(0,24)}`,capturedAt,transition:{id:transitionId,source,expectedRevision:expected}};
 }
