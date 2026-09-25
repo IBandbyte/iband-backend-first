@@ -11,7 +11,7 @@ const recoveryConflict={code:"MOVIE_MENTOR_PROVIDER_RECOVERY_CREATOR_STATE_UNIVE
 const effect={domain:"iband.movie-mentor.provider-effect-reality",schema:2,providerCallId:"call-307",executionId:"execution-307",slotId:"semantic",task:"movie-mentor-semantic",state:"confirmed",revision:1,evidence:[{externalEffectId:"effect-A",provider:"test",observedAt:"2035-01-01T00:00:01.000Z",source:"provider-ack"}]};
 const reconstructionInput={context:{turnContextAuthority:{revision:7,revisionAuthorityReference:null,snapshotFingerprint:null,snapshotReference:"snapshot:7",creatorState:{generation:7,fingerprint:"a".repeat(64),authorityReference:null}}}};
 const rows={
- movie_mentor_inference_execution:{domain:"iband.movie-mentor.inference-execution-store",schema:6,...execution,requestDigest:"request-307",phase:"active",providerEffectRealityRevision:1,settlementRealityBarrierRevision:0},
+ movie_mentor_inference_execution:{domain:"iband.movie-mentor.inference-execution-store",schema:6,...execution,requestDigest:"request-307",phase:"active",providerEffectRealityRevision:1,resultCandidateBarrierRevision:0,settlementRealityBarrierRevision:0},
  movie_mentor_provider_operation_reality:{providerCallId:"call-307",executionId:"execution-307",slotId:"semantic",task:"movie-mentor-semantic",reconstructionInput,reconstructionInputDigest:digestMovieMentorProviderReconstructionInput(reconstructionInput)},
  movie_mentor_provider_effect_reality:[structuredClone(effect)],
  movie_mentor_creator_state:{projectId:"project-307",revision:8,revisionAuthorityReference:"",snapshotReference:"snapshot:8",creatorStateGeneration:8,creatorStateFingerprint:"b".repeat(64),creatorAuthorityReference:""},
