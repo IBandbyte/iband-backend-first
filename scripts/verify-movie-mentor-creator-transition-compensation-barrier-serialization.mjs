@@ -62,8 +62,8 @@ assert.equal(durable.revision,8,"failed stale transition must not advance semant
 assert.equal(durable.compensationBarrierRevision,4,"failed stale transition must preserve committed compensation barrier");
 
 const storeSource=fs.readFileSync(new URL("../ai/MovieMentorCreatorStateStore.js",import.meta.url),"utf8");
-assert.match(storeSource,/findOneAndUpdate\(\{\.\.\.identity,revision:expected,compensationBarrierRevision:doc\.compensationBarrierRevision\},\{\$set:doc\}/,
-  "authoritative Creator-state CAS must bind the exact compensation barrier carried by the transition");
+assert.match(storeSource,/findOneAndUpdate\(\{\.\.\.identity,revision:expected,\.\.\.\(doc\.compensationBarrierRevision===0\?\{\$or:\[\{compensationBarrierRevision:0\},\{compensationBarrierRevision:\{\$exists:false\}\}\]\}:\{compensationBarrierRevision:doc\.compensationBarrierRevision\}\)\},\{\$set:doc\}/,
+  "authoritative Creator-state CAS must bind the compensation barrier, admitting physical absence only for legacy logical zero");
 assert.match(storeSource,/compensationBarrierRevision:n\(state\.compensationBarrierRevision\)\?\?0/,
   "court must remain bound to production writing the carried barrier through $set");
 
