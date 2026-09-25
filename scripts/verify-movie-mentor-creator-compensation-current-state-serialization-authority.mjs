@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createMovieMentorInferenceSettlementMongoStore } from "../ai/MovieMentorInferenceSettlementMongoStore.js";
 import { digestMovieMentorProviderReconstructionInput } from "../ai/MovieMentorProviderOperationAuthority.js";
+import { buildNextState } from "../ai/MovieMentorCreatorStateTransition.js";
 
 console.log("5A.43 — Creator Compensation current-state serialization authority");
 
@@ -37,3 +38,10 @@ assert.equal(result.authorized,true,"unchanged exact Creator-state row must perm
 assert.equal(rows.movie_mentor_inference_entitlement.remainingUnits,5,"serialized current Creator-state proof may restore exactly one unit");
 assert.equal(rows.movie_mentor_inference_spend_reservation.status,"released","serialized compensation must release the reservation exactly once");
 console.log("LAW: CREATOR COMPENSATION MUST SERIALIZE ITS CURRENT CREATOR-STATE PROOF AT THE SAME TRANSACTIONAL WRITE BOUNDARY AS TERMINAL COMPENSATION AND ENTITLEMENT RESTORATION.");
+
+{
+ const currentState={projectId:"project-342",creatorSessionId:"session-342",revision:8,revisionAuthorityReference:"revision-8",creatorStateGeneration:8,creatorStateFingerprint:"b".repeat(64),creatorAuthorityReference:"creator-8",snapshotReference:"snapshot-8",creatorConfirmedContext:[],projectJourney:{stageId:"story"},memoryContext:null,responseBlueprint:null,communicationPlan:null,compensationBarrierRevision:3,capturedAt:"2035-01-01T00:00:00.000Z"};
+ const next=buildNextState({current:currentState,input:{projectId:"project-342",creatorSessionId:"session-342",source:"creator-workspace",expectedRevision:8,state:{projectJourney:{stageId:"characters"}}},identity:{projectId:"project-342",creatorSessionId:"session-342"}});
+ assert.equal(next.compensationBarrierRevision,3,"legitimate Creator-state transitions must carry the durable compensation barrier forward unchanged");
+ console.log("✓ Creator-state transition preserves durable compensation barrier lineage");
+}
