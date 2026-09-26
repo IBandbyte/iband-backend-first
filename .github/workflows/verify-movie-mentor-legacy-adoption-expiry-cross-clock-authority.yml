@@ -1,5 +1,6 @@
 name: Verify Movie Mentor Legacy Adoption Expiry Cross-Clock Authority
 on:
+  workflow_dispatch:
   push:
     branches:
       - verify-legacy-adoption-expiry-cross-clock-authority
