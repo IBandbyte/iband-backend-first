@@ -16,7 +16,7 @@ const a=await A.authorizeActivation(binding("process-A"));
 assert.equal(a.authorized,true);assert.equal(a.leaseGeneration,1);
 const b=await B.authorizeActivation(binding("process-B"));
 assert.equal(b.authorized,false,"a process whose local clock is ahead must not take over a lease that is still live in durable real time");
-assert.equal(b.reason,"activation-lease-held-by-another-process");
+assert.equal(b.reason,"activation-lease-race-lost","durable expiry CAS denial must fail closed without granting takeover");
 assert.equal(durable.processInstanceId,"process-A");assert.equal(durable.leaseGeneration,1);
 console.log("LAW: PROCESS-LOCAL CLOCK SKEW MAY NOT DECIDE DURABLE ACTIVATION-LEASE EXPIRY OR MINT A SUCCESSOR FENCING EPOCH.");
 console.log("activation lease cross-process clock authority: GREEN");
