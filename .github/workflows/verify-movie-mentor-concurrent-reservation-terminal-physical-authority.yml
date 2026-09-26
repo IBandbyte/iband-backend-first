@@ -1,0 +1,36 @@
+name: Verify Movie Mentor Concurrent Reservation Terminal Physical Authority
+on:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok' localhost:27017/test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+          --replSet rs0
+          --bind_ip_all
+    env:
+      MONGO_URI: mongodb://127.0.0.1:27017/iband_pr357?replicaSet=rs0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Initialize Mongo replica set
+        run: |
+          mongosh --quiet --host 127.0.0.1:27017 --eval 'try { rs.status() } catch (e) { rs.initiate({_id:"rs0",members:[{_id:0,host:"127.0.0.1:27017"}]}) }'
+          for i in {1..30}; do
+            mongosh --quiet --host 127.0.0.1:27017 --eval 'if (db.hello().isWritablePrimary) quit(0); quit(1)' && exit 0
+            sleep 1
+          done
+          exit 1
+      - run: node scripts/verify-movie-mentor-concurrent-reservation-terminal-physical-authority.mjs
