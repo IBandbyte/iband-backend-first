@@ -46,6 +46,7 @@ async function reject(code, options = {}) {
       credential: { projectId: project.id, title: project.title },
       expectedIssuer: "iband-migration-authority",
       now,
+      readTrustedCurrentTime: async () => now,
       ...options,
     }),
     (error) => error?.code === code
@@ -100,6 +101,7 @@ const certified = await certifyLegacyProjectOwnershipAdoption({
   verifyAdoptionCredential: async () => verifiedEvidence(),
   expectedIssuer: "iband-migration-authority",
   now,
+  readTrustedCurrentTime: async () => now,
 });
 assert.equal(certified.certified, true);
 assert.equal(certified.principalId, principal.principalId);
