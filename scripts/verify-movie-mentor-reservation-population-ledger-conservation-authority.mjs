@@ -12,7 +12,7 @@ assert.match(spend,/\$inc:\{remainingUnits:-n\.units,reservedUnits:n\.units,enti
 assert.match(spend,/Reservation\.create\(\[\{domain:DOMAIN,schema:SCHEMA,\.\.\.n,entitlementRevision:entitlement\.entitlementRevision,status:"reserved"/);
 const terminalMoves=[...settlement.matchAll(/\$inc:\{reservedUnits:-reservation\.units,(remainingUnits|consumedUnits):reservation\.units,entitlementRevision:1\}/g)];
 assert.ok(terminalMoves.length>=3,"every terminal family must move the exact reservation units out of aggregate reserved accounting");
-assert.doesNotMatch(issuance,/reservedUnits:[+-]?[a-zA-Z]/,"issuance must not mutate existing reserved balance");
+assert.doesNotMatch(issuance,/\$inc:\{[^}]*reservedUnits/,"issuance must not mutate existing reserved balance");
 assert.doesNotMatch(reversal,/\$inc:\{[^}]*reservedUnits/,"reversal must not mutate reserved balance");
 
 function invariant(s){return s.reservedUnits===Object.values(s.reservations).filter(r=>r.status==="reserved").reduce((n,r)=>n+r.units,0);}
