@@ -1,0 +1,21 @@
+name: Verify Movie Mentor Recovery Activation Lease Cross-Clock Authority
+on:
+  push:
+    branches:
+      - verify-recovery-activation-lease-cross-clock-authority
+  pull_request:
+    paths:
+      - "ai/MovieMentorJourneyRecoveryActivationLeaseAuthority.js"
+      - "ai/MovieMentorJourneyRecoveryActivationLeaseMongoStore.js"
+      - "scripts/verify-movie-mentor-journey-recovery-activation-lease-cross-clock-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-journey-recovery-activation-lease-cross-clock-authority.yml"
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: node scripts/verify-movie-mentor-journey-recovery-activation-lease-cross-clock-authority.mjs
