@@ -1,0 +1,17 @@
+name: Verify Movie Mentor Expired Execution Closure Cross-Clock Authority
+on:
+  push:
+    branches:
+      - verify-expired-execution-closure-cross-clock-authority
+  pull_request:
+    paths:
+      - "ai/MovieMentorInferenceExecutionClosureAuthority.js"
+      - "ai/MovieMentorInferenceExecutionMongoStore.js"
+      - "scripts/verify-movie-mentor-expired-execution-closure-cross-clock-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-expired-execution-closure-cross-clock-authority.yml"
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: node scripts/verify-movie-mentor-expired-execution-closure-cross-clock-authority.mjs
