@@ -14,7 +14,7 @@ function createMovieMentorLegacyMigrationCeremony({
   now=()=>Date.now(),randomId=()=>crypto.randomUUID(),randomNonce=()=>crypto.randomBytes(32).toString("base64url"),
   persistChallenge=persistMovieMentorLegacyMigrationChallenge,readChallenge=readMovieMentorLegacyMigrationChallenge,consumeChallenge=consumeMovieMentorLegacyMigrationChallenge,readConsumption=readMovieMentorLegacyMigrationConsumption,bindConsumptionIssuance=bindMovieMentorLegacyMigrationConsumptionIssuance,
   createIssuance=createMovieMentorLegacyMigrationAttestationIssuance,readIssuanceByConsumptionId=readMovieMentorLegacyMigrationAttestationIssuanceByConsumptionId,readIssuanceByAdoptionId=readMovieMentorLegacyMigrationAttestationIssuanceByAdoptionId,
-  certifyAdoption=certifyLegacyProjectOwnershipAdoption,ownershipAuthority=createMovieMentorProjectOwnershipAuthority(),verifyAdoptionCredential=null,
+  certifyAdoption=certifyLegacyProjectOwnershipAdoption,ownershipAuthority=createMovieMentorProjectOwnershipAuthority(),verifyAdoptionCredential=null,readTrustedCurrentTime=null,
   expectedIssuer="iband.movie-mentor.legacy-migration-authority",expectedAudience="iband.movie-mentor.legacy-ownership-adoption",
 }={}){
   const challengeAuthority=createMovieMentorLegacyMigrationChallengeAuthority({now,randomId,randomNonce,persistChallenge,readChallenge,consumeChallenge});
@@ -26,7 +26,7 @@ function createMovieMentorLegacyMigrationCeremony({
     const eligibility=await challengeAuthority.consumeForAttestationEligibility({challenge,principal,project,consumptionId:operationId});
     const issuance=await issuer.issue({consumptionId:eligibility.consumptionId,principal,project});
     const credential=Object.freeze({adoptionId:s(issuance.attestation?.adoptionId)});
-    const certified=await certifyAdoption({principal,project,credential,verifyAdoptionCredential:durableVerifier,expectedIssuer,expectedAudience,now:now()});
+    const certified=await certifyAdoption({principal,project,credential,verifyAdoptionCredential:durableVerifier,expectedIssuer,expectedAudience,now:now(),readTrustedCurrentTime});
     const ownership=await ownershipAuthority.adoptLegacyOwnership({principal,projectId:s(project?.id||project?.projectId),adoptionAttestation:certified});
     return Object.freeze({status:"completed",challengeId:eligibility.challengeId,consumptionId:eligibility.consumptionId,adoptionId:certified.adoptionId,eligibilityStatus:eligibility.status,issuanceStatus:issuance.status,ownershipStatus:ownership.status,ownership:ownership.ownership});
   }
