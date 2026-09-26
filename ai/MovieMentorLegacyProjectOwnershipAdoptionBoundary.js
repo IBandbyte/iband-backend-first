@@ -33,6 +33,7 @@ async function certifyLegacyProjectOwnershipAdoption({
   expectedIssuer = null,
   expectedAudience = "iband.movie-mentor.legacy-ownership-adoption",
   now = Date.now(),
+  readTrustedCurrentTime = null,
 } = {}) {
   const principalId = clean(principal?.principalId);
   if (!principalId || principal?.authenticated !== true) {
@@ -63,6 +64,19 @@ async function certifyLegacyProjectOwnershipAdoption({
     fail(
       "MOVIE_MENTOR_LEGACY_ADOPTION_CLOCK_INVALID",
       "Legacy ownership adoption requires a finite current proof time."
+    );
+  }
+  if (typeof readTrustedCurrentTime !== "function") {
+    fail(
+      "MOVIE_MENTOR_LEGACY_ADOPTION_TRUSTED_TIME_REQUIRED",
+      "Legacy ownership adoption requires an independent trusted current-time authority."
+    );
+  }
+  const trustedNowMs = currentProofTime(await readTrustedCurrentTime());
+  if (trustedNowMs === null) {
+    fail(
+      "MOVIE_MENTOR_LEGACY_ADOPTION_TRUSTED_TIME_INVALID",
+      "Legacy ownership adoption trusted current-time authority returned an invalid time."
     );
   }
 
@@ -131,13 +145,13 @@ async function certifyLegacyProjectOwnershipAdoption({
       "Legacy adoption proof has invalid issuance or expiry bounds."
     );
   }
-  if (issuedAtMs > nowMs + 30_000) {
+  if (issuedAtMs > trustedNowMs + 30_000) {
     fail(
       "MOVIE_MENTOR_LEGACY_ADOPTION_NOT_YET_VALID",
       "Legacy adoption proof was issued in the future."
     );
   }
-  if (expiresAtMs <= nowMs) {
+  if (expiresAtMs <= trustedNowMs) {
     fail(
       "MOVIE_MENTOR_LEGACY_ADOPTION_EXPIRED",
       "Legacy adoption proof has expired."

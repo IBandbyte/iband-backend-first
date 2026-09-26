@@ -1,0 +1,14 @@
+import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
+import {certifyLegacyProjectOwnershipAdoption} from "../ai/MovieMentorLegacyProjectOwnershipAdoptionBoundary.js";
+const source=readFileSync(new URL("../ai/MovieMentorLegacyProjectOwnershipAdoptionBoundary.js",import.meta.url),"utf8");
+assert.match(source,/readTrustedCurrentTime/,"irreversible legacy ownership adoption must require an independent trusted current-time authority");
+const realNow=Date.parse("2030-01-01T00:00:00.000Z");
+const project={id:"legacy-1",identity:{domain:"iband.movie-mentor.project",schema:0,issuance:"legacy-preserved",legacy:true}};
+const principal={principalId:"creator-1",authenticated:true};
+let verified=0;
+const verifyAdoptionCredential=async()=>{verified++;return{verified:true,subject:"creator-1",projectId:"legacy-1",adoptionId:"adopt-1",issuer:"iband-migration-authority",audience:"iband.movie-mentor.legacy-ownership-adoption",verificationMethod:"court",issuedAt:new Date(realNow-60000).toISOString(),expiresAt:new Date(realNow-1000).toISOString(),revoked:false,projectIdentity:project.identity};};
+await assert.rejects(()=>certifyLegacyProjectOwnershipAdoption({principal,project,credential:{},verifyAdoptionCredential,expectedIssuer:"iband-migration-authority",now:realNow-120000,readTrustedCurrentTime:async()=>realNow}),e=>e?.code==="MOVIE_MENTOR_LEGACY_ADOPTION_EXPIRED","a behind process clock must not certify an adoption credential already expired in authoritative time");
+assert.equal(verified,1);
+console.log("LAW: PROCESS-LOCAL CLOCK SKEW MAY NOT RESURRECT EXPIRED LEGACY OWNERSHIP ADOPTION AUTHORITY.");
+console.log("legacy adoption expiry cross-clock authority: GREEN");

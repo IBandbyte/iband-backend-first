@@ -79,6 +79,7 @@ async function legacyAttestation(projectId, principalId, adoptionId) {
     credential: { opaqueMigrationProof: adoptionId },
     expectedIssuer: "iband-migration-authority",
     now: Date.parse("2026-08-27T21:10:00.000Z"),
+    readTrustedCurrentTime: async () => Date.parse("2026-08-27T21:10:00.000Z"),
     verifyAdoptionCredential: async () => ({
       verified: true,
       subject: principalId,
