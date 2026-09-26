@@ -9,15 +9,15 @@ const releaseStart=source.indexOf("async function releaseUnclaimedReservation",s
 const compensationStart=source.indexOf("async function compensateSupersededCreatorState",releaseStart);
 assert.ok(settleStart>=0&&releaseStart>settleStart&&compensationStart>releaseStart);
 const settle=source.slice(settleStart,releaseStart);
-const compensation=source.slice(compensationStart);
+const compensationSource=source.slice(compensationStart);
 
 assert.match(settle,/\["finalized","settled"\]\.includes\(text\(execution\.phase\)\)/,"canonical settlement only owns finalized/settled execution");
-assert.match(compensation,/\["finalized","settled"\]\.includes\(text\(execution\.phase\)\)/,"compensation refuses canonical execution authority");
-assert.match(compensation,/if\(canonical\|\|candidate\)/,"compensation refuses durable result lineage");
+assert.match(compensationSource,/\["finalized","settled"\]\.includes\(text\(execution\.phase\)\)/,"compensation refuses canonical execution authority");
+assert.match(compensationSource,/if\(canonical\|\|candidate\)/,"compensation refuses durable result lineage");
 assert.match(settle,/findOneAndUpdate\(\{reservationId:text\(reservation\.reservationId\),status:"reserved"\}/,"canonical disposition CASes reserved→consumed");
-assert.match(compensation,/findOneAndUpdate\(\{reservationId:text\(reservation\.reservationId\),status:"reserved"\}/,"compensation disposition CASes reserved→released");
+assert.match(compensationSource,/findOneAndUpdate\(\{reservationId:text\(reservation\.reservationId\),status:"reserved"\}/,"compensation disposition CASes reserved→released");
 assert.match(settle,/phase:"finalized"[\s\S]*?\$set:\{phase:"settled"/,"canonical terminal execution mutation requires finalized authority");
-assert.match(compensation,/executionId:id,phase:text\(execution\.phase\)[\s\S]*?\$set:\{phase:"compensated"/,"compensation terminal mutation CASes the observed execution phase");
+assert.match(compensationSource,/executionId:id,phase:text\(execution\.phase\)[\s\S]*?\$set:\{phase:"compensated"/,"compensation terminal mutation CASes the observed execution phase");
 
 function canonical(tx){
  if(tx.execution!=="finalized") return "denied";
