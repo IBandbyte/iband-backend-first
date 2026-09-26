@@ -20,7 +20,7 @@ let durable = structuredClone(challenge);
 const consumeChallenge = async ({ challengeId, expectedStatus, principalId, projectId, consumptionId, consumedAt }) => {
   if (!durable || durable.challengeId !== challengeId || durable.status !== expectedStatus || durable.principalId !== principalId || durable.projectId !== projectId) return { consumed: false };
   // Model the repaired production store contract: durable Mongo time, not caller time, owns expiry.
-  if (Date.parse(durable.expiresAt) <= realNow) return { consumed: false };
+  if (Date.parse(durable.expiresAt) <= realNow) { const error = new Error("Migration challenge has expired."); error.code = "MOVIE_MENTOR_LEGACY_MIGRATION_CHALLENGE_EXPIRED"; throw error; }
   durable = { ...durable, status: "consumed", consumptionId, consumedAt: new Date(realNow).toISOString() };
   return { consumed: true, record: structuredClone(durable) };
 };
