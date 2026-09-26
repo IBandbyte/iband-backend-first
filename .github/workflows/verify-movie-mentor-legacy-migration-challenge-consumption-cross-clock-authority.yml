@@ -1,0 +1,29 @@
+name: Verify Movie Mentor Legacy Challenge Consumption Cross-Clock Authority
+on:
+  push:
+    branches:
+      - verify-legacy-challenge-consumption-cross-clock-authority
+  pull_request:
+    paths:
+      - "ai/MovieMentorLegacyMigrationChallengeAuthority.js"
+      - "ai/MovieMentorLegacyMigrationChallengeStore.js"
+      - "scripts/verify-movie-mentor-legacy-migration-challenge-consumption-cross-clock-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-legacy-migration-challenge-consumption-cross-clock-authority.yml"
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok' localhost:27017/test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - run: node scripts/verify-movie-mentor-legacy-migration-challenge-consumption-cross-clock-authority.mjs
+        env:
+          MONGO_URI: mongodb://localhost:27017/movie_mentor_legacy_challenge_cross_clock
