@@ -113,7 +113,12 @@ function createMovieMentorJourneyRecoveryActivationLeaseMongoStore({ mongoModel 
     if (normalizedCurrent.leaseGeneration !== expectedGeneration || normalizedCurrent.leaseReference !== expectedReference) return null; if (expectedExpiresAt && normalizedCurrent.expiresAt !== expectedExpiresAt) return null;
     if (renewal) { if (!sameIdentity(normalizedCurrent, next) || next.leaseReference !== normalizedCurrent.leaseReference || next.fencingToken !== normalizedCurrent.fencingToken || iso(next.acquiredAt) !== normalizedCurrent.acquiredAt || new Date(next.expiresAt).getTime() <= new Date(normalizedCurrent.expiresAt).getTime()) fail("MOVIE_MENTOR_RECOVERY_ACTIVATION_LEASE_MONGO_RENEWAL_MUTATION_INVALID", "Renewal may only advance expiry while preserving holder and fencing identity."); }
     else if (next.leaseReference === normalizedCurrent.leaseReference || next.fencingToken === normalizedCurrent.fencingToken) fail("MOVIE_MENTOR_RECOVERY_ACTIVATION_LEASE_MONGO_TAKEOVER_FENCE_REUSE", "Takeover must mint a new lease reference and fencing token.");
-    const filter = { serviceKey: SERVICE_KEY, leaseGeneration: expectedGeneration, leaseReference: expectedReference }; if (expectedExpiresAt) filter.expiresAt = new Date(expectedExpiresAt);
+    const filter = { serviceKey: SERVICE_KEY, leaseGeneration: expectedGeneration, leaseReference: expectedReference };
+    if (expectedExpiresAt) filter.expiresAt = new Date(expectedExpiresAt);
+    if (takeover) {
+      if (expected.requireDurablyExpired !== true) fail("MOVIE_MENTOR_RECOVERY_ACTIVATION_LEASE_MONGO_TAKEOVER_EXPIRY_AUTHORITY_REQUIRED", "Activation lease takeover requires durable-store expiry authority.");
+      filter.$expr = { $lte: ["$expiresAt", "$NOW"] };
+    }
     const written = await storeModel().findOneAndUpdate(filter, { $set: next }, { new: true, runValidators: true }).lean().exec(); return written ? normalize(written) : null;
   }
 
