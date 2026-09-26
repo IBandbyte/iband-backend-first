@@ -1,0 +1,36 @@
+name: Verify Movie Mentor Legacy Challenge Consumption Cross-Clock Authority
+on:
+  push:
+    branches:
+      - verify-legacy-challenge-consumption-cross-clock-authority
+  pull_request:
+    paths:
+      - "ai/MovieMentorLegacyMigrationChallengeAuthority.js"
+      - "ai/MovieMentorLegacyMigrationChallengeStore.js"
+      - "scripts/verify-movie-mentor-legacy-migration-challenge-consumption-cross-clock-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-legacy-migration-challenge-consumption-cross-clock-authority.yml"
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok' localhost:27017/test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - run: mongosh --quiet --host localhost:27017 --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"localhost:27017"}]})' || true
+      - run: |
+          for i in {1..30}; do
+            mongosh --quiet --host localhost:27017 --eval 'db.hello().isWritablePrimary' | grep true && exit 0
+            sleep 1
+          done
+          exit 1
+      - run: node scripts/verify-movie-mentor-legacy-migration-challenge-consumption-cross-clock-authority.mjs
+        env:
+          MONGO_URI: mongodb://localhost:27017/movie_mentor_legacy_challenge_cross_clock?replicaSet=rs0
