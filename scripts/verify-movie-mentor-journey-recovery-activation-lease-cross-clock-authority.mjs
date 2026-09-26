@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { createMovieMentorJourneyRecoveryActivationLeaseAuthority } from "../ai/MovieMentorJourneyRecoveryActivationLeaseAuthority.js";
 const clone=v=>v?structuredClone(v):null;
-let durable=null,id=0;
+let durable=null,id=0;\nconst durableNow=Date.parse("2030-01-01T00:00:00.000Z");
 const readLease=async()=>clone(durable);
 const createLease=async next=>{if(durable)return null;durable=clone(next);return clone(durable);};
-const replaceLease=async(next,expected={})=>{if(!durable||durable.leaseGeneration!==expected.expectedLeaseGeneration||durable.leaseReference!==expected.expectedLeaseReference)return null;if(expected.expectedExpiresAt&&durable.expiresAt!==expected.expectedExpiresAt)return null;durable=clone(next);return clone(durable);};
+const replaceLease=async(next,expected={})=>{if(!durable||durable.leaseGeneration!==expected.expectedLeaseGeneration||durable.leaseReference!==expected.expectedLeaseReference)return null;if(expected.expectedExpiresAt&&durable.expiresAt!==expected.expectedExpiresAt)return null;if(next.leaseGeneration===durable.leaseGeneration+1){assert.equal(expected.requireDurablyExpired,true,"takeover must delegate expiry authority to durable storage");if(Date.parse(durable.expiresAt)>durableNow)return null;}durable=clone(next);return clone(durable);};
 const binding=p=>({processInstanceId:p,deploymentId:"deploy-A",basePath:"/api/movie-mentor-recovery",expectedIssuer:"issuer",expectedAudience:"audience"});
 const real0=Date.parse("2030-01-01T00:00:00.000Z");
 let clockA=real0,clockB=real0+120000;
