@@ -15,8 +15,7 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
-          --replSet rs0
-          --bind_ip_all
+        command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
     env:
       MONGO_URI: mongodb://127.0.0.1:27017/iband_pr357?replicaSet=rs0
     steps:
