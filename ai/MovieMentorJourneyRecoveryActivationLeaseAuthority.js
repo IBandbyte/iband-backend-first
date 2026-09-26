@@ -36,7 +36,7 @@ export function createMovieMentorJourneyRecoveryActivationLeaseAuthority({ readL
       const fencingToken = `recovery-fence-${generation}-${randomId()}`;
       const next = freeze({ ...request, status: "active", leaseGeneration: generation, leaseReference: reference, fencingToken, acquiredAt: at.toISOString(), expiresAt: new Date(at.getTime() + leaseMs).toISOString() });
       try {
-        current = current ? await replaceLease(next, { expectedLeaseGeneration: previousGeneration, expectedLeaseReference: text(current.leaseReference) }) : await createLease(next);
+        current = current ? await replaceLease(next, { expectedLeaseGeneration: previousGeneration, expectedLeaseReference: text(current.leaseReference), requireDurablyExpired: true }) : await createLease(next);
       } catch (error) {
         const exact = await rereadExact(request, generation, reference);
         if (exact) return evidence(exact);
