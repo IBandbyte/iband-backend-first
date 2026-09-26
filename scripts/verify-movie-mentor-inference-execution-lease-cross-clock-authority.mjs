@@ -1,13 +1,19 @@
 import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
 import {createMovieMentorInferenceExecutionLeaseAuthority} from "../ai/MovieMentorInferenceExecutionLeaseAuthority.js";
 const clone=v=>v?structuredClone(v):null;
+const authoritySource=readFileSync(new URL("../ai/MovieMentorInferenceExecutionLeaseAuthority.js",import.meta.url),"utf8");
+const storeSource=readFileSync(new URL("../ai/MovieMentorInferenceExecutionMongoStore.js",import.meta.url),"utf8");
+assert.match(authoritySource,/requireDurablyExpired\s*:\s*true/,"execution takeover must delegate expiry authority to durable storage");
+assert.match(storeSource,/\$expr\s*=|\$expr\s*:/,"execution store takeover must use a database-evaluated expiry predicate");
+assert.match(storeSource,/\$\$NOW/,"execution store takeover must compare lease expiry against durable database time");
 let durable=null,id=0;
 const realNow=Date.parse("2030-01-01T00:00:00.000Z");
 const store={
  async readExecution(id){return durable?.executionId===id?clone(durable):null;},
  async readExecutionByCreatorTurn({creatorTurnId,principalId,projectId}={}){return durable&&durable.creatorTurnId===creatorTurnId&&durable.principalId===principalId&&durable.projectId===projectId?clone(durable):null;},
  async createExecution(next){if(durable)return null;durable={domain:"iband.movie-mentor.inference-execution-store",schema:6,...clone(next)};return clone(durable);},
- async replaceExecution(next,expected={}){if(!durable||durable.phase!==expected.expectedPhase||durable.leaseGeneration!==expected.expectedLeaseGeneration||durable.leaseReference!==expected.expectedLeaseReference)return null;if(expected.expectedLeaseExpiresAt&&durable.leaseExpiresAt!==expected.expectedLeaseExpiresAt)return null;if(next.leaseGeneration===durable.leaseGeneration+1&&Date.parse(durable.leaseExpiresAt)>realNow)return null;durable=clone(next);return clone(durable);},
+ async replaceExecution(next,expected={}){if(!durable||durable.phase!==expected.expectedPhase||durable.leaseGeneration!==expected.expectedLeaseGeneration||durable.leaseReference!==expected.expectedLeaseReference)return null;if(expected.expectedLeaseExpiresAt&&durable.leaseExpiresAt!==expected.expectedLeaseExpiresAt)return null;if(next.leaseGeneration===durable.leaseGeneration+1){assert.equal(expected.requireDurablyExpired,true,"takeover must request durable-store expiry authority");if(Date.parse(durable.leaseExpiresAt)>realNow)return null;}durable=clone(next);return clone(durable);},
  async claimProviderCall(){throw new Error("not exercised");}
 };
 let clockA=realNow,clockB=realNow+120000;
