@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 const source = await fs.readFile(new URL("../ai/MovieMentorLegacyMigrationChallengeStore.js", import.meta.url), "utf8");
-assert.match(source,/movie_mentor_legacy_migration_challenges/); assert.match(source,/challengeId: 1 \}, \{ unique: true/); assert.match(source,/consumptionId: 1 \}, \{ unique: true, sparse: true/); assert.match(source,/expiresAt:\{\$gt:at\}/); assert.match(source,/readMovieMentorLegacyMigrationConsumption/); assert.match(source,/reconcileMovieMentorLegacyMigrationConsumption/); assert.match(source,/crashRecovery:"consumptionId"/);
+assert.match(source,/movie_mentor_legacy_migration_challenges/); assert.match(source,/challengeId: 1 \}, \{ unique: true/); assert.match(source,/consumptionId: 1 \}, \{ unique: true, sparse: true/); assert.match(source,/\$expr:\{\$gt:\["\$expiresAt","\$"\+"\$NOW"\]\}/); assert.match(source,/\$currentDate:\{consumedAt:true\}/); assert.match(source,/readMovieMentorLegacyMigrationConsumption/); assert.match(source,/reconcileMovieMentorLegacyMigrationConsumption/); assert.match(source,/crashRecovery:"consumptionId"/);
 
 const records=new Map(), consumptionIds=new Map();
 function create(c){if(records.has(c.challengeId))throw new Error("duplicate-challenge");records.set(c.challengeId,structuredClone({...c,status:"issued",consumptionId:null}));}
