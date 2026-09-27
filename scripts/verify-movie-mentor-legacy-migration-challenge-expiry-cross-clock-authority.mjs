@@ -12,7 +12,7 @@ const challenge = {
   projectId: "legacy-project",
   projectIdentity: { domain: "iband.movie-mentor.project", schema: 0, issuance: "legacy-preserved" },
   nonce: "nonce",
-  issuedAt: new Date(realNow - 60000).toISOString(),
+  issuedAt: new Date(realNow - 180000).toISOString(),
   expiresAt,
   status: "issued"
 };
