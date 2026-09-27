@@ -117,7 +117,7 @@ function createMovieMentorJourneyRecoveryActivationLeaseMongoStore({ mongoModel 
     if (expectedExpiresAt) filter.expiresAt = new Date(expectedExpiresAt);
     if (takeover) {
       if (expected.requireDurablyExpired !== true) fail("MOVIE_MENTOR_RECOVERY_ACTIVATION_LEASE_MONGO_TAKEOVER_EXPIRY_AUTHORITY_REQUIRED", "Activation lease takeover requires durable-store expiry authority.");
-      filter.$expr = { $lte: ["$expiresAt", "$NOW"] };
+      filter.$expr = { $lte: ["$expiresAt", "$" + "$NOW"] };
     }
     const written = await storeModel().findOneAndUpdate(filter, { $set: next }, { new: true, runValidators: true }).lean().exec(); return written ? normalize(written) : null;
   }
