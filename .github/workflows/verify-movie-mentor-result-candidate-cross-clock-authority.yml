@@ -12,7 +12,6 @@ jobs:
         image: mongo:7
         ports: ["27017:27017"]
         options: >-
-          --replSet rs0 --bind_ip_all
     env:
       MONGO_URI: mongodb://localhost:27017/iband_candidate_clock?replicaSet=rs0
     steps:
