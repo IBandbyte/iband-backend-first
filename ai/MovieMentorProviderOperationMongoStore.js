@@ -209,7 +209,7 @@ function createMovieMentorProviderOperationMongoStore({ mongoModel = null, conne
       leaseGeneration: generation,
       leaseReference: leaseRef,
       fencingToken: fence,
-      leaseExpiresAt: { $gt: timestamp },
+      $expr: { $gt: ["$leaseExpiresAt", MONGO_SERVER_NOW] },
       providerCalls: { $elemMatch: { providerCallId: callId, slotId: identity.slotId, task: identity.task, leaseGeneration: generation, leaseReference: leaseRef, fencingToken: fence } },
     };
     const operationFilter = { providerCallId: callId, executionId: identity.executionId, slotId: identity.slotId, task: identity.task, $or: [{ reconstructionInputDigest: null }, { reconstructionInputDigest: { $exists: false } }] };
