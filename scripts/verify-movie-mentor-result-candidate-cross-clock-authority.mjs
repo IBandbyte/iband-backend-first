@@ -6,7 +6,7 @@ await execs.insertOne({...execution,authorized:undefined,executionAuthorized:und
 await states.insertOne({projectId:"project-1",revision:1,creatorStateGeneration:1,creatorStateFingerprint:"fingerprint-1",resultCandidateBarrierRevision:0});
 const proof={domain:MOVIE_MENTOR_CREATOR_STATE_CONSUMPTION_PROOF_DOMAIN,schema:MOVIE_MENTOR_CREATOR_STATE_CONSUMPTION_SCHEMA,authorized:true,currentOwnershipVerified:true,principalId:"creator-1",projectId:"project-1",ownershipRef:"ownership-1",ownershipRevision:1,stage:"result-candidate",revision:1,creatorStateGeneration:1,creatorStateFingerprint:"fingerprint-1",executionId:execution.executionId,providerCallId:null};
 const store=createMovieMentorResultCandidateMongoStore({connect:async()=>{},executionCollection:execs,creatorStateCollection:states,startSession:()=>mongoose.startSession(),readIndexes:async name=>name==="movie_mentor_result_candidate"?[{key:{executionId:1},unique:true},{key:{candidateReference:1},unique:true}]:[{key:{projectId:1},unique:true}],now:()=>new Date(lag),randomId:()=>"clock"});
-let rejected=false;try{await store.stageCandidate({execution,resultPayload:{success:true,text:"candidate"},creatorStateConsumptionProof:proof});}catch(e){rejected=e?.code==="MOVIE_MENTOR_RESULT_CANDIDATE_EXECUTION_FENCED";}
+let rejected=false;try{await store.stageCandidate({execution,resultPayload:{success:true,text:"candidate"},creatorStateConsumptionProof:proof});}catch(e){if(e?.code==="MOVIE_MENTOR_RESULT_CANDIDATE_EXECUTION_FENCED")rejected=true;else throw e;}
 assert.equal(rejected,true,"Mongo-expired execution must not stage result candidate through lagging process time");
 console.log("LAW: MONGO SERVER TIME OWNS LIVE LEASE VALIDITY INSIDE ATOMIC RESULT-CANDIDATE STAGING.");
 await mongoose.disconnect();
