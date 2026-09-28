@@ -1,9 +1,7 @@
 import assert from "node:assert/strict";
 import mongoose from "mongoose";
-import {MongoMemoryServer} from "mongodb-memory-server";
 process.env.NODE_ENV="test";
-const mongod=await MongoMemoryServer.create({binary:{version:"7.0.14"}});
-process.env.MONGO_URI=mongod.getUri();
+process.env.MONGO_URI=process.env.MONGO_URI||"mongodb://127.0.0.1:27017/movie_mentor_quarantine_missing_barrier";
 const {createMovieMentorInferenceExecutionMongoStore}=await import("../ai/MovieMentorInferenceExecutionMongoStore.js");
 await mongoose.connect(process.env.MONGO_URI);
 const db=mongoose.connection.db, col=db.collection("movie_mentor_inference_executions");
@@ -17,4 +15,4 @@ assert.equal(q.phase,"quarantined","a current-schema row whose historical zero b
 const raw=await col.findOne({executionId:base.executionId});
 assert.equal(raw.phase,"quarantined","quarantine must be physical, not merely normalized intent");
 console.log("LAW: NORMALIZED ZERO COMPATIBILITY MUST SURVIVE THE PHYSICAL QUARANTINE CAS; MISSING HISTORICAL ZERO MAY NOT BLOCK REVOCATION.");
-await mongoose.disconnect();await mongod.stop();
+await mongoose.disconnect();
