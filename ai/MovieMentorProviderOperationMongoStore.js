@@ -114,11 +114,9 @@ function createMovieMentorProviderOperationMongoStore({ mongoModel = null, conne
     if (!mongoModel) await connect();
     if (!physicalUniqueIndexReadinessPromise) {
       physicalUniqueIndexReadinessPromise = Promise.resolve().then(async () => {
-        if (typeof readPhysicalIndexes !== "function") {
-          const currentModel = storeModel();
-          if (typeof currentModel?.createIndexes !== "function") fail("MOVIE_MENTOR_PROVIDER_OPERATION_PHYSICAL_AUTHORITY_UNAVAILABLE", "Provider operation store cannot provision required physical Mongo indexes.", { retryable: true, boundary: PHYSICAL_AUTHORITY_BOUNDARY });
-          await currentModel.createIndexes();
-        }
+        const currentModel = storeModel();
+        if (typeof currentModel?.createIndexes === "function") await currentModel.createIndexes();
+        else if (!mongoModel && typeof readPhysicalIndexes !== "function") fail("MOVIE_MENTOR_PROVIDER_OPERATION_PHYSICAL_AUTHORITY_UNAVAILABLE", "Provider operation store cannot provision required physical Mongo indexes.", { retryable: true, boundary: PHYSICAL_AUTHORITY_BOUNDARY });
         const indexes = await readIndexes();
         assertPhysicalUniqueIndexes(indexes);
         return true;
