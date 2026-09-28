@@ -4,6 +4,7 @@ import {createMovieMentorProviderEffectMongoStore} from "../ai/MovieMentorProvid
 const uri=process.env.MONGO_URI;assert.ok(uri);await mongoose.connect(uri);const db=mongoose.connection.db;
 const effects=db.collection("movie_mentor_provider_effect_reality"),execs=db.collection("movie_mentor_inference_execution");await Promise.all([effects.deleteMany({}),execs.deleteMany({})]);
 await effects.createIndex({providerCallId:1},{unique:true});
+await effects.createIndex({"evidence.provider":1,"evidence.externalEffectId":1},{unique:true});
 await execs.createIndex({executionId:1},{unique:true});
 const now=new Date("2032-01-01T00:00:00.000Z");
 const mk=(id,slot)=>({domain:"iband.movie-mentor.provider-effect-reality",schema:2,providerCallId:id,executionId:"execution-global-effect",slotId:slot,task:"movie-mentor-"+slot,state:"unknown",dispatchUnknownAt:now,revision:0,evidence:[]});
