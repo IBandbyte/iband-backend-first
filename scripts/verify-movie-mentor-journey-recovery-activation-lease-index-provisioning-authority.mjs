@@ -1,0 +1,11 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+const source=fs.readFileSync(new URL("../ai/MovieMentorJourneyRecoveryActivationLeaseMongoStore.js",import.meta.url),"utf8");
+console.log("Movie Mentor journey recovery activation lease index provisioning authority court");
+assert.match(source,/schema\.index\(\{ serviceKey: 1 \}, \{ unique: true \}\)/);
+const readiness=source.slice(source.indexOf("async function verifyPhysicalUniqueIndexReadiness"),source.indexOf("async function physicalReadyBoundary"));
+assert.match(readiness,/createIndexes\(\)/,"activation lease readiness must explicitly provision the singleton serviceKey unique index before trusting the physical catalogue");
+assert.ok(readiness.indexOf("createIndexes()")>=0&&readiness.indexOf("collection.indexes()")>readiness.indexOf("createIndexes()"),"activation lease provisioning must precede physical catalogue observation");
+assert.match(source,/async function createLease[\s\S]*?await physicalReadyBoundary\(\)[\s\S]*?storeModel\(\)\.create\(next\)/);
+assert.match(source,/async function replaceLease[\s\S]*?await physicalReadyBoundary\(\)[\s\S]*?findOneAndUpdate/);
+console.log("PASS activation lease index provisioning authority — production store provisions singleton identity before physical readiness and lease mutation.");
