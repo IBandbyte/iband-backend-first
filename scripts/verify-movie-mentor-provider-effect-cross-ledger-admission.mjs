@@ -43,7 +43,7 @@ const executionCollection = {
       row.executionId === filter.executionId && row.phase === filter.phase &&
       row.ownerId === filter.ownerId && row.leaseGeneration === filter.leaseGeneration &&
       row.leaseReference === filter.leaseReference && row.fencingToken === filter.fencingToken &&
-      (filter.$expr?.$gt?.[0] === "$leaseExpiresAt" ? new Date(row.leaseExpiresAt).getTime() > Date.now() : new Date(row.leaseExpiresAt).getTime() > new Date(filter.leaseExpiresAt.$gt).getTime()) && call);
+      (filter.$expr?.$gt?.[0] === "$leaseExpiresAt" ? new Date(row.leaseExpiresAt).getTime() > now.getTime() : new Date(row.leaseExpiresAt).getTime() > new Date(filter.leaseExpiresAt.$gt).getTime()) && call);
     if (matches) revisionTouches += 1;
     return { matchedCount: matches ? 1 : 0, modifiedCount: matches ? 1 : 0 };
   }
