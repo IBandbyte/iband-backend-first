@@ -14,7 +14,7 @@ assert.match(compositionSource,/beginProviderDispatch:providerBoundaryAuthority\
 function query(value=null){return{session(){return this;},lean(){return this;},async exec(){return value?structuredClone(value):null;}};}
 let effectWrites=0,executionTouches=0,transactions=0;
 const fakeModel={
- collection:{async indexes(){return[{name:"providerCallId_1",key:{providerCallId:1},unique:true}];}},
+ collection:{async indexes(){return[{name:"providerCallId_1",key:{providerCallId:1},unique:true},{name:"evidence_provider_externalEffectId_unique",key:{"evidence.provider":1,"evidence.externalEffectId":1},unique:true,partialFilterExpression:{"evidence.provider":{$type:"string"},"evidence.externalEffectId":{$type:"string"}}}];}},
  findOne(){return query(null);},
  find(){return query([]);},
  async create(records){effectWrites+=1;return Array.isArray(records)?records:[records];},
