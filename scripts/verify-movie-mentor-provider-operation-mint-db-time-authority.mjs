@@ -6,5 +6,6 @@ const bind=source.slice(source.indexOf("async function bindOperation"),source.in
 assert.match(bind,/leaseExpiresAt/);
 assert.match(bind,/providerCalls/);
 assert.match(bind,/storeModel\(\)\.create\(\[candidate\], \{ session \}\)/);
-assert.match(bind,/\$expr\s*:\s*\{\s*\$gt\s*:\s*\[\s*["']\$leaseExpiresAt["']\s*,\s*["']\$\$NOW["']\s*\]\s*\}/,"first provider-operation mint must prove execution lease liveness against Mongo server time, not process-supplied boundAt");
+assert.match(source,/const MONGO_SERVER_NOW = "\\x24\\x24NOW";/,"Mongo server-time authority constant must evaluate to the literal two-dollar NOW system variable");
+assert.match(bind,/\$expr\s*:\s*\{\s*\$gt\s*:\s*\[\s*["']\$leaseExpiresAt["']\s*,\s*MONGO_SERVER_NOW\s*\]\s*\}/,"first provider-operation mint must prove execution lease liveness against Mongo server time, not process-supplied boundAt");
 console.log("PASS provider-operation mint DB-time authority.");
