@@ -1,0 +1,11 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+const source=fs.readFileSync(new URL("../ai/MovieMentorJourneyRecoveryStore.js",import.meta.url),"utf8");
+console.log("Movie Mentor journey recovery index provisioning authority court");
+assert.match(source,/schema\.index\(\{projectId:1\},\{unique:true\}\)/);
+const readiness=source.slice(source.indexOf("async function physicalUniqueIndexReadiness"),source.indexOf("function normalize"));
+assert.match(readiness,/createIndexes\(\)/,"journey recovery readiness must explicitly provision its singleton projectId unique index before trusting physical catalogue reality");
+assert.ok(readiness.indexOf("createIndexes()")>=0&&readiness.indexOf("collection.indexes()")>readiness.indexOf("createIndexes()"),"journey recovery provisioning must precede physical catalogue observation");
+assert.match(source,/writeMovieMentorJourneyRecovery[\s\S]*?getModel\(\)\.create\(doc\)/);
+assert.match(source,/writeMovieMentorJourneyRecovery[\s\S]*?findOneAndUpdate\(\{projectId:pid,recoveryRevision:expected\}/);
+console.log("PASS journey recovery index provisioning authority.");
