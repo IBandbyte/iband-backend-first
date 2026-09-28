@@ -37,6 +37,7 @@ function makeStore(initial){
   return {
     store:{
       readExecution:async id=>id===durable.executionId?clone(durable):null,
+      readLiveExecution:async id=>id===durable.executionId?clone(durable):null,
       readExecutionByCreatorTurn:async input=>input.creatorTurnId===durable.creatorTurnId&&input.principalId===durable.principalId&&input.projectId===durable.projectId?clone(durable):null,
       createExecution:async()=>null,
       async replaceExecution(next){replacements+=1;durable=clone(next);return clone(durable);},
