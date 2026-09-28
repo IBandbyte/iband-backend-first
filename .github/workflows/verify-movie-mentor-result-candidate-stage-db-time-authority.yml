@@ -1,0 +1,23 @@
+name: Verify Movie Mentor Result Candidate Stage DB Time Authority
+
+on:
+  push:
+    branches:
+      - verify-result-candidate-stage-db-time-authority
+  pull_request:
+    paths:
+      - "ai/MovieMentorResultCandidateMongoStore.js"
+      - "scripts/verify-movie-mentor-result-candidate-stage-db-time-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-result-candidate-stage-db-time-authority.yml"
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Verify result-candidate stage DB-time authority
+        run: node scripts/verify-movie-mentor-result-candidate-stage-db-time-authority.mjs
