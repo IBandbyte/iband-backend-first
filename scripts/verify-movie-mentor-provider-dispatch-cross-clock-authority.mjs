@@ -1,0 +1,13 @@
+import assert from "node:assert/strict";
+import {createMovieMentorInferenceExecutionLeaseAuthority} from "../ai/MovieMentorInferenceExecutionLeaseAuthority.js";
+const serverNow=new Date("2032-01-01T00:02:00.000Z"),laggingNow=new Date(serverNow.getTime()-120000),leaseExpiresAt=new Date(serverNow.getTime()-1000);
+let durable={domain:"iband.movie-mentor.inference-execution-store",schema:6,executionId:"execution-dispatch-clock",creatorTurnId:"turn-dispatch-clock",principalId:"creator-1",projectId:"project-1",reservationId:"reservation-1",requestDigest:"digest-1",phase:"active",ownerId:"worker-1",leaseGeneration:1,leaseReference:"lease-1",fencingToken:"fence-1",leaseAcquiredAt:new Date(serverNow.getTime()-60000).toISOString(),leaseExpiresAt:leaseExpiresAt.toISOString(),maxProviderCalls:1,providerCallsClaimed:1,providerCalls:[{providerCallId:"call-1",slotId:"semantic",task:"movie-mentor-semantic",state:"admitted",leaseGeneration:1,leaseReference:"lease-1",fencingToken:"fence-1",admittedAt:new Date(serverNow.getTime()-30000).toISOString()}]};
+const clone=x=>structuredClone(x);
+const store={async readExecution(id){return id===durable.executionId?clone(durable):null;},async readExecutionByCreatorTurn(){return clone(durable);},async createExecution(){return null;},async replaceExecution(){return null;},async claimProviderCall(){return{claimed:false,execution:clone(durable),existingProviderCall:clone(durable.providerCalls[0])};}};
+const authority=createMovieMentorInferenceExecutionLeaseAuthority({store,now:()=>new Date(laggingNow),randomId:()=>"court",requireProviderCallAuthority:false});
+const evidence=await authority.findExecutionByCreatorTurn({creatorTurnId:durable.creatorTurnId,principalId:durable.principalId,projectId:durable.projectId,reservationId:durable.reservationId,requestDigest:durable.requestDigest,ownerId:durable.ownerId,maxProviderCalls:1});
+assert.equal(evidence.found,true);
+const providerCall=Object.freeze({authorized:true,dispatchAuthorized:true,executionId:durable.executionId,providerCallId:"call-1",slotId:"semantic",leaseGeneration:1});
+const result=await authority.assertProviderDispatch({providerCall});
+assert.equal(result.dispatchAuthorized,false,"Mongo-expired execution lease must not retain provider network dispatch authority through a lagging process clock");
+console.log("LAW: DURABLE LEASE TIME OWNS FINAL PROVIDER DISPATCH FENCING; PROCESS CLOCK SKEW MAY NOT REVIVE AN EXPIRED NETWORK FENCE.");
