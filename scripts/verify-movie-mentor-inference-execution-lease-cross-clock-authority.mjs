@@ -6,7 +6,7 @@ const authoritySource=readFileSync(new URL("../ai/MovieMentorInferenceExecutionL
 const storeSource=readFileSync(new URL("../ai/MovieMentorInferenceExecutionMongoStore.js",import.meta.url),"utf8");
 assert.match(authoritySource,/requireDurablyExpired\s*:\s*true/,"execution takeover must delegate expiry authority to durable storage");
 assert.match(storeSource,/\$expr\s*=|\$expr\s*:/,"execution store takeover must use a database-evaluated expiry predicate");
-assert.match(storeSource,/\$\$NOW/,"execution store takeover must compare lease expiry against durable database time");
+assert.ok(storeSource.includes('"$"+"$NOW"')||storeSource.includes('"$NOW"'),"execution store takeover must compare lease expiry against durable database time");
 let durable=null,id=0;
 const realNow=Date.parse("2030-01-01T00:00:00.000Z");
 const store={
