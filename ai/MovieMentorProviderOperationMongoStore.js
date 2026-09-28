@@ -170,7 +170,7 @@ function createMovieMentorProviderOperationMongoStore({ mongoModel = null, conne
           leaseGeneration,
           leaseReference,
           fencingToken,
-          leaseExpiresAt: { $gt: candidate.boundAt },
+          $expr: { $gt: ["$leaseExpiresAt", "$NOW"] },
           providerCalls: { $elemMatch: { providerCallId: candidate.providerCallId, slotId: candidate.slotId, task: candidate.task, leaseGeneration, leaseReference, fencingToken } },
         }, { $inc: { settlementRealityBarrierRevision: 1 } }, { session });
         if (touch.matchedCount !== 1) fail("MOVIE_MENTOR_PROVIDER_OPERATION_EXECUTION_FENCED", "Provider operation cannot be minted unless its exact admitted call remains under live execution authority.", { retryable: false });
