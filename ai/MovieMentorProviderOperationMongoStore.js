@@ -6,7 +6,8 @@ const DOMAIN = "iband.movie-mentor.provider-operation-reality";
 const SCHEMA = 1;
 const COLLECTION = "movie_mentor_provider_operation_reality";
 const EXECUTION_COLLECTION = "movie_mentor_inference_execution";
-const CURRENT_EXECUTION_SCHEMA = 6;\nconst MONGO_SERVER_NOW = "\\x24\\x24NOW";
+const CURRENT_EXECUTION_SCHEMA = 6;
+const MONGO_SERVER_NOW = "\x24\x24NOW";
 const PHYSICAL_AUTHORITY_BOUNDARY = "before-provider-operation-read-or-irreversible-mint";
 const REQUIRED_UNIQUE_INDEXES = Object.freeze([
   Object.freeze({ key: Object.freeze({ providerCallId: 1 }), unique: true }),
