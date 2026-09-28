@@ -1,0 +1,15 @@
+import assert from "node:assert/strict";
+import mongoose from "mongoose";
+import {createMovieMentorInferenceExecutionMongoStore} from "../ai/MovieMentorInferenceExecutionMongoStore.js";
+const uri=process.env.MONGO_URI||process.env.MONGODB_URI;assert.ok(uri,"MONGO_URI required");process.env.MONGO_URI=uri;
+const store=createMovieMentorInferenceExecutionMongoStore();await store.readExecution("court-readiness-probe");
+const db=mongoose.connection.db,collection=db.collection("movie_mentor_inference_execution");await collection.deleteMany({});
+const serverNow=new Date((await db.command({hello:1})).localTime),laggingNow=new Date(serverNow.getTime()-120000),oldExpiry=new Date(serverNow.getTime()-1000),acquired=new Date(serverNow.getTime()-60000),renewedExpiry=new Date(oldExpiry.getTime()+60000);
+assert.ok(oldExpiry.getTime()<=serverNow.getTime());assert.ok(oldExpiry.getTime()>laggingNow.getTime());assert.ok(renewedExpiry.getTime()>oldExpiry.getTime());
+const base={domain:"iband.movie-mentor.inference-execution-store",schema:6,executionId:"execution-renew-clock",creatorTurnId:"turn-renew-clock",principalId:"creator-1",projectId:"project-1",reservationId:"reservation-1",requestDigest:"digest-1",phase:"active",ownerId:"worker-1",leaseGeneration:1,leaseReference:"lease-1",fencingToken:"fence-1",leaseAcquiredAt:acquired.toISOString(),leaseExpiresAt:oldExpiry.toISOString(),maxProviderCalls:1,providerCallsClaimed:0,providerCalls:[],providerEffectRealityRevision:0,settlementRealityBarrierRevision:0,resultFinalizationBarrierRevision:0,resultCandidateBarrierRevision:0};
+await collection.insertOne({...base,leaseAcquiredAt:acquired,leaseExpiresAt:oldExpiry});
+const written=await store.replaceExecution({...base,leaseExpiresAt:renewedExpiry.toISOString()},{expectedPhase:"active",expectedLeaseGeneration:1,expectedLeaseReference:"lease-1",expectedLeaseExpiresAt:oldExpiry.toISOString()});
+assert.equal(written,null,"Mongo-expired execution generation must not renew itself through a lagging process clock");
+console.log("LAW: MONGO SERVER TIME OWNS SAME-GENERATION RENEWAL ELIGIBILITY; AN EXPIRED FENCE MAY NOT EXTEND ITSELF.");
+console.log("execution renewal cross-clock authority: GREEN");
+await mongoose.disconnect();
