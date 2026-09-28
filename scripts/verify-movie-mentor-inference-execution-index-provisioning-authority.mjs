@@ -1,0 +1,12 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+const store=fs.readFileSync(new URL("../ai/MovieMentorInferenceExecutionMongoStore.js",import.meta.url),"utf8");
+const composition=fs.readFileSync(new URL("../ai/MovieMentorProductionInferenceExecutionComposition.js",import.meta.url),"utf8");
+console.log("Movie Mentor inference-execution index provisioning authority court");
+assert.match(store,/schema\.index\(\{executionId:1\},\{unique:true\}\)/);
+assert.match(store,/schema\.index\(\{principalId:1,projectId:1,creatorTurnId:1\},\{unique:true\}\)/);
+assert.match(store,/schema\.index\(\{reservationId:1\},\{unique:true\}\)/);
+assert.match(composition,/createMovieMentorInferenceExecutionPhysicalAuthority\(\{store:durableStore,readIndexes:readPhysicalIndexes\}\)/);
+assert.match(store,/createIndexes\(\)/,"production execution store must explicitly provision its three authority-bearing unique indexes before physical readiness can delegate irreversible execution mutation");
+assert.match(store,/async function createExecution/);
+console.log("PASS inference-execution index provisioning authority.");
