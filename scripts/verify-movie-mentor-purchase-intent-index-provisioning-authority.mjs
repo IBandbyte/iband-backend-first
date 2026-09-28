@@ -1,0 +1,11 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+const source=fs.readFileSync(new URL("../ai/MovieMentorCommercialPurchaseIntentMongoStore.js",import.meta.url),"utf8");
+console.log("Movie Mentor purchase-intent index provisioning authority court");
+assert.match(source,/schema\.index\(\{commercialIntentId:1\},\{unique:true\}\)/);
+assert.match(source,/schema\.index\(\{domain:1,schema:1,principalId:1,purchaseAttemptDigest:1\},\{unique:true\}\)/);
+const readiness=source.slice(source.indexOf("async function ready()"),source.indexOf(" async function create("));
+assert.match(readiness,/createIndexes\(\)/,"purchase-intent production readiness must explicitly provision both authority-bearing unique indexes before trusting physical catalogue reality");
+assert.ok(readiness.indexOf("createIndexes()")>=0&&readiness.indexOf("collection?.indexes")>readiness.indexOf("createIndexes()"),"purchase-intent provisioning must precede default physical catalogue observation");
+assert.match(source,/M\(\)\.create/);
+console.log("PASS purchase-intent index provisioning authority.");
