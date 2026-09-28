@@ -101,7 +101,11 @@ async function ensureMovieMentorProjectOwnershipPhysicalUniqueIndexReadiness() {
   if (physicalUniqueIndexReadinessPromise) return physicalUniqueIndexReadinessPromise;
   physicalUniqueIndexReadinessPromise = (async () => {
     const connection = await ensureConnection();
-    getModel();
+    const currentModel = getModel();
+    if (typeof currentModel?.createIndexes !== "function") {
+      fail("MOVIE_MENTOR_PROJECT_OWNERSHIP_PHYSICAL_AUTHORITY_UNAVAILABLE", "Project ownership registry cannot provision required physical Mongo indexes.", { retryable: true });
+    }
+    await currentModel.createIndexes();
     let indexes;
     try {
       indexes = await connection.collection(MOVIE_MENTOR_PROJECT_OWNERSHIP_COLLECTION).indexes();
