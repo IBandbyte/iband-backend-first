@@ -7,6 +7,7 @@ const SCHEMA = 1;
 const COLLECTION = "movie_mentor_provider_operation_reality";
 const EXECUTION_COLLECTION = "movie_mentor_inference_execution";
 const CURRENT_EXECUTION_SCHEMA = 6;
+const MONGO_SERVER_NOW = "\x24\x24NOW";
 const PHYSICAL_AUTHORITY_BOUNDARY = "before-provider-operation-read-or-irreversible-mint";
 const REQUIRED_UNIQUE_INDEXES = Object.freeze([
   Object.freeze({ key: Object.freeze({ providerCallId: 1 }), unique: true }),
@@ -170,7 +171,7 @@ function createMovieMentorProviderOperationMongoStore({ mongoModel = null, conne
           leaseGeneration,
           leaseReference,
           fencingToken,
-          leaseExpiresAt: { $gt: candidate.boundAt },
+          $expr: { $gt: ["$leaseExpiresAt", MONGO_SERVER_NOW] },
           providerCalls: { $elemMatch: { providerCallId: candidate.providerCallId, slotId: candidate.slotId, task: candidate.task, leaseGeneration, leaseReference, fencingToken } },
         }, { $inc: { settlementRealityBarrierRevision: 1 } }, { session });
         if (touch.matchedCount !== 1) fail("MOVIE_MENTOR_PROVIDER_OPERATION_EXECUTION_FENCED", "Provider operation cannot be minted unless its exact admitted call remains under live execution authority.", { retryable: false });
