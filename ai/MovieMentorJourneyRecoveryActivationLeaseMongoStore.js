@@ -84,6 +84,11 @@ function createMovieMentorJourneyRecoveryActivationLeaseMongoStore({ mongoModel 
     if (physicalReady) return true;
     if (!physicalReadyPromise) physicalReadyPromise = (async () => {
       await ready();
+      if (typeof readPhysicalIndexes !== "function") {
+        const currentModel = storeModel();
+        if (typeof currentModel?.createIndexes !== "function") fail("MOVIE_MENTOR_RECOVERY_ACTIVATION_LEASE_PHYSICAL_AUTHORITY_UNAVAILABLE", "Activation lease store cannot provision required physical Mongo indexes.", { retryable: true, boundary: PHYSICAL_AUTHORITY_BOUNDARY });
+        await currentModel.createIndexes();
+      }
       const reader = typeof readPhysicalIndexes === "function" ? readPhysicalIndexes : async () => {
         const collection = storeModel().collection;
         if (!collection || typeof collection.indexes !== "function") fail("MOVIE_MENTOR_RECOVERY_ACTIVATION_LEASE_PHYSICAL_AUTHORITY_UNAVAILABLE", "Activation lease physical Mongo index authority is unavailable.", { retryable: true, boundary: PHYSICAL_AUTHORITY_BOUNDARY });
