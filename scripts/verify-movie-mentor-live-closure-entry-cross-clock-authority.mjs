@@ -6,7 +6,7 @@ const uri=process.env.MONGO_URI||process.env.MONGODB_URI;
 assert.ok(uri,"MONGO_URI required");
 process.env.MONGO_URI=uri;
 const store=createMovieMentorInferenceExecutionMongoStore();
-await store.assertPhysicalAuthorityReady();
+await store.readExecution("court-readiness-probe");
 const db=mongoose.connection.db;
 const collection=db.collection("movie_mentor_inference_execution");
 await collection.deleteMany({});
