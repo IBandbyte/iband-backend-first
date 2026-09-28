@@ -286,6 +286,17 @@ function createMovieMentorCanonicalResultMongoStore({
   async function physicalUniqueIndexReadiness(){
     if(!physicalReadinessPromise){
       physicalReadinessPromise=(async()=>{
+        if(typeof readIndexes!=="function"){
+          const currentModel=storeModel();
+          if(typeof currentModel?.createIndexes!=="function"){
+            fail(
+              "MOVIE_MENTOR_CANONICAL_RESULT_PHYSICAL_AUTHORITY_UNAVAILABLE",
+              "Canonical result store cannot provision required physical Mongo indexes.",
+              {retryable:true}
+            );
+          }
+          await currentModel.createIndexes();
+        }
         const indexes=typeof readIndexes==="function"
           ?await readIndexes(COLLECTION)
           :await mongoose.connection.collection(COLLECTION).indexes();
