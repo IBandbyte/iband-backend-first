@@ -1,0 +1,12 @@
+import assert from "node:assert/strict";
+import {createMovieMentorInferenceExecutionLeaseAuthority} from "../ai/MovieMentorInferenceExecutionLeaseAuthority.js";
+const serverNow=new Date("2032-01-01T00:02:00.000Z"),laggingNow=new Date(serverNow.getTime()-120000),expiry=new Date(serverNow.getTime()-1000);
+const durable={domain:"iband.movie-mentor.inference-execution-store",schema:6,executionId:"execution-recovery-clock",creatorTurnId:"turn-recovery-clock",principalId:"creator-1",projectId:"project-1",reservationId:"reservation-1",requestDigest:"digest-1",phase:"active",ownerId:"worker-1",leaseGeneration:1,leaseReference:"lease-1",fencingToken:"fence-1",leaseAcquiredAt:new Date(serverNow.getTime()-60000).toISOString(),leaseExpiresAt:expiry.toISOString(),maxProviderCalls:1,providerCallsClaimed:0,providerCalls:[]};
+let durableLiveReads=0;const clone=x=>structuredClone(x);const store={async readExecution(id){return id===durable.executionId?clone(durable):null;},async readLiveExecution(id){durableLiveReads+=1;return id===durable.executionId&&expiry.getTime()>serverNow.getTime()?clone(durable):null;},async readExecutionByCreatorTurn(){return clone(durable);},async createExecution(){return null;},async replaceExecution(){return null;},async claimProviderCall(){return{claimed:false,execution:clone(durable)}}};
+const authority=createMovieMentorInferenceExecutionLeaseAuthority({store,now:()=>new Date(laggingNow),randomId:()=>"court"});
+const proof=await authority.findExecutionByCreatorTurn({creatorTurnId:durable.creatorTurnId,principalId:durable.principalId,projectId:durable.projectId,reservationId:durable.reservationId,requestDigest:durable.requestDigest,ownerId:durable.ownerId,maxProviderCalls:1});
+assert.equal(proof.authorized,true);
+const current=await authority.assertFence(proof);
+assert.equal(durableLiveReads,1,"recovery fence proof must consult durable live-lease storage");
+assert.equal(current.authorized,false,"Mongo-expired execution must not retain provider recovery network authority through lagging process time");
+console.log("LAW: DURABLE LEASE TIME OWNS PROVIDER RECOVERY NETWORK AUTHORITY; PROCESS CLOCK SKEW MAY NOT REVIVE AN EXPIRED RECOVERY FENCE.");
