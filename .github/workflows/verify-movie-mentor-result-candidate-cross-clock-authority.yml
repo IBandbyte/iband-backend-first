@@ -12,11 +12,14 @@ jobs:
         image: mongo:7
         ports: ["27017:27017"]
         options: >-
-          --health-cmd "mongosh --quiet --eval 'db.runCommand({ping:1}).ok' mongodb://localhost:27017/admin"
-          --health-interval 5s --health-timeout 5s --health-retries 20
+          --replSet rs0 --bind_ip_all
     env:
-      MONGO_URI: mongodb://localhost:27017/iband_candidate_clock
+      MONGO_URI: mongodb://localhost:27017/iband_candidate_clock?replicaSet=rs0
     steps:
+      - name: Initiate Mongo replica set
+        run: |
+          for i in {1..30}; do mongosh --host localhost:27017 --quiet --eval 'try { rs.status().ok } catch (e) { rs.initiate({_id:"rs0",members:[{_id:0,host:"localhost:27017"}]}) }' && break || sleep 1; done
+          for i in {1..30}; do mongosh --host localhost:27017 --quiet --eval 'quit(db.hello().isWritablePrimary ? 0 : 1)' && break || sleep 1; done
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: {node-version: 22}
