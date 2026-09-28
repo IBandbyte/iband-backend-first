@@ -15,4 +15,10 @@ jobs:
         with:
           node-version: 22
       - run: npm install --no-audit --no-fund --ignore-scripts
+      - run: docker run -d --name movie-mentor-mongo -p 27017:27017 mongo:7.0
+      - run: |
+          for i in {1..30}; do (echo > /dev/tcp/127.0.0.1/27017) >/dev/null 2>&1 && exit 0; sleep 1; done
+          exit 1
       - run: node scripts/verify-movie-mentor-quarantine-missing-barrier-revision-authority.mjs
+        env:
+          MONGO_URI: mongodb://127.0.0.1:27017/movie_mentor_quarantine_missing_barrier
