@@ -25,7 +25,7 @@ const session={async withTransaction(fn){transactions+=1;await fn();},async endS
 const requestedCollections=[];
 const readPhysicalIndexes=async collectionName=>{
  requestedCollections.push(collectionName);
- if(collectionName==="movie_mentor_provider_effect_reality")return[{name:"providerCallId_1",key:{providerCallId:1},unique:true}];
+ if(collectionName==="movie_mentor_provider_effect_reality")return[{name:"providerCallId_1",key:{providerCallId:1},unique:true},{name:"evidence_provider_externalEffectId_unique",key:{"evidence.provider":1,"evidence.externalEffectId":1},unique:true,partialFilterExpression:{"evidence.provider":{$type:"string"},"evidence.externalEffectId":{$type:"string"}}}];
  return[{name:"_id_",key:{_id:1},unique:true}];
 };
 const previous=mongoose.models.MovieMentorProviderEffectReality;
