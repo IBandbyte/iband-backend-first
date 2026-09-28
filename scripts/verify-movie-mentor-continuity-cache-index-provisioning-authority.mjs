@@ -1,0 +1,10 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+const source=fs.readFileSync(new URL("../ai/MovieMentorContinuityDerivedCacheStore.js",import.meta.url),"utf8");
+console.log("Movie Mentor continuity cache index provisioning authority court");
+assert.match(source,/schema\.index\(\{projectHeadKey:1\},\{unique:true,sparse:true\}\)/);
+const readiness=source.slice(source.indexOf("async function ensurePhysicalAuthority"),source.indexOf("function normalize"));
+assert.match(readiness,/createIndexes\(\)/,"continuity cache production readiness must explicitly provision its sparse unique projectHeadKey index before trusting physical catalogue reality");
+assert.ok(readiness.indexOf("createIndexes()")>=0&&readiness.indexOf("collection.indexes()")>readiness.indexOf("createIndexes()"),"continuity cache provisioning must precede physical catalogue observation");
+assert.match(source,/findOneAndUpdate\(filter,\{\$set:doc\},\{upsert:true/);
+console.log("PASS continuity cache index provisioning authority.");
