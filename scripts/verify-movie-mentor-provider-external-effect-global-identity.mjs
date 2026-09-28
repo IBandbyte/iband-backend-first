@@ -1,0 +1,21 @@
+import assert from "node:assert/strict";
+import mongoose from "mongoose";
+import {createMovieMentorProviderEffectMongoStore} from "../ai/MovieMentorProviderEffectMongoStore.js";
+const uri=process.env.MONGO_URI;assert.ok(uri);await mongoose.connect(uri);const db=mongoose.connection.db;
+const effects=db.collection("movie_mentor_provider_effect_reality"),execs=db.collection("movie_mentor_inference_execution");await Promise.all([effects.deleteMany({}),execs.deleteMany({})]);
+await effects.createIndex({providerCallId:1},{unique:true});
+await effects.createIndex({"evidence.provider":1,"evidence.externalEffectId":1},{unique:true,partialFilterExpression:{"evidence.provider":{$type:"string"},"evidence.externalEffectId":{$type:"string"}}});
+await execs.createIndex({executionId:1},{unique:true});
+const now=new Date("2032-01-01T00:00:00.000Z");
+const mk=(id,slot)=>({domain:"iband.movie-mentor.provider-effect-reality",schema:2,providerCallId:id,executionId:"execution-global-effect",slotId:slot,task:"movie-mentor-"+slot,state:"unknown",dispatchUnknownAt:now,revision:0,evidence:[]});
+await effects.insertMany([mk("call-A","semantic"),mk("call-B","synthesis")]);
+await execs.insertOne({domain:"iband.movie-mentor.inference-execution-store",schema:6,executionId:"execution-global-effect",phase:"closing",providerEffectRealityRevision:0});
+const store=createMovieMentorProviderEffectMongoStore({connect:async()=>{},startSession:()=>mongoose.startSession(),executionCollection:execs,readPhysicalIndexes:async name=>name==="movie_mentor_provider_effect_reality"?await effects.indexes():name==="movie_mentor_inference_execution"?await execs.indexes():[]});
+const externalEffectId="resp_globally_one_external_effect";
+await store.appendEvidence({providerCallId:"call-A",externalEffectId,provider:"openai",observedAt:now,source:"provider-response"});
+let rejected=false;try{await store.appendEvidence({providerCallId:"call-B",externalEffectId,provider:"openai",observedAt:now,source:"provider-response"});}catch{rejected=true;}
+const a=await effects.findOne({providerCallId:"call-A"}),b=await effects.findOne({providerCallId:"call-B"});
+assert.equal(rejected,true,"one external provider effect identity must not confirm two durable provider operations");
+assert.equal(a.evidence.length,1);assert.equal(b.evidence.length,0,"second provider operation must remain without borrowed external reality");
+console.log("LAW: ONE EXTERNAL PROVIDER EFFECT IDENTITY MAY BELONG TO AT MOST ONE DURABLE PROVIDER OPERATION.");
+await mongoose.disconnect();
