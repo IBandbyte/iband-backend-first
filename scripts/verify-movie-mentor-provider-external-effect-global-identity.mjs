@@ -9,7 +9,7 @@ const now=new Date("2032-01-01T00:00:00.000Z");
 const mk=(id,slot)=>({domain:"iband.movie-mentor.provider-effect-reality",schema:2,providerCallId:id,executionId:"execution-global-effect",slotId:slot,task:"movie-mentor-"+slot,state:"unknown",dispatchUnknownAt:now,revision:0,evidence:[]});
 await effects.insertMany([mk("call-A","semantic"),mk("call-B","synthesis")]);
 await execs.insertOne({domain:"iband.movie-mentor.inference-execution-store",schema:6,executionId:"execution-global-effect",phase:"closing",providerEffectRealityRevision:0});
-const store=createMovieMentorProviderEffectMongoStore({connect:async()=>{},startSession:()=>mongoose.startSession(),executionCollection:execs,readPhysicalIndexes:async name=>name==="movie_mentor_provider_effect_reality"?await effects.indexes():[]});
+const store=createMovieMentorProviderEffectMongoStore({connect:async()=>{},startSession:()=>mongoose.startSession(),executionCollection:execs,readPhysicalIndexes:async name=>name==="movie_mentor_provider_effect_reality"?await effects.indexes():name==="movie_mentor_inference_execution"?await execs.indexes():[]});
 const externalEffectId="resp_globally_one_external_effect";
 await store.appendEvidence({providerCallId:"call-A",externalEffectId,provider:"openai",observedAt:now,source:"provider-response"});
 let rejected=false;try{await store.appendEvidence({providerCallId:"call-B",externalEffectId,provider:"openai",observedAt:now,source:"provider-response"});}catch{rejected=true;}
