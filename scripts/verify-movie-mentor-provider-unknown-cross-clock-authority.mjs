@@ -6,7 +6,7 @@ const db=mongoose.connection.db,effects=db.collection("movie_mentor_provider_eff
 const laggingNow=new Date("1999-12-31T23:58:00.000Z"),expiry=new Date("1999-12-31T23:59:00.000Z");
 const call={providerCallId:"call-clock",executionId:"execution-clock",slotId:"semantic",task:"movie-mentor-semantic",ownerId:"worker-1",leaseGeneration:1,leaseReference:"lease-1",fencingToken:"fence-1",dispatchUnknownAt:laggingNow.toISOString()};
 await executions.insertOne({domain:"iband.movie-mentor.inference-execution-store",schema:6,executionId:call.executionId,phase:"active",ownerId:call.ownerId,leaseGeneration:1,leaseReference:call.leaseReference,fencingToken:call.fencingToken,leaseExpiresAt:expiry,providerEffectRealityRevision:0,providerCalls:[{providerCallId:call.providerCallId,slotId:call.slotId,task:call.task,leaseGeneration:1,leaseReference:call.leaseReference,fencingToken:call.fencingToken}]});
-const rawLive=await executions.findOne({executionId:call.executionId,$expr:{$gt:["$leaseExpiresAt","$NOW"]}});assert.equal(rawLive,null,"control: raw Mongo $NOW must classify the inserted execution as expired");
+const rawLive=await executions.findOne({executionId:call.executionId,$expr:{$gt:["$leaseExpiresAt","$"+"$NOW"]}});assert.equal(rawLive,null,"control: raw Mongo server time must classify the inserted execution as expired");
 const store=createMovieMentorProviderEffectMongoStore({connect:async()=>{},executionCollection:executions,startSession:()=>mongoose.startSession()});
 let rejected=false;try{await store.beginUnknown(call);}catch(e){if(e?.code==="MOVIE_MENTOR_PROVIDER_EFFECT_EXECUTION_FENCED")rejected=true;else throw e;}
 assert.equal(rejected,true,"Mongo-expired execution must not mint provider UNKNOWN/revision authority through lagging process time");
