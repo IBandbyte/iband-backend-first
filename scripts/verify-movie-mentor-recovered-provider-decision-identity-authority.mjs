@@ -1,0 +1,10 @@
+import assert from "node:assert/strict";
+import {recoverPreviouslyAdmittedProviderResult} from "../ai/MovieMentorRecoveredProviderResultAuthority.js";
+const execution=Object.freeze({executionId:"execution-identity",ownerId:"owner-1",leaseGeneration:2});
+const historical=Object.freeze({providerCallId:"call-A",executionId:execution.executionId,slotId:"semantic",task:"movie-mentor-semantic"});
+const decision=Object.freeze({authorized:false,dispatchAuthorized:false,reason:"provider-call-slot-already-admitted",existingProviderCallId:"call-B",existingProviderCall:historical});
+let recoveryReads=0;
+const recoveryAuthority={async reconcile({providerCallId}){recoveryReads++;return Object.freeze({authorized:true,outcome:"CONFIRMED_EFFECT",recovered:true,recoveryAuthorized:true,redispatchAuthorized:false,refundAuthorized:false,providerCallId,executionId:historical.executionId,slotId:historical.slotId,task:historical.task,externalEffectId:"effect-1",recoveredProviderResponse:{id:"effect-1"},recoveryOwnerId:execution.ownerId,recoveryLeaseGeneration:execution.leaseGeneration});}};
+await assert.rejects(()=>recoverPreviouslyAdmittedProviderResult({decision,execution,slotId:historical.slotId,task:historical.task,recoveryAuthority}),e=>e?.code==="MOVIE_MENTOR_PROVIDER_RECOVERY_OPERATION_BINDING_INVALID");
+assert.equal(recoveryReads,0,"conflicting decision identities must fail before recovery authority is consulted");
+console.log("LAW: TWO PRESENT HISTORICAL PROVIDER-CALL IDENTITIES MUST AGREE; RECOVERY MAY NOT SILENTLY PREFER ONE AUTHORITY REPRESENTATION.");
