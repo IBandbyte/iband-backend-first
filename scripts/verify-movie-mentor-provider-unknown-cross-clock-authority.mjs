@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 import {createMovieMentorProviderEffectMongoStore} from "../ai/MovieMentorProviderEffectMongoStore.js";
 const uri=process.env.MONGO_URI||process.env.MONGODB_URI;assert.ok(uri);await mongoose.connect(uri);
 const db=mongoose.connection.db,effects=db.collection("movie_mentor_provider_effect_reality"),executions=db.collection("movie_mentor_inference_execution");await effects.deleteMany({});await executions.deleteMany({});await effects.createIndex({providerCallId:1},{unique:true});await executions.createIndex({executionId:1},{unique:true});
-const serverNow=new Date((await db.command({hello:1})).localTime),laggingNow=new Date(serverNow.getTime()-120000),expiry=new Date(serverNow.getTime()-1000);
+const laggingNow=new Date("1999-12-31T23:58:00.000Z"),expiry=new Date("1999-12-31T23:59:00.000Z");
 const call={providerCallId:"call-clock",executionId:"execution-clock",slotId:"semantic",task:"movie-mentor-semantic",ownerId:"worker-1",leaseGeneration:1,leaseReference:"lease-1",fencingToken:"fence-1",dispatchUnknownAt:laggingNow.toISOString()};
 await executions.insertOne({domain:"iband.movie-mentor.inference-execution-store",schema:6,executionId:call.executionId,phase:"active",ownerId:call.ownerId,leaseGeneration:1,leaseReference:call.leaseReference,fencingToken:call.fencingToken,leaseExpiresAt:expiry,providerEffectRealityRevision:0,providerCalls:[{providerCallId:call.providerCallId,slotId:call.slotId,task:call.task,leaseGeneration:1,leaseReference:call.leaseReference,fencingToken:call.fencingToken}]});
 const rawLive=await executions.findOne({executionId:call.executionId,$expr:{$gt:["$leaseExpiresAt","$NOW"]}});assert.equal(rawLive,null,"control: raw Mongo $NOW must classify the inserted execution as expired");
