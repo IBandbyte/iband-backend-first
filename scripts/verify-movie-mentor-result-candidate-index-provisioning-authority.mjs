@@ -1,0 +1,10 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+const source=fs.readFileSync(new URL("../ai/MovieMentorResultCandidateMongoStore.js",import.meta.url),"utf8");
+console.log("Movie Mentor result-candidate index provisioning authority court");
+assert.match(source,/schema\.index\(\{executionId:1\},\{unique:true\}\)/);
+assert.match(source,/schema\.index\(\{candidateReference:1\},\{unique:true\}\)/);
+const readiness=source.slice(source.indexOf("async function ensurePhysicalAuthority"),source.indexOf("async function ensureCrossLedgerPhysicalAuthority"));
+assert.match(readiness,/createIndexes\(\)/,"result-candidate production readiness must explicitly provision its two candidate unique indexes before trusting physical catalogue reality");
+assert.match(source,/storeModel\(\)\.create\(\[record\],\{session\}\)/);
+console.log("PASS result-candidate index provisioning authority.");
