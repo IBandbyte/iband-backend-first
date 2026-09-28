@@ -20,7 +20,7 @@ await col.insertOne({...row,executionId:"execution-candidate-close",creatorTurnI
 const closing=await store.beginClosing({executionId:"execution-candidate-close",ownerId:"owner",leaseGeneration:1,leaseReference:"lease-1",fencingToken:"fence-1",closureReference:"closure-live",frozenProviderCallCount:0,frozenProviderCallSetDigest:"frozen-live",closingAt:new Date("2032-01-01T00:05:00Z"),closurePolicyVersion:"policy"});
 assert.equal(closing.phase,"closing","normalized historical zero candidate barrier must not block live closure");
 await col.deleteMany({});
-await col.insertOne({...row,executionId:"execution-candidate-expired",creatorTurnId:"turn-candidate-expired",reservationId:"reservation-candidate-expired",leaseAcquiredAt:new Date("2031-12-31T23:50:00Z"),leaseExpiresAt:new Date("2031-12-31T23:59:00Z")});
+await col.insertOne({...row,executionId:"execution-candidate-expired",creatorTurnId:"turn-candidate-expired",reservationId:"reservation-candidate-expired",leaseAcquiredAt:new Date("2020-01-01T00:00:00Z"),leaseExpiresAt:new Date("2020-01-01T00:10:00Z")});
 const recovered=await store.recoverExpiredIntoClosing({executionId:"execution-candidate-expired",closureReference:"closure-expired",frozenProviderCallCount:0,frozenProviderCallSetDigest:"frozen-expired",closingAt:new Date("2032-01-01T00:05:00Z"),closurePolicyVersion:"policy",requireDurablyExpired:true});
 assert.equal(recovered.phase,"closing","normalized historical zero candidate barrier must not block expired closure recovery");
 console.log("LAW: PHYSICALLY MISSING HISTORICAL RESULT-CANDIDATE BARRIER ZERO MUST REMAIN CAS-COMPATIBLE WITH NORMALIZED ZERO.");
