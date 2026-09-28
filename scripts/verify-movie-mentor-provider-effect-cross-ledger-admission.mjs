@@ -61,7 +61,7 @@ const store = createMovieMentorProviderEffectMongoStore({
   readPhysicalIndexes: async collection => {
     physicalIndexReads += 1;
     if (collection === "movie_mentor_provider_effect_reality") {
-      return [{ name: "providerCallId_1", key: { providerCallId: 1 }, unique: true }];
+      return [{ name: "providerCallId_1", key: { providerCallId: 1 }, unique: true }, { name: "evidence_provider_externalEffectId_unique", key: { "evidence.provider": 1, "evidence.externalEffectId": 1 }, unique: true, partialFilterExpression: { "evidence.provider": { $type: "string" }, "evidence.externalEffectId": { $type: "string" } } }];
     }
     if (collection === "movie_mentor_inference_execution") {
       return [{ name: "executionId_1", key: { executionId: 1 }, unique: true }];
