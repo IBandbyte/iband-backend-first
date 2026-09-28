@@ -1,0 +1,20 @@
+import assert from "node:assert/strict";
+import mongoose from "mongoose";
+import {MongoMemoryServer} from "mongodb-memory-server";
+process.env.NODE_ENV="test";
+const mongod=await MongoMemoryServer.create({binary:{version:"7.0.14"}});
+process.env.MONGO_URI=mongod.getUri();
+const {createMovieMentorInferenceExecutionMongoStore}=await import("../ai/MovieMentorInferenceExecutionMongoStore.js");
+await mongoose.connect(process.env.MONGO_URI);
+const db=mongoose.connection.db, col=db.collection("movie_mentor_inference_executions");
+const base={domain:"iband.movie-mentor.inference-execution-store",schema:6,executionId:"execution-q-missing",creatorTurnId:"turn-q-missing",principalId:"creator-q",projectId:"project-q",reservationId:"reservation-q-missing",requestDigest:"request-q",phase:"closed",ownerId:"owner-q",leaseGeneration:1,leaseReference:"lease-q",fencingToken:"fence-q",leaseAcquiredAt:new Date("2032-01-01T00:00:00Z"),leaseExpiresAt:new Date("2032-01-01T00:10:00Z"),maxProviderCalls:1,providerCallsClaimed:0,providerCalls:[],providerEffectRealityRevision:0,settlementRealityBarrierRevision:0,resultCandidateBarrierRevision:0,closureReference:"closure-q",frozenProviderCallCount:0,frozenProviderCallSetDigest:"frozen-q",closingAt:new Date("2032-01-01T00:01:00Z"),closedFromExecutionGeneration:1,closurePolicyVersion:"policy-q",closureCertificateDigest:"certificate-q",closedAt:new Date("2032-01-01T00:02:00Z"),finalizedResultReference:"",finalizedCandidateReference:"",finalizedResultDigest:"",resultFinalizedAt:null,settledResultReference:"",settledCandidateReference:"",settledResultDigest:"",settledAt:null,abortedAt:null,abortReason:"",compensatedAt:null,compensationReason:"",quarantinedAt:null,quarantineReason:"",quarantinedFromPhase:""};
+await col.insertOne(base); // deliberately omit resultFinalizationBarrierRevision physically
+const store=createMovieMentorInferenceExecutionMongoStore();
+const read=await store.readExecution(base.executionId);
+assert.equal(read.schema,6);assert.equal(read.phase,"closed");assert.equal(read.resultFinalizationBarrierRevision,0,"current-schema historical physical absence normalizes to zero");
+const q=await store.quarantineExecution({executionId:base.executionId,closureReference:base.closureReference,reason:"late-provider-reality-conflict",quarantinedAt:new Date("2032-01-01T00:03:00Z")});
+assert.equal(q.phase,"quarantined","a current-schema row whose historical zero barrier is physically missing must still persist quarantine");
+const raw=await col.findOne({executionId:base.executionId});
+assert.equal(raw.phase,"quarantined","quarantine must be physical, not merely normalized intent");
+console.log("LAW: NORMALIZED ZERO COMPATIBILITY MUST SURVIVE THE PHYSICAL QUARANTINE CAS; MISSING HISTORICAL ZERO MAY NOT BLOCK REVOCATION.");
+await mongoose.disconnect();await mongod.stop();
