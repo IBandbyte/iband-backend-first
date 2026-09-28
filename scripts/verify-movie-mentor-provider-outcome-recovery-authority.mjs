@@ -14,6 +14,7 @@ const operationRows = new Map();
 
 const executionStore = {
   async readExecution(executionId) { return durable?.executionId === executionId ? clone(durable) : null; },
+  async readLiveExecution(executionId) { return durable?.executionId === executionId && durable.phase === "active" && new Date(durable.leaseExpiresAt).getTime() > clock.getTime() ? clone(durable) : null; },
   async readExecutionByCreatorTurn({ creatorTurnId, principalId, projectId } = {}) { return durable && durable.creatorTurnId === creatorTurnId && durable.principalId === principalId && durable.projectId === projectId ? clone(durable) : null; },
   async createExecution(next) { durable = { domain:"iband.movie-mentor.inference-execution-store", schema:6, ...clone(next) }; return clone(durable); },
   async replaceExecution(next, expected = {}) {
