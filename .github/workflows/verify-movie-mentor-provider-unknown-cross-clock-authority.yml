@@ -17,17 +17,9 @@ jobs:
       mongo:
         image: mongo:7
         ports: ["27017:27017"]
-        options: >-
-          --replSet rs0 --bind_ip_all
-          --health-timeout 5s
-          --health-retries 20
     env:
-      MONGO_URI: mongodb://localhost:27017/iband_movie_mentor_unknown_clock?replicaSet=rs0
+      MONGO_URI: mongodb://localhost:27017/iband_movie_mentor_unknown_clock
     steps:
-      - name: Initiate Mongo replica set
-        run: |
-          for i in {1..30}; do mongosh --host localhost:27017 --quiet --eval 'try { rs.status().ok } catch (e) { rs.initiate({_id:"rs0",members:[{_id:0,host:"localhost:27017"}]}) }' && break || sleep 1; done
-          for i in {1..30}; do mongosh --host localhost:27017 --quiet --eval 'quit(db.hello().isWritablePrimary ? 0 : 1)' && break || sleep 1; done
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
