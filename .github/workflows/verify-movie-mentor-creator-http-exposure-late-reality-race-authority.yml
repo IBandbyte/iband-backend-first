@@ -1,0 +1,29 @@
+name: Verify Movie Mentor Creator HTTP Exposure Late Reality Race Authority
+on:
+  push:
+    branches: [main]
+    paths:
+      - "movieMentorTurn.js"
+      - "ai/MovieMentorTurnRuntime.js"
+      - "scripts/verify-movie-mentor-creator-http-exposure-late-reality-race-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-creator-http-exposure-late-reality-race-authority.yml"
+  pull_request:
+    paths:
+      - "movieMentorTurn.js"
+      - "ai/MovieMentorTurnRuntime.js"
+      - "scripts/verify-movie-mentor-creator-http-exposure-late-reality-race-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-creator-http-exposure-late-reality-race-authority.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - run: node --check movieMentorTurn.js && node --check scripts/verify-movie-mentor-creator-http-exposure-late-reality-race-authority.mjs
+      - run: node scripts/verify-movie-mentor-creator-http-exposure-late-reality-race-authority.mjs
