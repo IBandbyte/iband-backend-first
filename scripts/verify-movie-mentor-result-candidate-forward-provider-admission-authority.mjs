@@ -76,6 +76,12 @@ const fakeModel = {
   findOne() { return query(durable); },
   findOneAndUpdate(filter, update) {
     observedFilter = structuredClone(filter);
+    const candidateBarrier = filter?.resultCandidateBarrierRevision;
+    const candidateBarrierMatches = candidateBarrier === undefined
+      || candidateBarrier === durable.resultCandidateBarrierRevision
+      || candidateBarrier?.$in?.includes?.(durable.resultCandidateBarrierRevision)
+      || (durable.resultCandidateBarrierRevision == null && candidateBarrier?.$in?.includes?.(null));
+    if (!candidateBarrierMatches) return query(null);
     const next = structuredClone(durable);
     const call = structuredClone(update?.$push?.providerCalls);
     if (call) {
