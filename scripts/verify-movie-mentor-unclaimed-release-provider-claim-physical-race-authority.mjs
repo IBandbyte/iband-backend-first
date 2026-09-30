@@ -59,6 +59,10 @@ try {
   const executionStore=createMovieMentorInferenceExecutionMongoStore();
   const settlementStore=createMovieMentorInferenceSettlementMongoStore();
 
+  // Warm the real stores so lazy connection/index readiness is outside the defendant race.
+  await executionStore.readExecution(executionId);
+  await settlementStore.releaseUnclaimedReservation({executionId:"readiness-probe-missing-execution"}).catch(()=>null);
+
   const claim=executionStore.claimProviderCall({
     executionId,ownerId,leaseGeneration,leaseReference,fencingToken,providerCallId,
     slotId:"semantic",task:"movie-mentor-semantic",admittedAt:new Date().toISOString(),
