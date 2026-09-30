@@ -31,7 +31,7 @@ const checkoutBindingAuthority={
  revokeOpenCheckoutsForPrincipal:async({principalId:pid})=>{assert.equal(pid,principalId);await adapter.revokeCheckout({checkoutReference:liveCheckout});return Object.freeze({revoked:true,count:1});},
  getStatus:()=>checkoutStatus
 };
-const issuanceAuthority={issueVerifiedEvidence:async()=>{issuanceCalls++;if(entitlementStatus!=="active")return Object.freeze({authorized:false,issued:false,reason:"entitlement-suspended",principalId});return Object.freeze({authorized:true,issued:true,principalId,units:20});},getStatus:()=>issuanceStatus};
+const issuanceAuthority={issueVerifiedEvidence:async()=>{issuanceCalls++;if(entitlementStatus!=="active"){const error=new Error("Durable entitlement issuance was denied.");error.code="MOVIE_MENTOR_ENTITLEMENT_ISSUANCE_DENIED";error.reason="entitlement-suspended";throw error;}return Object.freeze({authorized:true,issued:true,principalId,units:20});},getStatus:()=>issuanceStatus};
 const reversalAuthority={
  suspendVerifiedReversal:async({reversal})=>{assert.equal(reversal.principalId,principalId);entitlementStatus="suspended";return Object.freeze({suspended:true,principalId,evidenceId:reversal.evidenceId});},
  preserveVerifiedReversalHistory:async()=>Object.freeze({preserved:true}),
@@ -45,9 +45,9 @@ await assert.rejects(()=>ingress.processProviderDelivery({provider:"stripe",deli
 assert.equal(entitlementStatus,"suspended","reversal commits suspension before checkout revocation discovers provider payment won");
 
 currentEvent=Object.freeze({id:"evt_live_paid",type:"checkout.session.completed",livemode:true,data:{object:{id:liveCheckout,client_reference_id:liveIntentId,payment_intent:livePayment,metadata:{commercialIntentId:liveIntentId,providerProductId:"price_20"},payment_status:"paid",amount_total:1200,currency:"gbp"}}});
-const paid=await ingress.processProviderDelivery({provider:"stripe",delivery:{rawBody:Buffer.from("signed-paid"),signature:"sig"}});
+await assert.rejects(()=>ingress.processProviderDelivery({provider:"stripe",delivery:{rawBody:Buffer.from("signed-paid"),signature:"sig"}}),error=>error?.code==="MOVIE_MENTOR_ENTITLEMENT_ISSUANCE_DENIED"&&error?.reason==="entitlement-suspended","court requires exact production issuance denial after provider-confirmed payment beats revocation");
 assert.equal(boundLivePayment,livePayment,"financially-real payment must become durable exact payment lineage");
 assert.equal(issuanceCalls,1);
-assert.equal(paid?.authorized,true,"RED: provider-confirmed payment that beat checkout revocation must reach a durable value disposition; suspension must not strand financially-real paid value behind entitlement-suspended");
+assert.fail("RED: provider-confirmed payment that beat checkout revocation escapes ingress as entitlement-suspended without a durable value disposition");
 console.log("GREEN: payment-won checkout revocation conflict preserves financially-real value through exact durable disposition.");
 console.log("LAW: SUSPENSION MAY REVOKE OPEN CHECKOUT AUTHORITY; IT MAY NOT ERASE A PAYMENT THAT ALREADY WON AT THE PROVIDER.");
