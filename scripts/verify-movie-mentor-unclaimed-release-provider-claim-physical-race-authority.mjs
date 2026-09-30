@@ -35,6 +35,7 @@ try {
   await executions.createIndex({executionId:1},{unique:true});
   await executions.createIndex({principalId:1,projectId:1,creatorTurnId:1},{unique:true});
   await executions.createIndex({reservationId:1},{unique:true});
+  await executions.createIndex({executionId:1,"providerCalls.slotId":1});
   await reservations.createIndex({reservationId:1},{unique:true});
   await entitlements.createIndex({principalId:1},{unique:true});
 
