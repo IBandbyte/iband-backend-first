@@ -44,7 +44,7 @@ try {
   await entitlements.insertOne({principalId,domain:"iband.movie-mentor.inference-spend",schema:1,status:"active",remainingUnits:9,reservedUnits:1,consumedUnits:0,entitlementRevision:1});
   await reservations.insertOne({reservationId,principalId,projectId,operation:"movie-mentor-turn",units:1,entitlementRevision:1,status:"reserved"});
   await executions.insertOne({
-    domain:"iband.movie-mentor.inference-execution",schema:6,executionId,creatorTurnId,principalId,projectId,reservationId,
+domain:"iband.movie-mentor.inference-execution-store",schema:6,executionId,creatorTurnId,principalId,projectId,reservationId,
     requestDigest:"a".repeat(64),phase:"active",ownerId,leaseGeneration,leaseReference,fencingToken,
     leaseAcquiredAt:now,leaseExpiresAt,maxProviderCalls:1,providerCallsClaimed:0,providerCalls:[],
     abandonedPredispatchProviderCalls:[],providerEffectRealityRevision:0,settlementRealityBarrierRevision:0,
