@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import {createMovieMentorStripeCommercialProviderAdapter} from "../ai/MovieMentorStripeCommercialProviderAdapter.js";
 import {createMovieMentorCommercialProviderIngressAuthority} from "../ai/MovieMentorCommercialProviderIngressAuthority.js";
 
 const principalId="creator_payment_won_race",priorIntentId="intent_prior",liveIntentId="intent_live",priorPayment="pi_prior",livePayment="pi_live",liveCheckout="cs_live";
+function digest(value){return crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");}
 const snapshot={packageId:"creator-20",provider:"stripe",providerProductId:"price_20",amountMinor:1200,currency:"GBP",environment:"live",units:20,policyVersion:"v1"};
 const intents={
- [priorIntentId]:Object.freeze({commercialIntentId:priorIntentId,principalId,...snapshot,policyDigest:"prior",status:"created"}),
- [liveIntentId]:Object.freeze({commercialIntentId:liveIntentId,principalId,...snapshot,policyDigest:"live",status:"created"})
+ [priorIntentId]:Object.freeze({commercialIntentId:priorIntentId,principalId,...snapshot,policyDigest:digest(snapshot),status:"created"}),
+ [liveIntentId]:Object.freeze({commercialIntentId:liveIntentId,principalId,...snapshot,policyDigest:digest(snapshot),status:"created"})
 };
 let currentEvent=null,entitlementStatus="active",boundLivePayment="",issuanceCalls=0;
 const stripe={checkout:{sessions:{
