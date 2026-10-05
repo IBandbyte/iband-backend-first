@@ -1,0 +1,16 @@
+name: Verify Movie Mentor Ordinary Refund Absent Preserved Credit Authority
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 21
+      - name: Verify ordinary refund absent preserved-credit authority
+        run: node scripts/verify-movie-mentor-ordinary-refund-absent-preserved-credit-authority.mjs
