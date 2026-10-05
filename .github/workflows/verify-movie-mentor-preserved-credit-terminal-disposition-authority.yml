@@ -12,6 +12,4 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 21
-          cache: npm
-      - run: npm ci
       - run: node scripts/verify-movie-mentor-preserved-credit-terminal-disposition-authority.mjs
