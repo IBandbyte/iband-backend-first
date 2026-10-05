@@ -1,0 +1,17 @@
+name: Verify Movie Mentor Payment-Won Suspension Revocation Conflict Authority
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'ai/**'
+      - 'scripts/verify-movie-mentor-payment-won-suspension-revocation-conflict-authority.mjs'
+      - '.github/workflows/verify-movie-mentor-payment-won-suspension-revocation-conflict-authority.yml'
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node scripts/verify-movie-mentor-payment-won-suspension-revocation-conflict-authority.mjs
