@@ -15,7 +15,7 @@ assert.ok(start >= 0 && end > start, "terminal disposition owner must exist");
 const terminal = disposition.slice(start, end);
 
 assert.match(terminal, /findOne\(q\)/, "terminal owner must look up exact provider-payment disposition");
-const explicitAbsentOutcome = /if\s*\(\s*!existing\s*\)/.test(terminal);
+const explicitAbsentOutcome = /if\s*\(\s*!row\s*\)/.test(terminal) && /status:"not-preserved"/.test(terminal);
 
 assert.equal(
   explicitAbsentOutcome,
