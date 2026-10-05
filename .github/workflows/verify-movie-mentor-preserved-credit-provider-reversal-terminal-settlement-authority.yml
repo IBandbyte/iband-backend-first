@@ -1,0 +1,16 @@
+name: Verify Movie Mentor Preserved Credit Provider Reversal Terminal Settlement Authority
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 21
+      - name: Verify preserved-credit provider-reversal terminal-settlement authority
+        run: node scripts/verify-movie-mentor-preserved-credit-provider-reversal-terminal-settlement-authority.mjs
