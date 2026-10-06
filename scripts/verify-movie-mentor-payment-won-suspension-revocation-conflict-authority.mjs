@@ -41,6 +41,7 @@ const reversalAuthority={
  getStatus:()=>reversalStatus
 };
 const dispositionAuthority={
+ terminallySettlePreservedValue:async()=>{throw new Error("terminal settlement outside this court");},
  preserveVerifiedPaidValue:async({commercialIntentId,principalId:pid,provider,providerPaymentReference,amountMinor,currency,units,reason,refundAuthorized})=>{
   preservedValueCalls++;
   assert.equal(commercialIntentId,liveIntentId);
