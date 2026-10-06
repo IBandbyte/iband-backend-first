@@ -42,5 +42,7 @@ await ingress.processProviderDelivery({provider:"stripe",delivery:{rawBody:Buffe
 assert.ok(settlement,"funds-withdrawn must reach production chargeback settlement");
 assert.equal(settlement.disposition,"chargeback");
 assert.equal(normalized.reversalAmountMinor,disputedAmountMinor);
-assert.equal(settlement.chargebackAmountMinor,disputedAmountMinor,"RED: exact Stripe funds-withdrawn amount must survive into chargeback settlement authority");
-console.log("GREEN: exact funds-withdrawn amount survives adapter and ingress into chargeback disposition.");
+assert.equal(settlement.chargebackAmountMinor,disputedAmountMinor,"exact Stripe funds-withdrawn amount must survive into chargeback settlement authority");
+assert.equal(settlement.amountMinor,1200);
+assert.equal(settlement.disposition,"chargeback");
+assert.fail("RED: executable ingress now delivers exact chargebackAmountMinor=300, but the production disposition owner does not consume chargebackAmountMinor and therefore cannot prove what portion of a partially-refunded preserved row the chargeback extinguishes.");
