@@ -1,13 +1,30 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
+import mongoose from "mongoose";
 
-console.log("Movie Mentor preserved-credit legacy partial-refund CAS authority court");
+console.log("Movie Mentor preserved-credit legacy partial-refund CAS executable authority court");
 
-const source=fs.readFileSync(new URL("../ai/MovieMentorProductionCommercialValueDispositionComposition.js",import.meta.url),"utf8");
-assert.match(source,/cumulativeRefundedAmountMinor:Number\.isSafeInteger\(v\.cumulativeRefundedAmountMinor\)\?v\.cumulativeRefundedAmountMinor:0/,"court requires backward-compatible normalization of missing cumulative refund state to zero");
-const cas=source.match(/findOneAndUpdate\(\{\.\.\.q,status:"preserved-credit",cumulativeRefundedAmountMinor:[^}]+\}/)?.[0]||"";
-assert.ok(cas,"court requires the partial-refund cumulative CAS boundary");
-assert.equal(/row\.cumulativeRefundedAmountMinor\?\?0/.test(cas),false,"RED: legacy rows normalize missing cumulative refund state to zero, but the physical CAS requires equality to numeric zero; a missing Mongo field cannot match that predicate and retry can repeat indefinitely.");
-assert.match(cas,/\$exists|\$or|cumulativeRefundedAmountMinor:\{\$in:/,"RED: first partial refund must physically match both legacy missing state and explicit zero state.");
-console.log("GREEN: first partial refund CAS accepts both legacy missing cumulative-refund state and explicit zero.");
-console.log("LAW: BACKWARD-COMPATIBLE NORMALIZATION MUST BE MATCHED BY BACKWARD-COMPATIBLE PHYSICAL CAS AUTHORITY; LOGICAL ZERO MAY NOT STRAND A LEGACY MISSING FIELD.");
+const uri=process.env.MONGO_URI||process.env.MONGODB_URI;
+assert.ok(uri,"physical court requires MONGO_URI");
+await mongoose.connect(uri);
+const collection=mongoose.connection.db.collection("movie_mentor_commercial_value_disposition");
+const payment="pi-legacy-partial-refund-cas-412";
+await collection.deleteMany({provider:"stripe",providerPaymentReference:payment});
+await collection.insertOne({
+ provider:"stripe",providerPaymentReference:payment,commercialIntentId:"intent-412",principalId:"creator-412",
+ amountMinor:1200,currency:"GBP",units:20,reason:"entitlement-suspended",refundAuthorized:false,
+ status:"preserved-credit",terminalDisposition:null,terminalReference:null,preservedAt:new Date("2026-01-01T00:00:00.000Z")
+});
+let row=await collection.findOne({provider:"stripe",providerPaymentReference:payment});
+assert.equal(Object.hasOwn(row,"cumulativeRefundedAmountMinor"),false,"fixture must be physically pre-partial-refund schema");
+const logicalPrevious=Number.isSafeInteger(row.cumulativeRefundedAmountMinor)?row.cumulativeRefundedAmountMinor:0;
+assert.equal(logicalPrevious,0,"legacy normalization must interpret missing cumulative refund as logical zero");
+const legacyCas={provider:"stripe",providerPaymentReference:payment,status:"preserved-credit",cumulativeRefundedAmountMinor:row.cumulativeRefundedAmountMinor??0};
+const first=await collection.findOneAndUpdate(legacyCas,{$set:{cumulativeRefundedAmountMinor:500,remainingAmountMinor:700,lastRefundReference:"evt-refund-412"}},{returnDocument:"after"});
+assert.equal(first,null,"RED: production-shaped numeric-zero CAS unexpectedly matched a physically missing legacy cumulative-refund field");
+row=await collection.findOne({provider:"stripe",providerPaymentReference:payment});
+assert.equal(Object.hasOwn(row,"cumulativeRefundedAmountMinor"),false,"RED: failed first CAS leaves legacy row physically missing");
+const second=await collection.findOneAndUpdate(legacyCas,{$set:{cumulativeRefundedAmountMinor:500,remainingAmountMinor:700,lastRefundReference:"evt-refund-412"}},{returnDocument:"after"});
+assert.equal(second,null,"RED: unchanged recursive retry predicate unexpectedly made progress");
+await collection.deleteMany({provider:"stripe",providerPaymentReference:payment});
+await mongoose.disconnect();
+assert.fail("RED: real Mongo proves legacy missing cumulative-refund state cannot satisfy production numeric-zero CAS; unchanged recursive retry cannot make progress.");
