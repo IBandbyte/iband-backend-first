@@ -1,18 +1,26 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
+import crypto from "node:crypto";
+import {createMovieMentorStripeCommercialProviderAdapter} from "../ai/MovieMentorStripeCommercialProviderAdapter.js";
+import {createMovieMentorCommercialProviderIngressAuthority} from "../ai/MovieMentorCommercialProviderIngressAuthority.js";
 
-console.log("Movie Mentor preserved-credit dispute lifecycle authority court");
+console.log("Movie Mentor preserved-credit dispute lifecycle executable authority court");
 
-const adapterSource=fs.readFileSync(new URL("../ai/MovieMentorStripeCommercialProviderAdapter.js",import.meta.url),"utf8");
-const ingressSource=fs.readFileSync(new URL("../ai/MovieMentorCommercialProviderIngressAuthority.js",import.meta.url),"utf8");
-
-const createdBlock=adapterSource.match(/if\(eventKind==="charge\.dispute\.created"[\s\S]*?return Object\.freeze\((\{[\s\S]*?\})\);\}/)?.[0]||"";
-assert.ok(createdBlock.includes('eventKind==="charge.dispute.created"'),"court requires Stripe dispute-created normalization");
-assert.equal(/commercialReversal\s*:\s*true/.test(createdBlock),false,"RED: dispute-created is treated as a final commercial reversal before funds/final loss authority exists.");
-
-const ingressReversal=ingressSource.match(/if\(normalized\?\.commercialReversal===true\)[\s\S]*?const evidenceAuthority=/)?.[0]||"";
-assert.ok(ingressReversal.includes('kind=text(normalized.reversalKind)==="refund"?"refund":"chargeback"'),"court requires current ingress dispute-to-chargeback disposition mapping");
-assert.equal(/reversalKind\)==="dispute"[\s\S]*?disputeLifecycle|disputeStatus|fundsWithdrawn|finalLoss/.test(ingressReversal),true,"RED: verified dispute evidence reaches chargeback settlement without a dispute lifecycle/funds-affected/final-loss gate.");
-
-console.log("GREEN: dispute-created cannot terminally charge back preserved value before explicit funds/final-loss authority.");
+const commercialIntentId="intent-dispute-lifecycle-1",principalId="creator-dispute-lifecycle-1",checkoutReference="cs_dispute_lifecycle_1",providerPaymentReference="pi_dispute_lifecycle_1";
+const snapshot={packageId:"creator-20",provider:"stripe",providerProductId:"price-20",amountMinor:1200,currency:"GBP",environment:"live",units:20,policyVersion:"v1"};
+const intent=Object.freeze({commercialIntentId,principalId,...snapshot,policyDigest:crypto.createHash("sha256").update(JSON.stringify(snapshot)).digest("hex"),status:"created"});
+let currentEvent=null,suspensionCalls=0,settlementCalls=0,lastDisposition=null;
+const stripe={checkout:{sessions:{create:async()=>{throw new Error("checkout creation outside court");}}},webhooks:{constructEvent(){return currentEvent;}}};
+const adapter=createMovieMentorStripeCommercialProviderAdapter({stripe,webhookSecret:"whsec_court",successUrl:"https://app.example/success",cancelUrl:"https://app.example/cancel"});
+const purchaseIntentAuthority={resolvePurchaseIntent:async({commercialIntentId:id})=>id===commercialIntentId?intent:null,getStatus:()=>Object.freeze({domain:"iband.movie-mentor.production-commercial-purchase-intent-authority",production:true,durablePurchaseIntent:true,immutableCommercialTerms:true,serverOwnedPolicy:true,processLocalFallback:false})};
+const checkoutBindingAuthority={resolveCheckoutBinding:async()=>null,bindProviderPaymentReference:async()=>{throw new Error("binding outside court");},resolveCheckoutBindingByProviderPaymentReference:async({provider,providerPaymentReference:ref})=>provider==="stripe"&&ref===providerPaymentReference?Object.freeze({commercialIntentId,provider:"stripe",status:"completed",checkoutReference,providerPaymentReference:ref}):null,revokeOpenCheckoutsForPrincipal:async({principalId:id})=>{assert.equal(id,principalId);return Object.freeze({revoked:true,count:0});},getStatus:()=>Object.freeze({domain:"iband.movie-mentor.production-commercial-checkout-authority",production:true,durableCheckoutBinding:true,checkoutBindingResolution:true,providerPaymentReferenceBinding:true,providerPaymentReferenceResolution:true,openCheckoutRevocation:true,serverOwnedIdempotency:true,purchaseIntentProvenanceRequired:true,explicitProviderRequired:true,processLocalFallback:false})};
+const issuanceAuthority={issueVerifiedEvidence:async()=>{throw new Error("issuance outside court");},getStatus:()=>Object.freeze({domain:"iband.movie-mentor.production-entitlement-issuance-authority",production:true,durableAtomicIssuance:true,evidenceIdentityUnique:true,issuanceReceiptDurable:true,processLocalFallback:false})};
+const reversalAuthority={suspendVerifiedReversal:async({reversal})=>{suspensionCalls++;assert.equal(reversal.providerPaymentReference,providerPaymentReference);return Object.freeze({suspended:true,principalId,evidenceId:reversal.evidenceId});},preserveVerifiedReversalHistory:async()=>Object.freeze({preserved:true}),reconcilePendingReversals:async()=>Object.freeze({reconciled:true,count:0,principalId,results:Object.freeze([])}),getStatus:()=>Object.freeze({domain:"iband.movie-mentor.production-commercial-reversal-authority",production:true,durableAtomicSuspension:true,reversalIdentityUnique:true,currentEntitlementSuspension:true,reversalReceiptDurable:true,pendingReversalHistoryDurable:true,pendingReversalIdentityUnique:true,pendingReversalReconciliation:true,processLocalFallback:false})};
+const dispositionAuthority={preserveVerifiedPaidValue:async()=>{throw new Error("preservation outside court");},terminallySettlePreservedValue:async(input)=>{settlementCalls++;lastDisposition=Object.freeze({...input});return Object.freeze({authorized:true,status:"charged-back"});},getStatus:()=>Object.freeze({domain:"iband.movie-mentor.production-commercial-value-disposition-authority",production:true,durablePreservedValue:true,paymentIdentityUnique:true,commercialIntentBinding:true,principalBinding:true,exactValueBinding:true,idempotentRetry:true,refundSeparate:true,processLocalFallback:false})};
+const ingress=createMovieMentorCommercialProviderIngressAuthority({providers:{stripe:adapter},purchaseIntentAuthority,checkoutBindingAuthority,issuanceAuthority,reversalAuthority,dispositionAuthority});
+currentEvent=Object.freeze({id:"evt_dispute_created_1",type:"charge.dispute.created",livemode:true,data:{object:{id:"dp_1",payment_intent:providerPaymentReference,amount:1200,currency:"gbp",status:"needs_response"}}});
+await ingress.processProviderDelivery({provider:"stripe",delivery:{rawBody:Buffer.from("signed-dispute-created"),signature:"sig"}});
+assert.equal(suspensionCalls,0,"RED: dispute-created reached current-entitlement suspension before funds/final-loss authority existed.");
+assert.equal(settlementCalls,0,"RED: dispute-created reached terminal preserved-value settlement before funds/final-loss authority existed.");
+assert.equal(lastDisposition,null,"RED: dispute-created manufactured terminal chargeback disposition from dispute-opened evidence.");
+console.log("GREEN: dispute-created remains non-terminal and cannot suspend or charge back preserved value before explicit funds/final-loss authority.");
 console.log("LAW: DISPUTE OPENED IS NOT FINAL CHARGEBACK; PRESERVED CUSTOMER VALUE MAY BE TERMINALLY EXTINGUISHED ONLY BY EXPLICIT FUNDS-AFFECTED OR FINAL-LOSS AUTHORITY.");
