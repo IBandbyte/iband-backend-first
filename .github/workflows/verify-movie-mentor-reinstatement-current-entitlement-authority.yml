@@ -10,4 +10,4 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: node scripts/verify-movie-mentor-reinstatement-current-entitlement-authority.mjs
+      - run: npm install --ignore-scripts --no-audit --no-fund\n      - run: node scripts/verify-movie-mentor-reinstatement-current-entitlement-authority.mjs
