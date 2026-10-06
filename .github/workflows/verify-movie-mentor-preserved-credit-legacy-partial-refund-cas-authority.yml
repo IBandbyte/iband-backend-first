@@ -1,0 +1,13 @@
+name: Verify Movie Mentor Preserved Credit Legacy Partial Refund CAS Authority
+on:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 21
+      - run: node scripts/verify-movie-mentor-preserved-credit-legacy-partial-refund-cas-authority.mjs
