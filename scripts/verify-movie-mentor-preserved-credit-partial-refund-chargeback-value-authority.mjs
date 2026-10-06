@@ -1,21 +1,46 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
+import {createMovieMentorStripeCommercialProviderAdapter} from "../ai/MovieMentorStripeCommercialProviderAdapter.js";
+import {createMovieMentorCommercialProviderIngressAuthority} from "../ai/MovieMentorCommercialProviderIngressAuthority.js";
 
-console.log("Movie Mentor preserved-credit partial-refund chargeback exact-value authority court");
+console.log("Movie Mentor partial-refund -> chargeback exact-value executable authority court");
 
-const ingress=fs.readFileSync(new URL("../ai/MovieMentorCommercialProviderIngressAuthority.js",import.meta.url),"utf8");
-const adapter=fs.readFileSync(new URL("../ai/MovieMentorStripeCommercialProviderAdapter.js",import.meta.url),"utf8");
-const disposition=fs.readFileSync(new URL("../ai/MovieMentorProductionCommercialValueDispositionComposition.js",import.meta.url),"utf8");
+const paymentReference="pi-413",eventId="evt-dispute-withdrawn-413",disputedAmountMinor=300;
+const stripe={
+ checkout:{sessions:{create:async()=>({}),expire:async()=>({}),retrieve:async()=>({})}},
+ webhooks:{constructEvent:()=>({id:eventId,type:"charge.dispute.funds_withdrawn",livemode:false,data:{object:{payment_intent:paymentReference,amount:disputedAmountMinor,currency:"gbp"}}})}
+};
+const adapter=createMovieMentorStripeCommercialProviderAdapter({stripe,webhookSecret:"whsec-413",successUrl:"https://example.test/s",cancelUrl:"https://example.test/c"});
+const normalized=await adapter.normalizeEvent({verifiedDelivery:{verified:true,provider:"stripe",event:stripe.webhooks.constructEvent()}});
+assert.equal(normalized.commercialReversal,true);
+assert.equal(normalized.reversalKind,"dispute");
+assert.equal(normalized.reversalAmountMinor,disputedAmountMinor,"real production adapter must preserve exact withdrawn dispute amount");
 
-assert.match(adapter,/charge\.dispute\.funds_withdrawn/,"court requires Stripe funds-withdrawn production evidence");
-assert.match(adapter,/reversalAmountMinor:Number\.isSafeInteger\(object\.amount\)\?object\.amount:null/,"Stripe adapter must preserve exact disputed/withdrawn amount");
-assert.match(ingress,/reversalAmountMinor:Number\.isSafeInteger\(normalized\.reversalAmountMinor\)\?normalized\.reversalAmountMinor:null/,"provider ingress must preserve reversal amount in verified history");
-assert.match(disposition,/cumulativeRefundedAmountMinor/,"court requires cumulative partial-refund accounting");
-assert.match(disposition,/remainingAmountMinor/,"court requires remaining preserved-value accounting");
-
-const settlementCall=ingress.match(/terminallySettlePreservedValue\(\{[^}]+\}\)/s)?.[0]||"";
-assert.ok(settlementCall,"production reversal path must reach preserved-value settlement");
-assert.match(settlementCall,/refundAmountMinor:kind==="refund"\?normalized\.reversalAmountMinor:null/,"refund path must carry exact provider amount");
-assert.doesNotMatch(settlementCall,/chargebackAmountMinor|reversalAmountMinor:normalized\.reversalAmountMinor/,"RED: funds-withdrawn exact amount is dropped when production calls chargeback settlement");
-
-assert.fail("RED: Stripe funds-withdrawn carries exact disputed value, but production chargeback settlement receives no exact chargeback amount and can collapse a partially-refunded preserved row without value-specific authority.");
+const status=(domain,extra={})=>({domain,production:true,processLocalFallback:false,...extra});
+const purchaseIntentAuthority={
+ getStatus:()=>status("iband.movie-mentor.production-commercial-purchase-intent-authority",{durablePurchaseIntent:true,immutableCommercialTerms:true,serverOwnedPolicy:true}),
+ resolvePurchaseIntent:async()=>({commercialIntentId:"intent-413",principalId:"creator-413",provider:"stripe",amountMinor:1200,currency:"GBP",units:20})
+};
+const checkoutBindingAuthority={
+ getStatus:()=>status("iband.movie-mentor.production-commercial-checkout-authority",{durableCheckoutBinding:true,checkoutBindingResolution:true,providerPaymentReferenceBinding:true,providerPaymentReferenceResolution:true,openCheckoutRevocation:true,serverOwnedIdempotency:true,purchaseIntentProvenanceRequired:true,explicitProviderRequired:true}),
+ resolveCheckoutBinding:async()=>null,bindProviderPaymentReference:async()=>null,
+ resolveCheckoutBindingByProviderPaymentReference:async()=>({provider:"stripe",providerPaymentReference:paymentReference,status:"completed",commercialIntentId:"intent-413"}),
+ revokeOpenCheckoutsForPrincipal:async()=>({revoked:true})
+};
+const issuanceAuthority={getStatus:()=>status("iband.movie-mentor.production-entitlement-issuance-authority",{durableAtomicIssuance:true,evidenceIdentityUnique:true,issuanceReceiptDurable:true}),issueVerifiedEvidence:async()=>({})};
+const reversalAuthority={
+ getStatus:()=>status("iband.movie-mentor.production-commercial-reversal-authority",{durableAtomicSuspension:true,reversalIdentityUnique:true,currentEntitlementSuspension:true,reversalReceiptDurable:true,pendingReversalHistoryDurable:true,pendingReversalIdentityUnique:true,pendingReversalReconciliation:true}),
+ suspendVerifiedReversal:async()=>({suspended:true,principalId:"creator-413"}),preserveVerifiedReversalHistory:async()=>({}),reconcilePendingReversals:async()=>({reconciled:true,count:0,results:[]})
+};
+let settlement=null;
+const dispositionAuthority={
+ getStatus:()=>status("iband.movie-mentor.production-commercial-value-disposition-authority",{durablePreservedValue:true,paymentIdentityUnique:true,commercialIntentBinding:true,principalBinding:true,exactValueBinding:true,idempotentRetry:true,refundSeparate:true}),
+ preserveVerifiedPaidValue:async()=>({}),
+ terminallySettlePreservedValue:async input=>(settlement=input,{settled:true})
+};
+const ingress=createMovieMentorCommercialProviderIngressAuthority({providers:{stripe:adapter},purchaseIntentAuthority,checkoutBindingAuthority,issuanceAuthority,reversalAuthority,dispositionAuthority});
+await ingress.processProviderDelivery({provider:"stripe",delivery:{rawBody:Buffer.from("{}"),signature:"sig"}});
+assert.ok(settlement,"funds-withdrawn must reach production chargeback settlement");
+assert.equal(settlement.disposition,"chargeback");
+assert.equal(normalized.reversalAmountMinor,disputedAmountMinor);
+assert.equal(settlement.chargebackAmountMinor,disputedAmountMinor,"RED: exact Stripe funds-withdrawn amount must survive into chargeback settlement authority");
+console.log("GREEN: exact funds-withdrawn amount survives adapter and ingress into chargeback disposition.");
