@@ -13,6 +13,18 @@ assert.match(issuance,/current&&text\(current\.status\)!=="active"/,"issuance mu
 assert.match(spend,/status:"active",remainingUnits:\{\$gte:n\.units\}/,"new spend must require active current entitlement");
 assert.match(disposition,/"release":"released-credit"|"released-credit"/,"preserved-value composition must expose release capability");
 
+// Strengthen the preliminary source RED into an executable current-authority court.
+// Production's owned reversal store exposes suspend but no inverse reinstatement mutation.
+const {createMovieMentorCommercialReversalMongoStore}=await import("../ai/MovieMentorCommercialReversalMongoStore.js");
+const entitlement={domain:"iband.movie-mentor.inference-spend",schema:1,principalId:"creator-415",status:"suspended",remainingUnits:7,reservedUnits:0,consumedUnits:5,entitlementRevision:9};
+const lean=v=>({lean:()=>({exec:async()=>v})});
+const fakeModel={createIndexes:async()=>{},collection:{indexes:async()=>[{unique:true,key:{principalId:1}}]},findOne:()=>lean(entitlement),findOneAndUpdate:()=>lean(null)};
+const fakeReversal={createIndexes:async()=>{},collection:{indexes:async()=>[{unique:true,key:{reversalId:1}},{unique:true,key:{evidenceSource:1,evidenceId:1}}]},findOne:()=>({session:()=>lean(null)})};
+const fakePending={createIndexes:async()=>{},collection:{indexes:async()=>[{unique:true,key:{evidenceSource:1,evidenceId:1}}]}};
+const store=createMovieMentorCommercialReversalMongoStore({modelSet:{entitlementModel:fakeModel,reversalModel:fakeReversal,pendingModel:fakePending}});
+assert.equal(typeof store.suspend,"function","production reversal store must own suspension");
+assert.equal(typeof store.reinstate,"function","RED: the durable production reversal store that owns current entitlement suspension exposes no inverse reinstatement mutation; a suspended entitlement cannot be restored by the same current-authority owner.");
+
 const productionFiles=[
  "../ai/MovieMentorCommercialReversalMongoStore.js",
  "../ai/MovieMentorEntitlementIssuanceMongoStore.js",
