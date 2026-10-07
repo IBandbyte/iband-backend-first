@@ -8,10 +8,12 @@ const gateway=fs.readFileSync(new URL("../movieMentorTurn.js",import.meta.url),"
 const runtime=fs.readFileSync(new URL("../ai/MovieMentorTurnRuntime.js",import.meta.url),"utf8");
 const composition=fs.readFileSync(new URL("../ai/MovieMentorProductionInferenceSettlementComposition.js",import.meta.url),"utf8");
 const reconciliation=fs.readFileSync(new URL("../ai/MovieMentorInferenceSettlementReconciliationAuthority.js",import.meta.url),"utf8");
-const decisionStore=fs.readFileSync(new URL("../ai/MovieMentorTerminalDispositionDecisionMongoStore.js",import.meta.url),"utf8");\nconst terminalProduction=fs.readFileSync(new URL("../ai/MovieMentorTerminalDispositionProductionAuthority.js",import.meta.url),"utf8");
+const decisionStore=fs.readFileSync(new URL("../ai/MovieMentorTerminalDispositionDecisionMongoStore.js",import.meta.url),"utf8");
+const terminalProduction=fs.readFileSync(new URL("../ai/MovieMentorTerminalDispositionProductionAuthority.js",import.meta.url),"utf8");
 
 assert.match(decisionStore,/recordAuthorizedDecision/,"#417 durable terminal policy decision owner must remain present");
-assert.match(decisionStore,/resolveAuthorizedDecision/,"#417 durable terminal policy decision resolver must remain present");\nassert.match(decisionStore,/entitlementRevision/,"durable terminal policy decision must bind exact entitlement revision");
+assert.match(decisionStore,/resolveAuthorizedDecision/,"#417 durable terminal policy decision resolver must remain present");
+assert.match(decisionStore,/entitlementRevision/,"durable terminal policy decision must bind exact entitlement revision");
 assert.match(reconciliation,/terminallyReleaseAuthorized/,"#418 reconciliation terminal consumer must remain present");
 assert.match(composition,/terminalDispositionAuthority/,"#418 production settlement composition must continue proving terminal capability");
 
