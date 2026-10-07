@@ -61,7 +61,8 @@ const authorizedDecision={
 const recorded=await decisionStore.recordAuthorizedDecision({decision:authorizedDecision});
 assert.equal(recorded.authorized,true);
 const durableDecision=await decisionStore.resolveAuthorizedDecision({decisionId:authorizedDecision.decisionId,principalId:reservation.principalId});
-assert.equal(durableDecision?.durableAuthority,true);\nassert.equal(durableDecision?.entitlementRevision,10,"durable terminal policy authority must bind the exact entitlement revision it authorized");
+assert.equal(durableDecision?.durableAuthority,true);
+assert.equal(durableDecision?.entitlementRevision,10,"durable terminal policy authority must bind the exact entitlement revision it authorized");
 
 await assert.rejects(
  ()=>store.terminallyReleaseAuthorizedReservation({executionId:execution.executionId,decision:{...durableDecision,decisionId:"fabricated-terminal-decision"},expectedEntitlementRevision:10}),
