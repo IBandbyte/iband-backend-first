@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import mongoose from "mongoose";
 import {createMovieMentorInferenceSettlementMongoStore} from "../ai/MovieMentorInferenceSettlementMongoStore.js";
+import {createMovieMentorTerminalDispositionDecisionMongoStore} from "../ai/MovieMentorTerminalDispositionDecisionMongoStore.js";
 
 const EXECUTION_DOMAIN="iband.movie-mentor.inference-execution-store";
 const RESULT_DOMAIN="iband.movie-mentor.canonical-result-store";
@@ -15,7 +16,7 @@ const uri=process.env.MONGO_URI;
 assert.ok(uri,"MONGO_URI required");
 await mongoose.connect(uri,{serverSelectionTimeoutMS:10000});
 const db=mongoose.connection.db;
-for(const name of ["movie_mentor_inference_execution","movie_mentor_canonical_result","movie_mentor_result_candidate","movie_mentor_inference_spend_reservation","movie_mentor_inference_entitlement","movie_mentor_provider_effect_reality","movie_mentor_provider_operation"])await db.collection(name).deleteMany({});
+for(const name of ["movie_mentor_inference_execution","movie_mentor_canonical_result","movie_mentor_result_candidate","movie_mentor_inference_spend_reservation","movie_mentor_inference_entitlement","movie_mentor_provider_effect_reality","movie_mentor_provider_operation","movie_mentor_terminal_disposition_decision"])await db.collection(name).deleteMany({});
 
 const id="terminal-disposition";
 const payload={success:true,text:"canonical-no-effect"};
@@ -51,20 +52,48 @@ assert.equal(unbound.reason,"reservation-already-bound-to-execution");
 const compensation=await store.compensateSupersededCreatorState({execution,recoveryConflict:null,providerEffects:[]}).catch(error=>({authorized:false,reason:error.code}));
 assert.equal(compensation.authorized,false,"Creator Compensation must not invent superseded-state authority for this finalized canonical result");
 
+const decisionStore=createMovieMentorTerminalDispositionDecisionMongoStore();
+const authorizedDecision={
+ decisionId:"terminal-decision-417",principalId:reservation.principalId,reservationId:reservation.reservationId,executionId:execution.executionId,
+ decisionSource:"movie-mentor-enforcement",decisionKind:"policy-approved-terminal-reservation-release",decidedBy:"creator-policy-authority",
+ policyVersion:"movie-mentor-enforcement-v1",caseReference:"terminal-case-417",decidedAt:"2032-01-01T00:04:30.000Z"
+};
+const recorded=await decisionStore.recordAuthorizedDecision({decision:authorizedDecision});
+assert.equal(recorded.authorized,true);
+const durableDecision=await decisionStore.resolveAuthorizedDecision({decisionId:authorizedDecision.decisionId,principalId:reservation.principalId});
+assert.equal(durableDecision?.durableAuthority,true);
+
+await assert.rejects(
+ ()=>store.terminallyReleaseAuthorizedReservation({executionId:execution.executionId,decision:{...durableDecision,decisionId:"fabricated-terminal-decision"},expectedEntitlementRevision:10}),
+ error=>error?.code==="MOVIE_MENTOR_TERMINAL_RELEASE_DECISION_NOT_DURABLE",
+ "caller-supplied terminal decision must not self-authorize value release"
+);
+
+const terminalRelease=await store.terminallyReleaseAuthorizedReservation({executionId:execution.executionId,decision:durableDecision,expectedEntitlementRevision:10});
+assert.equal(terminalRelease.authorized,true);
+assert.equal(terminalRelease.released,true);
+assert.equal(terminalRelease.idempotent,false);
+
+const replay=await store.terminallyReleaseAuthorizedReservation({executionId:execution.executionId,decision:durableDecision,expectedEntitlementRevision:10});
+assert.equal(replay.authorized,true);
+assert.equal(replay.released,true);
+assert.equal(replay.idempotent,true,"same durable terminal decision replay must not restore value twice");
+
 const durableReservation=await db.collection("movie_mentor_inference_spend_reservation").findOne({reservationId:reservation.reservationId});
 const durableEntitlement=await db.collection("movie_mentor_inference_entitlement").findOne({principalId:reservation.principalId});
 const durableExecution=await db.collection("movie_mentor_inference_execution").findOne({executionId:execution.executionId});
 
 assert.equal(durableExecution.phase,"finalized");
 assert.equal(durableEntitlement.status,"suspended");
-assert.equal(durableEntitlement.reservedUnits,2);
+assert.equal(durableEntitlement.status,"suspended","terminal value disposition must not reactivate the entitlement");
+assert.equal(durableEntitlement.remainingUnits,7,"two reserved units must be restored exactly once");
+assert.equal(durableEntitlement.reservedUnits,0);
 assert.equal(durableEntitlement.consumedUnits,3);
-assert.notEqual(
- durableReservation.status,
- "reserved",
- "RED: finalized canonical no-effect value remains durably reserved under suspension after every existing terminal owner refuses it; without reinstatement, customer value has no terminal disposition."
-);
+assert.equal(durableEntitlement.entitlementRevision,11);
+assert.equal(durableReservation.status,"released","durable terminal policy authority must own a terminal disposition for the stranded reservation");
+assert.equal(durableReservation.terminalDispositionDecisionId,authorizedDecision.decisionId);
+assert.equal(durableExecution.phase,"finalized","terminal value disposition must preserve finalized canonical execution history");
 
 console.log("PR #417 suspended finalized reservation terminal disposition authority: GREEN");
-console.log("LAW: SUSPENSION MAY HOLD VALUE WHILE AUTHORITY IS UNRESOLVED, BUT A FINALIZED NO-EFFECT RESERVATION MUST HAVE AN OWNED TERMINAL DISPOSITION IF REINSTATEMENT NEVER OCCURS.");
+console.log("LAW: SUSPENSION MAY HOLD VALUE WHILE AUTHORITY IS UNRESOLVED. ONLY DURABLE PRINCIPAL-BOUND TERMINAL POLICY AUTHORITY MAY RELEASE A FINALIZED NO-EFFECT RESERVATION; VALUE IS RESTORED EXACTLY ONCE WITHOUT REACTIVATION OR CANONICAL-HISTORY REWRITE.");
 await mongoose.disconnect();
