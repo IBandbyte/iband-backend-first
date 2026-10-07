@@ -1,9 +1,9 @@
 import crypto from "node:crypto";
 import mongoose from "mongoose";
 
-const VERSION="1.17.0",DOMAIN="iband.movie-mentor.inference-settlement-store";
+const VERSION="1.18.0",DOMAIN="iband.movie-mentor.inference-settlement-store";
 const EXECUTION_DOMAIN="iband.movie-mentor.inference-execution-store",RESULT_DOMAIN="iband.movie-mentor.canonical-result-store",CANDIDATE_DOMAIN="iband.movie-mentor.result-candidate-store",SPEND_DOMAIN="iband.movie-mentor.inference-spend",EFFECT_DOMAIN="iband.movie-mentor.provider-effect-reality";
-const EXECUTION_COLLECTION="movie_mentor_inference_execution",RESULT_COLLECTION="movie_mentor_canonical_result",CANDIDATE_COLLECTION="movie_mentor_result_candidate",RESERVATION_COLLECTION="movie_mentor_inference_spend_reservation",ENTITLEMENT_COLLECTION="movie_mentor_inference_entitlement",EFFECT_COLLECTION="movie_mentor_provider_effect_reality",OPERATION_COLLECTION="movie_mentor_provider_operation_reality",CREATOR_STATE_COLLECTION="movie_mentor_creator_state";
+const EXECUTION_COLLECTION="movie_mentor_inference_execution",RESULT_COLLECTION="movie_mentor_canonical_result",CANDIDATE_COLLECTION="movie_mentor_result_candidate",RESERVATION_COLLECTION="movie_mentor_inference_spend_reservation",ENTITLEMENT_COLLECTION="movie_mentor_inference_entitlement",EFFECT_COLLECTION="movie_mentor_provider_effect_reality",OPERATION_COLLECTION="movie_mentor_provider_operation_reality",CREATOR_STATE_COLLECTION="movie_mentor_creator_state",TERMINAL_DECISION_COLLECTION="movie_mentor_terminal_disposition_decision",TERMINAL_DECISION_DOMAIN="iband.movie-mentor.terminal-disposition-decision";
 let connectionPromise=null;
 const text=v=>typeof v==="string"?v.trim():"";const plain=v=>v&&typeof v.toObject==="function"?v.toObject():v;const iso=v=>{if(v===null||v===undefined||v==="")return "";const d=v instanceof Date?new Date(v):new Date(v);return Number.isNaN(d.getTime())?"":d.toISOString();};
 function fail(code,message,extras={}){const e=new Error(message);e.code=code;Object.assign(e,extras);throw e;}function settlementInstant(v){const normalized=iso(v);if(!normalized)fail("MOVIE_MENTOR_INFERENCE_SETTLEMENT_TIME_INVALID","Inference settlement time is invalid.",{retryable:false});return new Date(normalized);}function mongoUri(){return text(process.env.MONGO_URI||process.env.MONGODB_URI||"");}function digest(value){return crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");}
@@ -84,6 +84,40 @@ function createMovieMentorInferenceSettlementMongoStore({connect=ensureConnectio
   }catch(error){if(error?.code?.startsWith?.("MOVIE_MENTOR_CREATOR_COMPENSATION_"))throw error;fail("MOVIE_MENTOR_CREATOR_COMPENSATION_STORE_UNAVAILABLE",`Creator Compensation failed: ${error instanceof Error?error.message:"transaction failed"}`,{retryable:true});}
   finally{await session.endSession();}
  }
- return Object.freeze({settleCanonicalResult,releaseUnclaimedReservation,releaseUnboundReservation,compensateSupersededCreatorState,getStatus:getMovieMentorInferenceSettlementMongoStoreStatus});}
+ async function terminallyReleaseAuthorizedReservation({executionId,decision,expectedEntitlementRevision}={}){
+  const id=text(executionId),principal=text(decision?.principalId),decisionId=text(decision?.decisionId);
+  if(!id||!principal||!decisionId||text(decision?.executionId)!==id||text(decision?.decisionKind)!=="policy-approved-terminal-reservation-release"||decision?.durableAuthority!==true||!Number.isSafeInteger(expectedEntitlementRevision)||expectedEntitlementRevision<1)fail("MOVIE_MENTOR_TERMINAL_RELEASE_DECISION_NOT_DURABLE","Terminal reservation release requires execution-bound, principal-bound durable policy authority and an exact expected entitlement revision.",{retryable:false});
+  await connect();const session=await startSession();let outcome=null;
+  try{await session.withTransaction(async()=>{
+   const database=db(),executions=database.collection(EXECUTION_COLLECTION),reservations=database.collection(RESERVATION_COLLECTION),entitlements=database.collection(ENTITLEMENT_COLLECTION),effects=database.collection(EFFECT_COLLECTION),operations=database.collection(OPERATION_COLLECTION),decisions=database.collection(TERMINAL_DECISION_COLLECTION);
+   const durable=await decisions.findOne({domain:TERMINAL_DECISION_DOMAIN,schema:1,decisionId,principalId:principal,reservationId:text(decision.reservationId),executionId:id,decisionKind:"policy-approved-terminal-reservation-release"},{session});
+   if(!durable||text(durable.decisionSource)!==text(decision.decisionSource)||text(durable.decidedBy)!==text(decision.decidedBy)||text(durable.policyVersion)!==text(decision.policyVersion)||text(durable.caseReference)!==text(decision.caseReference)||iso(durable.decidedAt)!==iso(decision.decidedAt))fail("MOVIE_MENTOR_TERMINAL_RELEASE_DECISION_NOT_DURABLE","Caller terminal disposition decision does not match durable policy authority.",{retryable:false});
+   const execution=await executions.findOne({executionId:id},{session});
+   if(!execution||execution.domain!==EXECUTION_DOMAIN||execution.schema!==6||text(execution.principalId)!==principal||text(execution.reservationId)!==text(decision.reservationId)){outcome=Object.freeze({authorized:false,released:false,outcome:"reserved",reason:"execution-binding-invalid",executionId:id});return;}
+   if(text(execution.phase)!=="finalized"){outcome=Object.freeze({authorized:false,released:false,outcome:"reserved",reason:"execution-not-finalized",executionId:id});return;}
+   const reservation=await reservations.findOne({reservationId:text(execution.reservationId)},{session});
+   if(!reservationBindingValid(reservation,execution)){outcome=Object.freeze({authorized:false,released:false,outcome:"reserved",reason:"reservation-binding-invalid",executionId:id});return;}
+   const reason=`terminal-policy-release:${decisionId}`;
+   if(text(reservation.status)==="released"){
+    if(text(reservation.settlementReason)!==reason||text(reservation.settlementExecutionId)!==id)fail("MOVIE_MENTOR_TERMINAL_RELEASE_CONFLICT","Released reservation belongs to different terminal authority.",{retryable:false});
+    outcome=Object.freeze({authorized:true,released:true,outcome:"released",idempotent:true,executionId:id,reservationId:text(reservation.reservationId),decisionId});return;
+   }
+   if(text(reservation.status)!=="reserved"){outcome=Object.freeze({authorized:false,released:false,outcome:"reserved",reason:"reservation-state-invalid",executionId:id});return;}
+   const calls=Array.isArray(execution.providerCalls)?execution.providerCalls:[];
+   if(execution.providerCallsClaimed!==0||execution.frozenProviderCallCount!==0||calls.length!==0||digest([])!==text(execution.frozenProviderCallSetDigest)){outcome=Object.freeze({authorized:false,released:false,outcome:"reserved",reason:"zero-provider-reality-not-proven",executionId:id});return;}
+   const [effectCount,operationCount]=await Promise.all([effects.countDocuments({executionId:id},{session}),operations.countDocuments({executionId:id},{session})]);
+   if(effectCount!==0||operationCount!==0){outcome=Object.freeze({authorized:false,released:false,outcome:"reserved",reason:"provider-reality-exists",executionId:id});return;}
+   const at=settlementInstant(now());
+   const entitlement=await entitlements.findOneAndUpdate({principalId:principal,domain:SPEND_DOMAIN,schema:1,status:"suspended",entitlementRevision:expectedEntitlementRevision,reservedUnits:{$gte:reservation.units}},{$inc:{reservedUnits:-reservation.units,remainingUnits:reservation.units,entitlementRevision:1}},{returnDocument:"after",session});
+   if(!entitlement)fail("MOVIE_MENTOR_TERMINAL_RELEASE_LEDGER_CONFLICT","Current suspended entitlement changed or cannot atomically restore terminally released value.",{retryable:true});
+   const released=await reservations.findOneAndUpdate({reservationId:text(reservation.reservationId),principalId:principal,status:"reserved"},{$set:{status:"released",settledAt:at,settlementReason:reason,settlementExecutionId:id,terminalDispositionDecisionId:decisionId}},{returnDocument:"after",session});
+   if(!released)fail("MOVIE_MENTOR_TERMINAL_RELEASE_RESERVATION_RACE","Reservation changed during terminal disposition.",{retryable:true});
+   outcome=Object.freeze({authorized:true,released:true,outcome:"released",idempotent:false,executionId:id,reservationId:text(reservation.reservationId),decisionId,entitlementRevision:entitlement.entitlementRevision});
+  },{readConcern:{level:"snapshot"},writeConcern:{w:"majority"}});
+  if(!outcome)fail("MOVIE_MENTOR_TERMINAL_RELEASE_STORE_UNAVAILABLE","Terminal release transaction completed without durable outcome.",{retryable:true});return outcome;
+  }catch(error){if(error?.code?.startsWith?.("MOVIE_MENTOR_TERMINAL_RELEASE_"))throw error;fail("MOVIE_MENTOR_TERMINAL_RELEASE_STORE_UNAVAILABLE",`Terminal release failed: ${error instanceof Error?error.message:"transaction failed"}`,{retryable:true});}
+  finally{await session.endSession();}
+ }
+ return Object.freeze({settleCanonicalResult,releaseUnclaimedReservation,releaseUnboundReservation,compensateSupersededCreatorState,terminallyReleaseAuthorizedReservation,getStatus:getMovieMentorInferenceSettlementMongoStoreStatus});}
 function getMovieMentorInferenceSettlementMongoStoreStatus(){const configured=Boolean(mongoUri());return Object.freeze({version:VERSION,domain:DOMAIN,configured,readiness:configured?"configured":"configuration-required",atomicity:"single-mongo-transaction",currentRealityFence:"execution-document-write-conflict",candidateLineage:"proof-bearing-schema-2-provenance-revalidated-in-settlement-transaction",resultFinalization:"required-and-revalidated-in-settlement-transaction",unclaimedRelease:"atomic-execution-abort-plus-ledger-release",unboundRelease:"atomic-no-execution-binding-plus-ledger-release",creatorCompensation:"atomic-confirmed-provider-effect-plus-superseded-creator-state-ledger-restoration",executionBindingFence:"shared-reservation-write-conflict",settledExecutionAuthority:true,atomicFinalizedToSettledDebit:true,explicitDebitBinding:true,executionSchemaCompatibility:"6-settlement;4-6-unclaimed-release",schemaPreservation:true,proofTimeFailClosed:true,processLocalFallback:false});}
 export{VERSION as MOVIE_MENTOR_INFERENCE_SETTLEMENT_MONGO_STORE_VERSION,DOMAIN as MOVIE_MENTOR_INFERENCE_SETTLEMENT_MONGO_STORE_DOMAIN,createMovieMentorInferenceSettlementMongoStore,getMovieMentorInferenceSettlementMongoStoreStatus};export default createMovieMentorInferenceSettlementMongoStore;
