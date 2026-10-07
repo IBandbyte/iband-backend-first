@@ -17,7 +17,7 @@ assert.match(decisionStore,/entitlementRevision/,"durable terminal policy decisi
 assert.match(reconciliation,/terminallyReleaseAuthorized/,"#418 reconciliation terminal consumer must remain present");
 assert.match(composition,/terminalDispositionAuthority/,"#418 production settlement composition must continue proving terminal capability");
 
-const productionSurface=[server,gateway,runtime].join("\n");
+const productionSurface=[server,gateway,runtime,terminalProduction].join("\n");
 assert.match(
  productionSurface,
  /recordAuthorizedDecision/,
