@@ -7,7 +7,8 @@ const delegate={
  async settleCanonicalResult(){delegated+=1;return{settled:true};},
  async releaseUnclaimedReservation(){delegated+=1;return{released:true};},
  async releaseUnboundReservation(){delegated+=1;return{released:true};},
- async compensateSupersededCreatorState(){delegated+=1;return{compensated:true};},\n async terminallyReleaseAuthorizedReservation(){delegated+=1;return{authorized:true,released:true,outcome:"released"};}
+ async compensateSupersededCreatorState(){delegated+=1;return{compensated:true};},
+ async terminallyReleaseAuthorizedReservation(){delegated+=1;return{authorized:true,released:true,outcome:"released"};}
 };
 const completeIndexes=new Map();
 for(const requirement of MOVIE_MENTOR_INFERENCE_SETTLEMENT_REQUIRED_UNIQUE_INDEXES){const list=completeIndexes.get(requirement.collection)||[];list.push({key:{...requirement.key},unique:true,...(requirement.partialFilterExpression?{partialFilterExpression:structuredClone(requirement.partialFilterExpression)}:{})});completeIndexes.set(requirement.collection,list);}
