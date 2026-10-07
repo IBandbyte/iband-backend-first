@@ -1,57 +1,72 @@
+import assert from "node:assert/strict";
 import fs from "node:fs";
+import {createMovieMentorPolicyDecisionIngressAuthority} from "../ai/MovieMentorPolicyDecisionIngressAuthority.js";
 
-function read(path){ return fs.readFileSync(path,"utf8"); }
-function assert(condition,message){ if(!condition) throw new Error(message); }
+const server=fs.readFileSync(new URL("../server.js",import.meta.url),"utf8");
+const terminalProduction=fs.readFileSync(new URL("../ai/MovieMentorTerminalDispositionProductionAuthority.js",import.meta.url),"utf8");
 
-const server=read("server.js");
-const terminalProduction=read("ai/MovieMentorTerminalDispositionProductionAuthority.js");
-const reinstatementDecision=read("ai/MovieMentorReinstatementDecisionMongoStore.js");
-const terminalDecision=read("ai/MovieMentorTerminalDispositionDecisionMongoStore.js");
-const moderation=read("moderation.js");
-const admin=read("admin.js");
-const operations=read("ai/MovieMentorOperationsControlPlane.js");
-const mutationControl=read("ai/MovieMentorOperationsMutationCapabilityControl.js");
+assert.match(terminalProduction,/applyPolicyAuthorizedTerminalDisposition/,"#419 terminal executor must remain present.");
+assert.match(server,/createMovieMentorPolicyDecisionIngressAuthority/,"RED: production boot does not compose a distinct Movie Mentor policy-decision ingress.");
+assert.match(server,/creatorHttpAuthority!==false/,"policy ingress must fail closed unless creator HTTP authority remains false.");
+assert.doesNotMatch(server,/createMovieMentorTurnRouter\(\{[^}]*policyDecisionIngressAuthority/,"creator router must not receive policy decision authority.");
 
-assert(/recordAuthorizedDecision/.test(reinstatementDecision),"Precondition failed: #415 durable reinstatement decision owner missing.");
-assert(/recordAuthorizedDecision/.test(terminalDecision),"Precondition failed: #417 durable terminal decision owner missing.");
-assert(/applyPolicyAuthorizedTerminalDisposition/.test(terminalProduction),"Precondition failed: #419 terminal production executor missing.");
+const decision=Object.freeze({
+ decisionId:"decision-420",
+ principalId:"creator-420",
+ reservationId:"reservation-420",
+ executionId:"execution-420",
+ decisionSource:"movie-mentor-enforcement",
+ decisionKind:"policy-approved-terminal-reservation-release",
+ decidedBy:"creator-policy-authority",
+ policyVersion:"movie-mentor-enforcement-v1",
+ caseReference:"case-420",
+ entitlementRevision:12,
+ decidedAt:"2026-10-07T18:45:00.000Z"
+});
 
-const excluded=[moderation,admin,operations,mutationControl].join("\n");
-assert(!/applyPolicyAuthorizedTerminalDisposition/.test(excluded),"Existing excluded legacy/dormant surface unexpectedly owns terminal policy invocation.");
+let terminalCalls=0;
+const terminalDispositionAuthority={
+ async applyPolicyAuthorizedTerminalDisposition({decision:received}){
+  terminalCalls++;
+  assert.deepEqual(received,decision);
+  return Object.freeze({released:true,decisionId:received.decisionId});
+ }
+};
 
-/*
- * #419 intentionally instantiates the terminal decision store and terminal executor
- * inside server.js and proves their methods exist. That is downstream composition,
- * not an upstream policy decision.
- *
- * A genuine policy ingress must be a distinct production authority surface which:
- *   1. receives/derives policy approval from a policy-owned trust boundary;
- *   2. constructs or accepts the immutable policy decision provenance;
- *   3. invokes applyPolicyAuthorizedTerminalDisposition as an action, rather than
- *      merely checking that the method exists.
- *
- * Therefore server.js construction/type checks cannot satisfy this court.
- */
-const compositionOnly =
-  /createMovieMentorTerminalDispositionDecisionMongoStore\(\)/.test(server) &&
-  /createMovieMentorTerminalDispositionProductionAuthority\(/.test(server) &&
-  /typeof terminalDispositionAuthority\?\.applyPolicyAuthorizedTerminalDisposition!==["']function["']/.test(server);
-
-assert(compositionOnly,"Precondition failed: #419 production composition/readiness proof is no longer recognizable; review the court before classifying policy ingress.");
-
-const serverWithoutCompositionProof=server
-  .replace(/const terminalDecisionStore=createMovieMentorTerminalDispositionDecisionMongoStore\(\),terminalDispositionAuthority=createMovieMentorTerminalDispositionProductionAuthority\(\{decisionStore:terminalDecisionStore,settlementAuthority:settlementComposition\.authority\}\);if\(typeof terminalDecisionStore\.recordAuthorizedDecision!==["']function["']\|\|typeof terminalDecisionStore\.resolveAuthorizedDecision!==["']function["']\|\|typeof terminalDispositionAuthority\?\.applyPolicyAuthorizedTerminalDisposition!==["']function["']\)\{[^}]*\}/g,"")
-  .replace(/internal policy-owned terminal disposition authority/g,"");
-
-const liveInvocation =
-  /\.applyPolicyAuthorizedTerminalDisposition\s*\(\s*\{/.test(serverWithoutCompositionProof);
-
-const livePolicyIssuer =
-  /movie-mentor-enforcement|creator-policy-authority|createMovieMentorPolicyDecisionIngressAuthority|createMovieMentorPolicyDecisionIssuerAuthority/.test(serverWithoutCompositionProof);
-
-assert(
-  livePolicyIssuer && liveInvocation,
-  "RED: #419 composes and type-checks the terminal executor, but no distinct live Movie Mentor policy-decision ingress/issuer is wired to originate policy authority and invoke applyPolicyAuthorizedTerminalDisposition."
+const denied=createMovieMentorPolicyDecisionIngressAuthority({
+ authorizePolicyDecision:async()=>Object.freeze({authorized:false}),
+ terminalDispositionAuthority
+});
+await assert.rejects(
+ ()=>denied.applyPolicyDecision({request:{decision}}),
+ error=>error?.code==="MOVIE_MENTOR_POLICY_DECISION_NOT_AUTHORIZED",
+ "untrusted caller data must not self-authorize terminal disposition"
 );
+assert.equal(terminalCalls,0);
 
-console.log("GREEN: a distinct live production Movie Mentor policy-decision ingress/issuer is wired beyond #419 composition and invokes the certified terminal executor.");
+const authorized=createMovieMentorPolicyDecisionIngressAuthority({
+ authorizePolicyDecision:async({request})=>request?.policyAuthorization===true
+  ?Object.freeze({authorized:true,decision:request.decision})
+  :Object.freeze({authorized:false}),
+ terminalDispositionAuthority
+});
+const status=authorized.getStatus();
+assert.equal(status.production,true);
+assert.equal(status.trustedPolicyAuthorizationRequired,true);
+assert.equal(status.creatorHttpAuthority,false);
+assert.equal(status.legacyAdminAuthority,false);
+assert.equal(status.processLocalFallback,false);
+
+const result=await authorized.applyPolicyDecision({request:{policyAuthorization:true,decision}});
+assert.equal(result.released,true);
+assert.equal(terminalCalls,1);
+
+await assert.rejects(
+ ()=>authorized.applyPolicyDecision({request:{policyAuthorization:true,decision:{...decision,decisionKind:"creator-requested-release"}}}),
+ error=>error?.code==="MOVIE_MENTOR_POLICY_DECISION_BINDING_INVALID",
+ "wrong decision kind must fail closed before terminal execution"
+);
+assert.equal(terminalCalls,1);
+
+console.log("GREEN: distinct production policy ingress requires explicit trusted policy authorization, preserves exact terminal decision coordinates, delegates once to #419, and is not exposed to creator HTTP.");
+console.log("LAW: POLICY MAY AUTHORIZE TERMINAL VALUE DISPOSITION; CREATORS MAY NOT SELF-MINT THAT AUTHORITY, AND THE POLICY INGRESS MAY NOT MUTATE VALUE ITSELF.");
