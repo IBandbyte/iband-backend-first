@@ -1,0 +1,31 @@
+name: Verify Movie Mentor Lease Replacement Provider Reality Clock Race
+
+on:
+  push:
+    paths:
+      - "ai/MovieMentorInferenceExecutionMongoStore.js"
+      - "ai/MovieMentorProviderEffectMongoStore.js"
+      - "ai/MovieMentorInferenceExecutionLeaseAuthority.js"
+      - "scripts/verify-movie-mentor-lease-replacement-provider-reality-clock-race.mjs"
+      - ".github/workflows/verify-movie-mentor-lease-replacement-provider-reality-clock-race.yml"
+  pull_request:
+    paths:
+      - "ai/MovieMentorInferenceExecutionMongoStore.js"
+      - "ai/MovieMentorProviderEffectMongoStore.js"
+      - "ai/MovieMentorInferenceExecutionLeaseAuthority.js"
+      - "scripts/verify-movie-mentor-lease-replacement-provider-reality-clock-race.mjs"
+      - ".github/workflows/verify-movie-mentor-lease-replacement-provider-reality-clock-race.yml"
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --ignore-scripts --no-audit --no-fund
+      - run: node --check scripts/verify-movie-mentor-lease-replacement-provider-reality-clock-race.mjs
+      - run: node --check ai/MovieMentorInferenceExecutionMongoStore.js
+      - run: node scripts/verify-movie-mentor-lease-replacement-provider-reality-clock-race.mjs
