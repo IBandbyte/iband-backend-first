@@ -56,12 +56,13 @@ const decisionStore=createMovieMentorTerminalDispositionDecisionMongoStore();
 const authorizedDecision={
  decisionId:"terminal-decision-417",principalId:reservation.principalId,reservationId:reservation.reservationId,executionId:execution.executionId,
  decisionSource:"movie-mentor-enforcement",decisionKind:"policy-approved-terminal-reservation-release",decidedBy:"creator-policy-authority",
- policyVersion:"movie-mentor-enforcement-v1",caseReference:"terminal-case-417",decidedAt:"2032-01-01T00:04:30.000Z"
+ policyVersion:"movie-mentor-enforcement-v1",caseReference:"terminal-case-417",entitlementRevision:10,decidedAt:"2032-01-01T00:04:30.000Z"
 };
 const recorded=await decisionStore.recordAuthorizedDecision({decision:authorizedDecision});
 assert.equal(recorded.authorized,true);
 const durableDecision=await decisionStore.resolveAuthorizedDecision({decisionId:authorizedDecision.decisionId,principalId:reservation.principalId});
 assert.equal(durableDecision?.durableAuthority,true);
+assert.equal(durableDecision?.entitlementRevision,10,"durable terminal policy authority must bind the exact entitlement revision it authorized");
 
 await assert.rejects(
  ()=>store.terminallyReleaseAuthorizedReservation({executionId:execution.executionId,decision:{...durableDecision,decisionId:"fabricated-terminal-decision"},expectedEntitlementRevision:10}),
