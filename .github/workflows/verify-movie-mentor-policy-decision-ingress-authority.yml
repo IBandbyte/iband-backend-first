@@ -1,0 +1,19 @@
+name: Verify Movie Mentor Policy Decision Ingress Authority
+
+on:
+  push:
+    branches:
+      - verify-movie-mentor-policy-decision-ingress-authority
+  pull_request:
+    branches:
+      - verify-terminal-disposition-production-reachability-authority
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 21
+      - run: node scripts/verify-movie-mentor-policy-decision-ingress-authority.mjs
