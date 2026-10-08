@@ -1,0 +1,17 @@
+import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
+const gateway=readFileSync(new URL("../movieMentorTurn.js",import.meta.url),"utf8");
+const decision=readFileSync(new URL("../ai/MovieMentorCreatorDecisionAuthority.js",import.meta.url),"utf8");
+const lease=readFileSync(new URL("../ai/MovieMentorInferenceExecutionLeaseAuthority.js",import.meta.url),"utf8");
+const runtime=readFileSync(new URL("../ai/MovieMentorTurnRuntime.js",import.meta.url),"utf8");
+const genuineProofRegistry=/ownedExecutionEvidence\s*=\s*new WeakSet\(\)/.test(lease);
+const genuineProofRequired=/!ownedExecutionEvidence\.has\(execution\)/.test(lease);
+const gatewayLegacy=/commitDecision\s*=\s*\(input,deps\s*=\s*\{\}\)\s*=>\s*commitCreatorDecision\(input,\{\.\.\.deps,creatorStateMutationAuthority\}\)/.test(gateway);
+const decisionLeaseProof=/\bexecutionLeaseEvidence\b|\btrustedExecutionProof\b/.test(decision);
+const runtimeHasExecution=/const\s+\{[^}]*execution[^}]*\}/.test(runtime)||runtime.includes("const execution =");
+console.log(JSON.stringify({court:"decision-execution-proof-handoff-contract",evidence:{genuineProofRegistry,genuineProofRequired,gatewayLegacy,decisionLeaseProof,runtimeHasExecution},classification:"real production source contract; no MongoDB transaction; exact proof parameter is proposed interface"}));
+assert.equal(genuineProofRegistry,true);
+assert.equal(genuineProofRequired,true);
+assert.equal(gatewayLegacy,false,"TRUSTED HANDOFF RED: live HTTP decision callback still bypasses execution-proof-bound atomic authority");
+assert.equal(decisionLeaseProof,true,"TRUSTED HANDOFF RED: decision commit has no explicit execution lease evidence handoff");
+console.log("PASS: creator-decision commit is bound to server-issued execution ownership");
