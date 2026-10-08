@@ -24,6 +24,12 @@ jobs:
         run: |
           docker run -d --name movie-mentor-dual-index-mongo -p 127.0.0.1:27017:27017 mongo:7 --replSet rs0 --bind_ip_all
           for attempt in $(seq 1 40); do
+            if ! docker inspect -f '{{.State.Running}}' movie-mentor-dual-index-mongo | grep -q true; then
+              docker ps -a --filter name=movie-mentor-dual-index-mongo
+              docker logs movie-mentor-dual-index-mongo --tail 100 || true
+              echo "MongoDB container exited before readiness; infrastructure failure"
+              exit 1
+            fi
             if docker exec movie-mentor-dual-index-mongo mongosh --quiet --eval 'db.adminCommand({ping:1}).ok' | grep -q 1; then break; fi
             sleep 2
           done
