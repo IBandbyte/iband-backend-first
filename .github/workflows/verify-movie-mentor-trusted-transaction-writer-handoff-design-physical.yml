@@ -1,0 +1,65 @@
+name: Verify Movie Mentor Trusted Transaction Writer Handoff Design Physical
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - audit/creator-first-commit-takeover-verifier
+    paths:
+      - "scripts/verify-movie-mentor-trusted-transaction-writer-handoff-design-physical.mjs"
+      - ".github/workflows/verify-movie-mentor-trusted-transaction-writer-handoff-design-physical.yml"
+  pull_request:
+    paths:
+      - "ai/MovieMentorCreatorDecisionAuthority.js"
+      - "ai/MovieMentorCreatorStateTransition.js"
+      - "ai/MovieMentorCreatorStateStore.js"
+      - "ai/MovieMentorCreatorStateMutationAuthority.js"
+      - "ai/MovieMentorInferenceExecutionLeaseAuthority.js"
+      - "ai/MovieMentorCreatorStateConsumptionRuntime.js"
+      - "scripts/verify-movie-mentor-first-creator-decision-takeover-physical-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-first-creator-decision-takeover-physical-authority.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    env:
+      MONGO_URI: mongodb://127.0.0.1:27017/iband_first_commit_takeover_court
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Start isolated MongoDB replica set
+        run: |
+          docker run -d --name movie-mentor-mongo-rs -p 127.0.0.1:27017:27017 mongo:7 --replSet rs0 --bind_ip_all
+          for attempt in $(seq 1 40); do
+            if docker exec movie-mentor-mongo-rs mongosh --quiet --eval 'db.adminCommand({ping:1}).ok' | grep -q 1; then break; fi
+            sleep 2
+          done
+          docker exec movie-mentor-mongo-rs mongosh --quiet --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"127.0.0.1:27017"}]})'
+          for attempt in $(seq 1 40); do
+            if docker exec movie-mentor-mongo-rs mongosh --quiet --eval 'db.hello().isWritablePrimary' | grep -q true; then break; fi
+            sleep 2
+          done
+          docker exec movie-mentor-mongo-rs mongosh --quiet --eval 'if (!db.hello().isWritablePrimary) quit(1)'
+      - name: Prove MongoDB transactions work
+        run: |
+          node --input-type=module -e '
+            import mongoose from "mongoose";
+            await mongoose.connect(process.env.MONGO_URI, { serverSelectionTimeoutMS: 10000 });
+            const session = await mongoose.startSession();
+            try {
+              await session.withTransaction(async () => {
+                await mongoose.connection.collection("transaction_readiness").insertOne({ proof: "replica-set-transaction" }, { session });
+              }, { readConcern: { level: "snapshot" }, writeConcern: { w: "majority" } });
+              const count = await mongoose.connection.collection("transaction_readiness").countDocuments({ proof: "replica-set-transaction" });
+              if (count !== 1) throw new Error("Physical transaction readiness not proven");
+              console.log("PASS: isolated MongoDB replica-set transaction committed");
+            } finally { await session.endSession(); await mongoose.disconnect(); }
+          '
+      - run: node --check scripts/verify-movie-mentor-trusted-transaction-writer-handoff-design-physical.mjs
+      - run: node scripts/verify-movie-mentor-trusted-transaction-writer-handoff-design-physical.mjs
