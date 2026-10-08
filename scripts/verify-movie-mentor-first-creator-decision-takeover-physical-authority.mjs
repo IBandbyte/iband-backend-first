@@ -24,7 +24,7 @@ const leaseStore = {
   },
   async createExecution(next) {
     if (executionRow) return null;
-    executionRow = copy(next);
+    executionRow = copy({ ...next, schema: 6 });
     return copy(executionRow);
   },
   async replaceExecution(next, expected = {}) {
