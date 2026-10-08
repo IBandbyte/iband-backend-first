@@ -1,0 +1,41 @@
+name: Verify Movie Mentor First Creator Decision Takeover Physical Authority
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "ai/MovieMentorCreatorDecisionAuthority.js"
+      - "ai/MovieMentorCreatorStateTransition.js"
+      - "ai/MovieMentorCreatorStateStore.js"
+      - "ai/MovieMentorCreatorStateMutationAuthority.js"
+      - "ai/MovieMentorInferenceExecutionLeaseAuthority.js"
+      - "ai/MovieMentorCreatorStateConsumptionRuntime.js"
+      - "scripts/verify-movie-mentor-first-creator-decision-takeover-physical-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-first-creator-decision-takeover-physical-authority.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok' localhost:27017/test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      MONGO_URI: mongodb://127.0.0.1:27017/iband_first_commit_takeover_court
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - run: node --check scripts/verify-movie-mentor-first-creator-decision-takeover-physical-authority.mjs
+      - run: node scripts/verify-movie-mentor-first-creator-decision-takeover-physical-authority.mjs
