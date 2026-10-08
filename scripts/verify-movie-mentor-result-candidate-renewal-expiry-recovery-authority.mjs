@@ -14,7 +14,7 @@ assert.match(storeSource,/replaceExecution[\s\S]*resultCandidateBarrierRevision:
 assert.match(storeSource,/claimProviderCall[\s\S]*resultCandidateBarrierRevision:\{\$in:\[0,null\]\}/);
 assert.match(closureSource,/recoverExpiredIntoClosing/);
 assert.match(closureSource,/requireDurablyExpired:true/);
-assert.match(storeSource,/recoverExpiredIntoClosing[\s\S]*\$lte:\["\$leaseExpiresAt","\$"\+"\$NOW"\]/);
+assert.match(storeSource,/recoverExpiredIntoClosing[\s\S]*\$lte:\["\$leaseExpiresAt","\$\$NOW"\]/);
 assert.match(storeSource,/recoverExpiredIntoClosing[\s\S]*resultCandidateBarrierRevision:current\.resultCandidateBarrierRevision/);
 assert.match(compositionSource,/recoverExpiredExecutionIntoClosing:closureAuthority\.recoverExpiredIntoClosing/);
 const converge=runtimeSource.indexOf("async function convergeExistingTurn");
