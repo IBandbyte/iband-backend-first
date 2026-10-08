@@ -2,6 +2,12 @@ name: Verify Movie Mentor First Creator Decision Takeover Physical Authority
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - audit/creator-first-commit-takeover-verifier
+    paths:
+      - "scripts/verify-movie-mentor-first-creator-decision-takeover-physical-authority.mjs"
+      - ".github/workflows/verify-movie-mentor-first-creator-decision-takeover-physical-authority.yml"
   pull_request:
     paths:
       - "ai/MovieMentorCreatorDecisionAuthority.js"
