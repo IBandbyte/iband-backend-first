@@ -16,6 +16,7 @@ try {
  const definitions=schema.indexes().filter(([key])=>Object.keys(key).length===1&&key.projectId===1);
  assert.equal(definitions.length,1,"candidate must preserve exactly one project index");
  assert.equal(definitions[0][1].unique,true,"candidate project index must remain unique");
+ schema.set("collection","movie_mentor_project_ownership_index_candidate_audit");
  const Candidate=mongoose.model("MovieMentorOwnershipIndexCandidateAudit",schema);
  await Candidate.createIndexes();
  const physical=await Candidate.collection.indexes();
@@ -30,6 +31,6 @@ try {
  assert.equal(await Candidate.countDocuments({}),1);
  const persisted=await Candidate.findOne({projectId:"candidate-project"}).lean();
  assert.equal(persisted.ownerPrincipalId,"owner-A");
- console.log(JSON.stringify({court:"ownership-index-minimal-schema-candidate-physical",classification:"audit-only cloned production Mongoose schema with field-level projectId index removed; direct model writes, NOT real ownership authority API or production repair",projectUnique:true,establishmentUnique:true,competingOwnerCode:competitor.code,replayAuthorityCode:replay.code,rows:1,owner:persisted.ownerPrincipalId}));
+ console.log(JSON.stringify({court:"ownership-index-minimal-schema-candidate-physical",classification:"audit-only cloned production Mongoose schema in separate isolated candidate collection with field-level projectId index removed; direct model writes, NOT real ownership authority API or production repair",projectUnique:true,establishmentUnique:true,competingOwnerCode:competitor.code,replayAuthorityCode:replay.code,rows:1,owner:persisted.ownerPrincipalId}));
  console.log("PASS: cloned candidate creates both unique indexes and physically rejects competing ownership and establishment replay");
 }finally{await mongoose.disconnect();}
