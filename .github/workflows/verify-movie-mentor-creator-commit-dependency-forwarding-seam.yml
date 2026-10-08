@@ -1,0 +1,22 @@
+name: Verify Movie Mentor Creator Commit Dependency Forwarding Seam
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - audit/creator-first-commit-takeover-verifier
+    paths:
+      - scripts/verify-movie-mentor-creator-commit-dependency-forwarding-seam.mjs
+      - .github/workflows/verify-movie-mentor-creator-commit-dependency-forwarding-seam.yml
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - run: node --check scripts/verify-movie-mentor-creator-commit-dependency-forwarding-seam.mjs
+      - run: node scripts/verify-movie-mentor-creator-commit-dependency-forwarding-seam.mjs
