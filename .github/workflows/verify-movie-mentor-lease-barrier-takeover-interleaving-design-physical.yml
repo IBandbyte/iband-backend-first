@@ -7,7 +7,7 @@ on:
       - audit/creator-first-commit-takeover-verifier
     paths:
       - "scripts/verify-movie-mentor-lease-barrier-takeover-interleaving-design-physical.mjs"
-      - ".github/workflows/verify-movie-mentor-atomic-create-update-sync-design-physical.yml"
+      - ".github/workflows/verify-movie-mentor-lease-barrier-takeover-interleaving-design-physical.yml"
   pull_request:
     paths:
       - "ai/MovieMentorCreatorDecisionAuthority.js"
