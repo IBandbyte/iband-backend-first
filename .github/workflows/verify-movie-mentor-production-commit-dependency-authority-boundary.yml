@@ -1,0 +1,22 @@
+name: Verify Movie Mentor Production Commit Dependency Authority Boundary
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - audit/creator-first-commit-takeover-verifier
+    paths:
+      - scripts/verify-movie-mentor-production-commit-dependency-authority-boundary.mjs
+      - .github/workflows/verify-movie-mentor-production-commit-dependency-authority-boundary.yml
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - run: node --check scripts/verify-movie-mentor-production-commit-dependency-authority-boundary.mjs
+      - run: node scripts/verify-movie-mentor-production-commit-dependency-authority-boundary.mjs
