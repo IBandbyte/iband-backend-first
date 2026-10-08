@@ -1,0 +1,22 @@
+name: Verify Movie Mentor Atomic Creator Decision Integration Contract
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - audit/creator-first-commit-takeover-verifier
+    paths:
+      - scripts/verify-movie-mentor-atomic-creator-decision-integration-contract.mjs
+      - .github/workflows/verify-movie-mentor-atomic-creator-decision-integration-contract.yml
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - run: node --check scripts/verify-movie-mentor-atomic-creator-decision-integration-contract.mjs
+      - run: node scripts/verify-movie-mentor-atomic-creator-decision-integration-contract.mjs
