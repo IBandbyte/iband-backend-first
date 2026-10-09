@@ -66,6 +66,19 @@ try{
  let replayError;try{await commit(recovery);}catch(e){replayError=e;}
  assert.equal(replayError?.code,"LEASE_FENCED");
  results.push({case:"post-commit-ack-loss",durableCreatorRevision:8,durableBarrier:1,replayFenced:true,classification:"candidate-only; not production idempotency recovery"});
+ const takeoverAck=await setup("ack-loss-followed-by-takeover",7);
+ assert.equal(await commit(takeoverAck),8);
+ // The transaction committed; only the acknowledgement is lost.
+ await wait(1800);
+ const newOwner=await authority.acquireExecution({executionId:takeoverAck.proof.executionId,ownerId:"worker-B"});
+ assert.equal(newOwner.authorized,true,"new owner must genuinely take over the expired lease");
+ let staleAckError;try{await commit(takeoverAck);}catch(e){staleAckError=e;}
+ assert.equal(staleAckError?.code,"PRIVATE_PROOF_FENCED","revoked A cannot claim current authority through historical commit");
+ let newOwnerReplayError;try{await commit({...takeoverAck,proof:newOwner});}catch(e){newOwnerReplayError=e;}
+ assert.equal(newOwnerReplayError?.code,"LEASE_FENCED","new owner cannot mint a second first decision");
+ assert.equal((await creators.findOne({projectId:takeoverAck.projectId})).revision,8);
+ assert.equal((await executions.findOne({executionId:takeoverAck.proof.executionId})).creatorDecisionBarrierRevision,1);
+ results.push({case:"ack-loss-followed-by-takeover",oldOwnerFenced:true,newOwnerReplayFenced:true,durableRevision:8,durableBarrier:1});
  for(const [name,revision] of [["initial-create",0],["existing-update",7]]){
   const item=await setup(name,revision);
   let error;try{await commit(item,{abort:true});}catch(e){error=e;}
