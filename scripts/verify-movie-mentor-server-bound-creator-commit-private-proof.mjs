@@ -1,0 +1,26 @@
+import assert from "node:assert/strict";
+import {createMovieMentorInferenceExecutionLeaseAuthority} from "../ai/MovieMentorInferenceExecutionLeaseAuthority.js";
+import {bindCreatorDecisionCommitToTurn} from "../ai/MovieMentorCreatorStateConsumptionRuntime.js";
+let activeOwner="worker-A",generation=1;
+const now=()=>new Date("2026-10-09T12:00:00.000Z");
+const execution={executionId:"private-bound-execution",creatorTurnId:"bound-turn",principalId:"principal",projectId:"project",requestDigest:"digest",reservationId:"reservation",phase:"active",schema:6,ownerId:"worker-A",leaseGeneration:1,leaseReference:"ref-1",fencingToken:"fence-1",leaseExpiresAt:"2026-10-09T12:10:00.000Z"};
+const store={async readExecution(){return {...execution,ownerId:activeOwner,leaseGeneration:generation,leaseReference:`ref-${generation}`,fencingToken:`fence-${generation}`};},async readExecutionByCreatorTurn(){return {...execution};}};
+const lease=createMovieMentorInferenceExecutionLeaseAuthority({store,now,leaseMs:30000,maxProviderCalls:5,randomId:()=>"unused"});
+const proof=await lease.findExecutionByCreatorTurn({creatorTurnId:"bound-turn",principalId:"principal",projectId:"project",requestDigest:"digest"});
+assert.equal((await lease.assertFence(proof)).authorized,true);
+assert.equal((await lease.assertFence({...proof})).authorized,false);
+assert.equal((await lease.assertFence(JSON.parse(JSON.stringify(proof)))).authorized,false);
+let commits=0;
+const base=async(input,deps)=>{commits++;return {creatorTurnId:input.creatorTurnId,proofIdentity:deps.privateLeaseProof?.executionId??null,untrusted:deps.execution??null};};
+const bound=bindCreatorDecisionCommitToTurn({creatorTurnId:"bound-turn"},{commitCreatorDecision:base});
+const secure=async(args,deps={})=>{const verified=await lease.assertFence(proof);if(!verified.authorized)throw Object.assign(new Error("lease-fenced"),{code:"LEASE_FENCED"});const {execution:ignored,privateLeaseProof:ignoredProof,...safeDeps}=deps;return bound(args,{...safeDeps,privateLeaseProof:verified});};
+const first=await secure({candidate:{},projectId:"project"},{execution:{executionId:"forged"},privateLeaseProof:{executionId:"forged"}});
+assert.equal(first.creatorTurnId,"bound-turn");
+assert.equal(first.proofIdentity,"private-bound-execution");
+assert.equal(first.untrusted,null);
+activeOwner="worker-B";generation=2;
+let rejected;try{await secure({candidate:{},projectId:"project"},{privateLeaseProof:proof});}catch(e){rejected=e;}
+assert.equal(rejected?.code,"LEASE_FENCED");
+assert.equal(commits,1);
+console.log(JSON.stringify({court:"server-bound-creator-commit-private-proof",classification:"audit-only in-memory real private WeakSet lease authority and server-bound wrapper; no MongoDB transaction or production runtime integration",genuineProofAccepted:true,spreadCopyRejected:true,jsonCopyRejected:true,callerOverrideStripped:true,staleOwnerFenced:true,commits}));
+console.log("PASS: server-bound private lease proof, untrusted override stripping and stale-owner rejection");
