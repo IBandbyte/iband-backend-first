@@ -12,9 +12,14 @@ const facts={
  executionSchemaDeclaresCreatorDecisionBarrier:execution.includes("creatorDecisionBarrierRevision")
 };
 console.log(JSON.stringify({court:"creator-decision-atomic-integration-readiness",classification:"audit-only structural readiness; not MongoDB physical court",facts}));
-assert.equal(facts.postAcquisitionCommitDirectlyForwarded,false,"STRUCTURAL RED: creator commit still directly forwarded");
-assert.equal(facts.transitionForwardsSession,true,"STRUCTURAL RED: transition drops session");
-assert.equal(facts.writerInitialCreateSession,true,"STRUCTURAL RED: initial-create writer drops session");
-assert.equal(facts.writerUpdateSession,true,"STRUCTURAL RED: update writer drops session");
-assert.equal(facts.executionSchemaDeclaresCreatorDecisionBarrier,true,"STRUCTURAL RED: strict execution schema lacks dedicated barrier");
+const checks=[
+ ["post-acquisition-lease-binding",!facts.postAcquisitionCommitDirectlyForwarded],
+ ["transition-session-propagation",facts.transitionForwardsSession],
+ ["initial-create-session",facts.writerInitialCreateSession],
+ ["existing-update-session",facts.writerUpdateSession],
+ ["dedicated-execution-barrier-schema",facts.executionSchemaDeclaresCreatorDecisionBarrier]
+];
+const verdicts=checks.map(([requirement,passed])=>({requirement,passed}));
+console.log(JSON.stringify({court:"creator-decision-atomic-integration-readiness-independent-assertions",verdicts,failed:verdicts.filter(x=>!x.passed).length}));
+assert.equal(verdicts.filter(x=>!x.passed).length,0,"STRUCTURAL RED: independent prerequisite inventory contains missing integration requirements");
 console.log("PASS: all creator-decision atomic integration prerequisites structurally present");
