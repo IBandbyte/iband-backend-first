@@ -1,0 +1,17 @@
+import assert from "node:assert/strict";
+import {readFile} from "node:fs/promises";
+const read=async p=>readFile(new URL("../ai/"+p,import.meta.url),"utf8");
+const orchestrator=await read("MovieMentorTurnOrchestrator.js");
+const runtime=await read("MovieMentorTurnRuntime.js");
+const commit=await read("MovieMentorCreatorDecisionAuthority.js");
+const call=orchestrator.indexOf("const postCommitCreatorAuthority=creatorDecision?.status");
+const ret=orchestrator.indexOf("return{success:true,status:\"mentor-response-ready\"",call);
+assert.ok(call>=0&&ret>call,"production mentor response propagation must be located");
+const output=orchestrator.slice(call,ret+800);
+const forwardsPositive=output.includes("clone(creatorDecision.postCommitCreatorAuthority)")&&output.includes("postCommitCreatorAuthority,");
+const runtimeForwardsCommit=runtime.includes("commitCreatorDecision: deps.commitCreatorDecision");
+const idempotentProduces=commit.includes("postCommitCreatorAuthority=buildPostCommitCreatorAuthority(before)");
+const localExecutionGate=/assertFence\s*\(|assertCreatorDecisionExecutionFence\s*\(/.test(output);
+const facts={idempotentProducesPositiveAuthority:idempotentProduces,orchestratorForwardsPositiveAuthority:forwardsPositive,runtimePassesCommitUnmodified:runtimeForwardsCommit,orchestratorOutputHasExplicitExecutionGate:localExecutionGate};
+console.log(JSON.stringify({court:"idempotent-positive-authority-downstream-propagation",classification:"audit-only structural path evidence, not proof of unauthorized downstream effect",facts}));
+assert.equal(idempotentProduces&&forwardsPositive&&runtimeForwardsCommit&&!localExecutionGate,false,"STRUCTURAL RED: positive historical authority is forwarded into mentor response without local execution lease gate");
