@@ -1,0 +1,13 @@
+import assert from "node:assert/strict";
+import {readFile} from "node:fs/promises";
+const source=await readFile(new URL("../ai/MovieMentorResultCandidateMongoStore.js",import.meta.url),"utf8");
+const txn=source.indexOf("session.withTransaction(");
+const catch11000=source.indexOf("if(error?.code===11000)",txn);
+assert.ok(txn>=0&&catch11000>txn,"transaction and duplicate-key recovery must be located");
+const tail=source.slice(catch11000,source.indexOf("finally{await session.endSession();}",catch11000));
+const readback=tail.includes("readByExecution(record.executionId)");
+const positiveReturn=/return Object\.freeze\(\{\.\.\.durable,idempotent:true\}\)/.test(tail);
+const currentLeaseCheck=/assertFence\s*\(|leaseExpiresAt|executionLedger\(\)\.updateOne\(/.test(tail);
+const facts={duplicateKeyReadback:readback,returnsMatchingDurableCandidate:positiveReturn,explicitCurrentLeaseCheckInCatch:currentLeaseCheck};
+console.log(JSON.stringify({court:"result-candidate-duplicate-key-readback-lease-separation",classification:"audit-only source-level catch-path check; not a physical MongoDB exploit",facts}));
+assert.equal(readback&&positiveReturn&&!currentLeaseCheck,false,"STRUCTURAL RED: duplicate-key catch can return matching durable candidate without an explicit current execution lease recheck");
