@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import {createMovieMentorInferenceExecutionMongoStore} from "../ai/MovieMentorInferenceExecutionMongoStore.js";
 import {createMovieMentorInferenceExecutionLeaseAuthority} from "../ai/MovieMentorInferenceExecutionLeaseAuthority.js";
 import {writeAuthoritativeCreatorState,readAuthoritativeTurnSource} from "../ai/MovieMentorCreatorStateStore.js";
+import {createMovieMentorCreatorStateMutationAuthority} from "../ai/MovieMentorCreatorStateMutationAuthority.js";
 assert.equal(process.env.MONGO_URI,"mongodb://127.0.0.1:27017/iband_real_writer_transaction_seam_court");
 await mongoose.connect(process.env.MONGO_URI,{serverSelectionTimeoutMS:10000});
 try{
@@ -19,8 +20,9 @@ try{
  const evidence=await lease.openExecution({creatorTurnId:"seam-turn",principalId,projectId,reservationId,requestDigest:"sha256:seam",ownerId:"worker-A"});
  assert.equal((await lease.assertFence(evidence)).authorized,true);
  const original=await readAuthoritativeTurnSource({projectId});
- const next={...original,revision:8,revisionAuthorityReference:"revision-8",creatorStateGeneration:4,creatorStateFingerprint:"fingerprint-4",creatorAuthorityReference:"authority-4",snapshotReference:"snapshot-8",capturedAt:new Date().toISOString()};
- const mutationAuthority={async assertCurrentMutation(){return {authorized:true}}};
+ const next={...original,revision:8,revisionAuthorityReference:"revision-8",creatorStateGeneration:4,creatorStateFingerprint:"fingerprint-4",creatorAuthorityReference:"authority-4",snapshotReference:"snapshot-8",capturedAt:new Date().toISOString(),transition:{source:"creator-decision"}};
+ const authorization={authorized:true,principalId,projectId,ownershipRef:"seam-owner-reference",ownershipRevision:1};
+ const mutationAuthority=createMovieMentorCreatorStateMutationAuthority({request:{court:true},authorization,requestAuthority:{async authorize(){return authorization;}}});
  let callbackObserved=false;
  const session=await mongoose.startSession();
  try{
