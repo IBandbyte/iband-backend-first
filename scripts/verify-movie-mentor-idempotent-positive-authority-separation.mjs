@@ -1,0 +1,14 @@
+import assert from "node:assert/strict";
+import {readFile} from "node:fs/promises";
+const src=await readFile(new URL("../ai/MovieMentorCreatorDecisionAuthority.js",import.meta.url),"utf8");
+const start=src.indexOf("function idempotentDecisionResult(");
+const end=src.indexOf("async function commitCreatorDecision(",start);
+assert.ok(start>=0&&end>start,"production idempotent result function must be located");
+const body=src.slice(start,end);
+const returnsCommitted=/status\s*:\s*["']committed["']/.test(body);
+const emitsPositiveAuthority=/postCommitCreatorAuthority\s*=\s*buildPostCommitCreatorAuthority\(before\)/.test(body)&&/postCommitCreatorAuthority\s*\}/.test(body);
+const executionFence=/assertFence\s*\(|assertCreatorDecisionExecutionFence\s*\(/.test(body);
+const facts={returnsCommitted,emitsPositiveAuthority,executionFenceInIdempotentResult:executionFence};
+console.log(JSON.stringify({court:"creator-decision-idempotent-positive-authority-separation",classification:"audit-only structural source evidence; not physical MongoDB test",facts}));
+assert.equal(returnsCommitted&&emitsPositiveAuthority&&!executionFence,false,"STRUCTURAL RED: idempotent historical readback returns positive post-commit creator authority without an explicit execution lease fence");
+console.log("PASS: historical idempotency does not emit unfenced positive continuation authority");
