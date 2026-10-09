@@ -1,10 +1,6 @@
 import assert from "node:assert/strict";
-import {createMovieMentorInferenceExecutionLeaseAuthority} from "../ai/MovieMentorInferenceExecutionLeaseAuthority.js";
 import {bindCreatorDecisionCommitToTurn} from "../ai/MovieMentorCreatorStateConsumptionRuntime.js";
 const execution={authorized:true,executionId:"bound-execution",ownerId:"worker-A",leaseGeneration:3,leaseReference:"private-ref",fencingToken:"private-token"};
-let current=true;
-const store={async readExecution(){return {...execution};}};
-const leaseAuthority=createMovieMentorInferenceExecutionLeaseAuthority({store,now:()=>new Date(),leaseMs:30000,maxProviderCalls:5,randomId:()=> "not-used"});
 let calls=0;
 const originalCommit=async(input,deps)=>{calls++;return {status:"committed",creatorTurnId:input.creatorTurnId,callerExecution:deps.execution??null};};
 const bound=bindCreatorDecisionCommitToTurn({creatorTurnId:"bound-turn"},{commitCreatorDecision:originalCommit});
