@@ -1,0 +1,43 @@
+name: Verify Movie Mentor Real Creator Writer Initial Create Session Seam
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - audit/creator-first-commit-takeover-verifier
+    paths:
+      - scripts/verify-movie-mentor-real-creator-writer-initial-create-session-seam.mjs
+      - .github/workflows/verify-movie-mentor-real-creator-writer-initial-create-session-seam.yml
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    env:
+      MONGO_URI: mongodb://127.0.0.1:27017/iband_real_writer_initial_create_session_court
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Start isolated MongoDB replica set
+        run: |
+          docker run -d --name movie-mentor-real-api-candidate-mongo -p 127.0.0.1:27017:27017 mongo:7 --replSet rs0 --bind_ip_all
+          for attempt in $(seq 1 40); do
+            if ! docker inspect -f '{{.State.Running}}' movie-mentor-real-api-candidate-mongo | grep -q true; then
+              docker ps -a --filter name=movie-mentor-real-api-candidate-mongo
+              docker logs movie-mentor-real-api-candidate-mongo --tail 100 || true
+              echo "MongoDB container exited before readiness; infrastructure failure"
+              exit 1
+            fi
+            if docker exec movie-mentor-real-api-candidate-mongo mongosh --quiet --eval 'db.adminCommand({ping:1}).ok' | grep -q 1; then break; fi
+            sleep 2
+          done
+          docker exec movie-mentor-real-api-candidate-mongo mongosh --quiet --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"127.0.0.1:27017"}]})'
+          for attempt in $(seq 1 40); do
+            if docker exec movie-mentor-real-api-candidate-mongo mongosh --quiet --eval 'db.hello().isWritablePrimary' | grep -q true; then break; fi
+            sleep 2
+          done
+          docker exec movie-mentor-real-api-candidate-mongo mongosh --quiet --eval 'if (!db.hello().isWritablePrimary) quit(1)'
+      - run: node --check scripts/verify-movie-mentor-real-creator-writer-initial-create-session-seam.mjs
+      - run: node scripts/verify-movie-mentor-real-creator-writer-initial-create-session-seam.mjs
