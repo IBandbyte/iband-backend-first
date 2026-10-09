@@ -49,7 +49,7 @@ try{
  const legacy=await setup("legacy-missing-barrier",7);
  const rawBefore=await executions.findOne({executionId:legacy.proof.executionId});
  assert.equal(rawBefore.creatorDecisionBarrierRevision,undefined,"physical legacy row must lack the field");
- const hydrated=await executionModel.findOne({executionId:legacy.proof.executionId}).lean();
+ const hydrated=await executionModel.findOne({executionId:legacy.proof.executionId});
  assert.equal(hydrated.creatorDecisionBarrierRevision,0,"candidate schema must default missing legacy field to zero");
  assert.equal(await commit(legacy),8);
  const rawAfter=await executions.findOne({executionId:legacy.proof.executionId});
