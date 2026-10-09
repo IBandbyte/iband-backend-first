@@ -4,7 +4,7 @@ import {bindCreatorDecisionCommitToTurn} from "../ai/MovieMentorCreatorStateCons
 let activeOwner="worker-A",generation=1;
 const now=()=>new Date("2026-10-09T12:00:00.000Z");
 const execution={executionId:"private-bound-execution",creatorTurnId:"bound-turn",principalId:"principal",projectId:"project",requestDigest:"digest",reservationId:"reservation",phase:"active",schema:6,ownerId:"worker-A",leaseGeneration:1,leaseReference:"ref-1",fencingToken:"fence-1",leaseExpiresAt:"2026-10-09T12:10:00.000Z"};
-const store={async readExecution(){return {...execution,ownerId:activeOwner,leaseGeneration:generation,leaseReference:`ref-${generation}`,fencingToken:`fence-${generation}`};},async readExecutionByCreatorTurn(){return {...execution};}};
+const store={async readExecution(){return {...execution,ownerId:activeOwner,leaseGeneration:generation,leaseReference:`ref-${generation}`,fencingToken:`fence-${generation}`};},async readExecutionByCreatorTurn(){return {...execution};},async createExecution(){throw new Error("unused");},async replaceExecution(){throw new Error("unused");},async claimProviderCall(){throw new Error("unused");}};
 const lease=createMovieMentorInferenceExecutionLeaseAuthority({store,now,leaseMs:30000,maxProviderCalls:5,randomId:()=>"unused"});
 const proof=await lease.findExecutionByCreatorTurn({creatorTurnId:"bound-turn",principalId:"principal",projectId:"project",requestDigest:"digest"});
 assert.equal((await lease.assertFence(proof)).authorized,true);
