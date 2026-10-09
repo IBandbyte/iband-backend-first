@@ -1,0 +1,13 @@
+import assert from "node:assert/strict";
+import {readFile} from "node:fs/promises";
+const source=await readFile(new URL("../ai/MovieMentorTurnRuntime.js",import.meta.url),"utf8");
+const start=source.indexOf("let orchestrationDeps = { readAuthoritativeRevision:");
+const end=source.indexOf("let result;",start);
+assert.ok(start>=0&&end>start,"production post-acquisition orchestration seam must be located");
+const block=source.slice(start,end);
+assert.match(block,/createFencedInferenceOrchestrationDeps\(\{ execution, inferenceExecutionAuthority, deps \}\)/,"real acquired execution must be in scope");
+assert.match(block,/commitCreatorDecision:\s*deps\.commitCreatorDecision/,"existing creator commit forwarding must remain visible");
+const bound=/commitCreatorDecision:\s*(?:async\s*)?\([^)]*\)\s*=>|commitCreatorDecision:\s*(?:async\s*)?function|commitCreatorDecision:\s*create[A-Za-z]*Creator[A-Za-z]*Commit/.test(block);
+console.log(JSON.stringify({court:"creator-decision-post-acquisition-binding-structural",classification:"audit-only executable source seam; NOT physical MongoDB verdict",executionAcquiredInScope:true,creatorCommitDirectlyForwarded:!bound,postAcquisitionBindingDetected:bound}));
+assert.equal(bound,true,"STRUCTURAL RED: acquired execution exists, but creator decision is forwarded directly without post-acquisition lease binding");
+console.log("PASS: creator-decision post-acquisition binding structurally present");
