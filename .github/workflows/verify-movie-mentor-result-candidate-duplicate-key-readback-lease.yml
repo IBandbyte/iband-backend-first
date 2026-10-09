@@ -1,0 +1,18 @@
+name: Verify Movie Mentor Result Candidate Duplicate Key Readback Lease
+on:
+  push:
+    branches: [audit/creator-first-commit-takeover-verifier]
+    paths:
+      - scripts/verify-movie-mentor-result-candidate-duplicate-key-readback-lease.mjs
+      - .github/workflows/verify-movie-mentor-result-candidate-duplicate-key-readback-lease.yml
+  workflow_dispatch:
+jobs:
+  duplicate-key-readback:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: node --check scripts/verify-movie-mentor-result-candidate-duplicate-key-readback-lease.mjs
+      - run: node scripts/verify-movie-mentor-result-candidate-duplicate-key-readback-lease.mjs
