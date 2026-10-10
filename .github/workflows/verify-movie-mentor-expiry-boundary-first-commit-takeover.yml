@@ -1,0 +1,42 @@
+name: Verify Movie Mentor Expiry Boundary First Commit Takeover
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - audit/creator-first-commit-takeover-verifier
+    paths:
+      - scripts/verify-movie-mentor-expiry-boundary-first-commit-takeover.mjs
+      - .github/workflows/verify-movie-mentor-expiry-boundary-first-commit-takeover.yml
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      MONGO_URI: mongodb://127.0.0.1:27017/iband_expiry_boundary_first_commit_court
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund --ignore-scripts
+      - name: Start isolated MongoDB 7 replica set
+        run: |
+          docker run -d --name expiry-boundary-court -p 127.0.0.1:27017:27017 --tmpfs /data/db:rw,exec,nosuid,size=512m --tmpfs /data/configdb:rw,exec,nosuid,size=64m mongo:7 --replSet rs0 --bind_ip_all
+          for attempt in $(seq 1 40); do
+            if ! docker inspect -f '{{.State.Running}}' expiry-boundary-court | grep -q true; then
+              docker logs expiry-boundary-court --tail 100 || true
+              exit 1
+            fi
+            if docker exec expiry-boundary-court mongosh --quiet --eval 'db.adminCommand({ping:1}).ok' | grep -q 1; then break; fi
+            sleep 2
+          done
+          docker exec expiry-boundary-court mongosh --quiet --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"127.0.0.1:27017"}]})'
+          for attempt in $(seq 1 40); do
+            if docker exec expiry-boundary-court mongosh --quiet --eval 'db.hello().isWritablePrimary' | grep -q true; then break; fi
+            sleep 2
+          done
+          docker exec expiry-boundary-court mongosh --quiet --eval 'if (!db.hello().isWritablePrimary) quit(1)'
+      - run: node --check scripts/verify-movie-mentor-expiry-boundary-first-commit-takeover.mjs
+      - run: node scripts/verify-movie-mentor-expiry-boundary-first-commit-takeover.mjs
