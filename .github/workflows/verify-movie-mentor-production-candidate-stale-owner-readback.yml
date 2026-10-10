@@ -22,7 +22,7 @@ jobs:
       - run: npm install --no-audit --no-fund --ignore-scripts
       - name: Start isolated MongoDB replica set
         run: |
-          docker run -d --name movie-mentor-real-api-candidate-mongo -p 127.0.0.1:27017:27017 mongo:7 --replSet rs0 --bind_ip_all
+          docker run -d --name movie-mentor-real-api-candidate-mongo -p 127.0.0.1:27017:27017 --tmpfs /data/db:rw,exec,nosuid,size=512m --tmpfs /data/configdb:rw,exec,nosuid,size=64m mongo:7 --replSet rs0 --bind_ip_all
           for attempt in $(seq 1 40); do
             if ! docker inspect -f '{{.State.Running}}' movie-mentor-real-api-candidate-mongo | grep -q true; then
               docker ps -a --filter name=movie-mentor-real-api-candidate-mongo
