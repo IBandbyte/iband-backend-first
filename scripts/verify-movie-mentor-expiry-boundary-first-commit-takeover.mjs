@@ -44,13 +44,15 @@ try {
       principalId: "principal-" + id, projectId: "project-" + id,
       reservationId: "reservation-" + id, requestDigest: "digest-" + id,
       ownerId: "owner-A", leaseGeneration: 1, leaseReference: "lease-A",
-      fencingToken: "fence-A", phase: "active", schema: 6,
+      fencingToken: "fence-A", phase: "active", schema: 6, domain: "iband.movie-mentor.inference-execution-store",
       maxProviderCalls: 5, providerCallsClaimed: 0, providerCalls: [],
       leaseAcquiredAt: new Date((await serverNow()) - 1000),
       leaseExpiresAt: new Date((await serverNow()) + 3000),
       resultCandidateBarrierRevision: 0
     };
     await executions.insertOne(seed);
+    // A valid production-schema record is a precondition, not an optional observation.
+    assert.equal((await executionStore.readExecution(id))?.executionId, id, "INVALID FIXTURE: production store rejected execution");
     await states.insertOne({ projectId: seed.projectId, revision: 7, creatorStateGeneration: 3,
       creatorStateFingerprint: "fingerprint-" + id, resultCandidateBarrierRevision: 0 });
     const proof = { domain: DOMAIN, schema: SCHEMA, authorized: true, currentOwnershipVerified: true,
@@ -78,7 +80,7 @@ try {
     const staging = store.stageCandidate({ execution: seed, creatorStateConsumptionProof: proof, resultPayload: payload })
       .then(value => ({ status: "fulfilled", idempotent: value?.idempotent === true }),
         error => ({ status: "rejected", code: error?.code ?? null, message: error?.message ?? "" }));
-    let takeover, attemptedBeforeRelease = false;
+    let takeover, takeoverPromise, attemptedBeforeRelease = false;
     try {
       await Promise.race([ready, sleep(12000).then(() => { throw Error("First transaction did not reach gate"); })]);
       const expiry = seed.leaseExpiresAt.getTime();
@@ -87,10 +89,13 @@ try {
         .then(value => ({ status: "fulfilled", authorized: value?.authorized === true,
           acquired: value?.acquired === true, reason: value?.reason ?? null }),
           error => ({ status: "rejected", code: error?.code ?? null, message: error?.message ?? "" }));
+      takeoverPromise = attempt;
       takeover = await Promise.race([attempt, sleep(250).then(() => ({ status: "pending" }))]);
       attemptedBeforeRelease = true;
     } finally { release(); }
     const stageResult = await staging;
+    const completedTakeover = await takeoverPromise;
+    assert.notEqual(completedTakeover.code, "MOVIE_MENTOR_INFERENCE_EXECUTION_MONGO_RECORD_INVALID", "INVALID FIXTURE: takeover rejected malformed execution");
     // If the initial takeover was blocked by the transaction, retry via production authority.
     const after = await authority.acquireExecution({ executionId: id, ownerId: "owner-B" })
       .then(value => ({ status: "fulfilled", authorized: value?.authorized === true,
@@ -110,7 +115,7 @@ try {
       assert.equal(row.leaseGeneration, 2, "GENUINE RED: takeover generation invalid");
       assert.notEqual(candidate?.stagedFromLeaseGeneration, 2, "GENUINE RED: owner A forged owner B candidate");
     }
-    summary.cases.push({ id, stageResult, takeoverBeforeRelease: takeover, takeoverAfterRelease: after,
+    summary.cases.push({ id, stageResult, takeoverBeforeRelease: takeover, takeoverCompleted: completedTakeover, takeoverAfterRelease: after,
       finalOwner: row.ownerId, generation: row.leaseGeneration, candidates: count,
       candidateGeneration: candidate?.stagedFromLeaseGeneration ?? null,
       barrier: row.resultCandidateBarrierRevision });
@@ -118,6 +123,7 @@ try {
   summary.command11000 = events.flatMap(e => [e.code, ...e.writeErrors]).filter(x => x === 11000).length;
   summary.command112 = events.flatMap(e => [e.code, ...e.writeErrors]).filter(x => x === 112).length;
   summary.command251 = events.flatMap(e => [e.code, ...e.writeErrors]).filter(x => x === 251).length;
+  assert.ok(summary.cases.some(c => c.takeoverCompleted.acquired || c.takeoverAfterRelease.acquired), "INVALID COURT: no real takeover completed");
   summary.classification = summary.command11000 > 0
     ? "11000_OBSERVED_REVIEW_EXACT_EXECUTION_ID_AND_AUTHORITY"
     : "INCONCLUSIVE_NO_EXECUTION_ID_11000";
