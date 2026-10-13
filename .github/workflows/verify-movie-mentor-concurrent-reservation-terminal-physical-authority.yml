@@ -2,6 +2,11 @@ name: Verify Movie Mentor Concurrent Reservation Terminal Physical Authority
 on:
   pull_request:
   workflow_dispatch:
+  push:
+    branches:
+      - audit/creator-first-commit-takeover-verifier
+    paths:
+      - ".github/workflows/verify-movie-mentor-concurrent-reservation-terminal-physical-authority.yml"
 jobs:
   verify:
     runs-on: ubuntu-latest
