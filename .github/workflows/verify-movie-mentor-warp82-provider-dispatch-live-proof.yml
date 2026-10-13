@@ -5,6 +5,8 @@ on:
     branches:
       - audit/creator-first-commit-takeover-verifier
     paths:
+      - "ai/MovieMentorInferenceExecutionPhysicalAuthority.js"
+      - "ai/MovieMentorInferenceExecutionMongoStore.js"
       - "scripts/verify-movie-mentor-warp82-provider-dispatch-live-proof.mjs"
       - ".github/workflows/verify-movie-mentor-warp82-provider-dispatch-live-proof.yml"
 jobs:
@@ -16,5 +18,7 @@ jobs:
         with:
           node-version: 20
       - run: npm install
+      - run: node --check ai/MovieMentorInferenceExecutionPhysicalAuthority.js
+      - run: node --check ai/MovieMentorInferenceExecutionMongoStore.js
       - run: node --check scripts/verify-movie-mentor-warp82-provider-dispatch-live-proof.mjs
       - run: node scripts/verify-movie-mentor-warp82-provider-dispatch-live-proof.mjs
