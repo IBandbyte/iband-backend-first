@@ -1,0 +1,35 @@
+name: Verify Movie Mentor Transport Four Courts
+on:
+  push:
+    branches:
+      - audit/creator-first-commit-takeover-verifier
+    paths:
+      - scripts/verify-movie-mentor-semantic-redirect-observation.mjs
+      - scripts/verify-movie-mentor-semantic-cross-origin-auth-observation.mjs
+      - scripts/verify-movie-mentor-semantic-generic-operation-observation.mjs
+      - scripts/verify-movie-mentor-structured-redirect-rejection.mjs
+      - ai/MovieMentorSemanticInterpreter.js
+      - ai/StructuredAIProviderClient.js
+      - .github/workflows/verify-movie-mentor-transport-four-courts.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  transport-courts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        verifier:
+          - scripts/verify-movie-mentor-semantic-redirect-observation.mjs
+          - scripts/verify-movie-mentor-semantic-cross-origin-auth-observation.mjs
+          - scripts/verify-movie-mentor-semantic-generic-operation-observation.mjs
+          - scripts/verify-movie-mentor-structured-redirect-rejection.mjs
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run exact-head physical verifier
+        run: node ${{ matrix.verifier }}
