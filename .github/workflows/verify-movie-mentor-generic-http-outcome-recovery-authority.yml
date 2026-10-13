@@ -1,0 +1,24 @@
+name: Movie Mentor generic HTTP outcome recovery authority
+on:
+  push:
+    branches:
+      - audit/creator-first-commit-takeover-verifier
+    paths:
+      - scripts/verify-movie-mentor-generic-http-outcome-recovery-authority.mjs
+      - .github/workflows/verify-movie-mentor-generic-http-outcome-recovery-authority.yml
+      - ai/MovieMentorProviderOutcomeRecoveryAuthority.js
+  workflow_dispatch:
+jobs:
+  generic-http-outcome-recovery:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Exact-head generic HTTP recovery authority
+        run: node scripts/verify-movie-mentor-generic-http-outcome-recovery-authority.mjs
