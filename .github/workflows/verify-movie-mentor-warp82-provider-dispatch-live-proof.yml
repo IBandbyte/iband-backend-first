@@ -1,0 +1,20 @@
+name: Verify WARP82 Provider Dispatch Live Proof
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - audit/creator-first-commit-takeover-verifier
+    paths:
+      - "scripts/verify-movie-mentor-warp82-provider-dispatch-live-proof.mjs"
+      - ".github/workflows/verify-movie-mentor-warp82-provider-dispatch-live-proof.yml"
+jobs:
+  warp82-provider-dispatch-live-proof:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: node --check scripts/verify-movie-mentor-warp82-provider-dispatch-live-proof.mjs
+      - run: node scripts/verify-movie-mentor-warp82-provider-dispatch-live-proof.mjs
