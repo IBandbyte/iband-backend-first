@@ -1,0 +1,24 @@
+name: Verify Movie Mentor Predispatch Refund Reconciliation Propagation
+on:
+  push:
+    branches:
+      - audit/creator-first-commit-takeover-verifier
+    paths:
+      - scripts/verify-movie-mentor-predispatch-refund-reconciliation-propagation.mjs
+      - ai/MovieMentorTurnRuntime.js
+      - ai/MovieMentorInferenceSettlementReconciliationAuthority.js
+      - .github/workflows/verify-movie-mentor-predispatch-refund-reconciliation-propagation.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  propagation-court:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run exact-head predispatch propagation verifier
+        run: node scripts/verify-movie-mentor-predispatch-refund-reconciliation-propagation.mjs
