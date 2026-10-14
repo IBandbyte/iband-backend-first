@@ -5,6 +5,7 @@ on:
       - audit/creator-first-commit-takeover-verifier
     paths:
       - scripts/verify-movie-mentor-semantic-target-binding-court.mjs
+      - ai/MovieMentorSemanticInterpreter.js
       - .github/workflows/verify-movie-mentor-semantic-target-binding-court.yml
   workflow_dispatch:
 permissions:
