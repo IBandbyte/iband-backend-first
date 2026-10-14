@@ -6,6 +6,8 @@ on:
     paths:
       - scripts/verify-movie-mentor-semantic-target-binding-court.mjs
       - ai/MovieMentorSemanticInterpreter.js
+      - scripts/verify-movie-mentor-semantic-redirect-observation.mjs
+      - scripts/verify-movie-mentor-semantic-cross-origin-auth-observation.mjs
       - .github/workflows/verify-movie-mentor-semantic-target-binding-court.yml
   workflow_dispatch:
 permissions:
