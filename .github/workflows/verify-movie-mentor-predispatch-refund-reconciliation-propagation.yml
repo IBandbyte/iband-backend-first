@@ -20,5 +20,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+      - name: Install project dependencies
+        run: npm install
       - name: Run exact-head predispatch propagation verifier
         run: node scripts/verify-movie-mentor-predispatch-refund-reconciliation-propagation.mjs
