@@ -1,0 +1,22 @@
+name: Verify Movie Mentor Semantic Target Binding Court
+on:
+  push:
+    branches:
+      - audit/creator-first-commit-takeover-verifier
+    paths:
+      - scripts/verify-movie-mentor-semantic-target-binding-court.mjs
+      - .github/workflows/verify-movie-mentor-semantic-target-binding-court.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  semantic-target-binding:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run exact-head semantic target-binding verifier
+        run: node scripts/verify-movie-mentor-semantic-target-binding-court.mjs
