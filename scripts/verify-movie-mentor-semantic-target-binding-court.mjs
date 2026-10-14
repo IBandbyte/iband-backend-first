@@ -57,7 +57,7 @@ try {
   } catch (caught) {
     error = caught;
   }
-  assert.ok(error, "mismatched semantic transport must fail closed");
+  assert.equal(error?.code, "SEMANTIC_PROVIDER_TRANSPORT_TARGET_AUTHORITY_INVALID", "target drift must fail with the exact semantic transport authority error");
   assert.equal(driftedCalls, 0, "UNAUTHORISED: semantic POST reached provider B despite durable target A");
   assert.equal(authorizedCalls, 0, "a mismatched target must not silently dispatch to A");
   console.log("Semantic interpreter target-binding court: GREEN");
