@@ -27,22 +27,17 @@ try {
   process.env.IBAND_AI_BASE_URL = `http://127.0.0.1:${origin.address().port}/configured-provider`;
   process.env.IBAND_AI_API_KEY = "warp84-disposable-local-token";
   process.env.IBAND_AI_TIMEOUT_MS = "3000";
-  let failed = false;
+  let error = null;
   try {
     await interpretMovieMentorSemantics({ message: "A fictional scene begins." }, {
       providerOperation: { providerOperationId: "warp84-operation", executionId: "warp84-execution", slotId: "semantic", task: "movie-mentor-semantic" },
     });
-  } catch {
-    failed = true;
+  } catch (caught) {
+    error = caught;
   }
-  assert.equal(failed, true, "local destination intentionally rejects the request");
-  assert.equal(requests.length, 1, "Node fetch followed the 307 redirect to the unconfigured local destination");
-  assert.equal(requests[0].method, "POST", "307 preserves the semantic POST");
-  const body = JSON.parse(requests[0].body);
-  assert.equal(body.task, "movie-mentor-semantic-interpretation");
-  assert.equal(typeof body.input, "object");
-  assert.equal(requests[0].headers.authorization, undefined, "cross-origin fetch must strip Authorization");
-  console.log("WARP84 OBSERVATION: redirected semantic POST body reached a different loopback origin; Authorization was stripped. This is not a production defect verdict.");
+  assert.equal(error?.code, "SEMANTIC_PROVIDER_REDIRECT_FORBIDDEN", "semantic redirect must be rejected explicitly");
+  assert.equal(requests.length, 0, "redirect destination must receive no semantic POST");
+  console.log("WARP84 SECURITY GREEN: semantic 307 redirect rejected; destination received zero requests.");
 } finally {
   for (const key of keys) {
     if (previous[key] === undefined) delete process.env[key];
