@@ -1,0 +1,43 @@
+import assert from "node:assert/strict";
+import mongoose from "mongoose";
+import {createMovieMentorCommercialReversalMongoStore} from "../ai/MovieMentorCommercialReversalMongoStore.js";
+import {createMovieMentorProductionCommercialValueDispositionComposition} from "../ai/MovieMentorProductionCommercialValueDispositionComposition.js";
+
+const uri=process.env.MONGO_URI;
+assert.ok(uri&&/^(?:mongodb:\/\/)(?:127\.0\.0\.1|localhost):27017\/iband_aud_open_01(?:\?|$)/.test(uri),"isolated local MongoDB required");
+await mongoose.connect(uri,{serverSelectionTimeoutMS:15000});
+try {
+ const hello=await mongoose.connection.db.admin().command({hello:1});
+ assert.ok(hello.setName,"CASE D requires a real replica set; standalone MongoDB is not a valid court");
+ const db=mongoose.connection.db;
+ const reversal=createMovieMentorCommercialReversalMongoStore();
+ const value=createMovieMentorProductionCommercialValueDispositionComposition();
+ assert.equal(value.ready,true);
+ const principalId="aud-case-d-principal",commercialIntentId="aud-case-d-intent",providerPaymentReference="aud-case-d-payment";
+ await db.collection("movie_mentor_inference_entitlement").insertOne({domain:"iband.movie-mentor.inference-spend",schema:1,principalId,status:"active",remainingUnits:20,reservedUnits:0,consumedUnits:0,entitlementRevision:1});
+ const input={provider:"stripe",providerPaymentReference,commercialIntentId,principalId,amountMinor:1200,currency:"GBP",units:20};
+ await value.authority.preserveVerifiedPaidValue({...input,reason:"entitlement-suspended",refundAuthorized:false});
+ const evidence={evidenceId:"aud-case-d-chargeback",evidenceSource:"stripe",evidenceKind:"chargeback",providerPaymentReference,commercialReference:commercialIntentId,principalId,reversalAmountMinor:300,currency:"GBP"};
+ const first=await reversal.suspend(evidence);
+ assert.equal(first.suspended,true);assert.equal(first.idempotent,false);
+ const receipt=await db.collection("movie_mentor_commercial_reversal").findOne({evidenceSource:"stripe",evidenceId:evidence.evidenceId});
+ const entitlement=await db.collection("movie_mentor_inference_entitlement").findOne({principalId});
+ assert.ok(receipt,"durable reversal receipt required");
+ assert.equal(entitlement.status,"suspended");
+ const before=await db.collection("movie_mentor_commercial_value_disposition").findOne({provider:"stripe",providerPaymentReference});
+ assert.equal(before.chargebackAmountMinor,0,"cross-ledger crash boundary must be physically unsettled");
+ console.log("CASE D PHYSICAL CHECKPOINT: reversal transaction committed; credit ledger still unsettled");
+ const retry=await reversal.suspend(evidence);
+ assert.equal(retry.idempotent,true);
+ const settle={...input,disposition:"chargeback",chargebackAmountMinor:300,terminalReference:evidence.evidenceId};
+ await value.authority.terminallySettlePreservedValue(settle);
+ await value.authority.terminallySettlePreservedValue(settle);
+ const after=await db.collection("movie_mentor_commercial_value_disposition").findOne({provider:"stripe",providerPaymentReference});
+ assert.equal(after.chargebackAmountMinor,300);
+ assert.equal(after.remainingAmountMinor,900);
+ assert.equal(after.chargebackAmountMinor+after.remainingAmountMinor,1200);
+ assert.equal((after.chargebackEvents||[]).filter(e=>e.reference===evidence.evidenceId).length,1);
+ assert.equal(await db.collection("movie_mentor_commercial_reversal").countDocuments({evidenceSource:"stripe",evidenceId:evidence.evidenceId}),1);
+ console.log("CASE D PHYSICAL GREEN: real MongoDB reversal receipt and preserved-credit ledgers converge on replay");
+ console.log("NOT PROVEN: checkout-provider revocation, end-to-end signed ingress replay, or autonomous recovery without redelivery");
+}finally{await mongoose.disconnect();}
