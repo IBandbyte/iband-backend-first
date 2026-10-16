@@ -14,7 +14,7 @@ try {
  await coll.insertMany([make("case-d-open-a",principal),make("case-d-open-b",principal),make("case-d-other","other-principal")]);
  const calls=[];let failOnce=true;
  const registry=createMovieMentorCommercialCheckoutProviderRegistry({providers:{stripe:{
- getStatus:()=>({provider:"stripe",productionCommercialCheckoutProvider:true,createCheckout:true,resolveCheckout:true,revokeCheckout:true,processLocalFallback:false}),
+ getStatus:()=>({domain:"iband.movie-mentor.commercial-provider-adapter",provider:"stripe",productionCommercialProviderAdapter:true,checkoutTransport:true,checkoutRevocation:true,checkoutRevocationRecovery:true,currentCheckoutReality:true,serverOwnedIdempotencyRequired:true,creatorPayloadIsNotPaymentAuthority:true,processLocalFallback:false}),
  createCheckout:async()=>{throw Error("not used");},
  resolveCheckout:async()=>{throw Error("not used");},
  revokeCheckout:async({checkoutReference})=>{calls.push(checkoutReference);if(checkoutReference==="cs-case-d-open-b"&&failOnce){failOnce=false;throw Error("CASE_D_PROVIDER_REVOCATION_INTERRUPTED");}return {revoked:true,provider:"stripe",checkoutReference};}
