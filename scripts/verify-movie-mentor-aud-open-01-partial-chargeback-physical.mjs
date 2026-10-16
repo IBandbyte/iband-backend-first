@@ -56,28 +56,24 @@ try {
   await check(a.providerPaymentReference,"A first event");
   console.log("PASS A: first partial chargeback");
 
-  // Physical root-cause court: inspect actual production-model index and reproduce
-  // the nullable compound-unique collision in an isolated disposable collection.
+  // Physical index court: multiple live preserved-credit records with null
+  // terminal fields must coexist, while terminal evidence remains unique.
   const actualIndexes=await bounded("physical index catalogue",()=>collection().indexes());
   const terminalIndex=actualIndexes.find(i=>i.unique===true&&i.key?.terminalDisposition===1&&i.key?.terminalReference===1);
   assert.ok(terminalIndex,"physical terminal identity unique index must exist");
-  checkpoint("TERMINAL INDEX "+JSON.stringify({name:terminalIndex.name,key:terminalIndex.key,unique:terminalIndex.unique,sparse:terminalIndex.sparse,partialFilterExpression:terminalIndex.partialFilterExpression}));
+  assert.equal(terminalIndex.partialFilterExpression?.terminalDisposition?.$type,"string");
+  assert.equal(terminalIndex.partialFilterExpression?.terminalReference?.$type,"string");
+  checkpoint("SAFE TERMINAL INDEX "+JSON.stringify({name:terminalIndex.name,partialFilterExpression:terminalIndex.partialFilterExpression}));
   const probe=mongoose.connection.collection("aud_open_01_nullable_index_probe");
-  await bounded("probe index create",()=>probe.createIndex({terminalDisposition:1,terminalReference:1},{unique:true,sparse:true}));
+  await bounded("probe index create",()=>probe.createIndex({terminalDisposition:1,terminalReference:1},{unique:true,partialFilterExpression:{terminalDisposition:{$type:"string"},terminalReference:{$type:"string"}}}));
   await bounded("probe first null insert",()=>probe.insertOne({providerPaymentReference:"probe-first",terminalDisposition:null,terminalReference:null}));
+  await bounded("probe second null insert",()=>probe.insertOne({providerPaymentReference:"probe-second",terminalDisposition:null,terminalReference:null}));
+  await bounded("probe first terminal identity",()=>probe.insertOne({providerPaymentReference:"terminal-first",terminalDisposition:"chargeback",terminalReference:"evt-probe-unique"}));
   let duplicate=null;
-  try {
-    await bounded("probe second null insert",()=>probe.insertOne({providerPaymentReference:"probe-second",terminalDisposition:null,terminalReference:null}));
-  } catch(e) {
-    if(e?.code!==11000)throw e;
-    duplicate=e;
-    checkpoint("PHYSICAL DUPLICATE KEY "+JSON.stringify({code:e.code,keyPattern:e.keyPattern,keyValue:e.keyValue,indexName:terminalIndex.name}));
-  }
-  assert.ok(duplicate,"expected second explicit-null record to collide under physical sparse unique index");
-  const diagnosis=new Error("PHYSICAL INDEX COLLISION PROVEN: distinct preserved-credit rows with explicit-null terminal identity collide; source catch(11000) retries indefinitely. Accounting replay cases B/C remain untested.");
-  diagnosis.code="AUD_OPEN_01_INDEX_COLLISION_PROVEN";
-  throw diagnosis;
-
+  try {await bounded("probe duplicate terminal identity",()=>probe.insertOne({providerPaymentReference:"terminal-second",terminalDisposition:"chargeback",terminalReference:"evt-probe-unique"}));}
+  catch(e){if(e?.code!==11000)throw e;duplicate=e;}
+  assert.ok(duplicate,"duplicate real terminal evidence must remain rejected");
+  checkpoint("PASS SAFE INDEX: multiple nulls coexist; duplicate terminal evidence rejected");
 
   // B: same payment and identical evidence reference delivered twice.
   const b=await seed("pi-aud-open-01-b");
