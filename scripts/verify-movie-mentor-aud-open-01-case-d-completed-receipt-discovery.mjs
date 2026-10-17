@@ -6,7 +6,7 @@ import {createMovieMentorProductionCommercialReversalComposition,isMovieMentorPr
 // A pending-lineage reader is NOT a completed-receipt reader.
 // This is an interface/physical-capability court, not an A-B-C recovery or CAS court.
 const uri=process.env.MONGO_URI||process.env.MONGODB_URI;
-assert.ok(uri&&/^mongodb:\\/\\/(?:127\\.0\\.0\\.1|localhost):27017\\/iband_aud_open_01(?:\\?|$)/.test(uri),"isolated AUD-OPEN-01 MongoDB required");
+assert.ok(uri&&(uri.startsWith("mongodb://127.0.0.1:27017/iband_aud_open_01?")||uri==="mongodb://127.0.0.1:27017/iband_aud_open_01"||uri.startsWith("mongodb://localhost:27017/iband_aud_open_01?")||uri==="mongodb://localhost:27017/iband_aud_open_01"),"isolated AUD-OPEN-01 MongoDB required");
 await mongoose.connect(uri,{serverSelectionTimeoutMS:15000});
 try{
  const db=mongoose.connection.db;
