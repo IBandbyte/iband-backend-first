@@ -1,3 +1,4 @@
+import {recoverMovieMentorCompletedChargebacks} from "../ai/MovieMentorCompletedChargebackRecovery.js";
 import assert from "node:assert/strict";
 import mongoose from "mongoose";
 import Stripe from "stripe";
@@ -73,6 +74,7 @@ try{
  const freshValue=createMovieMentorProductionCommercialValueDispositionComposition();
  assert.equal(freshReversal.ready,true,"restarted reversal authority must be available");
  assert.equal(freshValue.ready,true,"restarted preserved-value authority must be available");
+ await recoverMovieMentorCompletedChargebacks({reversalAuthority:freshReversal.authority,purchaseIntentAuthority:purchase.authority,checkoutBindingAuthority:checkout.authority,dispositionAuthority:freshValue.authority});
  // The approved objective is a real elapsed deadline, not a simulated clock.
  // Deliberately do not invoke ingest(), replay the webhook, or call settlement manually.
  const deadline=recoveryStart+15*60*1000;

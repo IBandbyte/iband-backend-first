@@ -1,3 +1,4 @@
+import {recoverMovieMentorCompletedChargebacks} from "../ai/MovieMentorCompletedChargebackRecovery.js";
 import assert from "node:assert/strict";
 import mongoose from "mongoose";
 import Stripe from "stripe";
@@ -87,6 +88,7 @@ try{
  const freshValue=createMovieMentorProductionCommercialValueDispositionComposition();
  assert.equal(freshReversal.ready,true);
  assert.equal(freshValue.ready,true);
+ await recoverMovieMentorCompletedChargebacks({reversalAuthority:freshReversal.authority,purchaseIntentAuthority:purchase.authority,checkoutBindingAuthority:checkout.authority,dispositionAuthority:freshValue.authority});
  // No webhook redelivery, manual settlement, or direct value-ledger mutation.
  const deadline=Date.now()+30_000;
  let settled=null;
