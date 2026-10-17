@@ -1,0 +1,36 @@
+name: Verify Movie Mentor AUD-OPEN-01 Case D Ledger Observation
+on:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok' localhost:27017/test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+        command: mongod --replSet rs0 --bind_ip_all
+    env:
+      MONGO_URI: mongodb://127.0.0.1:27017/iband_aud_open_01?directConnection=true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Initialize replica set
+        run: |
+          docker exec ${{ job.services.mongo.id }} mongosh --quiet --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"localhost:27017"}]})'
+          for i in $(seq 1 30); do
+            if docker exec ${{ job.services.mongo.id }} mongosh --quiet --eval 'db.hello().isWritablePrimary' | grep -q true; then exit 0; fi
+            sleep 2
+          done
+          exit 1
+      - run: node scripts/verify-movie-mentor-aud-open-01-case-d-ledger-observation.mjs
