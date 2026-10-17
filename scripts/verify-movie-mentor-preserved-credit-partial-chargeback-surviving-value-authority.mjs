@@ -7,9 +7,9 @@ const original=1200,refunded=500,chargeback=300,surviving=400;
 let row={provider:"stripe",providerPaymentReference:"pi-414",commercialIntentId:"intent-414",principalId:"creator-414",amountMinor:original,currency:"GBP",units:20,reason:"entitlement-suspended",refundAuthorized:false,cumulativeRefundedAmountMinor:refunded,remainingAmountMinor:original-refunded,lastRefundReference:"re_414",chargebackAmountMinor:0,status:"preserved-credit",terminalDisposition:null,terminalReference:null,preservedAt:new Date()};
 const leanExec=v=>({lean:()=>({exec:async()=>v})});
 const model={
- createIndexes:async()=>{},collection:{indexes:async()=>[{unique:true,key:{provider:1,providerPaymentReference:1}}]},
+ createIndexes:async()=>{},collection:{indexes:async()=>[{unique:true,key:{provider:1,providerPaymentReference:1}},{unique:true,key:{terminalDisposition:1,terminalReference:1},partialFilterExpression:{terminalDisposition:{$type:"string"},terminalReference:{$type:"string"}}}]},
  findOne:()=>leanExec(row),
- findOneAndUpdate:(q,u)=>leanExec((()=>{if(row.status!==q.status)return null;row={...row,...u.$set};return row;})())
+ findOneAndUpdate:(q,u)=>leanExec((()=>{if(row.status!==q.status)return null;if(q.remainingAmountMinor!==undefined&&row.remainingAmountMinor!==q.remainingAmountMinor)return null;if(q.chargebackAmountMinor!==undefined&&row.chargebackAmountMinor!==q.chargebackAmountMinor)return null;if(q.chargebackEvents?.$not?.$elemMatch?.reference&&row.chargebackEvents?.some(e=>e.reference===q.chargebackEvents.$not.$elemMatch.reference))return null;row={...row,...u.$set,...(u.$push?.chargebackEvents?{chargebackEvents:[...(row.chargebackEvents||[]),u.$push.chargebackEvents]}:{})};return row;})())
 };
 const composition=createMovieMentorProductionCommercialValueDispositionComposition({injectedModel:model});
 assert.equal(composition.ready,true);
