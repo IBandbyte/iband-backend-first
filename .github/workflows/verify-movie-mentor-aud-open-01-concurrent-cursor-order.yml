@@ -33,4 +33,8 @@ jobs:
             sleep 2
           done
           exit 1
-      - run: node scripts/verify-movie-mentor-aud-open-01-concurrent-cursor-order.mjs
+      - name: Verify production-generated reversal ID commit order
+        run: node scripts/verify-movie-mentor-aud-open-01-production-id-order.mjs
+      - name: Verify original isolated cursor-order scenario
+        if: always()
+        run: node scripts/verify-movie-mentor-aud-open-01-concurrent-cursor-order.mjs
