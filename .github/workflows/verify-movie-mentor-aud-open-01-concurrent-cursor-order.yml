@@ -35,6 +35,9 @@ jobs:
           exit 1
       - name: Verify production-generated reversal ID commit order
         run: node scripts/verify-movie-mentor-aud-open-01-production-id-order.mjs
+      - name: Reset isolated verifier database between independent courts
+        if: always()
+        run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Verify original isolated cursor-order scenario
         if: always()
         run: node scripts/verify-movie-mentor-aud-open-01-concurrent-cursor-order.mjs
