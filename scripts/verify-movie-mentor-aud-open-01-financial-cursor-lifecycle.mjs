@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import mongoose from "mongoose";
+import Stripe from "stripe";
+import {createMovieMentorStripeCommercialProviderAdapter} from "../ai/MovieMentorStripeCommercialProviderAdapter.js";
 import {createMovieMentorProductionCommercialPurchaseIntentComposition} from "../ai/MovieMentorProductionCommercialPurchaseIntentComposition.js";
 import {createMovieMentorProductionEntitlementIssuanceComposition} from "../ai/MovieMentorProductionEntitlementIssuanceComposition.js";
 import {createMovieMentorProductionCommercialCheckoutComposition} from "../ai/MovieMentorProductionCommercialCheckoutComposition.js";
@@ -19,7 +21,9 @@ try{
  const issuance=createMovieMentorProductionEntitlementIssuanceComposition();
  const reversal=createMovieMentorProductionCommercialReversalComposition();
  const value=createMovieMentorProductionCommercialValueDispositionComposition();
- const checkout=createMovieMentorProductionCommercialCheckoutComposition({purchaseIntentAuthority:purchase.authority,entitlementAuthority:issuance.authority,providers:{}});
+ const stripe=new Stripe("sk_test_aud_open_01_no_network");
+ const adapter=createMovieMentorStripeCommercialProviderAdapter({stripe,webhookSecret:"whsec_aud_open_01_financial",successUrl:"https://example.invalid/success",cancelUrl:"https://example.invalid/cancel"});
+ const checkout=createMovieMentorProductionCommercialCheckoutComposition({purchaseIntentAuthority:purchase.authority,entitlementAuthority:issuance.authority,providers:{stripe:adapter}});
  assert.equal(reversal.ready,true);assert.equal(value.ready,true);assert.equal(checkout.ready,true);
  await purchase.authority.resolvePurchaseIntent({commercialIntentId:"index-ready-probe"});
  await checkout.authority.resolveCheckoutBinding({commercialIntentId:"index-ready-probe"});
