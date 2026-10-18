@@ -38,7 +38,7 @@ function createMovieMentorCommercialProviderIngressAuthority({providers={},purch
     const retry=async()=>{
      try{await recoverMovieMentorCompletedChargebacks({reversalAuthority,purchaseIntentAuthority,checkoutBindingAuthority,dispositionAuthority});}
      catch{
-      if(++attempt<5){const timer=setTimeout(retry,Math.min(1000*2**attempt,8000));timer.unref?.();}
+      attempt++;const timer=setTimeout(retry,Math.min(1000*2**attempt,8000));timer.unref?.();
      }
     };
     const timer=setTimeout(retry,1000);timer.unref?.();
