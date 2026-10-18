@@ -11,7 +11,11 @@ async function recoverMovieMentorCompletedChargebacks({reversalAuthority,purchas
  let cursor=null,scanned=0,settled=0,alreadySettled=0,skipped=0;
  for(let page=0;maxPages===null||page<maxPages;page++){
   const batch=await reversalAuthority.listCompletedReversalReceipts({evidenceSource,limit:pageLimit,cursor});
-  if(!batch||!Array.isArray(batch.receipts)||batch.receipts.length<1||batch.receipts.length>pageLimit)fail("Completed receipt discovery did not return a valid bounded page.");
+  if(!batch||!Array.isArray(batch.receipts)||batch.receipts.length>pageLimit)fail("Completed receipt discovery did not return a valid bounded page.");
+  if(batch.receipts.length===0){
+   if(batch.nextCursor!==null)fail("Empty completed receipt page cannot claim a continuing cursor.");
+   return Object.freeze({complete:true,scanned,settled,alreadySettled,skipped});
+  }
   for(const receipt of batch.receipts){
    scanned++;
    if(receipt.evidenceSource!==evidenceSource||receipt.status!=="suspended")fail("Completed receipt provenance is inconsistent.");
