@@ -33,6 +33,11 @@ jobs:
             sleep 2
           done
           exit 1
+      - name: Verify financial cursor lifecycle with genuine ledger
+        run: node scripts/verify-movie-mentor-aud-open-01-financial-cursor-lifecycle.mjs
+      - name: Reset isolated database after financial court
+        if: always()
+        run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Verify production-generated reversal ID commit order
         run: node scripts/verify-movie-mentor-aud-open-01-production-id-order.mjs
       - name: Reset isolated verifier database between independent courts
