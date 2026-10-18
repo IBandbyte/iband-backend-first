@@ -11,6 +11,7 @@ try{
  assert.ok((await db.admin().command({hello:1})).setName,"real replica set required");
  const composition=createMovieMentorProductionCommercialReversalComposition();
  assert.equal(composition.ready,true,"owner-proven production reversal required");
+ await composition.authority.listCompletedReversalReceipts({evidenceSource:"stripe",limit:1});
  const model=mongoose.model("MovieMentorCommercialReversal");
  const collection=db.collection("movie_mentor_commercial_reversal");
  const receipt=(id,kind="charge.refunded")=>({
