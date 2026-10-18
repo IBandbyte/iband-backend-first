@@ -5,7 +5,7 @@ import {isMovieMentorProductionCommercialValueDispositionAuthorityOwnedProof} fr
 
 const text=value=>typeof value==="string"?value.trim():"";
 function fail(message){const error=new Error(message);error.code="MOVIE_MENTOR_COMPLETED_REVERSAL_RECOVERY_FENCED";throw error;}
-async function recoverMovieMentorCompletedChargebacks({reversalAuthority,purchaseIntentAuthority,checkoutBindingAuthority,dispositionAuthority,evidenceSource="stripe",pageLimit=50,maxPages=20}={}){
+async function recoverMovieMentorCompletedChargebacks({reversalAuthority,purchaseIntentAuthority,checkoutBindingAuthority,dispositionAuthority,evidenceSource="stripe",pageLimit=50,maxPages=100}={}){
  if(!isMovieMentorProductionCommercialReversalAuthorityOwnedProof(reversalAuthority)||!isMovieMentorProductionCommercialPurchaseIntentAuthorityOwnedProof(purchaseIntentAuthority)||!isMovieMentorProductionCommercialCheckoutAuthorityOwnedProof(checkoutBindingAuthority)||!isMovieMentorProductionCommercialValueDispositionAuthorityOwnedProof(dispositionAuthority))fail("Recovery requires four original owner-proven production authorities.");
  if(evidenceSource!=="stripe"||!Number.isSafeInteger(pageLimit)||pageLimit<1||pageLimit>100||!Number.isSafeInteger(maxPages)||maxPages<1||maxPages>100)fail("Recovery scan must be bounded and Stripe-scoped.");
  let cursor=null,scanned=0,settled=0,alreadySettled=0,skipped=0;
