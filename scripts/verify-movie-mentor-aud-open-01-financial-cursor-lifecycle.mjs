@@ -12,7 +12,8 @@ import {recoverMovieMentorCompletedChargebacks} from "../ai/MovieMentorCompleted
 const uri=process.env.MONGO_URI;
 assert.ok(uri&&/^mongodb:\/\/(?:127\.0\.0\.1|localhost):27017\/iband_aud_open_01(?:\?|$)/.test(uri),"isolated replica-set database required");
 await mongoose.connect(uri,{serverSelectionTimeoutMS:15000});
-let release,signal,model,originalCreate;
+let release,signal,model,originalCreate,ledgerModel,originalLedgerUpdate,releaseLedger,signalLedger;
+const ledgerHeld=new Promise(r=>releaseLedger=r),ledgerEntered=new Promise(r=>signalLedger=r);
 const held=new Promise(r=>release=r),entered=new Promise(r=>signal=r);
 try{
  const db=mongoose.connection.db;
@@ -47,12 +48,23 @@ try{
  const earlyId=await entered;
  const b=await suspend("B"),c=await suspend("C");
  assert.ok(earlyId<b.reversalId&&b.reversalId<c.reversalId);
- const first=await recoverMovieMentorCompletedChargebacks({reversalAuthority:reversal.authority,purchaseIntentAuthority:purchase.authority,checkoutBindingAuthority:checkout.authority,dispositionAuthority:value.authority,pageLimit:1});
- assert.equal(first.complete,true);
- assert.equal(first.settled,2);
+ ledgerModel=mongoose.model("MovieMentorCommercialValueDisposition");
+ originalLedgerUpdate=ledgerModel.findOneAndUpdate;
+ ledgerModel.findOneAndUpdate=function(query,update,...options){
+  if(query?.provider==="stripe"&&query?.providerPaymentReference==="pi-ledger-B"&&update?.$push?.chargebackEvents){
+   signalLedger();return ledgerHeld.then(()=>originalLedgerUpdate.call(this,query,update,...options));
+  }
+  return originalLedgerUpdate.call(this,query,update,...options);
+ };
+ const firstPromise=recoverMovieMentorCompletedChargebacks({reversalAuthority:reversal.authority,purchaseIntentAuthority:purchase.authority,checkoutBindingAuthority:checkout.authority,dispositionAuthority:value.authority,pageLimit:1});
+ await ledgerEntered;
  release();
  const aResult=await a;
- assert.equal(aResult.reversalId,earlyId);
+ assert.equal(aResult.reversalId,earlyId,"earlier-generated reversal must commit while first recovery remains active");
+ releaseLedger();
+ const first=await firstPromise;
+ assert.equal(first.complete,true);
+ assert.equal(first.settled,2,"first scan misses A despite A committing before the scan finished");
  const pending=await db.collection("movie_mentor_commercial_value_disposition").findOne({provider:"stripe",providerPaymentReference:"pi-ledger-A"});
  assert.equal(pending.remainingAmountMinor,1200,"late committed reversal remains financially unsettled after earlier scan");
  assert.equal(pending.chargebackAmountMinor,0);
@@ -62,9 +74,10 @@ try{
  const settled=await db.collection("movie_mentor_commercial_value_disposition").findOne({provider:"stripe",providerPaymentReference:"pi-ledger-A"});
  assert.equal(settled.remainingAmountMinor,900);
  assert.equal(settled.chargebackAmountMinor,300);
- console.log("FINANCIAL CURSOR COURT: first recovery completed before late commit; ledger unsettled; fresh scan settled exactly once");
+ console.log("FINANCIAL CURSOR COURT: A committed DURING active recovery after cursor advanced; first scan falsely completed while A ledger unsettled; fresh scan settled exactly once");
 }finally{
- release?.();
+ release?.();releaseLedger?.();
  if(model&&originalCreate)model.create=originalCreate;
+ if(ledgerModel&&originalLedgerUpdate)ledgerModel.findOneAndUpdate=originalLedgerUpdate;
  await mongoose.disconnect();
 }
