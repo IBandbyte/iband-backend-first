@@ -5,13 +5,13 @@ import {isMovieMentorProductionCommercialValueDispositionAuthorityOwnedProof} fr
 
 const text=value=>typeof value==="string"?value.trim():"";
 function fail(message){const error=new Error(message);error.code="MOVIE_MENTOR_COMPLETED_REVERSAL_RECOVERY_FENCED";throw error;}
-async function recoverMovieMentorCompletedChargebacks({reversalAuthority,purchaseIntentAuthority,checkoutBindingAuthority,dispositionAuthority,evidenceSource="stripe",pageLimit=50,maxPages=100}={}){
+async function recoverMovieMentorCompletedChargebacks({reversalAuthority,purchaseIntentAuthority,checkoutBindingAuthority,dispositionAuthority,evidenceSource="stripe",pageLimit=50,maxPages=null}={}){
  if(!isMovieMentorProductionCommercialReversalAuthorityOwnedProof(reversalAuthority)||!isMovieMentorProductionCommercialPurchaseIntentAuthorityOwnedProof(purchaseIntentAuthority)||!isMovieMentorProductionCommercialCheckoutAuthorityOwnedProof(checkoutBindingAuthority)||!isMovieMentorProductionCommercialValueDispositionAuthorityOwnedProof(dispositionAuthority))fail("Recovery requires four original owner-proven production authorities.");
- if(evidenceSource!=="stripe"||!Number.isSafeInteger(pageLimit)||pageLimit<1||pageLimit>100||!Number.isSafeInteger(maxPages)||maxPages<1||maxPages>100)fail("Recovery scan must be bounded and Stripe-scoped.");
+ if(evidenceSource!=="stripe"||!Number.isSafeInteger(pageLimit)||pageLimit<1||pageLimit>100||(maxPages!==null&&(!Number.isSafeInteger(maxPages)||maxPages<1||maxPages>100)))fail("Recovery scan must be bounded and Stripe-scoped.");
  let cursor=null,scanned=0,settled=0,alreadySettled=0,skipped=0;
- for(let page=0;page<maxPages;page++){
+ for(let page=0;maxPages===null||page<maxPages;page++){
   const batch=await reversalAuthority.listCompletedReversalReceipts({evidenceSource,limit:pageLimit,cursor});
-  if(!batch||!Array.isArray(batch.receipts))fail("Completed receipt discovery did not return a valid page.");
+  if(!batch||!Array.isArray(batch.receipts)||batch.receipts.length<1||batch.receipts.length>pageLimit)fail("Completed receipt discovery did not return a valid bounded page.");
   for(const receipt of batch.receipts){
    scanned++;
    if(receipt.evidenceSource!==evidenceSource||receipt.status!=="suspended")fail("Completed receipt provenance is inconsistent.");
@@ -32,7 +32,7 @@ async function recoverMovieMentorCompletedChargebacks({reversalAuthority,purchas
    settled++;
   }
   if(batch.nextCursor===null)return Object.freeze({complete:true,scanned,settled,alreadySettled,skipped});
-  if(!text(batch.nextCursor)||batch.nextCursor===cursor)fail("Completed receipt discovery cursor did not advance.");
+  if(!text(batch.nextCursor)||(cursor!==null&&batch.nextCursor<=cursor))fail("Completed receipt discovery cursor did not advance.");
   cursor=batch.nextCursor;
  }
  fail("Completed receipt scan exceeded bounded page limit; startup must not claim complete recovery.");
