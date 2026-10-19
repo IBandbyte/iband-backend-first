@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import {AsyncLocalStorage} from "node:async_hooks";
 import mongoose from "mongoose";
 import Stripe from "stripe";
 import {createMovieMentorStripeCommercialProviderAdapter} from "../ai/MovieMentorStripeCommercialProviderAdapter.js";
@@ -14,6 +15,8 @@ assert.ok(uri&&/^mongodb:\/\/(?:127\.0\.0\.1|localhost):27017\/iband_aud_open_01
 await mongoose.connect(uri,{serverSelectionTimeoutMS:15000});
 let release,signal,model,originalCreate,ledgerModel,originalLedgerUpdate,releaseLedger,signalLedger;
 let durableChargebackCasWinners=0;
+const settlementWorkerContext=new AsyncLocalStorage();
+const durableWinnersByWorker=new Map();
 const ledgerHeld=new Promise(r=>releaseLedger=r),ledgerEntered=new Promise(r=>signalLedger=r);
 const held=new Promise(r=>release=r),entered=new Promise(r=>signal=r);
 try{
@@ -72,7 +75,11 @@ try{
     const originalExec=leanQuery.exec.bind(leanQuery);
     leanQuery.exec=async(...execArgs)=>{
      const updated=await originalExec(...execArgs);
-     if(updated)durableChargebackCasWinners++;
+     if(updated){
+      durableChargebackCasWinners++;
+      const worker=settlementWorkerContext.getStore()||"unattributed";
+      durableWinnersByWorker.set(worker,(durableWinnersByWorker.get(worker)||0)+1);
+     }
      return updated;
     };
     return leanQuery;
@@ -96,7 +103,10 @@ try{
  // Isolated candidate: explicit bounded full replay by two concurrent recovery workers.
  // This is NOT an autonomous scheduler, restart proof, or a production repair.
  const recoveryArgs={reversalAuthority:reversal.authority,purchaseIntentAuthority:purchase.authority,checkoutBindingAuthority:checkout.authority,dispositionAuthority:value.authority,pageLimit:1};
- const [second,third]=await Promise.all([recoverMovieMentorCompletedChargebacks(recoveryArgs),recoverMovieMentorCompletedChargebacks(recoveryArgs)]);
+ const [second,third]=await Promise.all([
+  settlementWorkerContext.run("worker-2",()=>recoverMovieMentorCompletedChargebacks(recoveryArgs)),
+  settlementWorkerContext.run("worker-3",()=>recoverMovieMentorCompletedChargebacks(recoveryArgs))
+ ]);
  assert.equal(second.complete,true);assert.equal(third.complete,true);
  const settled=await db.collection("movie_mentor_commercial_value_disposition").findOne({provider:"stripe",providerPaymentReference:"pi-ledger-A"});
  const events=Array.isArray(settled.chargebackEvents)?settled.chargebackEvents:[];
@@ -106,6 +116,9 @@ try{
  assert.equal(events.length,1,"durable ledger must record exactly one chargeback event");
  console.log("DURABLE CAS WINNER DIAGNOSTIC",JSON.stringify({successfulConditionalUpdates:durableChargebackCasWinners,reportedSettled:[second.settled,third.settled]}));
  assert.equal(durableChargebackCasWinners,1,"exactly one chargeback CAS may win for late receipt A");
+ console.log("ISOLATED WORKER OWNERSHIP CANDIDATE",JSON.stringify({durableWinnersByWorker:Object.fromEntries(durableWinnersByWorker),workerReports:[second.settled,third.settled]}));
+ assert.equal((durableWinnersByWorker.get("worker-2")||0)+(durableWinnersByWorker.get("worker-3")||0),1,"one of two isolated workers must own the successful database transition");
+ assert.equal(durableWinnersByWorker.has("unattributed"),false,"winner must be attributed to a real recovery worker");
  assert.equal(second.settled+third.settled,1,"concurrent replay counters must report one successful settlement");
  console.log("ISOLATED BOUNDED-REPLAY CANDIDATE: concurrent replays settled late chargeback exactly once; no autonomous trigger or restart proven");console.log("FINANCIAL CURSOR COURT: A committed DURING active recovery after cursor advanced; first scan falsely completed while A ledger unsettled; fresh scan settled exactly once");
 }finally{
