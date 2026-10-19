@@ -65,6 +65,11 @@ jobs:
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Verify last-scanner genuine autonomous timer control
         run: node scripts/verify-movie-mentor-aud-open-01-last-scanner-timer-control.mjs
+      - name: Reset isolated database before late-commit own-retry court
+        if: always()
+        run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
+      - name: Verify late-commit reversal own genuine retry
+        run: node scripts/verify-movie-mentor-aud-open-01-late-commit-own-retry.mjs
       - name: Reset isolated database after inverted signed ingress
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
