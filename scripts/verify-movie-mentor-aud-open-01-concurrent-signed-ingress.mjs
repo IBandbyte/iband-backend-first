@@ -89,8 +89,8 @@ async function verifySignedIngressDualRetry(){
    const ingressResults=await Promise.allSettled([firstIngress,secondIngress]);
    assert.equal(ingressResults.length,2);
    assert.ok(ingressResults.every(r=>r.status==="rejected"),"both signed ingress paths must fail once");
-   assert.match(String(ingressResults[0].reason),"AUD_ONE_SHOT_LEDGER_FAILURE");
-   assert.match(String(ingressResults[1].reason),"AUD_SECOND_LEDGER_FAILURE");
+   assert.match(String(ingressResults[0].reason),/AUD_ONE_SHOT_LEDGER_FAILURE/);
+   assert.match(String(ingressResults[1].reason),/AUD_SECOND_LEDGER_FAILURE/);
    assert.equal(injected,1);
    assert.equal(secondInjection,1);
    const deadline=Date.now()+10000;
