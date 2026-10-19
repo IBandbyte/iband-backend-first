@@ -36,80 +36,95 @@ jobs:
           done
           exit 1
       - name: Verify no-failure late-commit bounded no-trigger control
+        if: success() || failure()
         run: node scripts/verify-movie-mentor-aud-open-01-no-failure-late-commit-control.mjs
       - name: Reset isolated database after no-failure late-commit control
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Verify financial cursor lifecycle with genuine ledger
+        if: success() || failure()
         run: node scripts/verify-movie-mentor-aud-open-01-financial-cursor-lifecycle.mjs
       - name: Reset isolated database after financial court
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Verify isolated bounded full-replay candidate with concurrent workers
+        if: success() || failure()
         run: node scripts/verify-movie-mentor-aud-open-01-isolated-bounded-replay-candidate.mjs
       - name: Reset isolated database after bounded replay candidate
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Verify isolated post-scan no-trigger settlement window
+        if: success() || failure()
         run: node scripts/verify-movie-mentor-aud-open-01-post-scan-no-trigger-window.mjs
       - name: Reset isolated database after post-scan no-trigger court
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Verify overlapping financial recovery scans
+        if: success() || failure()
         run: node scripts/verify-movie-mentor-aud-open-01-concurrent-financial-scans.mjs
       - name: Reset isolated database after overlapping recovery scans
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Verify signed Stripe ingress first-failure retry boundary
+        if: success() || failure()
         run: node scripts/verify-movie-mentor-aud-open-01-signed-ingress-retry.mjs
       - name: Reset isolated database after signed ingress retry court
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Verify dual signed Stripe ingress independent retry baseline
+        if: success() || failure()
         run: node scripts/verify-movie-mentor-aud-open-01-dual-signed-ingress-baseline.mjs
       - name: Reset isolated database after dual ingress baseline
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Verify concurrent signed Stripe ingress autonomous retries
+        if: success() || failure()
         run: node scripts/verify-movie-mentor-aud-open-01-concurrent-signed-ingress.mjs
       - name: Reset isolated database after concurrent signed ingress
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Verify inverted-commit signed Stripe ingress autonomous retries
+        if: success() || failure()
         run: node scripts/verify-movie-mentor-aud-open-01-inverted-signed-ingress.mjs
       - name: Reset isolated database before last-scanner timer control
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Verify last-scanner genuine autonomous timer control
+        if: success() || failure()
         run: node scripts/verify-movie-mentor-aud-open-01-last-scanner-timer-control.mjs
       - name: Reset isolated database before late-commit own-retry court
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Verify late-commit reversal own genuine retry
+        if: success() || failure()
         run: node scripts/verify-movie-mentor-aud-open-01-late-commit-own-retry.mjs
       - name: Reset isolated database after inverted signed ingress
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Verify synthetic post-commit acknowledgement-loss control (not real network loss)
+        if: success() || failure()
         run: node scripts/verify-movie-mentor-aud-open-01-synthetic-post-commit-ack-control.mjs
       - name: Reset isolated database after synthetic acknowledgement control
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Diagnose genuine MongoDB commitTransaction connection-loss outcome
+        if: success() || failure()
         run: node scripts/verify-movie-mentor-aud-open-01-real-mongo-commit-failpoint-diagnostic.mjs
       - name: Reset isolated database after real MongoDB commit diagnostic
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Diagnose three genuine MongoDB commit connection losses
+        if: success() || failure()
         run: node scripts/verify-movie-mentor-aud-open-01-multiple-commit-loss-diagnostic.mjs
       - name: Reset isolated database after multiple-loss diagnostic
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Verify production-generated reversal ID commit order
+        if: success() || failure()
         run: node scripts/verify-movie-mentor-aud-open-01-production-id-order.mjs
       - name: Reset isolated verifier database between independent courts
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Verify original isolated cursor-order scenario
-        if: always()
+        if: success() || failure()
         run: node scripts/verify-movie-mentor-aud-open-01-concurrent-cursor-order.mjs
