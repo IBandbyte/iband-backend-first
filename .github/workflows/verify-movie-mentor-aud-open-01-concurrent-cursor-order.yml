@@ -43,6 +43,11 @@ jobs:
       - name: Reset isolated database after signed ingress retry court
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
+      - name: Verify dual signed Stripe ingress independent retry baseline
+        run: node scripts/verify-movie-mentor-aud-open-01-dual-signed-ingress-baseline.mjs
+      - name: Reset isolated database after dual ingress baseline
+        if: always()
+        run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Verify production-generated reversal ID commit order
         run: node scripts/verify-movie-mentor-aud-open-01-production-id-order.mjs
       - name: Reset isolated verifier database between independent courts
