@@ -38,6 +38,11 @@ jobs:
       - name: Reset isolated database after financial court
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
+      - name: Verify isolated bounded full-replay candidate with concurrent workers
+        run: node scripts/verify-movie-mentor-aud-open-01-isolated-bounded-replay-candidate.mjs
+      - name: Reset isolated database after bounded replay candidate
+        if: always()
+        run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Verify isolated post-scan no-trigger settlement window
         run: node scripts/verify-movie-mentor-aud-open-01-post-scan-no-trigger-window.mjs
       - name: Reset isolated database after post-scan no-trigger court
