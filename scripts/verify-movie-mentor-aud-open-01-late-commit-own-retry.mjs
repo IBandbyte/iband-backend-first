@@ -125,7 +125,7 @@ async function verifySignedIngressInvertedCommitRetry(){
    assert.equal(firstResult[0].status,"rejected","A must fail ledger once and schedule own real retry");
    assert.match(String(firstResult[0].reason),/AUD_ONE_SHOT_LEDGER_FAILURE/);
    assert.equal(injected,1);
-   assert.equal(secondInjection,1);
+   assert.ok(secondInjection>=2,"B must have its injected first failure and a genuine subsequent ledger retry");
    const aReceipt=await db.collection("movie_mentor_commercial_reversal").findOne({evidenceId:eventId});
    assert.ok(aReceipt,"A must durably commit after B");
    console.log("AUD INVERTED SIGNED INGRESS: earlier-generated A committed after B; both ledger failures scheduled real timers");
