@@ -83,6 +83,11 @@ jobs:
       - name: Reset isolated database after real MongoDB commit diagnostic
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
+      - name: Diagnose three genuine MongoDB commit connection losses
+        run: node scripts/verify-movie-mentor-aud-open-01-multiple-commit-loss-diagnostic.mjs
+      - name: Reset isolated database after multiple-loss diagnostic
+        if: always()
+        run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Verify production-generated reversal ID commit order
         run: node scripts/verify-movie-mentor-aud-open-01-production-id-order.mjs
       - name: Reset isolated verifier database between independent courts
