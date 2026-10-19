@@ -84,6 +84,7 @@ async function verifySignedIngressInvertedCommitRetry(){
     }
     return q;
    };
+   await reversal.authority.listCompletedReversalReceipts({evidenceSource:"stripe",limit:1});
    const reversalModel=mongoose.model("MovieMentorCommercialReversal");
    const originalCreate=reversalModel.create;
    let releaseA,notifyA;
