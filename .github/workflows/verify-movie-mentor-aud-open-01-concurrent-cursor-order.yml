@@ -60,6 +60,11 @@ jobs:
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Verify inverted-commit signed Stripe ingress autonomous retries
         run: node scripts/verify-movie-mentor-aud-open-01-inverted-signed-ingress.mjs
+      - name: Reset isolated database before last-scanner timer control
+        if: always()
+        run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
+      - name: Verify last-scanner genuine autonomous timer control
+        run: node scripts/verify-movie-mentor-aud-open-01-last-scanner-timer-control.mjs
       - name: Reset isolated database after inverted signed ingress
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
