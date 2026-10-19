@@ -24,6 +24,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+      - name: Inventory exact-head recovery consumers (verifier-only)
+        run: node scripts/verify-movie-mentor-aud-open-01-consumer-inventory.mjs
       - run: npm install --ignore-scripts --no-audit --no-fund
       - name: Initialize replica set
         run: |
