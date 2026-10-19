@@ -82,10 +82,13 @@ try{
  const recoveryArgs={reversalAuthority:reversal.authority,purchaseIntentAuthority:purchase.authority,checkoutBindingAuthority:checkout.authority,dispositionAuthority:value.authority,pageLimit:1};
  const [second,third]=await Promise.all([recoverMovieMentorCompletedChargebacks(recoveryArgs),recoverMovieMentorCompletedChargebacks(recoveryArgs)]);
  assert.equal(second.complete,true);assert.equal(third.complete,true);
- assert.equal(second.settled+third.settled,1,"concurrent bounded full replays must settle late receipt exactly once");
  const settled=await db.collection("movie_mentor_commercial_value_disposition").findOne({provider:"stripe",providerPaymentReference:"pi-ledger-A"});
- assert.equal(settled.remainingAmountMinor,900);
- assert.equal(settled.chargebackAmountMinor,300);
+ const events=Array.isArray(settled.chargebackEvents)?settled.chargebackEvents:[];
+ console.log("CONCURRENT REPLAY LEDGER OBSERVATION",JSON.stringify({reportedSettled:[second.settled,third.settled],reportedAlreadySettled:[second.alreadySettled,third.alreadySettled],remainingAmountMinor:settled.remainingAmountMinor,chargebackAmountMinor:settled.chargebackAmountMinor,chargebackEventCount:events.length,chargebackEvents:events.map(e=>({evidenceId:e.evidenceId,terminalReference:e.terminalReference,amountMinor:e.amountMinor,chargebackAmountMinor:e.chargebackAmountMinor}))}));
+ assert.equal(settled.remainingAmountMinor,900,"durable ledger must deduct late chargeback exactly once");
+ assert.equal(settled.chargebackAmountMinor,300,"durable chargeback amount must remain exactly once");
+ assert.equal(events.length,1,"durable ledger must record exactly one chargeback event");
+ assert.equal(second.settled+third.settled,1,"concurrent replay counters must report one successful settlement");
  console.log("ISOLATED BOUNDED-REPLAY CANDIDATE: concurrent replays settled late chargeback exactly once; no autonomous trigger or restart proven");console.log("FINANCIAL CURSOR COURT: A committed DURING active recovery after cursor advanced; first scan falsely completed while A ledger unsettled; fresh scan settled exactly once");
 }finally{
  release?.();releaseLedger?.();
