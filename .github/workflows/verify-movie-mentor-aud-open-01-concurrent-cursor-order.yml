@@ -41,6 +41,12 @@ jobs:
       - name: Reset isolated database after no-failure late-commit control
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
+      - name: Verify post-completion late-commit no-trigger control
+        if: success() || failure()
+        run: node scripts/verify-movie-mentor-aud-open-01-post-completion-late-commit-control.mjs
+      - name: Reset isolated database after post-completion late-commit control
+        if: always()
+        run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Verify financial cursor lifecycle with genuine ledger
         if: success() || failure()
         run: node scripts/verify-movie-mentor-aud-open-01-financial-cursor-lifecycle.mjs
