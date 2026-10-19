@@ -52,7 +52,16 @@ try{
  originalLedgerUpdate=ledgerModel.findOneAndUpdate;
  ledgerModel.findOneAndUpdate=function(query,update,...options){
   if(query?.provider==="stripe"&&query?.providerPaymentReference==="pi-ledger-B"&&update?.$push?.chargebackEvents){
-   signalLedger();return ledgerHeld.then(()=>originalLedgerUpdate.call(this,query,update,...options));
+   signalLedger();
+   const q=originalLedgerUpdate.call(this,query,update,...options);
+   const originalLean=q.lean.bind(q);
+   q.lean=(...args)=>{
+    const leanQuery=originalLean(...args);
+    const originalExec=leanQuery.exec.bind(leanQuery);
+    leanQuery.exec=(...execArgs)=>ledgerHeld.then(()=>originalExec(...execArgs));
+    return leanQuery;
+   };
+   return q;
   }
   return originalLedgerUpdate.call(this,query,update,...options);
  };
