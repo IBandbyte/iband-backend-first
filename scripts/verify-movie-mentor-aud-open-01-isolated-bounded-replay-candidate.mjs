@@ -13,6 +13,7 @@ const uri=process.env.MONGO_URI;
 assert.ok(uri&&/^mongodb:\/\/(?:127\.0\.0\.1|localhost):27017\/iband_aud_open_01(?:\?|$)/.test(uri),"isolated replica-set database required");
 await mongoose.connect(uri,{serverSelectionTimeoutMS:15000});
 let release,signal,model,originalCreate,ledgerModel,originalLedgerUpdate,releaseLedger,signalLedger;
+let durableChargebackCasWinners=0;
 const ledgerHeld=new Promise(r=>releaseLedger=r),ledgerEntered=new Promise(r=>signalLedger=r);
 const held=new Promise(r=>release=r),entered=new Promise(r=>signal=r);
 try{
@@ -63,6 +64,21 @@ try{
    };
    return q;
   }
+  if(query?.provider==="stripe"&&query?.providerPaymentReference==="pi-ledger-A"&&update?.$push?.chargebackEvents){
+   const q=originalLedgerUpdate.call(this,query,update,...options);
+   const originalLean=q.lean.bind(q);
+   q.lean=(...args)=>{
+    const leanQuery=originalLean(...args);
+    const originalExec=leanQuery.exec.bind(leanQuery);
+    leanQuery.exec=async(...execArgs)=>{
+     const updated=await originalExec(...execArgs);
+     if(updated)durableChargebackCasWinners++;
+     return updated;
+    };
+    return leanQuery;
+   };
+   return q;
+  }
   return originalLedgerUpdate.call(this,query,update,...options);
  };
  const firstPromise=recoverMovieMentorCompletedChargebacks({reversalAuthority:reversal.authority,purchaseIntentAuthority:purchase.authority,checkoutBindingAuthority:checkout.authority,dispositionAuthority:value.authority,pageLimit:1});
@@ -88,6 +104,8 @@ try{
  assert.equal(settled.remainingAmountMinor,900,"durable ledger must deduct late chargeback exactly once");
  assert.equal(settled.chargebackAmountMinor,300,"durable chargeback amount must remain exactly once");
  assert.equal(events.length,1,"durable ledger must record exactly one chargeback event");
+ console.log("DURABLE CAS WINNER DIAGNOSTIC",JSON.stringify({successfulConditionalUpdates:durableChargebackCasWinners,reportedSettled:[second.settled,third.settled]}));
+ assert.equal(durableChargebackCasWinners,1,"exactly one chargeback CAS may win for late receipt A");
  assert.equal(second.settled+third.settled,1,"concurrent replay counters must report one successful settlement");
  console.log("ISOLATED BOUNDED-REPLAY CANDIDATE: concurrent replays settled late chargeback exactly once; no autonomous trigger or restart proven");console.log("FINANCIAL CURSOR COURT: A committed DURING active recovery after cursor advanced; first scan falsely completed while A ledger unsettled; fresh scan settled exactly once");
 }finally{
