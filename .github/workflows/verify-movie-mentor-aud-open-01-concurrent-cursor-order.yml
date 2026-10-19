@@ -38,6 +38,11 @@ jobs:
       - name: Reset isolated database after financial court
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
+      - name: Verify overlapping financial recovery scans
+        run: node scripts/verify-movie-mentor-aud-open-01-concurrent-financial-scans.mjs
+      - name: Reset isolated database after overlapping recovery scans
+        if: always()
+        run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Verify signed Stripe ingress first-failure retry boundary
         run: node scripts/verify-movie-mentor-aud-open-01-signed-ingress-retry.mjs
       - name: Reset isolated database after signed ingress retry court
