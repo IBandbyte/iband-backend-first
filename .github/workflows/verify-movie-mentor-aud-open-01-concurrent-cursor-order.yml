@@ -16,7 +16,7 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
-        command: mongod --replSet rs0 --bind_ip_all
+        command: mongod --replSet rs0 --bind_ip_all --setParameter enableTestCommands=1
     env:
       MONGO_URI: mongodb://127.0.0.1:27017/iband_aud_open_01?directConnection=true
     steps:
@@ -76,6 +76,11 @@ jobs:
       - name: Verify synthetic post-commit acknowledgement-loss control (not real network loss)
         run: node scripts/verify-movie-mentor-aud-open-01-synthetic-post-commit-ack-control.mjs
       - name: Reset isolated database after synthetic acknowledgement control
+        if: always()
+        run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
+      - name: Diagnose genuine MongoDB commitTransaction connection-loss outcome
+        run: node scripts/verify-movie-mentor-aud-open-01-real-mongo-commit-failpoint-diagnostic.mjs
+      - name: Reset isolated database after real MongoDB commit diagnostic
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Verify production-generated reversal ID commit order
