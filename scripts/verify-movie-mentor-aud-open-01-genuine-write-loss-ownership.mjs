@@ -6,7 +6,7 @@ import mongoose from "mongoose";
 // A genuine mongod connection closure is injected at findAndModify. This does
 // NOT guarantee that the server committed before closing the connection.
 const uri=process.env.MONGO_URI;
-assert.ok(uri&&/^mongodb:\/\/(?:127\\.0\\.0\\.1|localhost):27017\\/iband_aud_open_01(?:\\?|$)/.test(uri),"isolated database required");
+assert.ok(uri&&uri.startsWith("mongodb://127.0.0.1:27017/iband_aud_open_01")||uri&&uri.startsWith("mongodb://localhost:27017/iband_aud_open_01"),"isolated database required");
 await mongoose.connect(uri,{serverSelectionTimeoutMS:15000,retryWrites:false});
 try {
  const db=mongoose.connection.db;
