@@ -149,6 +149,12 @@ jobs:
       - name: Reset isolated database after real authority compatibility court
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
+      - name: Diagnose genuine settlement write connection loss and durable ownership (isolated candidate)
+        if: success() || failure()
+        run: node scripts/verify-movie-mentor-aud-open-01-genuine-write-loss-ownership.mjs
+      - name: Reset isolated database after genuine write-loss ownership diagnostic
+        if: always()
+        run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Verify production-generated reversal ID commit order
         if: success() || failure()
         run: node scripts/verify-movie-mentor-aud-open-01-production-id-order.mjs
