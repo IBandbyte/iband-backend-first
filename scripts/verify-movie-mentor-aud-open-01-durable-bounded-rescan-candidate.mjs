@@ -43,9 +43,11 @@ try {
  assert.equal(await dedup.countDocuments({}),30);
  // Reinstantiate the worker by reloading only MongoDB state, not any in-memory Set.
  const second=await pass("after-restart",3);
- assert.equal(second.complete,true);assert.equal(second.newEvidence,21);
+ assert.equal(second.complete,false);assert.equal(second.newEvidence,21);
  assert.equal(await dedup.countDocuments({}),51);
  await session.commitTransaction();
+ const boundary=await pass("complete-first-cycle",1);
+ assert.equal(boundary.complete,true);assert.equal(boundary.newEvidence,0);
  const third=await pass("new-cycle",6);
  assert.equal(third.complete,true);assert.equal(third.newEvidence,1);
  assert.equal(await dedup.countDocuments({}),52);
@@ -54,7 +56,7 @@ try {
  assert.equal(fourth.newEvidence,0);
  assert.equal(await dedup.countDocuments({}),52);
  assert.ok([first,second,third,fourth].every(x=>x.pages<=6));
- console.log("AUD DURABLE BOUNDED RESCAN CANDIDATE GREEN",JSON.stringify({first,second,third,fourth,durableUniqueEvidence:52,pageLimit,scope:"isolated MongoDB candidate; persisted cursor and dedup, bounded per pass; no autonomous trigger, production settlement, multi-worker lease or scalable guarantee"}));
+ console.log("AUD DURABLE BOUNDED RESCAN CANDIDATE GREEN",JSON.stringify({first,second,boundary,third,fourth,durableUniqueEvidence:52,pageLimit,scope:"isolated MongoDB candidate; persisted cursor and dedup, bounded per pass; no autonomous trigger, production settlement, multi-worker lease or scalable guarantee"}));
 }finally{
  if(session){if(session.inTransaction())await session.abortTransaction();await session.endSession();}
  await mongoose.disconnect();
