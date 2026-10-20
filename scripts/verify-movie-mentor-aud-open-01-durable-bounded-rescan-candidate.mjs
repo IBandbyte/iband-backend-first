@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 // Isolated verifier-only candidate: durable checkpoint + dedup across worker restart.
 // Not production authority, not a scheduler, and not a proof of eventual recovery.
 const uri=process.env.MONGO_URI;
-assert.ok(uri&&/^mongodb:\/\/(?:127\\.0\\.0\\.1|localhost):27017\\/iband_aud_open_01(?:\\?|$)/.test(uri),"isolated replica-set database required");
+assert.ok(uri&&(uri.startsWith("mongodb://127.0.0.1:27017/iband_aud_open_01")||uri.startsWith("mongodb://localhost:27017/iband_aud_open_01")),"isolated replica-set database required");
 await mongoose.connect(uri,{serverSelectionTimeoutMS:15000});
 let session;
 try {
