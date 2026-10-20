@@ -173,6 +173,12 @@ jobs:
       - name: Reset isolated database after real authority write concern diagnostic
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
+      - name: Verify isolated CAS owner-proof candidate
+        if: success() || failure()
+        run: node scripts/verify-movie-mentor-aud-open-01-owner-proof-candidate.mjs
+      - name: Reset isolated database after CAS owner-proof candidate
+        if: always()
+        run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Demand real authority owner proof under concurrent settlement (expected RED)
         if: success() || failure()
         run: node scripts/verify-movie-mentor-aud-open-01-owner-proof-contract-red.mjs
