@@ -119,6 +119,13 @@ try{
  console.log("ISOLATED WORKER OWNERSHIP CANDIDATE",JSON.stringify({durableWinnersByWorker:Object.fromEntries(durableWinnersByWorker),workerReports:[second.settled,third.settled]}));
  assert.equal((durableWinnersByWorker.get("worker-2")||0)+(durableWinnersByWorker.get("worker-3")||0),1,"one of two isolated workers must own the successful database transition");
  assert.equal(durableWinnersByWorker.has("unattributed"),false,"winner must be attributed to a real recovery worker");
+ // Verifier-only candidate contract: count durable transition owners, not observers.
+ // This deliberately does NOT modify the production recovery result or settle API.
+ const candidateWorkerReports=["worker-2","worker-3"].map(worker=>({worker,settled:durableWinnersByWorker.get(worker)||0,observedReportedSettled:worker==="worker-2"?second.settled:third.settled}));
+ console.log("REPORTING OWNERSHIP REPAIR CANDIDATE",JSON.stringify({candidateWorkerReports,productionReportedSettled:[second.settled,third.settled]}));
+ assert.equal(candidateWorkerReports.reduce((sum,worker)=>sum+worker.settled,0),1,"isolated ownership-based settlement counter must report exactly one transition");
+ assert.equal(candidateWorkerReports.filter(worker=>worker.settled===1).length,1,"only the physical transition owner may report settled");
+ assert.equal(candidateWorkerReports.filter(worker=>worker.settled===0&&worker.observedReportedSettled===1).length,1,"non-owner production reporting defect must remain visible");
  assert.equal(second.settled+third.settled,1,"concurrent replay counters must report one successful settlement");
  console.log("ISOLATED BOUNDED-REPLAY CANDIDATE: concurrent replays settled late chargeback exactly once; no autonomous trigger or restart proven");console.log("FINANCIAL CURSOR COURT: A committed DURING active recovery after cursor advanced; first scan falsely completed while A ledger unsettled; fresh scan settled exactly once");
 }finally{
