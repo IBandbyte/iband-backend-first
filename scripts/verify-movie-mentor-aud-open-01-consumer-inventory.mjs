@@ -35,10 +35,10 @@ console.log("AUD-OPEN-01 SOURCE INVENTORY COMPLETE; match classification and fin
 const startup=await readFile(join(root,"ai/MovieMentorProductionCommercialHttpIngress.js"),"utf8");
 const ingress=await readFile(join(root,"ai/MovieMentorCommercialProviderIngressAuthority.js"),"utf8");
 const recovery=await readFile(join(root,"ai/MovieMentorCompletedChargebackRecovery.js"),"utf8");
-assert.match(startup,/await recoverMovieMentorCompletedChargebacks\\s*\\(/,"Startup recovery invocation must remain visible");
-assert.match(ingress,/setTimeout\\(retry,/,"Ingress error retry timer must remain visible");
-assert.match(ingress,/await recoverMovieMentorCompletedChargebacks\\s*\\(/,"Ingress retry recovery invocation must remain visible");
-assert.match(recovery,/async function recoverMovieMentorCompletedChargebacks\\s*\\(/,"Recovery definition must remain visible");
+assert.match(startup,/await recoverMovieMentorCompletedChargebacks\s*\(/,"Startup recovery invocation must remain visible");
+assert.match(ingress,/setTimeout\(retry,/,"Ingress error retry timer must remain visible");
+assert.match(ingress,/await recoverMovieMentorCompletedChargebacks\s*\(/,"Ingress retry recovery invocation must remain visible");
+assert.match(recovery,/async function recoverMovieMentorCompletedChargebacks\s*\(/,"Recovery definition must remain visible");
 const provenance=Object.freeze({
  startup:{path:"ai/MovieMentorProductionCommercialHttpIngress.js",kind:"mount-time-invocation"},
  ingress:{path:"ai/MovieMentorCommercialProviderIngressAuthority.js",kind:"error-contingent-retry"},
