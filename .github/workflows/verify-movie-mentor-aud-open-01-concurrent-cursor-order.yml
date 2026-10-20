@@ -191,6 +191,12 @@ jobs:
       - name: Reset isolated database after rescan candidate
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
+      - name: Evaluate isolated durable bounded rescan and restart candidate
+        if: success() || failure()
+        run: node scripts/verify-movie-mentor-aud-open-01-durable-bounded-rescan-candidate.mjs
+      - name: Reset isolated database after durable bounded rescan candidate
+        if: always()
+        run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Verify original isolated cursor-order scenario
         if: success() || failure()
         run: node scripts/verify-movie-mentor-aud-open-01-concurrent-cursor-order.mjs
