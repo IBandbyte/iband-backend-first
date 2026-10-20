@@ -8,6 +8,7 @@ let session;
 try{
  const db=mongoose.connection.db;
  assert.ok((await db.admin().command({hello:1})).setName,"replica set required");
+ await db.createCollection("aud_open_01_rescan_candidate");
  const c=db.collection("aud_open_01_rescan_candidate");
  const row=id=>({_id:id,kind:"charge.dispute.funds_withdrawn",status:"suspended"});
  session=await mongoose.startSession();session.startTransaction();
