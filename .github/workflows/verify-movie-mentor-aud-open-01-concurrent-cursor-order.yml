@@ -62,6 +62,12 @@ jobs:
       - name: Verify isolated post-scan no-trigger settlement window
         if: success() || failure()
         run: node scripts/verify-movie-mentor-aud-open-01-post-scan-no-trigger-window.mjs
+      - name: Reset isolated database before no-alarm contract court
+        if: always()
+        run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
+      - name: Demand autonomous late-commit recovery without any alarm (expected RED)
+        if: success() || failure()
+        run: node scripts/verify-movie-mentor-aud-open-01-no-alarm-contract-red.mjs
       - name: Reset isolated database after post-scan no-trigger court
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
