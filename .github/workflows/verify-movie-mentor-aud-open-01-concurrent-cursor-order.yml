@@ -137,6 +137,12 @@ jobs:
       - name: Reset isolated database after atomic ownership candidate
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
+      - name: Verify isolated authority-minted owner authenticity candidate
+        if: success() || failure()
+        run: node scripts/verify-movie-mentor-aud-open-01-owner-authenticity-candidate.mjs
+      - name: Reset isolated database after owner authenticity candidate
+        if: always()
+        run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Verify production-generated reversal ID commit order
         if: success() || failure()
         run: node scripts/verify-movie-mentor-aud-open-01-production-id-order.mjs
