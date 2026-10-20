@@ -184,7 +184,7 @@ jobs:
         run: node scripts/verify-movie-mentor-aud-open-01-rescan-candidate.mjs
       - name: Reset isolated database after rescan candidate
         if: always()
-        run: mongosh "$MONGO_URI" --quiet --eval 'db.dropDatabase()'
+        run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Verify original isolated cursor-order scenario
         if: success() || failure()
         run: node scripts/verify-movie-mentor-aud-open-01-concurrent-cursor-order.mjs
