@@ -213,6 +213,12 @@ jobs:
       - name: Reset isolated database after real-authority rescan candidate
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
+      - name: Verify leased real-authority financial replay candidate
+        if: success() || failure()
+        run: node scripts/verify-movie-mentor-aud-open-01-leased-real-authority-candidate.mjs
+      - name: Reset isolated database after leased real-authority candidate
+        if: always()
+        run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Verify database-server-time lease fencing candidate
         if: success() || failure()
         run: node scripts/verify-movie-mentor-aud-open-01-server-time-lease-candidate.mjs
