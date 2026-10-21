@@ -125,7 +125,7 @@ try{
  console.log("REPORTING OWNERSHIP REPAIR CANDIDATE",JSON.stringify({candidateWorkerReports,productionReportedSettled:[second.settled,third.settled]}));
  assert.equal(candidateWorkerReports.reduce((sum,worker)=>sum+worker.settled,0),1,"isolated ownership-based settlement counter must report exactly one transition");
  assert.equal(candidateWorkerReports.filter(worker=>worker.settled===1).length,1,"only the physical transition owner may report settled");
- assert.equal(candidateWorkerReports.filter(worker=>worker.settled===0&&worker.observedReportedSettled===1).length,1,"non-owner production reporting defect must remain visible");
+ assert.equal(candidateWorkerReports.filter(worker=>worker.settled===0&&worker.observedReportedSettled===1).length,0,"non-owner must not report a settlement after ownership repair");
  assert.equal(second.settled+third.settled,1,"concurrent replay counters must report one successful settlement");
  console.log("ISOLATED BOUNDED-REPLAY CANDIDATE: concurrent replays settled late chargeback exactly once; no autonomous trigger or restart proven");console.log("FINANCIAL CURSOR COURT: A committed DURING active recovery after cursor advanced; first scan falsely completed while A ledger unsettled; fresh scan settled exactly once");
 }finally{
