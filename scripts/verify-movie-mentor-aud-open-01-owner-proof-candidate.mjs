@@ -47,7 +47,7 @@ try{
  assert.equal(winners.has("replay"),false,"replay cannot own prior transition");
  const candidate=["worker-A","worker-B"].map(worker=>({worker,applied:winners.get(worker)===1}));
  assert.equal(candidate.filter(x=>x.applied).length,1,"exactly one owner claim derived from physical CAS");
- assert.equal(a?.applied===true||b?.applied===true,false,"current authority must not be misrepresented as owner-proven");
+ assert.equal([a,b].filter(result=>result?.applied===true).length,1,"exactly one concurrent caller must be owner-proven");
  assert.equal(replay?.applied===true,false,"replay must not claim application");
  console.log("OWNER-PROOF VERIFIER CANDIDATE GREEN",JSON.stringify({candidate,casWinners:Object.fromEntries(winners),durableEvents:row.chargebackEvents.length,productionAppliedClaims:[a?.applied===true,b?.applied===true],scope:"instrumented verifier observation only; production API unchanged"}));
 }finally{
