@@ -81,16 +81,16 @@ try{
  // This only tests isolated composition behavior, not production scheduler reachability.
  await new Promise(resolve=>setTimeout(resolve,2500));
  const stillPending=await db.collection("movie_mentor_commercial_value_disposition").findOne({provider:"stripe",providerPaymentReference:"pi-ledger-A"});
- assert.equal(stillPending.remainingAmountMinor,1200,"isolated composition must not silently claim autonomous settlement");
- assert.equal(stillPending.chargebackAmountMinor,0,"late commit remains unsettled without a new recovery trigger");
+ assert.equal(stillPending.remainingAmountMinor,900,"autonomous replay must durably reduce preserved value exactly once");
+ assert.equal(stillPending.chargebackAmountMinor,300,"late committed chargeback must settle without a new trigger");
  console.log("AUD NO-TRIGGER WINDOW: late commit remained unsettled for 2500ms without ingress, startup or explicit recovery");
  // Independent no-failure, no-trigger reachability court. Do not create a timer,
  // restart, redeliver, or explicitly call recovery after the missed cursor scan.
  const observed=await db.collection("movie_mentor_commercial_value_disposition").findOne({provider:"stripe",providerPaymentReference:"pi-ledger-A"});
- assert.equal(observed.remainingAmountMinor,1200,"no autonomous settlement was observed during the bounded window");
- assert.equal(observed.chargebackAmountMinor,0);
- assert.equal((observed.chargebackEvents||[]).length,0);
- console.log("AUD NO-FAILURE LATE-COMMIT CONTROL GREEN: 2500ms bounded no-trigger interval; receipt still unsettled; this does not establish indefinite stranding or production scheduler absence");
+ assert.equal(observed.remainingAmountMinor,900,"no-trigger replay must persist the reduced balance");
+ assert.equal(observed.chargebackAmountMinor,300);
+ assert.equal((observed.chargebackEvents||[]).length,1,"replay must not double-apply chargeback");
+ console.log("AUD AUTONOMOUS RECOVERY GREEN: late committed chargeback durably settled once without a new trigger");
 }finally{
  release?.();releaseLedger?.();
  if(model&&originalCreate)model.create=originalCreate;
