@@ -30,10 +30,12 @@ async function recoverMovieMentorCompletedChargebacks({reversalAuthority,purchas
    const observation=await dispositionAuthority.observePreservedValueSettlement(coordinates);
    if(observation.settlementState==="settled"){alreadySettled++;continue;}
    if(observation.settlementState!=="unsettled")fail("Completed chargeback has no preserved-value ledger row.");
-   await dispositionAuthority.terminallySettlePreservedValue({provider:evidenceSource,providerPaymentReference:payment,commercialIntentId:intentId,principalId:principal,amountMinor:intent.amountMinor,currency,units:intent.units,disposition:"chargeback",chargebackAmountMinor:amount,terminalReference:evidenceId});
+   const settlement=await dispositionAuthority.terminallySettlePreservedValue({provider:evidenceSource,providerPaymentReference:payment,commercialIntentId:intentId,principalId:principal,amountMinor:intent.amountMinor,currency,units:intent.units,disposition:"chargeback",chargebackAmountMinor:amount,terminalReference:evidenceId});
    const confirmed=await dispositionAuthority.observePreservedValueSettlement(coordinates);
    if(confirmed.settlementState!=="settled")fail("Chargeback settlement was not durably observed.");
-   settled++;
+   if(settlement?.applied===true)settled++;
+   else if(settlement?.applied===false)alreadySettled++;
+   else fail("Settlement authority did not provide physical ownership proof.");
   }
   if(batch.nextCursor===null)return Object.freeze({complete:true,scanned,settled,alreadySettled,skipped});
   if(!text(batch.nextCursor)||(cursor!==null&&batch.nextCursor<=cursor))fail("Completed receipt discovery cursor did not advance.");
