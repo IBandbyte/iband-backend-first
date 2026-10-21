@@ -84,11 +84,11 @@ try{
  await leases.createIndex({domain:1},{unique:true});
  const leaseKey={domain:"stripe-chargeback-reconciliation"};
  await leases.insertOne({...leaseKey,owner:"A",generation:1,leaseUntil:new Date(0),cursor:"receipt-010"});
- const takeover=await leases.findOneAndUpdate({...leaseKey,owner:"A",generation:1,$expr:{$lte:["$leaseUntil","$NOW"]}},[{$set:{owner:"B",generation:{$add:["$generation",1]},leaseUntil:{$dateAdd:{startDate:"$NOW",unit:"minute",amount:5}}}}],{returnDocument:"after"});
+ const takeover=await leases.findOneAndUpdate({...leaseKey,owner:"A",generation:1,$expr:{$lte:["$leaseUntil","$$NOW"]}},[{$set:{owner:"B",generation:{$add:["$generation",1]},leaseUntil:{$dateAdd:{startDate:"$$NOW",unit:"minute",amount:5}}}}],{returnDocument:"after"});
  assert.equal(takeover?.generation,2);
- const stale=await leases.updateOne({...leaseKey,owner:"A",generation:1,$expr:{$gt:["$leaseUntil","$NOW"]}},{$set:{cursor:"forged-past-late-receipt"}});
+ const stale=await leases.updateOne({...leaseKey,owner:"A",generation:1,$expr:{$gt:["$leaseUntil","$$NOW"]}},{$set:{cursor:"forged-past-late-receipt"}});
  assert.equal(stale.matchedCount,0,"stale A must not advance B's checkpoint");
- const ownerB=await leases.findOne({...leaseKey,owner:"B",generation:2,$expr:{$gt:["$leaseUntil","$NOW"]}});
+ const ownerB=await leases.findOne({...leaseKey,owner:"B",generation:2,$expr:{$gt:["$leaseUntil","$$NOW"]}});
  assert.ok(ownerB,"only B may run under current server-time lease");
  const [workerA,workerB]=await Promise.all([
   recoverMovieMentorCompletedChargebacks(recoveryArgs),
@@ -101,7 +101,7 @@ try{
  assert.equal(settled.remainingAmountMinor,900,"concurrent workers must preserve exact remaining value");
  assert.equal(settled.chargebackAmountMinor,300);
  assert.equal((settled.chargebackEvents||[]).length,1,"concurrent workers must not duplicate financial event");
- const checkpoint=await leases.updateOne({...leaseKey,owner:"B",generation:2,$expr:{$gt:["$leaseUntil","$NOW"]}},{$set:{cursor:null,cycle:2}});
+ const checkpoint=await leases.updateOne({...leaseKey,owner:"B",generation:2,$expr:{$gt:["$leaseUntil","$$NOW"]}},{$set:{cursor:null,cycle:2}});
  assert.equal(checkpoint.matchedCount,1,"current owner must checkpoint the completed replay cycle");
  const forged=await leases.updateOne({...leaseKey,owner:"A",generation:1},{$set:{cursor:"forged"}});
  assert.equal(forged.matchedCount,0);
