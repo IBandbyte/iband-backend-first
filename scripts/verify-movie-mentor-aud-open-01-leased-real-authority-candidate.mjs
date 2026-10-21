@@ -101,11 +101,25 @@ try{
  assert.equal(settled.remainingAmountMinor,900,"concurrent workers must preserve exact remaining value");
  assert.equal(settled.chargebackAmountMinor,300);
  assert.equal((settled.chargebackEvents||[]).length,1,"concurrent workers must not duplicate financial event");
- const checkpoint=await leases.updateOne({...leaseKey,owner:"B",generation:2,$expr:{$gt:["$leaseUntil","$$NOW"]}},{$set:{cursor:null,cycle:2}});
- assert.equal(checkpoint.matchedCount,1,"current owner must checkpoint the completed replay cycle");
+ // Deterministic interrupted-worker court: B completes real financial replay, then
+ // loses its lease before it can commit its checkpoint. C must take over.
+ // This is verifier-only lease orchestration, NOT production lease enforcement.
+ const expireB=await leases.updateOne({...leaseKey,owner:"B",generation:2},{$set:{leaseUntil:new Date(0)}});
+ assert.equal(expireB.matchedCount,1,"interrupted B must have owned the prior generation");
+ const takeoverC=await leases.findOneAndUpdate({...leaseKey,owner:"B",generation:2,$expr:{$lte:["$leaseUntil","$NOW"]}},[{$set:{owner:"C",generation:{$add:["$generation",1]},leaseUntil:{$dateAdd:{startDate:"$NOW",unit:"minute",amount:5}}}}],{returnDocument:"after"});
+ assert.equal(takeoverC?.generation,3,"successor must acquire a new generation");
+ const interruptedCheckpoint=await leases.updateOne({...leaseKey,owner:"B",generation:2,$expr:{$gt:["$leaseUntil","$NOW"]}},{$set:{cursor:"forged-after-interruption",cycle:2}});
+ assert.equal(interruptedCheckpoint.matchedCount,0,"interrupted B must not checkpoint after C takeover");
+ const successor=await recoverMovieMentorCompletedChargebacks(recoveryArgs);
+ assert.equal(successor.complete,true,"successor must finish a full real-authority recovery cycle");
+ assert.equal(successor.settled,0,"successor must not duplicate already durable financial settlement");
+ const checkpoint=await leases.updateOne({...leaseKey,owner:"C",generation:3,$expr:{$gt:["$leaseUntil","$NOW"]}},{$set:{cursor:null,cycle:2}});
+ assert.equal(checkpoint.matchedCount,1,"current successor must checkpoint the completed replay cycle");
  const forged=await leases.updateOne({...leaseKey,owner:"A",generation:1},{$set:{cursor:"forged"}});
  assert.equal(forged.matchedCount,0);
  const observedLease=await leases.findOne(leaseKey);
+ assert.equal(observedLease.owner,"C");
+ assert.equal(observedLease.generation,3);
  assert.equal(observedLease.cursor,null);
  assert.equal(observedLease.cycle,2);
  const replay=await recoverMovieMentorCompletedChargebacks(recoveryArgs);
