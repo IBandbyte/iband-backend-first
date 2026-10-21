@@ -83,20 +83,22 @@ try{
  // The existing recovery function currently ignores leaseProof; this court should
  // RED until production enforces a durable owner/generation lease contract.
  const staleLeaseProof=Object.freeze({domain:"stripe-chargeback-reconciliation",owner:"expired-worker-A",generation:1,leaseUntil:new Date(0)});
- await assert.rejects(
-  ()=>recoverMovieMentorCompletedChargebacks({...recoveryArgs,leaseProof:staleLeaseProof}),
-  error=>error?.code==="MOVIE_MENTOR_COMPLETED_REVERSAL_RECOVERY_FENCED",
-  "production recovery must reject an expired worker generation, not silently scan"
- );
- // Forged but superficially unexpired proof must not grant recovery authority.
- // No corresponding durable lease row exists in this isolated database.
  const forgedLeaseProof=Object.freeze({domain:"stripe-chargeback-reconciliation",owner:"forged-worker-Zorg",generation:999,leaseUntil:new Date("2099-01-01T00:00:00.000Z")});
- await assert.rejects(
-  ()=>recoverMovieMentorCompletedChargebacks({...recoveryArgs,leaseProof:forgedLeaseProof}),
-  error=>error?.code==="MOVIE_MENTOR_COMPLETED_REVERSAL_RECOVERY_FENCED",
-  "production recovery must reject a forged future-dated owner proof without durable database authority"
- );
- console.log("AUD PRODUCTION LEASE BOUNDARY GREEN: expired and forged owner proofs rejected before recovery");
+ const verdicts=[];
+ for(const [label,proof] of [["expired",staleLeaseProof],["forged",forgedLeaseProof]]){
+  let rejected=false;
+  try{
+   await recoverMovieMentorCompletedChargebacks({...recoveryArgs,leaseProof:proof});
+  }catch(error){
+   if(error?.code!=="MOVIE_MENTOR_COMPLETED_REVERSAL_RECOVERY_FENCED")throw error;
+   rejected=true;
+  }
+  verdicts.push({label,rejected});
+  console.log("AUD PRODUCTION LEASE PROOF "+label.toUpperCase()+": "+(rejected?"REJECTED":"NOT REJECTED"));
+ }
+ assert.deepEqual(verdicts,[{label:"expired",rejected:true},{label:"forged",rejected:true}],
+  "production must reject BOTH expired and forged proofs based on durable ownership");
+ console.log("AUD PRODUCTION LEASE BOUNDARY GREEN: both proofs rejected");
 
 }finally{
  release?.();releaseLedger?.();
