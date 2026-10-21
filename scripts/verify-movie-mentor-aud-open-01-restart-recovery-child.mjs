@@ -10,7 +10,7 @@ import {createMovieMentorProductionCommercialValueDispositionComposition} from "
 import {recoverMovieMentorCompletedChargebacks} from "../ai/MovieMentorCompletedChargebackRecovery.js";
 
 const uri=process.env.MONGO_URI;
-assert.ok(uri&&/^mongodb:\\/\\/(?:127\\.0\\.0\\.1|localhost):27017\\/iband_aud_open_01(?:\\?|$)/.test(uri),"isolated replica-set database required");
+assert.ok(uri&&/^mongodb:\/\/(?:127\.0\.0\.1|localhost):27017\/iband_aud_open_01(?:\?|$)/.test(uri),"isolated replica-set database required");
 await mongoose.connect(uri,{serverSelectionTimeoutMS:15000});
 try{
  assert.ok((await mongoose.connection.db.admin().command({hello:1})).setName,"physical replica set required");
