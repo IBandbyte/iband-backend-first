@@ -1,4 +1,5 @@
 name: Verify Movie Mentor AUD-OPEN-01 Concurrent Cursor Order
+# Audit-only CI retrigger: rerun the owner-return repair against this exact head.
 on:
   pull_request:
   workflow_dispatch:
