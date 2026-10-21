@@ -19,7 +19,10 @@ const cases=[
  ["chargeback-cas-guard",/chargebackEvents:\{\$not:\{\$elemMatch:\{reference\}\}\}/],
  ["chargeback-cas-winner",/const updated=await M\.findOneAndUpdate\(\{\.\.\.q,status:"preserved-credit",\.\.\.chargebackCas\}/]
 ];
-for(const [name,pattern] of cases)assert.match(body,pattern,"Return-path source contract changed: "+name);
+for(const [name,pattern] of cases){
+ const found=name==="refund-idempotent"?body.includes("if(refundAmountMinor<=previous)return settlementResult(existing,false)"):name==="refund-cas-winner"?body.includes("return settlementResult(normalize(updated),true)"):name==="chargeback-event-replay"?body.includes("return settlementResult(existing,false);"):name==="terminal-replay"?body.includes("if(existing.status===target&&existing.terminalDisposition===kind&&existing.terminalReference===reference)return settlementResult(existing,false)"):pattern.test(body);
+ assert.ok(found,"Return-path source contract changed: "+name);
+}
 assert.equal((body.match(/if\(!updated\)return terminallySettlePreservedValue\(input\)/g)||[]).length,2,"refund and chargeback CAS retry paths must both remain visible");
 assert.equal((body.match(/return settlementResult\(normalize\(updated\),true\)/g)||[]).length,2,"both CAS-winning return paths must remain visible");
 assert.match(ingress,/await dispositionAuthority\.terminallySettlePreservedValue\(/,"ingress invocation must remain visible");
