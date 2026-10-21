@@ -13,7 +13,7 @@ const cases=[
  ["no-ledger-row",/if\(!row\)return Object\.freeze\(\{authorized:true,status:"not-preserved"/],
  ["refund-idempotent",/if\(refundAmountMinor<=previous\)return settlementResult(existing,false)/],
  ["refund-cas-loser-retry",/if\(!updated\)return terminallySettlePreservedValue\(input\)/],
- ["refund-cas-winner",/return normalize\(updated\)/],
+ ["refund-cas-winner",/return settlementResult\(normalize\(updated\),true\)/],
  ["chargeback-event-replay",/if\(prior\)\{[^}]*return settlementResult(existing,false);/],
  ["terminal-replay",/if\(existing\.status===target&&existing\.terminalDisposition===kind&&existing\.terminalReference===reference\)return settlementResult(existing,false)/],
  ["chargeback-cas-guard",/chargebackEvents:\{\$not:\{\$elemMatch:\{reference\}\}\}/],
@@ -21,9 +21,9 @@ const cases=[
 ];
 for(const [name,pattern] of cases)assert.match(body,pattern,"Return-path source contract changed: "+name);
 assert.equal((body.match(/if\(!updated\)return terminallySettlePreservedValue\(input\)/g)||[]).length,2,"refund and chargeback CAS retry paths must both remain visible");
-assert.equal((body.match(/return normalize\(updated\)/g)||[]).length,2,"both CAS-winning return paths must remain visible");
+assert.equal((body.match(/return settlementResult\(normalize\(updated\),true\)/g)||[]).length,2,"both CAS-winning return paths must remain visible");
 assert.match(ingress,/await dispositionAuthority\.terminallySettlePreservedValue\(/,"ingress invocation must remain visible");
 assert.match(recovery,/await dispositionAuthority\.terminallySettlePreservedValue\(/,"recovery invocation must remain visible");
-assert.match(recovery,/settled\+\+/,"recovery currently counts confirmed observation rather than ownership");
-assert.doesNotMatch(body,/\bapplied\s*:/,"current authority has no ownership return contract");
-console.log("AUD-OPEN-01 RETURN PATH INVENTORY GREEN",JSON.stringify({cases:cases.map(x=>x[0]),casRetryPaths:2,casWinnerReturns:2,ingressConsumesReturn:false,recoveryOwnerAccountingProven:"physical verifier required",scope:"exact-head source shape only; ownership repair and compatibility remain RED/unproven"}));
+assert.match(recovery,/settlement\?\.applied===true\)settled\+\+/,"recovery must count only owner-proven settlement");
+assert.match(authority,/function settlementResult\(row,applied\)/,"ownership result helper must exist");
+console.log("AUD-OPEN-01 RETURN PATH INVENTORY GREEN",JSON.stringify({cases:cases.map(x=>x[0]),casRetryPaths:2,casWinnerReturns:2,ingressConsumesReturn:false,recoveryOwnerAccountingProven:"physical verifier required",scope:"exact-head source shape only; physical ownership repair and compatibility require exact-head verification"}));
