@@ -1,3 +1,4 @@
+import {spawnSync} from "node:child_process";
 import assert from "node:assert/strict";
 import mongoose from "mongoose";
 import Stripe from "stripe";
@@ -85,27 +86,12 @@ try{
  ledgerModel.findOneAndUpdate=originalLedgerUpdate;
  await mongoose.disconnect();
  await mongoose.connect(uri,{serverSelectionTimeoutMS:15000});
- const restartedPurchase=createMovieMentorProductionCommercialPurchaseIntentComposition({resolveCommercialPolicy:async()=>{throw Error("NO_POLICY_MINT");}});
- const restartedIssuance=createMovieMentorProductionEntitlementIssuanceComposition();
- const restartedReversal=createMovieMentorProductionCommercialReversalComposition();
- const restartedValue=createMovieMentorProductionCommercialValueDispositionComposition();
- const restartedStripe=new Stripe("sk_test_aud_open_01_no_network");
- const restartedAdapter=createMovieMentorStripeCommercialProviderAdapter({stripe:restartedStripe,webhookSecret:"whsec_aud_open_01_financial",successUrl:"https://example.invalid/success",cancelUrl:"https://example.invalid/cancel"});
- const restartedCheckout=createMovieMentorProductionCommercialCheckoutComposition({purchaseIntentAuthority:restartedPurchase.authority,entitlementAuthority:restartedIssuance.authority,providers:{stripe:restartedAdapter}});
- assert.equal(restartedReversal.ready,true);
- assert.equal(restartedValue.ready,true);
- assert.equal(restartedCheckout.ready,true);
- const restart=await recoverMovieMentorCompletedChargebacks({reversalAuthority:restartedReversal.authority,purchaseIntentAuthority:restartedPurchase.authority,checkoutBindingAuthority:restartedCheckout.authority,dispositionAuthority:restartedValue.authority,pageLimit:1});
- assert.equal(restart.complete,true,"restart startup scan must complete");
- assert.equal(restart.settled,1,"fresh restart scan must recover the previously missed late commit");
- const settled=await mongoose.connection.db.collection("movie_mentor_commercial_value_disposition").findOne({provider:"stripe",providerPaymentReference:"pi-ledger-A"});
- assert.equal(settled.remainingAmountMinor,900);
- assert.equal(settled.chargebackAmountMinor,300);
- assert.equal((settled.chargebackEvents||[]).length,1,"restart recovery must settle exactly once");
- const repeat=await recoverMovieMentorCompletedChargebacks({reversalAuthority:restartedReversal.authority,purchaseIntentAuthority:restartedPurchase.authority,checkoutBindingAuthority:restartedCheckout.authority,dispositionAuthority:restartedValue.authority,pageLimit:1});
- assert.equal(repeat.settled,0,"repeated startup recovery must not settle again");
- assert.ok(repeat.alreadySettled>=1,"repeat must observe durable settled receipt");
- console.log("AUD RESTART RECOVERY GREEN: fresh connection and owner-proven authorities settled missed late commit exactly once");
+ const child=spawnSync(process.execPath,["scripts/verify-movie-mentor-aud-open-01-restart-recovery-child.mjs"],{env:process.env,encoding:"utf8",timeout:30000});
+ if(child.stdout)process.stdout.write(child.stdout);
+ if(child.stderr)process.stderr.write(child.stderr);
+ assert.equal(child.error,undefined,"fresh restart child process must execute");
+ assert.equal(child.status,0,"separate Node process must recover the missed chargeback exactly once");
+ console.log("AUD PROCESS RESTART GREEN: independent Node process recovered durable late commit");
 
 }finally{
  release?.();releaseLedger?.();
