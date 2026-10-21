@@ -5,7 +5,7 @@ import {isMovieMentorProductionCommercialValueDispositionAuthorityOwnedProof} fr
 
 const text=value=>typeof value==="string"?value.trim():"";
 function fail(message){const error=new Error(message);error.code="MOVIE_MENTOR_COMPLETED_REVERSAL_RECOVERY_FENCED";throw error;}
-async function recoverMovieMentorCompletedChargebacks({reversalAuthority,purchaseIntentAuthority,checkoutBindingAuthority,dispositionAuthority,evidenceSource="stripe",pageLimit=50,maxPages=null}={}){
+async function scanCompletedChargebacks({reversalAuthority,purchaseIntentAuthority,checkoutBindingAuthority,dispositionAuthority,evidenceSource="stripe",pageLimit=50,maxPages=null}={}){
  if(!isMovieMentorProductionCommercialReversalAuthorityOwnedProof(reversalAuthority)||!isMovieMentorProductionCommercialPurchaseIntentAuthorityOwnedProof(purchaseIntentAuthority)||!isMovieMentorProductionCommercialCheckoutAuthorityOwnedProof(checkoutBindingAuthority)||!isMovieMentorProductionCommercialValueDispositionAuthorityOwnedProof(dispositionAuthority))fail("Recovery requires four original owner-proven production authorities.");
  if(evidenceSource!=="stripe"||!Number.isSafeInteger(pageLimit)||pageLimit<1||pageLimit>100||(maxPages!==null&&(!Number.isSafeInteger(maxPages)||maxPages<1||maxPages>100)))fail("Recovery scan must be bounded and Stripe-scoped.");
  let cursor=null,scanned=0,settled=0,alreadySettled=0,skipped=0;
@@ -42,5 +42,34 @@ async function recoverMovieMentorCompletedChargebacks({reversalAuthority,purchas
   cursor=batch.nextCursor;
  }
  fail("Completed receipt scan exceeded bounded page limit; startup must not claim complete recovery.");
+}
+const activeRecoveryLoops=new WeakMap();
+const RESCAN_INTERVAL_MS=750;
+function ensureRecoveryLoop(options){
+ const owner=options.reversalAuthority;
+ if(activeRecoveryLoops.has(owner))return;
+ const state={busy:false};
+ activeRecoveryLoops.set(owner,state);
+ const next=()=>{
+  const timer=setTimeout(async()=>{
+   if(state.busy){next();return;}
+   state.busy=true;
+   try{
+    await scanCompletedChargebacks(options);
+   }catch(error){
+    process.emitWarning("Completed chargeback rescan failed: "+String(error?.message||error),{code:"MOVIE_MENTOR_RECOVERY_RESCAN_FAILED"});
+   }finally{
+    state.busy=false;
+    next();
+   }
+  },RESCAN_INTERVAL_MS);
+  timer.unref?.();
+ };
+ next();
+}
+async function recoverMovieMentorCompletedChargebacks(options={}){
+ const result=await scanCompletedChargebacks(options);
+ if(result.complete===true&&options.maxPages==null)ensureRecoveryLoop(options);
+ return result;
 }
 export {recoverMovieMentorCompletedChargebacks};
