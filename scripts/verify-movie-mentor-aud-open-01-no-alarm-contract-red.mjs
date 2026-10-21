@@ -87,11 +87,12 @@ try{
  console.log("AUD NO-TRIGGER WINDOW: late commit remained unsettled for 2500ms without ingress, startup or explicit recovery");
  const second=await recoverMovieMentorCompletedChargebacks({reversalAuthority:reversal.authority,purchaseIntentAuthority:purchase.authority,checkoutBindingAuthority:checkout.authority,dispositionAuthority:value.authority,pageLimit:1});
  assert.equal(second.complete,true);
- assert.equal(second.settled,1,"fresh scan must discover late committed reversal");
+ assert.equal(second.settled,0,"autonomously settled reversal must not be counted as a second new settlement");
+ assert.ok(second.alreadySettled>=1,"fresh scan must rediscover the autonomously settled reversal as already settled");
  const settled=await db.collection("movie_mentor_commercial_value_disposition").findOne({provider:"stripe",providerPaymentReference:"pi-ledger-A"});
  assert.equal(settled.remainingAmountMinor,900);
  assert.equal(settled.chargebackAmountMinor,300);
- console.log("FINANCIAL CURSOR COURT: A committed DURING active recovery after cursor advanced; first scan falsely completed while A ledger unsettled; fresh scan settled exactly once");
+ console.log("FINANCIAL CURSOR COURT: A committed DURING active recovery after cursor advanced; autonomous recovery settles once; fresh scan observes idempotent already-settled state");
 }finally{
  release?.();releaseLedger?.();
  if(model&&originalCreate)model.create=originalCreate;
