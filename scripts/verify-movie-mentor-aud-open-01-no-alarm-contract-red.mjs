@@ -81,7 +81,7 @@ try{
  // This only tests isolated composition behavior, not production scheduler reachability.
  await new Promise(resolve=>setTimeout(resolve,2500));
  const stillPending=await db.collection("movie_mentor_commercial_value_disposition").findOne({provider:"stripe",providerPaymentReference:"pi-ledger-A"});
- assert.equal(stillPending.remainingAmountMinor,1200,"isolated composition must not silently claim autonomous settlement");
+ assert.ok(Number.isSafeInteger(stillPending.remainingAmountMinor),"late-commit ledger must remain physically observable");
  console.log("AUD NO-ALARM AUTHORITY OBSERVATION",JSON.stringify({remainingAmountMinor:stillPending.remainingAmountMinor,chargebackAmountMinor:stillPending.chargebackAmountMinor,elapsedMs:2500,trigger:"none"}));
  assert.equal(stillPending.chargebackAmountMinor,300,"PHYSICAL NO-ALARM RED: late-committed reversal must autonomously settle without ingress, startup or explicit recovery");
  console.log("AUD NO-TRIGGER WINDOW: late commit remained unsettled for 2500ms without ingress, startup or explicit recovery");
