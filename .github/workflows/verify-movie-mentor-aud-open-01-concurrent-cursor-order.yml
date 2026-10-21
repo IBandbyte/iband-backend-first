@@ -32,6 +32,7 @@ jobs:
       - name: Inventory exact-head settlement return paths (verifier-only)
         run: node scripts/verify-movie-mentor-aud-open-01-return-path-inventory.mjs
       - run: npm install --ignore-scripts --no-audit --no-fund
+      # Dependency installation and replica-set election must succeed before any physical court.
       - name: Initialize replica set
         run: |
           docker exec ${{ job.services.mongo.id }} mongosh --quiet --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"localhost:27017"}]})'
