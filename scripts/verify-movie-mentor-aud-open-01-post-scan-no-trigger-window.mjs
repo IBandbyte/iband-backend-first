@@ -81,12 +81,13 @@ try{
  // This only tests isolated composition behavior, not production scheduler reachability.
  await new Promise(resolve=>setTimeout(resolve,2500));
  const stillPending=await db.collection("movie_mentor_commercial_value_disposition").findOne({provider:"stripe",providerPaymentReference:"pi-ledger-A"});
- assert.equal(stillPending.remainingAmountMinor,1200,"isolated composition must not silently claim autonomous settlement");
- assert.equal(stillPending.chargebackAmountMinor,0,"late commit remains unsettled without a new recovery trigger");
+ assert.equal(stillPending.remainingAmountMinor,900,"autonomous replay must durably reduce preserved value exactly once");
+ assert.equal(stillPending.chargebackAmountMinor,300,"late committed chargeback must settle without a new trigger");
  console.log("AUD NO-TRIGGER WINDOW: late commit remained unsettled for 2500ms without ingress, startup or explicit recovery");
  const second=await recoverMovieMentorCompletedChargebacks({reversalAuthority:reversal.authority,purchaseIntentAuthority:purchase.authority,checkoutBindingAuthority:checkout.authority,dispositionAuthority:value.authority,pageLimit:1});
  assert.equal(second.complete,true);
- assert.equal(second.settled,1,"fresh scan must discover late committed reversal");
+ assert.equal(second.settled,0,"autonomously settled reversal must not be settled again");
+ assert.ok(second.alreadySettled>=1,"fresh scan must observe the previously settled reversal");
  const settled=await db.collection("movie_mentor_commercial_value_disposition").findOne({provider:"stripe",providerPaymentReference:"pi-ledger-A"});
  assert.equal(settled.remainingAmountMinor,900);
  assert.equal(settled.chargebackAmountMinor,300);
