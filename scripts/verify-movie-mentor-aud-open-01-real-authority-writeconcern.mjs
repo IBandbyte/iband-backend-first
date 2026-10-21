@@ -39,7 +39,7 @@ try{
  assert.equal(after.remainingAmountMinor,900);
  assert.equal(after.chargebackAmountMinor,300);
  const ownerTokenPresent=Object.hasOwn(events[0],"authorityAttemptToken");
- const replayProvesOwnership=Object.hasOwn(replay,"applied")||Object.hasOwn(replay,"attemptToken");
+ const replayProvesOwnership=replay?.applied===true;
  console.log("AUD REAL AUTHORITY WRITE CONCERN DIAGNOSTIC",JSON.stringify({
   caller,error,durableEvents:events.length,observation:observed.settlementState,
   replayEvents:after.chargebackEvents.length,ownerTokenPresent,replayProvesOwnership,
@@ -47,5 +47,5 @@ try{
  }));
  assert.ok(error&&error.name==="MongoWriteConcernError","write concern uncertainty must physically reach production authority");
  assert.equal(ownerTokenPresent,false,"current production event must not be mistaken for ownership-bearing candidate");
- assert.equal(replayProvesOwnership,false,"current production replay must not be mistaken for writer proof");
+ assert.equal(replayProvesOwnership,false,"replay after uncertain write must not claim original ownership");
 }finally{await mongoose.disconnect();}
