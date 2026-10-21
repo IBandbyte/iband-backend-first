@@ -96,6 +96,12 @@ try{
   verdicts.push({label,rejected});
   console.log("AUD PRODUCTION LEASE PROOF "+label.toUpperCase()+": "+(rejected?"REJECTED":"NOT REJECTED"));
  }
+ // Integration consequence: a rejected, unauthorised worker must not settle A.
+ // Observe the real durable ledger, not merely the thrown error contract.
+ const afterUnauthorisedAttempts=await db.collection("movie_mentor_commercial_value_disposition").findOne({provider:"stripe",providerPaymentReference:"pi-ledger-A"});
+ const noUnauthorisedFinancialEffect=afterUnauthorisedAttempts?.remainingAmountMinor===1200&&afterUnauthorisedAttempts?.chargebackAmountMinor===0;
+ console.log("AUD PRODUCTION LEASE FINANCIAL INTEGRATION: "+(noUnauthorisedFinancialEffect?"NO UNAUTHORISED SETTLEMENT":"UNAUTHORISED FINANCIAL EFFECT OBSERVED"));
+ assert.equal(noUnauthorisedFinancialEffect,true,"expired/forged workers must not produce a real financial settlement before durable lease validation");
  assert.deepEqual(verdicts,[{label:"expired",rejected:true},{label:"forged",rejected:true}],
   "production must reject BOTH expired and forged proofs based on durable ownership");
  console.log("AUD PRODUCTION LEASE BOUNDARY GREEN: both proofs rejected");
