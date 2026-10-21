@@ -37,14 +37,14 @@ try{
  assert.equal(row.chargebackEvents.length,1);
  assert.equal(row.remainingAmountMinor,900);
  assert.equal(row.chargebackAmountMinor,300);
- assert.deepEqual(first,second,"production API cannot distinguish concurrent winner from observer");
- assert.deepEqual(first,replay,"production API cannot distinguish winner from later replay");
+ assert.equal([first,second].filter(result=>result.applied===true).length,1,"exactly one concurrent caller must receive owner proof");
+ assert.equal(replay.applied,false,"later replay cannot claim ownership");
  for(const result of [first,second,replay]){
   assert.equal(result.remainingAmountMinor,900);
   assert.equal(result.chargebackAmountMinor,300);
-  assert.equal(Object.hasOwn(result,"applied"),false);
+  assert.equal(typeof result.applied,"boolean","owner-return contract must be explicit");
   assert.equal(Object.hasOwn(result,"attemptToken"),false);
  }
  assert.equal(row.chargebackEvents[0].authorityAttemptToken,undefined,"no ownership token in current production schema");
- console.log("AUD REAL AUTHORITY COMPATIBILITY AMBIGUITY GREEN",JSON.stringify({durableCasWinners:winners,publicResultsIndistinguishable:true,legacyReturnShapePreserved:true,ownerProofAvailable:false,scope:"real production authority in isolated MongoDB; diagnostic of current ambiguity, not a repair or future API certification"}));
+ console.log("AUD REAL AUTHORITY COMPATIBILITY AMBIGUITY GREEN",JSON.stringify({durableCasWinners:winners,publicResultsIndistinguishable:false,ownerReturnContract:true,ownerProofAvailable:true,scope:"real production authority in isolated MongoDB; diagnostic of current ambiguity, not a repair or future API certification"}));
 }finally{if(M&&original)M.findOneAndUpdate=original;await mongoose.disconnect();}
