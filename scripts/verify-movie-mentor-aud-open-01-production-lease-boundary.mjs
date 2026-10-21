@@ -88,7 +88,15 @@ try{
   error=>error?.code==="MOVIE_MENTOR_COMPLETED_REVERSAL_RECOVERY_FENCED",
   "production recovery must reject an expired worker generation, not silently scan"
  );
- console.log("AUD PRODUCTION LEASE BOUNDARY GREEN: expired caller rejected before real financial recovery");
+ // Forged but superficially unexpired proof must not grant recovery authority.
+ // No corresponding durable lease row exists in this isolated database.
+ const forgedLeaseProof=Object.freeze({domain:"stripe-chargeback-reconciliation",owner:"forged-worker-Zorg",generation:999,leaseUntil:new Date("2099-01-01T00:00:00.000Z")});
+ await assert.rejects(
+  ()=>recoverMovieMentorCompletedChargebacks({...recoveryArgs,leaseProof:forgedLeaseProof}),
+  error=>error?.code==="MOVIE_MENTOR_COMPLETED_REVERSAL_RECOVERY_FENCED",
+  "production recovery must reject a forged future-dated owner proof without durable database authority"
+ );
+ console.log("AUD PRODUCTION LEASE BOUNDARY GREEN: expired and forged owner proofs rejected before recovery");
 
 }finally{
  release?.();releaseLedger?.();
