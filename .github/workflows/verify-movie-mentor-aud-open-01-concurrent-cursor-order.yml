@@ -219,6 +219,13 @@ jobs:
       - name: Reset isolated database after leased real-authority candidate
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
+      - name: Verify genuine recovery owner-proof fencing against forged authorities
+        if: success() || failure()
+        timeout-minutes: 2
+        run: node scripts/verify-movie-mentor-aud-open-01-recovery-owner-proof-boundary.mjs
+      - name: Reset isolated database after recovery owner-proof court
+        if: always()
+        run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Verify production lease boundary rejects expired worker (expected RED)
         if: success() || failure()
         run: node scripts/verify-movie-mentor-aud-open-01-production-lease-boundary.mjs
