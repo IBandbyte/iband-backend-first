@@ -82,9 +82,11 @@ try{
  const pendingBefore=await db.collection("movie_mentor_commercial_value_disposition").findOne({provider:"stripe",providerPaymentReference:"pi-ledger-A"});
  assert.equal(pendingBefore.chargebackAmountMinor,0);
  const recoveryArgs={reversalAuthority:reversal.authority,purchaseIntentAuthority:purchase.authority,checkoutBindingAuthority:checkout.authority,dispositionAuthority:value.authority,pageLimit:1};
- const start=await recoverMovieMentorCompletedChargebacks(recoveryArgs);
- assert.equal(start.complete,true);
- const deadline=Date.now()+8000;
+ // The first completed scan above already armed the production 750ms loop.
+ // A second manual recovery here would settle A and falsely credit the timer.
+ // Wait for the existing autonomous timer without invoking recovery again.
+ const waitStartedAt=Date.now();
+ const deadline=waitStartedAt+8000;
  let observed=null;
  while(Date.now()<deadline){
   observed=await db.collection("movie_mentor_commercial_value_disposition").findOne({provider:"stripe",providerPaymentReference:"pi-ledger-A"});
@@ -92,6 +94,7 @@ try{
   await new Promise(resolve=>setTimeout(resolve,50));
  }
  assert.equal(observed?.chargebackAmountMinor,300,"REAL PRODUCTION RESCAN RED: late-committed earlier-ID chargeback not settled by autonomous full-cycle rescan");
+ assert.ok(Date.now()-waitStartedAt>=500,"autonomous 750ms timer must not be credited with an immediate manual settlement");
  assert.equal(observed.remainingAmountMinor,900);
  assert.equal((observed.chargebackEvents||[]).length,1);
  const replay=await recoverMovieMentorCompletedChargebacks({...recoveryArgs,maxPages:100});
