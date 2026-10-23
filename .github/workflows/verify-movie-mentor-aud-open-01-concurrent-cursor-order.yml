@@ -262,6 +262,13 @@ jobs:
       - name: Reset isolated database after real rescan liveness
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
+      - name: Verify SIGKILL restart recovers durable earlier-ID cursor miss
+        if: success() || failure()
+        timeout-minutes: 2
+        run: node scripts/verify-movie-mentor-aud-open-01-production-restart-recovery.mjs
+      - name: Reset isolated database after restart recovery court
+        if: always()
+        run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Verify production-generated reversal ID commit order
         if: success() || failure()
         run: node scripts/verify-movie-mentor-aud-open-01-production-id-order.mjs
