@@ -255,6 +255,13 @@ jobs:
       - name: Reset isolated database after in-flight transfer diagnostic
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
+      - name: Verify real production 750ms rescan settles late earlier-ID receipt
+        if: success() || failure()
+        timeout-minutes: 2
+        run: node scripts/verify-movie-mentor-aud-open-01-production-rescan-liveness.mjs
+      - name: Reset isolated database after real rescan liveness
+        if: always()
+        run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Verify production-generated reversal ID commit order
         if: success() || failure()
         run: node scripts/verify-movie-mentor-aud-open-01-production-id-order.mjs
