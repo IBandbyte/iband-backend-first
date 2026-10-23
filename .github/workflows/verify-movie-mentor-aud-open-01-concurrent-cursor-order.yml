@@ -249,6 +249,12 @@ jobs:
       - name: Reset isolated database after concurrent financial replay
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
+      - name: Diagnose in-flight A-to-B ownership transfer at real financial settlement (verifier fixture, not production lease certification)
+        if: success() || failure()
+        run: node scripts/verify-movie-mentor-aud-open-01-inflight-transfer-diagnostic.mjs
+      - name: Reset isolated database after in-flight transfer diagnostic
+        if: always()
+        run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Verify production-generated reversal ID commit order
         if: success() || failure()
         run: node scripts/verify-movie-mentor-aud-open-01-production-id-order.mjs
