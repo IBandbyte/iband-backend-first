@@ -290,6 +290,13 @@ jobs:
       - name: Reset isolated database after HTTP startup restart court
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
+      - name: Verify signed-ingress persistent startup recovery failure versus root-equivalent health
+        if: success() || failure()
+        timeout-minutes: 2
+        run: node scripts/verify-movie-mentor-aud-open-01-startup-readiness-failure.mjs
+      - name: Reset isolated database after startup readiness failure court
+        if: always()
+        run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Verify production-generated reversal ID commit order
         if: success() || failure()
         run: node scripts/verify-movie-mentor-aud-open-01-production-id-order.mjs
