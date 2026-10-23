@@ -99,6 +99,13 @@ jobs:
       - name: Reset isolated database after overlapping recovery scans
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
+      - name: Verify independently composed production recovery workers
+        if: success() || failure()
+        timeout-minutes: 3
+        run: node scripts/verify-movie-mentor-aud-open-01-independent-recovery-compositions.mjs
+      - name: Reset isolated database after independent recovery compositions
+        if: always()
+        run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Verify signed Stripe ingress first-failure retry boundary
         if: success() || failure()
         run: node scripts/verify-movie-mentor-aud-open-01-signed-ingress-retry.mjs
