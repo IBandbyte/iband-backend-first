@@ -65,7 +65,7 @@ try{
   }
   return originalLedgerUpdate.call(this,query,update,...options);
  };
- const firstPromise=recoverMovieMentorCompletedChargebacks({reversalAuthority:reversal.authority,purchaseIntentAuthority:purchase.authority,checkoutBindingAuthority:checkout.authority,dispositionAuthority:value.authority,pageLimit:1});
+ const firstPromise=recoverMovieMentorCompletedChargebacks({reversalAuthority:reversal.authority,purchaseIntentAuthority:purchase.authority,checkoutBindingAuthority:checkout.authority,dispositionAuthority:value.authority,pageLimit:1,maxPages:100});
  await ledgerEntered;
  release();
  const aResult=await a;
@@ -77,7 +77,7 @@ try{
  const pending=await db.collection("movie_mentor_commercial_value_disposition").findOne({provider:"stripe",providerPaymentReference:"pi-ledger-A"});
  assert.equal(pending.remainingAmountMinor,1200,"late committed reversal remains financially unsettled after earlier scan");
  assert.equal(pending.chargebackAmountMinor,0);
- const recoveryArgs={reversalAuthority:reversal.authority,purchaseIntentAuthority:purchase.authority,checkoutBindingAuthority:checkout.authority,dispositionAuthority:value.authority,pageLimit:1};
+ const recoveryArgs={reversalAuthority:reversal.authority,purchaseIntentAuthority:purchase.authority,checkoutBindingAuthority:checkout.authority,dispositionAuthority:value.authority,pageLimit:1,maxPages:100};
  // Verifier-only durable lease fixture. This is NOT a production lease implementation.
  const leases=db.collection("aud_open_01_inflight_transfer_diagnostic");
  await leases.insertOne({domain:"completed-chargeback",owner:"worker-A",generation:1});
