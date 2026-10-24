@@ -5,7 +5,7 @@ import mongoose from "mongoose";
 // Proves a current successor can settle NEW pending evidence, while old
 // evidence remains idempotent. Does NOT certify the production recovery API.
 const uri=process.env.MONGO_URI;
-assert.ok(uri && /^mongodb:\/\/(?:127\\.0\\.0\\.1|localhost):27017\/iband_aud_open_01(?:\\?|$)/.test(uri),"isolated audit MongoDB required");
+assert.ok(uri && /^mongodb:\/\/(?:127\.0\.0\.1|localhost):27017\/iband_aud_open_01(?:\?|$)/.test(uri),"isolated audit MongoDB required");
 await mongoose.connect(uri,{serverSelectionTimeoutMS:15000});
 try {
  const db=mongoose.connection.db;
