@@ -18,6 +18,7 @@ try{
   ["chargeback",{chargebackAmountMinor:300}],
   ["termination",{}]
  ];
+ const failures=[];
  for(const [kind,extra] of cases){
   const coordinates={provider:"stripe",providerPaymentReference:"pi-aud-direct-"+kind,commercialIntentId:"intent-aud-direct-"+kind,principalId:"principal-aud-direct-"+kind,amountMinor:1200,currency:"GBP",units:20};
   await value.authority.preserveVerifiedPaidValue({...coordinates,reason:"entitlement-suspended",refundAuthorized:false});
@@ -28,8 +29,9 @@ try{
   const row=await db.collection("movie_mentor_commercial_value_disposition").findOne({provider:"stripe",providerPaymentReference:coordinates.providerPaymentReference});
   const unchanged=row?.status==="preserved-credit"&&row?.remainingAmountMinor===1200&&row?.cumulativeRefundedAmountMinor===0&&row?.chargebackAmountMinor===0&&(!row?.chargebackEvents||row.chargebackEvents.length===0)&&!row?.terminalDisposition;
   console.log("AUD DIRECT TERMINAL "+kind,JSON.stringify({rejected,unchanged,status:row?.status}));
-  assert.equal(unchanged,true,"PHYSICAL DIRECT-TERMINAL RED: unauthorised "+kind+" changed durable value");
-  assert.equal(rejected,true,"PHYSICAL DIRECT-TERMINAL RED: unauthorised "+kind+" did not fail closed");
+  if(!unchanged||!rejected)failures.push({kind,rejected,unchanged});
  }
+ console.log("AUD DIRECT TERMINAL FOUR-KIND SUMMARY",JSON.stringify({cases:cases.length,failures}));
+ assert.deepEqual(failures,[],"PHYSICAL DIRECT-TERMINAL RED: one or more unauthorised dispositions changed durable value or did not fail closed");
  console.log("AUD DIRECT TERMINAL BOUNDARY GREEN: all four kinds fail closed without durable financial effects");
 }finally{await mongoose.disconnect();}
