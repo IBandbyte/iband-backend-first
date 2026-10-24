@@ -293,6 +293,13 @@ jobs:
       - name: Demand forged-origin financial authority rejection (expected RED)
         if: success() || failure()
         run: node scripts/verify-movie-mentor-aud-open-01-forged-origin-financial-boundary.mjs
+      - name: Demand direct terminal-kind authority across release refund chargeback termination (expected RED)
+        if: success() || failure()
+        timeout-minutes: 2
+        run: node scripts/verify-movie-mentor-aud-open-01-direct-terminal-kinds-boundary.mjs
+      - name: Reset isolated database after direct terminal-kind authority court
+        if: always()
+        run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Reset isolated database after forged-origin financial boundary
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
