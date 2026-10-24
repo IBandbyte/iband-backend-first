@@ -298,6 +298,10 @@ jobs:
         if: success() || failure()
         timeout-minutes: 2
         run: node scripts/verify-movie-mentor-aud-open-01-startup-readiness-failure.mjs
+      - name: Verify real root stays healthy while signed chargeback recovery ledger fails
+        if: success() || failure()
+        timeout-minutes: 2
+        run: node scripts/verify-movie-mentor-aud-open-01-real-root-recovery-failure.mjs
       - name: Reset isolated database after startup readiness failure court
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
