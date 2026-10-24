@@ -283,6 +283,13 @@ jobs:
       - name: Reset isolated database after transactional writer fence candidate
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
+      - name: Verify isolated successor-owner positive settlement candidate
+        if: success() || failure()
+        timeout-minutes: 2
+        run: node scripts/verify-movie-mentor-aud-open-01-successor-owner-positive-candidate.mjs
+      - name: Reset isolated database after successor-owner positive candidate
+        if: always()
+        run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Demand forged-origin financial authority rejection (expected RED)
         if: success() || failure()
         run: node scripts/verify-movie-mentor-aud-open-01-forged-origin-financial-boundary.mjs
