@@ -269,6 +269,13 @@ jobs:
       - name: Reset isolated database after in-flight transfer diagnostic
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
+      - name: Demand real financial writer fence after durable owner transfer (expected RED)
+        if: success() || failure()
+        timeout-minutes: 2
+        run: node scripts/verify-movie-mentor-aud-open-01-real-writer-transfer-fence.mjs
+      - name: Reset isolated database after real writer transfer fence court
+        if: always()
+        run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Verify real production 750ms rescan settles late earlier-ID receipt
         if: success() || failure()
         timeout-minutes: 2
