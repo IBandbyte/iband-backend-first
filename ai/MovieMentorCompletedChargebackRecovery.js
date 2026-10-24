@@ -68,6 +68,10 @@ function ensureRecoveryLoop(options){
  next();
 }
 async function recoverMovieMentorCompletedChargebacks(options={}){
+ // No durable lease validator is integrated yet. Never silently accept a caller-
+ // supplied ownership assertion: even a future-dated or correctly shaped proof
+ // is untrusted until checked against the authoritative durable lease record.
+ if(Object.prototype.hasOwnProperty.call(options,"leaseProof"))fail("Caller-provided recovery lease proof is not an authorised ownership capability.");
  const result=await scanCompletedChargebacks(options);
  if(result.complete===true&&options.maxPages==null)ensureRecoveryLoop(options);
  return result;
