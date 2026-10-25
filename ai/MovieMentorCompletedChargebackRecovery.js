@@ -43,6 +43,10 @@ async function scanCompletedChargebacks({reversalAuthority,purchaseIntentAuthori
  }
  fail("Completed receipt scan exceeded bounded page limit; startup must not claim complete recovery.");
 }
+// A cursor is only a bounded traversal position, never a durable high-water mark.
+// Re-enter discovery from null on every pass: a reversal ID can be allocated
+// before its Mongo transaction commits, so an earlier ID can become visible
+// only after a later ID has already advanced a previous scan.
 const activeRecoveryLoops=new WeakMap();
 const RESCAN_INTERVAL_MS=750;
 function ensureRecoveryLoop(options){
