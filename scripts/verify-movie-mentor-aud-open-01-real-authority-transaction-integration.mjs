@@ -11,7 +11,18 @@ import {recoverMovieMentorCompletedChargebacks} from "../ai/MovieMentorCompleted
 
 const uri=process.env.MONGO_URI;
 assert.ok(uri&&/^mongodb:\/\/(?:127\.0\.0\.1|localhost):27017\/iband_aud_open_01(?:\?|$)/.test(uri),"isolated replica-set database required");
-await mongoose.connect(uri,{serverSelectionTimeoutMS:15000});
+await mongoose.connect(uri,{serverSelectionTimeoutMS:15000,monitorCommands:true});
+const observedFinancialWrites=[];
+const observedOwnerWrites=[];
+const commandListener=event=>{
+ const c=event.command||{};
+ const coll=c.findAndModify||c.update||c.insert;
+ if(!coll||!c.lsid||c.txnNumber===undefined||c.autocommit!==false)return;
+ const proof={collection:coll,lsid:JSON.stringify(c.lsid),txn:String(c.txnNumber),inTransaction:true};
+ if(coll==="movie_mentor_commercial_value_disposition")observedFinancialWrites.push(proof);
+ else if(/movie_mentor.*(chargeback|recovery).*(lease|owner)/i.test(coll))observedOwnerWrites.push(proof);
+};
+mongoose.connection.getClient().on("commandStarted",commandListener);
 let release,signal,model,originalCreate,ledgerModel,originalLedgerUpdate,releaseLedger,signalLedger;
 const ledgerHeld=new Promise(r=>releaseLedger=r),ledgerEntered=new Promise(r=>signalLedger=r);
 const held=new Promise(r=>release=r),entered=new Promise(r=>signal=r);
@@ -133,6 +144,9 @@ try{
   // The transaction must carry the current owner generation into the lease predicate.
   // Capture writes through the MongoDB driver command monitor so Mongoose query chaining
   // and collection-level writes are both visible. The monitor must be enabled at connect.
+  const sharedTransaction=observedFinancialWrites.some(w=>observedOwnerWrites.some(o=>o.lsid===w.lsid&&o.txn===w.txn));
+  console.log("AUD REAL TRANSACTION COMMANDS: ownerWrites="+observedOwnerWrites.length+"; financialWrites="+observedFinancialWrites.length+"; sharedTransaction="+sharedTransaction);
+  assert.equal(sharedTransaction,true,"PHYSICAL SAME-TRANSACTION RED: no durable production owner write and financial ledger write observed in one MongoDB transaction");
   console.log("AUD REAL AUTHORITY TRANSACTION BOUNDARY: realWriterSessionSeen="+realWriterSessionSeen);
   assert.equal(realWriterSessionSeen,true,"PHYSICAL REAL-AUTHORITY INTEGRATION RED: financial writer did not enter an ownership-fenced MongoDB transaction");
   const noStaleFinancialEffect=beforeB?.remainingAmountMinor===1200&&beforeB?.chargebackAmountMinor===0&&(beforeB?.chargebackEvents||[]).length===0;
@@ -152,5 +166,6 @@ try{
  release?.();releaseLedger?.();
  if(model&&originalCreate)model.create=originalCreate;
  if(ledgerModel&&originalLedgerUpdate)ledgerModel.findOneAndUpdate=originalLedgerUpdate;
+ mongoose.connection.getClient().off("commandStarted",commandListener);
  await mongoose.disconnect();
 }
