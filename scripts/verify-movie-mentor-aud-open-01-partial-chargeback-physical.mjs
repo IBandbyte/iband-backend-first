@@ -63,6 +63,7 @@ async function check(payment,label){
   assert.equal(row.cumulativeRefundedAmountMinor+row.chargebackAmountMinor+row.remainingAmountMinor,1200,label+": conservation");
 }
 try {
+  await bounded("isolated MongoDB connect",()=>mongoose.connect(uri,{serverSelectionTimeoutMS:15000}));
   const db=mongoose.connection.db;
   assert.ok((await db.admin().command({hello:1})).setName,"physical replica set required");
   await db.collection("movie_mentor_inference_entitlement").insertOne({domain:"iband.movie-mentor.inference-spend",schema:1,principalId:base.principalId,status:"active",remainingUnits:20,reservedUnits:0,consumedUnits:0,entitlementRevision:1});
