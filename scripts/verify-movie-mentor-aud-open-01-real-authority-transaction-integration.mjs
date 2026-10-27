@@ -138,21 +138,20 @@ try{
    const record=await db.collection(name).findOne({domain:"completed-chargeback"});
    if(record&&typeof record.owner==="string"&&Number.isSafeInteger(record.generation)&&record.generation>=1)productionOwnerProof=true;
   }
-  console.log("AUD REAL OWNER CONTRACT: productionOwnerProof="+productionOwnerProof+"; candidateCollections="+ownerCollections.length+"; verifierFixtureExcluded=true");
-  assert.equal(productionOwnerProof,true,"PHYSICAL REAL OWNER CONTRACT RED: real recovery did not acquire a durable production owner generation");
-  // Require a same-session, same-transaction durable lease WRITE, not merely a ledger session.
-  // The transaction must carry the current owner generation into the lease predicate.
-  // Capture writes through the MongoDB driver command monitor so Mongoose query chaining
-  // and collection-level writes are both visible. The monitor must be enabled at connect.
+  // Collect independent observations before asserting, so one RED cannot hide another.
   const sharedTransaction=observedFinancialWrites.some(w=>observedOwnerWrites.some(o=>o.lsid===w.lsid&&o.txn===w.txn));
-  console.log("AUD REAL TRANSACTION COMMANDS: ownerWrites="+observedOwnerWrites.length+"; financialWrites="+observedFinancialWrites.length+"; sharedTransaction="+sharedTransaction);
-  assert.equal(sharedTransaction,true,"PHYSICAL SAME-TRANSACTION RED: no durable production owner write and financial ledger write observed in one MongoDB transaction");
-  console.log("AUD REAL AUTHORITY TRANSACTION BOUNDARY: realWriterSessionSeen="+realWriterSessionSeen);
-  assert.equal(realWriterSessionSeen,true,"PHYSICAL REAL-AUTHORITY INTEGRATION RED: financial writer did not enter an ownership-fenced MongoDB transaction");
   const noStaleFinancialEffect=beforeB?.remainingAmountMinor===1200&&beforeB?.chargebackAmountMinor===0&&(beforeB?.chargebackEvents||[]).length===0;
+  console.log("AUD REAL OWNER CONTRACT: productionOwnerProof="+productionOwnerProof+"; candidateCollections="+ownerCollections.length+"; verifierFixtureExcluded=true");
+  console.log("AUD REAL TRANSACTION COMMANDS: ownerWrites="+observedOwnerWrites.length+"; financialWrites="+observedFinancialWrites.length+"; sharedTransaction="+sharedTransaction);
+  console.log("AUD REAL AUTHORITY TRANSACTION BOUNDARY: realWriterSessionSeen="+realWriterSessionSeen);
   console.log("AUD REAL AUTHORITY INTEGRATION FENCE: staleRejected="+staleRejected+"; noStaleFinancialEffect="+noStaleFinancialEffect);
-  assert.equal(noStaleFinancialEffect,true,"PHYSICAL STALE-WRITER RED: superseded worker A committed at real financial mutation after durable generation transfer");
-  assert.equal(staleRejected,true,"PHYSICAL STALE-WRITER RED: worker A must receive a fenced ownership error");
+  const failures=[];
+  if(!productionOwnerProof)failures.push("PHYSICAL REAL OWNER CONTRACT RED: real recovery did not acquire a durable production owner generation");
+  if(!sharedTransaction)failures.push("PHYSICAL SAME-TRANSACTION RED: no durable production owner write and financial ledger write observed in one MongoDB transaction");
+  if(!realWriterSessionSeen)failures.push("PHYSICAL REAL-AUTHORITY INTEGRATION RED: financial writer did not enter an ownership-fenced MongoDB transaction");
+  if(!noStaleFinancialEffect)failures.push("PHYSICAL STALE-WRITER RED: superseded worker A committed at real financial mutation after durable generation transfer");
+  if(!staleRejected)failures.push("PHYSICAL STALE-WRITER RED: worker A must receive a fenced ownership error");
+  assert.equal(failures.length,0,failures.join("\n"));
   const workerB=await recoverMovieMentorCompletedChargebacks(recoveryArgs);
   const ledger=await db.collection("movie_mentor_commercial_value_disposition").findOne({provider:"stripe",providerPaymentReference:"pi-ledger-A"});
   assert.equal(ledger.remainingAmountMinor,900);
