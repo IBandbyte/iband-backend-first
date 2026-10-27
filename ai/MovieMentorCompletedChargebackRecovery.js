@@ -49,6 +49,11 @@ async function scanCompletedChargebacks({reversalAuthority,purchaseIntentAuthori
    if(settlement?.applied===true)settled++;
    else if(settlement?.applied===false)alreadySettled++;
    else fail("Settlement authority did not provide physical ownership proof.");
+   // A successful transaction is complete; do not strand other independent
+   // recovery workers behind an otherwise idle thirty-second generation.
+   // Release is owner-and-generation checked and uses MongoDB server time.
+   await releaseRecoveryOwner({capability:recoveryCapability});
+   recoveryCapability=null;
   }
   if(batch.nextCursor===null)return Object.freeze({complete:true,scanned,settled,alreadySettled,skipped});
   if(!text(batch.nextCursor)||(cursor!==null&&batch.nextCursor<=cursor))fail("Completed receipt discovery cursor did not advance.");
