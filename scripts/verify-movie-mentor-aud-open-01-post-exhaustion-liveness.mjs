@@ -68,6 +68,8 @@ try{
  const recoveryStart=Date.now();
  // Initial 1s timer plus bounded 2/4/8/8s retries: retain fault for 35s.
  await new Promise(resolve=>setTimeout(resolve,35_000));
+ const ownerLease=await db.collection("movie_mentor_completed_chargeback_recovery_lease").findOne({_id:"completed-chargeback:stripe"});
+ console.log("CASE D OWNER-FENCE DIAGNOSTIC",JSON.stringify({ledgerCasAttempts:injected,ownerGeneration:ownerLease?.generation??null,writerFenceRevision:ownerLease?.writerFenceRevision??null,leaseExpiresAt:ownerLease?.leaseUntil??null,leaseStillActive:ownerLease?.leaseUntil instanceof Date&&ownerLease.leaseUntil.getTime()>Date.now()}));
  assert.ok(injected>=5,"all bounded recovery attempts must reach the failing ledger CAS");
  const beforeRestore=await db.collection("movie_mentor_commercial_value_disposition").findOne({provider:"stripe",providerPaymentReference});
  assert.equal(beforeRestore.chargebackAmountMinor,0,"must remain unsettled at exhaustion");
