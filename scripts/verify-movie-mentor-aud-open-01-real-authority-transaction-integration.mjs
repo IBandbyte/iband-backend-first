@@ -29,6 +29,34 @@ const held=new Promise(r=>release=r),entered=new Promise(r=>signal=r);
 try{
  const db=mongoose.connection.db;
  assert.ok((await db.admin().command({hello:1})).setName);
+ // Positive control: independently prove the command monitor observes both writes
+ // with the same MongoDB transaction identity and an acknowledged generation CAS.
+ const positiveLease=db.collection("movie_mentor_aud_recovery_lease_control");
+ const positiveLedger=db.collection("movie_mentor_commercial_value_disposition");
+ const controlId="aud-monitor-positive-control-"+process.pid;
+ await positiveLease.insertOne({_id:controlId,domain:"completed-chargeback",owner:"control-A",generation:7,writerFenceRevision:0});
+ await positiveLedger.insertOne({_id:controlId,domain:"aud-monitor-positive-control",revision:0});
+ const controlSession=await mongoose.startSession();
+ try{
+  await controlSession.withTransaction(async()=>{
+   const fence=await positiveLease.updateOne({_id:controlId,owner:"control-A",generation:7},{$inc:{writerFenceRevision:1}},{session:controlSession});
+   assert.equal(fence.matchedCount,1,"POSITIVE MONITOR CONTROL: owner generation CAS must match");
+   assert.equal(fence.modifiedCount,1,"POSITIVE MONITOR CONTROL: owner generation CAS must write");
+   const ledger=await positiveLedger.updateOne({_id:controlId},{$inc:{revision:1}},{session:controlSession});
+   assert.equal(ledger.matchedCount,1,"POSITIVE MONITOR CONTROL: ledger update must match");
+   assert.equal(ledger.modifiedCount,1,"POSITIVE MONITOR CONTROL: ledger update must write");
+  });
+  const matching=observedOwnerWrites.some(o=>observedFinancialWrites.some(w=>o.lsid===w.lsid&&o.txn===w.txn));
+  console.log("AUD MONITOR POSITIVE CONTROL: ownerWrites="+observedOwnerWrites.length+"; financialWrites="+observedFinancialWrites.length+"; sharedTransaction="+matching+"; ownerGeneration=7; acknowledged=true");
+  assert.equal(matching,true,"POSITIVE MONITOR CONTROL RED: command monitor failed to detect known-good atomic lease/ledger writes");
+ }finally{
+  await controlSession.endSession();
+  await positiveLease.deleteOne({_id:controlId});
+  await positiveLedger.deleteOne({_id:controlId});
+  observedOwnerWrites.length=0;
+  observedFinancialWrites.length=0;
+ }
+
  const purchase=createMovieMentorProductionCommercialPurchaseIntentComposition({resolveCommercialPolicy:async()=>{throw Error("NO_POLICY_MINT");}});
  const issuance=createMovieMentorProductionEntitlementIssuanceComposition();
  const reversal=createMovieMentorProductionCommercialReversalComposition();
