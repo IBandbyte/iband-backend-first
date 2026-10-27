@@ -129,6 +129,10 @@ try{
   }
   console.log("AUD REAL OWNER CONTRACT: productionOwnerProof="+productionOwnerProof+"; candidateCollections="+ownerCollections.length+"; verifierFixtureExcluded=true");
   assert.equal(productionOwnerProof,true,"PHYSICAL REAL OWNER CONTRACT RED: real recovery did not acquire a durable production owner generation");
+  // Require a same-session, same-transaction durable lease WRITE, not merely a ledger session.
+  // The transaction must carry the current owner generation into the lease predicate.
+  // Capture writes through the MongoDB driver command monitor so Mongoose query chaining
+  // and collection-level writes are both visible. The monitor must be enabled at connect.
   console.log("AUD REAL AUTHORITY TRANSACTION BOUNDARY: realWriterSessionSeen="+realWriterSessionSeen);
   assert.equal(realWriterSessionSeen,true,"PHYSICAL REAL-AUTHORITY INTEGRATION RED: financial writer did not enter an ownership-fenced MongoDB transaction");
   const noStaleFinancialEffect=beforeB?.remainingAmountMinor===1200&&beforeB?.chargebackAmountMinor===0&&(beforeB?.chargebackEvents||[]).length===0;
