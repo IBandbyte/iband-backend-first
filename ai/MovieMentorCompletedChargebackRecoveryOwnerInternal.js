@@ -6,6 +6,9 @@ import mongoose from "mongoose";
 const COLLECTION="movie_mentor_completed_chargeback_recovery_lease";
 const SCOPE="completed-chargeback:stripe";
 const FENCED="MOVIE_MENTOR_COMPLETED_REVERSAL_RECOVERY_FENCED";
+// Only this module can mint a capability. The owner/generation fields are not proof.
+const mintedCapabilities=new WeakMap();
+function mint(owner,generation,connection){const capability=Object.freeze({owner,generation});mintedCapabilities.set(capability,connection);return capability;}
 function fail(message){const error=new Error(message);error.code=FENCED;throw error;}
 function assertConnection(connection){
  if(!connection?.db||typeof connection.startSession!=="function")fail("Durable recovery ownership requires an active MongoDB connection.");
@@ -19,7 +22,7 @@ async function acquireRecoveryOwner({connection=mongoose.connection,owner=ownerT
  // against the unique _id index; no claimant may reset a prior generation.
  try{
   await leases.insertOne({_id:SCOPE,owner,generation:1,writerFenceRevision:0,leaseUntil:new Date(Date.now()+leaseMs)});
-  return Object.freeze({owner,generation:1});
+  return mint(owner,1,connection);
  }catch(error){if(error?.code!==11000)throw error;}
  // A takeover is allowed only after expiry as measured by MongoDB server time.
  // Update pipeline uses $$NOW to set expiry on the server and increments the
@@ -31,10 +34,10 @@ async function acquireRecoveryOwner({connection=mongoose.connection,owner=ownerT
  );
  const row=result?.value??result;
  if(!row||row.owner!==owner||!Number.isSafeInteger(row.generation))fail("Recovery ownership is held by another generation.");
- return Object.freeze({owner,generation:row.generation});
+ return mint(owner,row.generation,connection);
 }
 async function runWithRecoveryFence({connection=mongoose.connection,capability,work}={}){
- if(!capability||typeof capability.owner!=="string"||!Number.isSafeInteger(capability.generation)||capability.generation<1||typeof work!=="function")fail("Internal recovery fence requires acquired owner generation and transaction callback.");
+ if(!capability||mintedCapabilities.get(capability)!==connection||typeof capability.owner!=="string||!Number.isSafeInteger(capability.generation)||capability.generation<1||typeof work!=="function")fail("Internal recovery fence requires acquired owner generation and transaction callback.");
  const leases=collection(connection);
  const session=await connection.startSession();
  try{
