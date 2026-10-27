@@ -119,6 +119,16 @@ try{
    staleRejected=true;
   }
   const beforeB=await db.collection("movie_mentor_commercial_value_disposition").findOne({provider:"stripe",providerPaymentReference:"pi-ledger-A"});
+  // The verifier-only lease fixture cannot establish production ownership authority.
+  // Independently demand a durable production recovery-owner lease record, not the fixture.
+  const ownerCollections=(await db.listCollections({}, {nameOnly:true}).toArray()).map(x=>x.name).filter(n=>/movie_mentor.*(chargeback|recovery).*lease|movie_mentor.*recovery.*owner/i.test(n));
+  let productionOwnerProof=false;
+  for(const name of ownerCollections){
+   const record=await db.collection(name).findOne({domain:"completed-chargeback"});
+   if(record&&typeof record.owner==="string"&&Number.isSafeInteger(record.generation)&&record.generation>=1)productionOwnerProof=true;
+  }
+  console.log("AUD REAL OWNER CONTRACT: productionOwnerProof="+productionOwnerProof+"; candidateCollections="+ownerCollections.length+"; verifierFixtureExcluded=true");
+  assert.equal(productionOwnerProof,true,"PHYSICAL REAL OWNER CONTRACT RED: real recovery did not acquire a durable production owner generation");
   console.log("AUD REAL AUTHORITY TRANSACTION BOUNDARY: realWriterSessionSeen="+realWriterSessionSeen);
   assert.equal(realWriterSessionSeen,true,"PHYSICAL REAL-AUTHORITY INTEGRATION RED: financial writer did not enter an ownership-fenced MongoDB transaction");
   const noStaleFinancialEffect=beforeB?.remainingAmountMinor===1200&&beforeB?.chargebackAmountMinor===0&&(beforeB?.chargebackEvents||[]).length===0;
