@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import mongoose from "mongoose";
 import {createMovieMentorProductionCommercialValueDispositionComposition} from "../ai/MovieMentorProductionCommercialValueDispositionComposition.js";
+import {createMovieMentorProductionCommercialReversalComposition} from "../ai/MovieMentorProductionCommercialReversalComposition.js";
 
 // VERIFIER ONLY: actual production authority, isolated MongoDB.
 // Proves whether durable settlement survives a server writeConcernError.
@@ -14,6 +15,14 @@ try{
  const authority=createMovieMentorProductionCommercialValueDispositionComposition().authority;
  const coordinates={provider:"stripe",providerPaymentReference:"pi-real-wc",commercialIntentId:"intent-real-wc",principalId:"principal-real-wc",amountMinor:1200,currency:"GBP",units:20};
  await authority.preserveVerifiedPaidValue({...coordinates,reason:"entitlement-suspended",refundAuthorized:false});
+ // Establish independently committed provider reversal evidence before the fault.
+ // Otherwise the production evidence gate rejects settlement before findAndModify.
+ const reversal=createMovieMentorProductionCommercialReversalComposition();
+ assert.equal(reversal.ready,true,"original production reversal authority required");
+ const suspended=await reversal.authority.suspendVerifiedReversal({reversal:{verified:true,evidenceId:"evt-real-wc",evidenceSource:"stripe",evidenceKind:"charge.dispute.funds_withdrawn",providerPaymentReference:coordinates.providerPaymentReference,reversalAmountMinor:300,currency:coordinates.currency,verifiedAt:new Date().toISOString(),commercialReference:coordinates.commercialIntentId,principalId:coordinates.principalId}});
+ assert.ok(suspended,"reversal suspension must complete before fault injection");
+ const committedReceipt=await db.collection("movie_mentor_commercial_reversal").findOne({domain:"iband.movie-mentor.inference-spend",schema:1,evidenceSource:"stripe",evidenceId:"evt-real-wc",providerPaymentReference:coordinates.providerPaymentReference,commercialReference:coordinates.commercialIntentId,principalId:coordinates.principalId,status:"suspended",evidenceKind:"charge.dispute.funds_withdrawn",reversalAmountMinor:300});
+ assert.ok(committedReceipt,"independent committed reversal evidence must be visible before financial fault injection");
  const input={...coordinates,disposition:"chargeback",chargebackAmountMinor:300,terminalReference:"evt-real-wc"};
  let caller="UNKNOWN",error=null;
  try{
