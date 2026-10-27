@@ -166,6 +166,12 @@ jobs:
       - name: Reset isolated database after settlement acknowledgement-loss court
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
+      - name: Demand initial lease MongoDB server-clock authority (expected RED)
+        if: success() || failure()
+        run: node scripts/verify-movie-mentor-aud-open-01-initial-lease-server-clock.mjs
+      - name: Reset isolated database after initial lease server-clock court
+        if: always()
+        run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Verify actual internal recovery owner module (isolated physical court)
         if: success() || failure()
         run: node scripts/verify-movie-mentor-aud-open-01-internal-owner-module.mjs
