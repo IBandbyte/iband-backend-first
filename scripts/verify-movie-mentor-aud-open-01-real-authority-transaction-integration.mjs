@@ -160,7 +160,7 @@ try{
   const beforeB=await db.collection("movie_mentor_commercial_value_disposition").findOne({provider:"stripe",providerPaymentReference:"pi-ledger-A"});
   // The verifier-only lease fixture cannot establish production ownership authority.
   // Independently demand a durable production recovery-owner lease record, not the fixture.
-  const ownerCollections=(await db.listCollections({}, {nameOnly:true}).toArray()).map(x=>x.name).filter(n=>/movie_mentor.*(chargeback|recovery).*lease|movie_mentor.*recovery.*owner/i.test(n));
+  const ownerCollections=(await db.listCollections({}, {nameOnly:true}).toArray()).map(x=>x.name).filter(n=>n!=="movie_mentor_aud_recovery_lease_control"&&/movie_mentor.*(chargeback|recovery).*lease|movie_mentor.*recovery.*owner/i.test(n));
   let productionOwnerProof=false;
   for(const name of ownerCollections){
    const record=await db.collection(name).findOne({domain:"completed-chargeback"});
