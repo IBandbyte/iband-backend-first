@@ -21,17 +21,18 @@ async function acquireRecoveryOwner({connection=mongoose.connection,owner=ownerT
  // Only the first claimant may create generation 1. Concurrent inserts lose
  // against the unique _id index; no claimant may reset a prior generation.
  try{
-  // Insert with a deliberately expired sentinel, then set the first lease
-  // using MongoDB server time. The sentinel is never an active writer lease.
-  await leases.insertOne({_id:SCOPE,owner,generation:1,writerFenceRevision:0,leaseUntil:new Date(0)});
-  const activated=await leases.findOneAndUpdate(
-   {_id:SCOPE,owner,generation:1,writerFenceRevision:0,leaseUntil:new Date(0)},
-   [{$set:{leaseUntil:{$dateAdd:{startDate:"$NOW",unit:"millisecond",amount:leaseMs}}}}],
-   {returnDocument:"after"}
+  // Atomic first-claim upsert. MongoDB server time determines expiry in
+  // the same write as generation-one creation; no intermediate open lease.
+  const first=await leases.findOneAndUpdate(
+   {_id:SCOPE,owner:{$exists:false}},
+   [{$set:{
+    owner,generation:1,writerFenceRevision:0,
+    leaseUntil:{$dateAdd:{startDate:"$$NOW",unit:"millisecond",amount:leaseMs}}
+   }}],
+   {upsert:true,returnDocument:"after"}
   );
-  const active=activated?.value??activated;
-  if(!active||active.owner!==owner||active.generation!==1)fail("Initial recovery lease activation failed.");
-
+  const active=first?.value??first;
+  if(active?.owner!==owner||active.generation!==1)fail("Initial recovery lease activation failed.");
   return mint(owner,1,connection);
  }catch(error){if(error?.code!==11000)throw error;}
  // A takeover is allowed only after expiry as measured by MongoDB server time.
