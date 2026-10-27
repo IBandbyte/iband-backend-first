@@ -17,7 +17,7 @@ try {
  await db.collection("movie_mentor_inference_entitlement").insertOne({domain:"iband.movie-mentor.inference-spend",schema:1,principalId,status:"active",remainingUnits:20,reservedUnits:0,consumedUnits:0,entitlementRevision:1});
  const input={provider:"stripe",providerPaymentReference,commercialIntentId,principalId,amountMinor:1200,currency:"GBP",units:20};
  await value.authority.preserveVerifiedPaidValue({...input,reason:"entitlement-suspended",refundAuthorized:false});
- const evidence={evidenceId:"aud-case-d-chargeback",evidenceSource:"stripe",evidenceKind:"chargeback",providerPaymentReference,commercialReference:commercialIntentId,principalId,reversalAmountMinor:300,currency:"GBP"};
+ const evidence={evidenceId:"aud-case-d-chargeback",evidenceSource:"stripe",evidenceKind:"charge.dispute.funds_withdrawn",providerPaymentReference,commercialReference:commercialIntentId,principalId,reversalAmountMinor:300,currency:"GBP"};
  const first=await reversal.suspend(evidence);
  assert.equal(first.suspended,true);assert.equal(first.idempotent,false);
  const receipt=await db.collection("movie_mentor_commercial_reversal").findOne({evidenceSource:"stripe",evidenceId:evidence.evidenceId});
