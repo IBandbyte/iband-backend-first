@@ -14,6 +14,11 @@ try{
  assert.ok((await db.admin().command({hello:1})).setName,"replica set required");
  const authority=createMovieMentorProductionCommercialValueDispositionComposition().authority;
  const coordinates={provider:"stripe",providerPaymentReference:"pi-real-wc",commercialIntentId:"intent-real-wc",principalId:"principal-real-wc",amountMinor:1200,currency:"GBP",units:20};
+ // VERIFIER ONLY: durable commercial provenance required by the real reversal authority.
+ // Match the existing isolated real-writer court; do not bypass production gates.
+ await db.collection("movie_mentor_commercial_purchase_intent").insertOne({domain:"iband.movie-mentor.commercial-purchase-intent",schema:2,commercialIntentId:coordinates.commercialIntentId,principalId:coordinates.principalId,purchaseAttemptDigest:"wc-attempt",packageId:"aud-package",provider:"stripe",providerProductId:"aud-product",amountMinor:1200,currency:"GBP",environment:"test",units:20,policyVersion:"aud-fixture",policyDigest:"aud-fixture",status:"created",createdAtAuthority:new Date()});
+ await db.collection("movie_mentor_commercial_checkout_binding").insertOne({domain:"iband.movie-mentor.commercial-checkout-binding",schema:1,commercialIntentId:coordinates.commercialIntentId,provider:"stripe",idempotencyKey:"wc-checkout",status:"completed",checkoutReference:"cs-real-wc",checkoutUrl:"https://example.invalid/checkout",providerPaymentReference:coordinates.providerPaymentReference,createdAtAuthority:new Date(),completedAtAuthority:new Date()});
+ await db.collection("movie_mentor_inference_entitlement").insertOne({domain:"iband.movie-mentor.inference-spend",schema:1,principalId:coordinates.principalId,status:"active",remainingUnits:20,reservedUnits:0,consumedUnits:0,entitlementRevision:1});
  await authority.preserveVerifiedPaidValue({...coordinates,reason:"entitlement-suspended",refundAuthorized:false});
  // Establish independently committed provider reversal evidence before the fault.
  // Otherwise the production evidence gate rejects settlement before findAndModify.
