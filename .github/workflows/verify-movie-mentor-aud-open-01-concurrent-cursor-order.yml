@@ -169,13 +169,13 @@ jobs:
       - name: Verify actual internal recovery owner module (isolated physical court)
         if: success() || failure()
         run: node scripts/verify-movie-mentor-aud-open-01-internal-owner-module.mjs
+      - name: Reset isolated database after internal owner module court
+        if: always()
+        run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Demand internal recovery owner capability authenticity (expected RED)
         if: success() || failure()
         run: node scripts/verify-movie-mentor-aud-open-01-internal-owner-capability-authenticity.mjs
       - name: Reset isolated database after owner authenticity security court
-        if: always()
-        run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
-      - name: Reset isolated database after internal owner module court
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Verify isolated atomic ownership contract candidate
