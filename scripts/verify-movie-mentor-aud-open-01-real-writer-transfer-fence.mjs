@@ -8,6 +8,7 @@ import {createMovieMentorProductionCommercialCheckoutComposition} from "../ai/Mo
 import {createMovieMentorProductionCommercialReversalComposition} from "../ai/MovieMentorProductionCommercialReversalComposition.js";
 import {createMovieMentorProductionCommercialValueDispositionComposition} from "../ai/MovieMentorProductionCommercialValueDispositionComposition.js";
 import {recoverMovieMentorCompletedChargebacks} from "../ai/MovieMentorCompletedChargebackRecovery.js";
+import {acquireRecoveryOwner,MOVIE_MENTOR_RECOVERY_LEASE_COLLECTION} from "../ai/MovieMentorCompletedChargebackRecoveryOwnerInternal.js";
 
 const uri=process.env.MONGO_URI;
 assert.ok(uri&&/^mongodb:\/\/(?:127\.0\.0\.1|localhost):27017\/iband_aud_open_01(?:\?|$)/.test(uri),"isolated replica-set database required");
@@ -78,9 +79,10 @@ try{
  assert.equal(pending.remainingAmountMinor,1200,"late committed reversal remains financially unsettled after earlier scan");
  assert.equal(pending.chargebackAmountMinor,0);
  const recoveryArgs={reversalAuthority:reversal.authority,purchaseIntentAuthority:purchase.authority,checkoutBindingAuthority:checkout.authority,dispositionAuthority:value.authority,pageLimit:1,maxPages:100};
- // Verifier-only durable lease fixture. This is NOT a production lease implementation.
- const leases=db.collection("aud_open_01_real_writer_transfer_fence");
- await leases.insertOne({domain:"completed-chargeback",owner:"worker-A",generation:1});
+ // Acquire genuine internal capability; no verifier-minted owner or lease fixture.
+ const ownerA=await acquireRecoveryOwner({connection:mongoose.connection,owner:"worker-A",leaseMs:1000});
+ assert.equal(ownerA.generation,1);
+ const leases=db.collection(MOVIE_MENTOR_RECOVERY_LEASE_COLLECTION);
  const liveLedger=mongoose.model("MovieMentorCommercialValueDisposition");
  const liveUpdate=liveLedger.findOneAndUpdate;
  let releaseA,signalA;
@@ -103,8 +105,18 @@ try{
  try{
   const workerA=recoverMovieMentorCompletedChargebacks(recoveryArgs);
   await Promise.race([enteredA,new Promise((_,reject)=>setTimeout(()=>reject(Error("worker A did not reach real settlement boundary")),10000))]);
-  const takeover=await leases.findOneAndUpdate({domain:"completed-chargeback",owner:"worker-A",generation:1},{$set:{owner:"worker-B"},$inc:{generation:1}},{returnDocument:"after"});
-  assert.equal(takeover?.generation,2);
+  // Wait for actual MongoDB server-time expiry, then acquire through the real API.
+  let ownerB=null;
+  for(let attempt=0;attempt<30&&!ownerB;attempt++){
+   await new Promise(resolve=>setTimeout(resolve,150));
+   try{ownerB=await acquireRecoveryOwner({connection:mongoose.connection,owner:"worker-B",leaseMs:30000});}
+   catch(error){if(error?.code!=="MOVIE_MENTOR_COMPLETED_REVERSAL_RECOVERY_FENCED")throw error;}
+  }
+  assert.ok(ownerB,"real lease takeover must succeed after server-time expiry");
+  assert.equal(ownerB.generation,ownerA.generation+1);
+  const takeover=await leases.findOne({_id:"completed-chargeback:stripe"});
+  assert.equal(takeover.owner,"worker-B");
+  assert.equal(takeover.generation,ownerB.generation);
   // RED-FIRST: the superseded worker must not commit after durable takeover.
   // Resume A before starting B so idempotency cannot disguise stale-owner mutation.
   releaseA();
