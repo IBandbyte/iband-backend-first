@@ -31,5 +31,7 @@ for(const path of files){
 console.log("AUD-OPEN-01 SETTLEMENT CALLER INVENTORY",JSON.stringify({filesEnumerated:files.length,filesRead:files.length-failures.length,failures,matches},null,2));
 assert.equal(failures.length,0,"all enumerated JavaScript source files must be readable");
 assert(matches.some(m=>m.path==="ai/MovieMentorProductionCommercialValueDispositionComposition.js"),"production authority definition required");
-assert(matches.some(m=>m.path==="ai/MovieMentorCompletedChargebackRecovery.js"),"chargeback recovery caller required");
+const recoverySource=await readFile(join(root,"ai/MovieMentorCompletedChargebackRecovery.js"),"utf8");
+assert(/\bsettleMovieMentorRecoveryWithOwner\b/.test(recoverySource)&&/\bacquireRecoveryOwner\b/.test(recoverySource),"chargeback recovery must invoke owner-fenced settlement");
+assert(matches.some(m=>m.path==="ai/MovieMentorProductionCommercialValueDispositionComposition.js"&&m.occurrences>0),"settlement authority definition and internal transaction entry required");
 console.log("SETTLEMENT CALLER INVENTORY GREEN: exact source references enumerated; manual classification, dynamic calls, external callers and return-shape compatibility remain unproven");
