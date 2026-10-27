@@ -276,6 +276,13 @@ jobs:
       - name: Reset isolated database after real writer transfer fence court
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
+      - name: Demand real-authority transactional settlement integration (expected RED)
+        if: success() || failure()
+        timeout-minutes: 2
+        run: node scripts/verify-movie-mentor-aud-open-01-real-authority-transaction-integration.mjs
+      - name: Reset isolated database after real-authority transaction integration
+        if: always()
+        run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Verify isolated transactional owner/financial writer conflict candidate
         if: success() || failure()
         timeout-minutes: 2
