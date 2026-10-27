@@ -47,6 +47,16 @@ async function acquireRecoveryOwner({connection=mongoose.connection,owner=ownerT
  if(!row||row.owner!==owner||!Number.isSafeInteger(row.generation))fail("Recovery ownership is held by another generation.");
  return mint(owner,row.generation,connection);
 }
+// Relinquish only the exact minted generation after a failed scan. The server
+// clock sets expiry; a superseded owner cannot release a successor's lease.
+async function releaseRecoveryOwner({connection=mongoose.connection,capability}={}){
+ if(!capability||mintedCapabilities.get(capability)!==connection)fail("Release requires a genuine recovery ownership capability.");
+ const result=await collection(connection).updateOne(
+  {_id:SCOPE,owner:capability.owner,generation:capability.generation},
+  [{$set:{leaseUntil:"$NOW"}}]
+ );
+ return result.matchedCount===1;
+}
 async function runWithRecoveryFence({connection=mongoose.connection,capability,work}={}){
  if(!capability||mintedCapabilities.get(capability)!==connection||typeof capability.owner!=="string"||!Number.isSafeInteger(capability.generation)||capability.generation<1||typeof work!=="function")fail("Internal recovery fence requires acquired owner generation and transaction callback.");
  const leases=collection(connection);
@@ -64,4 +74,4 @@ async function runWithRecoveryFence({connection=mongoose.connection,capability,w
   });
  }finally{await session.endSession();}
 }
-export {COLLECTION as MOVIE_MENTOR_RECOVERY_LEASE_COLLECTION,acquireRecoveryOwner,runWithRecoveryFence};
+export {COLLECTION as MOVIE_MENTOR_RECOVERY_LEASE_COLLECTION,acquireRecoveryOwner,releaseRecoveryOwner,runWithRecoveryFence};
