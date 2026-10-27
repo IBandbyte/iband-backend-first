@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import mongoose from "mongoose";
+import {createMovieMentorCommercialReversalMongoStore} from "../ai/MovieMentorCommercialReversalMongoStore.js";
 import {createMovieMentorProductionCommercialValueDispositionComposition} from "../ai/MovieMentorProductionCommercialValueDispositionComposition.js";
 
 // AUD-OPEN-01: physical preserved-credit ledger court. Never connects to production.
@@ -34,10 +35,22 @@ assert.equal(composition.ready,true);
 const authority=composition.authority;
 const collection=()=>mongoose.connection.collection("movie_mentor_commercial_value_disposition");
 const base={provider:"stripe",commercialIntentId:"aud-open-01-intent",principalId:"aud-open-01-principal",amountMinor:1200,currency:"GBP",units:20,disposition:"chargeback",chargebackAmountMinor:300,terminalReference:"evt-aud-open-01-chargeback"};
+const reversal=createMovieMentorCommercialReversalMongoStore();
+async function commitReceipt(payment,kind,reference,amount){
+  const evidence={evidenceSource:"stripe",evidenceId:reference,evidenceKind:kind,providerPaymentReference:payment,commercialReference:base.commercialIntentId,principalId:base.principalId,reversalAmountMinor:amount,currency:"GBP"};
+  const suspension=await bounded(payment+" reversal "+reference,()=>reversal.suspend(evidence));
+  assert.equal(suspension.suspended,true,"reversal authority must suspend entitlement");
+  const receipt=await bounded(payment+" receipt "+reference,()=>mongoose.connection.collection("movie_mentor_commercial_reversal").findOne({evidenceSource:"stripe",evidenceId:reference}));
+  assert.ok(receipt,"physical reversal receipt must be committed");
+  assert.equal(receipt.reversalAmountMinor,amount);
+}
 async function seed(payment){
-  const args={...base,providerPaymentReference:payment};
+  const args={...base,providerPaymentReference:payment,terminalReference:"evt-aud-open-01-chargeback-"+payment};
+  const refundReference="evt-aud-open-01-refund-"+payment;
   await bounded(payment+" preserve",()=>authority.preserveVerifiedPaidValue({...args,reason:"entitlement-suspended",refundAuthorized:false}));
-  await bounded(payment+" refund",()=>authority.terminallySettlePreservedValue({...args,disposition:"refund",refundAmountMinor:500,terminalReference:"evt-aud-open-01-refund"}));
+  await commitReceipt(payment,"charge.refunded",refundReference,500);
+  await bounded(payment+" refund",()=>authority.terminallySettlePreservedValue({...args,disposition:"refund",refundAmountMinor:500,terminalReference:refundReference}));
+  await commitReceipt(payment,"charge.dispute.funds_withdrawn",args.terminalReference,300);
   return args;
 }
 async function check(payment,label){
@@ -50,6 +63,9 @@ async function check(payment,label){
   assert.equal(row.cumulativeRefundedAmountMinor+row.chargebackAmountMinor+row.remainingAmountMinor,1200,label+": conservation");
 }
 try {
+  const db=mongoose.connection.db;
+  assert.ok((await db.admin().command({hello:1})).setName,"physical replica set required");
+  await db.collection("movie_mentor_inference_entitlement").insertOne({domain:"iband.movie-mentor.inference-spend",schema:1,principalId:base.principalId,status:"active",remainingUnits:20,reservedUnits:0,consumedUnits:0,entitlementRevision:1});
   // A: first partial chargeback.
   const a=await seed("pi-aud-open-01-a");
   await bounded("A first chargeback",()=>authority.terminallySettlePreservedValue(a));
