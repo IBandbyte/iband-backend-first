@@ -37,7 +37,7 @@ async function acquireRecoveryOwner({connection=mongoose.connection,owner=ownerT
  return mint(owner,row.generation,connection);
 }
 async function runWithRecoveryFence({connection=mongoose.connection,capability,work}={}){
- if(!capability||mintedCapabilities.get(capability)!==connection||typeof capability.owner!=="string||!Number.isSafeInteger(capability.generation)||capability.generation<1||typeof work!=="function")fail("Internal recovery fence requires acquired owner generation and transaction callback.");
+ if(!capability||mintedCapabilities.get(capability)!==connection||typeof capability.owner!=="string"||!Number.isSafeInteger(capability.generation)||capability.generation<1||typeof work!=="function")fail("Internal recovery fence requires acquired owner generation and transaction callback.");
  const leases=collection(connection);
  const session=await connection.startSession();
  try{
