@@ -2,7 +2,7 @@ import {isMovieMentorProductionCommercialReversalAuthorityOwnedProof} from "./Mo
 import {isMovieMentorProductionCommercialPurchaseIntentAuthorityOwnedProof} from "./MovieMentorProductionCommercialPurchaseIntentComposition.js";
 import {isMovieMentorProductionCommercialCheckoutAuthorityOwnedProof} from "./MovieMentorProductionCommercialCheckoutComposition.js";
 import {isMovieMentorProductionCommercialValueDispositionAuthorityOwnedProof,settleMovieMentorRecoveryWithOwner} from "./MovieMentorProductionCommercialValueDispositionComposition.js";
-import {acquireRecoveryOwner} from "./MovieMentorCompletedChargebackRecoveryOwnerInternal.js";
+import {acquireRecoveryOwner,releaseRecoveryOwner} from "./MovieMentorCompletedChargebackRecoveryOwnerInternal.js";
 
 const text=value=>typeof value==="string"?value.trim():"";
 function fail(message){const error=new Error(message);error.code="MOVIE_MENTOR_COMPLETED_REVERSAL_RECOVERY_FENCED";throw error;}
@@ -34,7 +34,16 @@ async function scanCompletedChargebacks({reversalAuthority,purchaseIntentAuthori
    if(observation.settlementState==="settled"){alreadySettled++;continue;}
    if(observation.settlementState!=="unsettled")fail("Completed chargeback has no preserved-value ledger row.");
    if(!recoveryCapability)recoveryCapability=await acquireRecoveryOwner();
-   const settlement=await settleMovieMentorRecoveryWithOwner({authority:dispositionAuthority,capability:recoveryCapability,input:{provider:evidenceSource,providerPaymentReference:payment,commercialIntentId:intentId,principalId:principal,amountMinor:intent.amountMinor,currency,units:intent.units,disposition:"chargeback",chargebackAmountMinor:amount,terminalReference:evidenceId}});
+   let settlement;
+   try{
+    settlement=await settleMovieMentorRecoveryWithOwner({authority:dispositionAuthority,capability:recoveryCapability,input:{provider:evidenceSource,providerPaymentReference:payment,commercialIntentId:intentId,principalId:principal,amountMinor:intent.amountMinor,currency,units:intent.units,disposition:"chargeback",chargebackAmountMinor:amount,terminalReference:evidenceId}});
+   }catch(error){
+    // A failed financial attempt must not monopolise the lease for its full
+    // lifetime. Only the original minted generation may relinquish it.
+    try{await releaseRecoveryOwner({capability:recoveryCapability});}
+    catch(releaseError){process.emitWarning("Recovery lease release failed: "+String(releaseError?.message||releaseError),{code:"MOVIE_MENTOR_RECOVERY_LEASE_RELEASE_FAILED"});}
+    throw error;
+   }
    const confirmed=await dispositionAuthority.observePreservedValueSettlement(coordinates);
    if(confirmed.settlementState!=="settled")fail("Chargeback settlement was not durably observed.");
    if(settlement?.applied===true)settled++;
