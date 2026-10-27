@@ -18,7 +18,7 @@ try {
   // This is deliberately a WRITE to the ownership document in the SAME transaction
   // as the financial mutation, so a concurrent transfer conflicts with this writer.
   const fence=await leases.updateOne({_id:key,owner,generation,$expr:{$gt:["$leaseUntil","$$NOW"]}},{$inc:{writerFenceRevision:1}},{session});
-  if(fence.matchedCount!==1) {
+  if(fence.matchedCount!==1 || fence.modifiedCount!==1 || fence.acknowledged!==true) {
    const error=new Error("stale recovery owner");error.code="MOVIE_MENTOR_COMPLETED_REVERSAL_RECOVERY_FENCED";throw error;
   }
   const effect=await ledger.updateOne({_id:payment,remainingAmountMinor:1200,events:{$not:{$elemMatch:{reference:event}}}},{$inc:{remainingAmountMinor:-300,chargebackAmountMinor:300},$push:{events:{reference:event,owner,generation}}},{session});
@@ -34,6 +34,26 @@ try {
  finally{await stale.endSession();}
  assert.equal(fenced,true,"superseded A must be explicitly fenced");
  assert.equal((await ledger.findOne({_id:payment})).events.length,0,"stale owner must have zero financial effect");
+ // Court 1b: current owner with wrong generation and expired lease must
+ // both fail closed, with no financial effect. This probes the real predicate.
+ const wrongGeneration=await mongoose.startSession();
+ let wrongFenced=false;
+ try{
+  await wrongGeneration.withTransaction(async()=>{await settle(wrongGeneration,"B",1);});
+ }catch(error){if(error.code!=="MOVIE_MENTOR_COMPLETED_REVERSAL_RECOVERY_FENCED")throw error;wrongFenced=true;}
+ finally{await wrongGeneration.endSession();}
+ assert.equal(wrongFenced,true,"current owner with wrong generation must be fenced");
+ await leases.updateOne({_id:key,owner:"B",generation:2},{$set:{leaseUntil:new Date("2000-01-01")}});
+ const expiredSession=await mongoose.startSession();
+ let expiredFenced=false;
+ try{
+  await expiredSession.withTransaction(async()=>{await settle(expiredSession,"B",2);});
+ }catch(error){if(error.code!=="MOVIE_MENTOR_COMPLETED_REVERSAL_RECOVERY_FENCED")throw error;expiredFenced=true;}
+ finally{await expiredSession.endSession();}
+ assert.equal(expiredFenced,true,"expired owner generation must be fenced by MongoDB server time");
+ assert.equal((await ledger.findOne({_id:payment})).events.length,0,"wrong or expired generation must not write ledger");
+ await leases.updateOne({_id:key,owner:"B",generation:2},{$set:{leaseUntil:new Date("2999-01-01")}});
+ console.log("AUD FENCE PREDICATE CONTROL: staleOwnerRejected="+fenced+"; wrongGenerationRejected="+wrongFenced+"; expiredLeaseRejected="+expiredFenced+"; acknowledgedLeaseWriteRequired=true");
  // Court 2: B holds an uncommitted fence+ledger transaction; C attempts transfer.
  // Transfer must not successfully commit while B's transaction is in flight.
  const active=await mongoose.startSession();active.startTransaction();
