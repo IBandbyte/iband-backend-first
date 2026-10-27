@@ -1,7 +1,8 @@
 import {isMovieMentorProductionCommercialReversalAuthorityOwnedProof} from "./MovieMentorProductionCommercialReversalComposition.js";
 import {isMovieMentorProductionCommercialPurchaseIntentAuthorityOwnedProof} from "./MovieMentorProductionCommercialPurchaseIntentComposition.js";
 import {isMovieMentorProductionCommercialCheckoutAuthorityOwnedProof} from "./MovieMentorProductionCommercialCheckoutComposition.js";
-import {isMovieMentorProductionCommercialValueDispositionAuthorityOwnedProof} from "./MovieMentorProductionCommercialValueDispositionComposition.js";
+import {isMovieMentorProductionCommercialValueDispositionAuthorityOwnedProof,settleMovieMentorRecoveryWithOwner} from "./MovieMentorProductionCommercialValueDispositionComposition.js";
+import {acquireRecoveryOwner} from "./MovieMentorCompletedChargebackRecoveryOwnerInternal.js";
 
 const text=value=>typeof value==="string"?value.trim():"";
 function fail(message){const error=new Error(message);error.code="MOVIE_MENTOR_COMPLETED_REVERSAL_RECOVERY_FENCED";throw error;}
@@ -9,6 +10,8 @@ async function scanCompletedChargebacks({reversalAuthority,purchaseIntentAuthori
  if(!isMovieMentorProductionCommercialReversalAuthorityOwnedProof(reversalAuthority)||!isMovieMentorProductionCommercialPurchaseIntentAuthorityOwnedProof(purchaseIntentAuthority)||!isMovieMentorProductionCommercialCheckoutAuthorityOwnedProof(checkoutBindingAuthority)||!isMovieMentorProductionCommercialValueDispositionAuthorityOwnedProof(dispositionAuthority))fail("Recovery requires four original owner-proven production authorities.");
  if(evidenceSource!=="stripe"||!Number.isSafeInteger(pageLimit)||pageLimit<1||pageLimit>100||(maxPages!==null&&(!Number.isSafeInteger(maxPages)||maxPages<1||maxPages>100)))fail("Recovery scan must be bounded and Stripe-scoped.");
  let cursor=null,scanned=0,settled=0,alreadySettled=0,skipped=0;
+ // Ownership is acquired only for a real financial mutation, never for discovery.
+ let recoveryCapability=null;
  for(let page=0;maxPages===null||page<maxPages;page++){
   const batch=await reversalAuthority.listCompletedReversalReceipts({evidenceSource,limit:pageLimit,cursor});
   if(!batch||!Array.isArray(batch.receipts)||batch.receipts.length>pageLimit)fail("Completed receipt discovery did not return a valid bounded page.");
@@ -30,7 +33,8 @@ async function scanCompletedChargebacks({reversalAuthority,purchaseIntentAuthori
    const observation=await dispositionAuthority.observePreservedValueSettlement(coordinates);
    if(observation.settlementState==="settled"){alreadySettled++;continue;}
    if(observation.settlementState!=="unsettled")fail("Completed chargeback has no preserved-value ledger row.");
-   const settlement=await dispositionAuthority.terminallySettlePreservedValue({provider:evidenceSource,providerPaymentReference:payment,commercialIntentId:intentId,principalId:principal,amountMinor:intent.amountMinor,currency,units:intent.units,disposition:"chargeback",chargebackAmountMinor:amount,terminalReference:evidenceId});
+   if(!recoveryCapability)recoveryCapability=await acquireRecoveryOwner();
+   const settlement=await settleMovieMentorRecoveryWithOwner({authority:dispositionAuthority,capability:recoveryCapability,input:{provider:evidenceSource,providerPaymentReference:payment,commercialIntentId:intentId,principalId:principal,amountMinor:intent.amountMinor,currency,units:intent.units,disposition:"chargeback",chargebackAmountMinor:amount,terminalReference:evidenceId}});
    const confirmed=await dispositionAuthority.observePreservedValueSettlement(coordinates);
    if(confirmed.settlementState!=="settled")fail("Chargeback settlement was not durably observed.");
    if(settlement?.applied===true)settled++;
