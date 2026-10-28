@@ -308,6 +308,13 @@ jobs:
       - name: Reset isolated database after genuine lease financial composition court
         if: always()
         run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
+      - name: Verify genuine full-worker lease contention and successor replay
+        if: success() || failure()
+        timeout-minutes: 2
+        run: node scripts/verify-movie-mentor-aud-open-01-full-worker-contention.mjs
+      - name: Reset isolated database after full-worker contention
+        if: always()
+        run: docker exec ${{ job.services.mongo.id }} mongosh --quiet iband_aud_open_01 --eval 'db.dropDatabase()'
       - name: Verify isolated transactional owner/financial writer conflict candidate
         if: success() || failure()
         timeout-minutes: 2
