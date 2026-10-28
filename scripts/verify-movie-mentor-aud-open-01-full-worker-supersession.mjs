@@ -83,7 +83,8 @@ try{
   assert.equal((row.chargebackEvents||[]).filter(e=>e.reference==="evt-worker-"+p).length,1,"exactly one durable chargeback event");
  }
  const finalLease=await leases.findOne({_id:"completed-chargeback:stripe"});
- assert.ok(finalLease.generation>ownerB.generation,"replay must obtain new genuine generation");
+ assert.equal(finalLease.generation,ownerB.generation,"settled-only replay must not acquire another generation");
+ assert.equal(finalLease.owner,ownerB.owner,"stale worker must not displace the successful successor");
  console.log("AUD FULL WORKER SUPERSESSION GREEN: old worker acquired genuine lease then expired before transaction; successor took over and settled exactly once; old worker fenced without financial mutation; replay idempotent.");
 
 }finally{restore();await mongoose.disconnect();}
