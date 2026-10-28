@@ -1,0 +1,149 @@
+import assert from "node:assert/strict";
+import mongoose from "mongoose";
+import Stripe from "stripe";
+import {createMovieMentorStripeCommercialProviderAdapter} from "../ai/MovieMentorStripeCommercialProviderAdapter.js";
+import {createMovieMentorProductionCommercialPurchaseIntentComposition} from "../ai/MovieMentorProductionCommercialPurchaseIntentComposition.js";
+import {createMovieMentorProductionEntitlementIssuanceComposition} from "../ai/MovieMentorProductionEntitlementIssuanceComposition.js";
+import {createMovieMentorProductionCommercialCheckoutComposition} from "../ai/MovieMentorProductionCommercialCheckoutComposition.js";
+import {createMovieMentorProductionCommercialReversalComposition} from "../ai/MovieMentorProductionCommercialReversalComposition.js";
+import {createMovieMentorProductionCommercialValueDispositionComposition} from "../ai/MovieMentorProductionCommercialValueDispositionComposition.js";
+import {recoverMovieMentorCompletedChargebacks} from "../ai/MovieMentorCompletedChargebackRecovery.js";
+import {acquireRecoveryOwner,MOVIE_MENTOR_RECOVERY_LEASE_COLLECTION} from "../ai/MovieMentorCompletedChargebackRecoveryOwnerInternal.js";
+
+const uri=process.env.MONGO_URI;
+assert.ok(uri&&/^mongodb:\/\/(?:127\.0\.0\.1|localhost):27017\/iband_aud_open_01(?:\?|$)/.test(uri),"isolated replica-set database required");
+await mongoose.connect(uri,{serverSelectionTimeoutMS:15000});
+let release,signal,model,originalCreate,ledgerModel,originalLedgerUpdate,releaseLedger,signalLedger;
+const ledgerHeld=new Promise(r=>releaseLedger=r),ledgerEntered=new Promise(r=>signalLedger=r);
+const held=new Promise(r=>release=r),entered=new Promise(r=>signal=r);
+try{
+ const db=mongoose.connection.db;
+ assert.ok((await db.admin().command({hello:1})).setName);
+ const purchase=createMovieMentorProductionCommercialPurchaseIntentComposition({resolveCommercialPolicy:async()=>{throw Error("NO_POLICY_MINT");}});
+ const issuance=createMovieMentorProductionEntitlementIssuanceComposition();
+ const reversal=createMovieMentorProductionCommercialReversalComposition();
+ const value=createMovieMentorProductionCommercialValueDispositionComposition();
+ const stripe=new Stripe("sk_test_aud_open_01_no_network");
+ const adapter=createMovieMentorStripeCommercialProviderAdapter({stripe,webhookSecret:"whsec_aud_open_01_financial",successUrl:"https://example.invalid/success",cancelUrl:"https://example.invalid/cancel"});
+ const checkout=createMovieMentorProductionCommercialCheckoutComposition({purchaseIntentAuthority:purchase.authority,entitlementAuthority:issuance.authority,providers:{stripe:adapter}});
+ assert.equal(reversal.ready,true);assert.equal(value.ready,true);assert.equal(checkout.ready,true);
+ await purchase.authority.resolvePurchaseIntent({commercialIntentId:"index-ready-probe"});
+ await checkout.authority.resolveCheckoutBinding({commercialIntentId:"index-ready-probe"});
+ const principals=["A","B","C"];
+ for(const p of principals){
+  const principalId="ledger-order-"+p,commercialIntentId="ledger-intent-"+p,providerPaymentReference="pi-ledger-"+p;
+  await db.collection("movie_mentor_commercial_purchase_intent").insertOne({domain:"iband.movie-mentor.commercial-purchase-intent",schema:2,commercialIntentId,principalId,purchaseAttemptDigest:"ledger-attempt-"+p,packageId:"aud-package",provider:"stripe",providerProductId:"aud-product",amountMinor:1200,currency:"GBP",environment:"test",units:20,policyVersion:"aud-fixture",policyDigest:"aud-fixture",status:"created",createdAtAuthority:new Date()});
+  await db.collection("movie_mentor_commercial_checkout_binding").insertOne({domain:"iband.movie-mentor.commercial-checkout-binding",schema:1,commercialIntentId,provider:"stripe",idempotencyKey:"ledger-checkout-"+p,status:"completed",checkoutReference:"cs-ledger-"+p,checkoutUrl:"https://example.invalid/checkout",providerPaymentReference,createdAtAuthority:new Date(),completedAtAuthority:new Date()});
+  await db.collection("movie_mentor_inference_entitlement").insertOne({domain:"iband.movie-mentor.inference-spend",schema:1,principalId,status:"active",remainingUnits:20,reservedUnits:0,consumedUnits:0,entitlementRevision:1});
+  await value.authority.preserveVerifiedPaidValue({provider:"stripe",providerPaymentReference,commercialIntentId,principalId,amountMinor:1200,currency:"GBP",units:20,reason:"entitlement-suspended",refundAuthorized:false});
+ }
+ await reversal.authority.listCompletedReversalReceipts({evidenceSource:"stripe",limit:1});
+ model=mongoose.model("MovieMentorCommercialReversal");
+ originalCreate=model.create;
+ model.create=async function(docs,options){
+  if(docs?.[0]?.evidenceId==="evt-ledger-A"){signal(docs[0].reversalId);await held;}
+  return originalCreate.call(this,docs,options);
+ };
+ const suspend=p=>reversal.authority.suspendVerifiedReversal({reversal:{verified:true,evidenceId:"evt-ledger-"+p,evidenceSource:"stripe",evidenceKind:"charge.dispute.funds_withdrawn",providerPaymentReference:"pi-ledger-"+p,reversalAmountMinor:300,currency:"GBP",verifiedAt:new Date().toISOString(),commercialReference:"ledger-intent-"+p,principalId:"ledger-order-"+p}});
+ const a=suspend("A");
+ const earlyId=await entered;
+ const b=await suspend("B"),c=await suspend("C");
+ assert.ok(earlyId<b.reversalId&&b.reversalId<c.reversalId);
+ ledgerModel=mongoose.model("MovieMentorCommercialValueDisposition");
+ originalLedgerUpdate=ledgerModel.findOneAndUpdate;
+ ledgerModel.findOneAndUpdate=function(query,update,...options){
+  if(query?.provider==="stripe"&&query?.providerPaymentReference==="pi-ledger-B"&&update?.$push?.chargebackEvents){
+   signalLedger();
+   const q=originalLedgerUpdate.call(this,query,update,...options);
+   const originalLean=q.lean.bind(q);
+   q.lean=(...args)=>{
+    const leanQuery=originalLean(...args);
+    const originalExec=leanQuery.exec.bind(leanQuery);
+    leanQuery.exec=(...execArgs)=>ledgerHeld.then(()=>originalExec(...execArgs));
+    return leanQuery;
+   };
+   return q;
+  }
+  return originalLedgerUpdate.call(this,query,update,...options);
+ };
+ const firstPromise=recoverMovieMentorCompletedChargebacks({reversalAuthority:reversal.authority,purchaseIntentAuthority:purchase.authority,checkoutBindingAuthority:checkout.authority,dispositionAuthority:value.authority,pageLimit:1,maxPages:100});
+ await ledgerEntered;
+ release();
+ const aResult=await a;
+ assert.equal(aResult.reversalId,earlyId,"earlier-generated reversal must commit while first recovery remains active");
+ releaseLedger();
+ const first=await firstPromise;
+ assert.equal(first.complete,true);
+ assert.equal(first.settled,2,"first scan misses A despite A committing before the scan finished");
+ const pending=await db.collection("movie_mentor_commercial_value_disposition").findOne({provider:"stripe",providerPaymentReference:"pi-ledger-A"});
+ assert.equal(pending.remainingAmountMinor,1200,"late committed reversal remains financially unsettled after earlier scan");
+ assert.equal(pending.chargebackAmountMinor,0);
+ const recoveryArgs={reversalAuthority:reversal.authority,purchaseIntentAuthority:purchase.authority,checkoutBindingAuthority:checkout.authority,dispositionAuthority:value.authority,pageLimit:1,maxPages:100};
+ // Acquire genuine internal capability; no verifier-minted owner or lease fixture.
+ const ownerA=await acquireRecoveryOwner({connection:mongoose.connection,owner:"worker-A",leaseMs:1000});
+ assert.equal(ownerA.generation,1);
+ const leases=db.collection(MOVIE_MENTOR_RECOVERY_LEASE_COLLECTION);
+ const liveLedger=mongoose.model("MovieMentorCommercialValueDisposition");
+ const liveUpdate=liveLedger.findOneAndUpdate;
+ let releaseA,signalA;
+ const heldA=new Promise(r=>releaseA=r),enteredA=new Promise(r=>signalA=r);
+ let paused=false;
+ liveLedger.findOneAndUpdate=function(query,update,...args){
+  if(!paused&&query?.providerPaymentReference==="pi-ledger-A"&&update?.$push?.chargebackEvents){
+   paused=true;
+   const q=liveUpdate.call(this,query,update,...args);
+   const originalLean=q.lean.bind(q);
+   q.lean=(...params)=>{
+    const l=originalLean(...params),originalExec=l.exec.bind(l);
+    l.exec=(...execArgs)=>{signalA();return heldA.then(()=>originalExec(...execArgs));};
+    return l;
+   };
+   return q;
+  }
+  return liveUpdate.call(this,query,update,...args);
+ };
+ try{
+  const workerA=recoverMovieMentorCompletedChargebacks(recoveryArgs);
+  await Promise.race([enteredA,new Promise((_,reject)=>setTimeout(()=>reject(Error("worker A did not reach real settlement boundary")),10000))]);
+  // Wait for actual MongoDB server-time expiry, then acquire through the real API.
+  let ownerB=null;
+  for(let attempt=0;attempt<30&&!ownerB;attempt++){
+   await new Promise(resolve=>setTimeout(resolve,150));
+   try{ownerB=await acquireRecoveryOwner({connection:mongoose.connection,owner:"worker-B",leaseMs:30000});}
+   catch(error){if(error?.code!=="MOVIE_MENTOR_COMPLETED_REVERSAL_RECOVERY_FENCED")throw error;}
+  }
+  assert.ok(ownerB,"real lease takeover must succeed after server-time expiry");
+  assert.equal(ownerB.generation,ownerA.generation+1);
+  const takeover=await leases.findOne({_id:"completed-chargeback:stripe"});
+  assert.equal(takeover.owner,"worker-B");
+  assert.equal(takeover.generation,ownerB.generation);
+  // RED-FIRST: the superseded worker must not commit after durable takeover.
+  // Resume A before starting B so idempotency cannot disguise stale-owner mutation.
+  releaseA();
+  let staleRejected=false;
+  try{
+   await workerA;
+  }catch(error){
+   if(error?.code!=="MOVIE_MENTOR_COMPLETED_REVERSAL_RECOVERY_FENCED")throw error;
+   staleRejected=true;
+  }
+  const beforeB=await db.collection("movie_mentor_commercial_value_disposition").findOne({provider:"stripe",providerPaymentReference:"pi-ledger-A"});
+  const noStaleFinancialEffect=beforeB?.remainingAmountMinor===1200&&beforeB?.chargebackAmountMinor===0&&(beforeB?.chargebackEvents||[]).length===0;
+  console.log("AUD REAL WRITER TRANSFER FENCE: staleRejected="+staleRejected+"; noStaleFinancialEffect="+noStaleFinancialEffect);
+  assert.equal(noStaleFinancialEffect,true,"PHYSICAL STALE-WRITER RED: superseded worker A committed at real financial mutation after durable generation transfer");
+  assert.equal(staleRejected,true,"PHYSICAL STALE-WRITER RED: worker A must receive a fenced ownership error");
+  const workerB=await recoverMovieMentorCompletedChargebacks(recoveryArgs);
+  const ledger=await db.collection("movie_mentor_commercial_value_disposition").findOne({provider:"stripe",providerPaymentReference:"pi-ledger-A"});
+  assert.equal(ledger.remainingAmountMinor,900);
+  assert.equal(ledger.chargebackAmountMinor,300);
+  assert.equal((ledger.chargebackEvents||[]).length,1);
+  assert.equal(workerB.settled,1,"new durable owner must be able to settle exactly once");
+  console.log("AUD REAL WRITER TRANSFER FENCE GREEN: stale owner rejected at mutation, successor settled once");
+ }finally{releaseA?.();liveLedger.findOneAndUpdate=liveUpdate;}
+
+}finally{
+ release?.();releaseLedger?.();
+ if(model&&originalCreate)model.create=originalCreate;
+ if(ledgerModel&&originalLedgerUpdate)ledgerModel.findOneAndUpdate=originalLedgerUpdate;
+ await mongoose.disconnect();
+}

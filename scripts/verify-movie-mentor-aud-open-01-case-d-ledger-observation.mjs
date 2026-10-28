@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import mongoose from "mongoose";
+import {createMovieMentorCommercialReversalMongoStore} from "../ai/MovieMentorCommercialReversalMongoStore.js";
 import {createMovieMentorProductionCommercialValueDispositionComposition,isMovieMentorProductionCommercialValueDispositionAuthorityOwnedProof} from "../ai/MovieMentorProductionCommercialValueDispositionComposition.js";
 
 // AUD-OPEN-01 Case D: verifier FIRST. Observation is not settlement.
@@ -32,7 +33,17 @@ try {
   assert.equal(rowBefore.remainingAmountMinor,1200);
   assert.equal(rowBefore.chargebackAmountMinor,0);
 
-  await authority.terminallySettlePreservedValue({provider,providerPaymentReference,commercialIntentId,principalId,amountMinor:1200,currency:"GBP",units:20,disposition:"chargeback",chargebackAmountMinor:300,terminalReference:evidenceId});
+  const settlement={provider,providerPaymentReference,commercialIntentId,principalId,amountMinor:1200,currency:"GBP",units:20,disposition:"chargeback",chargebackAmountMinor:300,terminalReference:evidenceId};
+  await assert.rejects(()=>authority.terminallySettlePreservedValue(settlement),e=>e?.code==="MOVIE_MENTOR_COMMERCIAL_VALUE_DISPOSITION_CALLER_AUTHORITY_REJECTED","missing independent reversal receipt must fail closed");
+  assert.equal((await authority.observePreservedValueSettlement(coordinates))?.settlementState,"unsettled");
+  await db.collection("movie_mentor_inference_entitlement").insertOne({domain:"iband.movie-mentor.inference-spend",schema:1,principalId,status:"active",remainingUnits:20,reservedUnits:0,consumedUnits:0,entitlementRevision:1});
+  const reversal=createMovieMentorCommercialReversalMongoStore();
+  const evidence={evidenceSource:provider,evidenceId,evidenceKind:"charge.dispute.funds_withdrawn",providerPaymentReference,commercialReference:commercialIntentId,principalId,reversalAmountMinor:300,currency:"GBP"};
+  const suspension=await reversal.suspend(evidence);
+  assert.equal(suspension.suspended,true,"production reversal store must suspend entitlement");
+  const receipt=await db.collection("movie_mentor_commercial_reversal").findOne({evidenceSource:provider,evidenceId});
+  assert.ok(receipt,"independent reversal receipt must be durably committed");
+  await authority.terminallySettlePreservedValue(settlement);
   const after=await authority.observePreservedValueSettlement(coordinates);
   assert.equal(after?.settlementState,"settled","physical evidence-linked settlement must be observed");
   const rowAfter=await db.collection("movie_mentor_commercial_value_disposition").findOne({provider,providerPaymentReference});
