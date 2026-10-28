@@ -53,7 +53,7 @@ async function releaseRecoveryOwner({connection=mongoose.connection,capability}=
  if(!capability||mintedCapabilities.get(capability)!==connection)fail("Release requires a genuine recovery ownership capability.");
  const result=await collection(connection).updateOne(
   {_id:SCOPE,owner:capability.owner,generation:capability.generation},
-  [{$set:{leaseUntil:"$NOW"}}]
+  [{$set:{leaseUntil:"$$NOW"}}]
  );
  return result.matchedCount===1;
 }
