@@ -36,6 +36,9 @@ jobs:
       - name: Verify authenticated HTTP recovery transport
         run: node scripts/verify-movie-mentor-recovery-http-transport.mjs
       - name: Verify disposable physical MongoDB authorized HTTP recovery
+        env:
+          MONGO_URI: ""
+          MONGODB_URI: ""
         run: node scripts/verify-movie-mentor-recovery-isolated-mongodb-http.mjs
       - name: Verify isolated MongoDB persistence and authorized HTTP recovery
         run: node scripts/verify-movie-mentor-recovery-mongodb-http.mjs
