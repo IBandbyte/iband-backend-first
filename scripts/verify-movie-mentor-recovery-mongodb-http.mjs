@@ -53,6 +53,6 @@ try {
   assert.equal(owner.body.state.internalSecret,undefined);
   assert.equal(reads,1);
   assert.equal(owner.body.state.creatorSessionId,undefined);
-  const indexes=await collection.indexes();assert(indexes.some(i=>i.unique&&i.key?.projectId===1));
+  const indexes=await mongoose.connection.db.collection("movie_mentor_creator_state").indexes();assert(indexes.some(i=>i.unique&&i.key?.projectId===1));
   console.log("GREEN: isolated MongoDB saved state survived reconnection and was recovered over authenticated HTTP.");
 } finally {await new Promise((resolve,reject)=>server.close(err=>err?reject(err):resolve()));await mongoose.disconnect();}
