@@ -7,6 +7,13 @@ on:
 jobs:
   verify-fresh-browser-recovery:
     runs-on: ubuntu-latest
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+    env:
+      MONGO_URI: mongodb://127.0.0.1:27017/movie_mentor_recovery_ci
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -22,6 +29,7 @@ jobs:
           node --check scripts/verify-movie-mentor-creator-state-recovery-security.mjs
           node --check ai/MovieMentorCreatorStateRecoveryHandler.js
           node --check scripts/verify-movie-mentor-recovery-http-transport.mjs
+          node --check scripts/verify-movie-mentor-recovery-mongodb-http.mjs
           node --check scripts/verify-movie-mentor-recovery-isolated-mongodb-http.mjs
       - name: Verify creator state recovery security and safe exposure
         run: node scripts/verify-movie-mentor-creator-state-recovery-security.mjs
@@ -29,5 +37,7 @@ jobs:
         run: node scripts/verify-movie-mentor-recovery-http-transport.mjs
       - name: Verify disposable physical MongoDB authorized HTTP recovery
         run: node scripts/verify-movie-mentor-recovery-isolated-mongodb-http.mjs
+      - name: Verify isolated MongoDB persistence and authorized HTTP recovery
+        run: node scripts/verify-movie-mentor-recovery-mongodb-http.mjs
       - name: Verify creator state recovery read contract
         run: node scripts/verify-movie-mentor-fresh-browser-state-recovery.mjs
