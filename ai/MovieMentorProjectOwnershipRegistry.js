@@ -157,6 +157,18 @@ function normalize(record) {
   });
 }
 
+async function listMovieMentorOwnedProjectIdentities({ principalId } = {}) {
+  const ownerId = s(principalId);
+  if (!ownerId) fail("MOVIE_MENTOR_PROJECT_OWNERSHIP_PRINCIPAL_REQUIRED", "Owned-project listing requires an authenticated principal identity.");
+  await ensureConnection();
+  const records = await getModel().find({ ownerPrincipalId: ownerId, status: "active" }).sort({ projectId: 1 }).lean().exec();
+  return Object.freeze(records.map(record => {
+    const owned = normalize(record);
+    if (owned.ownerPrincipalId !== ownerId) fail("MOVIE_MENTOR_PROJECT_OWNERSHIP_IDENTITY_CONFLICT", "Owned-project listing encountered a conflicting owner.");
+    return Object.freeze({ projectId: owned.projectId });
+  }));
+}
+
 async function readMovieMentorProjectOwnership({ projectId } = {}) {
   await ensureConnection();
   const pid = s(projectId);
@@ -352,6 +364,7 @@ export {
   MOVIE_MENTOR_PROJECT_OWNERSHIP_AUTHORITY_CAPABILITY_DOMAIN,
   inspectMovieMentorProjectOwnership,
   readMovieMentorProjectOwnership,
+  listMovieMentorOwnedProjectIdentities,
   createMovieMentorProjectOwnership,
   createMovieMentorProjectOwnershipAuthority,
   getMovieMentorProjectOwnershipRegistryStatus,
