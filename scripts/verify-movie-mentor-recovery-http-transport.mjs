@@ -21,7 +21,7 @@ const requestAuthority={async authorize({request,projectId}){
 }};
 const spend={reserveTurn(){},readReservation(){}};
 const execution=Object.fromEntries(["findExecutionByCreatorTurn","openExecution","acquireExecution","assertFence","claimProviderCall","beginProviderDispatch","assertProviderDispatch","contributeProviderEffectEvidence","stageResultCandidate","readResultCandidate","beginExecutionClosing","reconcileExecutionClosure","assertCurrentExecutionClosure","commitCanonicalResult","readCanonicalResult"].map(k=>[k,()=>{}]));
-const settlement={reconcile(){},readSettlement(){},reserveSettlement(){},assertSettlement(){},commitSettlement(){}};
+const settlement={reconcile(){},releaseUnclaimed(){},releaseUnbound(){},readSettlement(){},reserveSettlement(){},assertSettlement(){},commitSettlement(){}};
 const app=express();
 app.use(express.json());
 app.use("/api/movie-mentor",createMovieMentorTurnRouter({
