@@ -1,0 +1,12 @@
+import assert from "node:assert/strict";
+import express from "express";
+import {createMovieMentorTurnRouter} from "../movieMentorTurn.js";
+const ownerByProject={"film-a":"creator-a","film-b":"creator-b"};
+const spend={reserveTurn(){},readReservation(){}};
+const execution=Object.fromEntries(["findExecutionByCreatorTurn","openExecution","acquireExecution","assertFence","claimProviderCall","beginProviderDispatch","assertProviderDispatch","contributeProviderEffectEvidence","stageResultCandidate","readResultCandidate","beginExecutionClosing","reconcileExecutionClosure","assertCurrentExecutionClosure","commitCanonicalResult","readCanonicalResult"].map(k=>[k,()=>{}]));
+const settlement={reconcile(){},releaseUnclaimed(){},releaseUnbound(){}};
+const requestAuthority={async authorize({request,projectId}){const principalId=request.headers.authorization?.replace(/^Bearer /,"");if(!principalId)throw Object.assign(new Error("Authentication required"),{code:"MOVIE_MENTOR_AUTH_CREDENTIAL_REQUIRED"});if(ownerByProject[projectId]!==principalId)throw Object.assign(new Error("Not authorized"),{code:"MOVIE_MENTOR_CREATOR_PROJECT_NOT_AUTHORIZED"});return{authorized:true,projectId,principalId};}};
+const app=express();
+app.use("/api/movie-mentor",createMovieMentorTurnRouter({requestAuthority,inferenceSpendAuthority:spend,inferenceExecutionAuthority:execution,inferenceSettlementAuthority:settlement,authenticateDiscovery:async({request})=>{const principalId=request.headers.authorization?.replace(/^Bearer /,"");return{authenticated:!!principalId,principalId};},listOwnedProjects:async({principalId})=>Object.entries(ownerByProject).filter(([,owner])=>owner===principalId).map(([projectId])=>({projectId}))}));
+const server=app.listen(0,"127.0.0.1");
+try{await new Promise(resolve=>server.once("listening",resolve));const url=`http://127.0.0.1:${server.address().port}/api/movie-mentor/projects/owned`;const call=async(token,query="")=>{const response=await fetch(url+query,{headers:token?{authorization:`Bearer ${token}`}:{}});return{status:response.status,body:await response.json()};};assert.equal((await call(null)).status,401);assert.deepEqual((await call("creator-a","?ownerPrincipalId=creator-b")).body.projects,[{projectId:"film-a"}]);assert.deepEqual((await call("creator-b")).body.projects,[{projectId:"film-b"}]);console.log("GREEN: HTTP discovery only returns authenticated owner's projects.");}finally{await new Promise(resolve=>server.close(resolve));}
