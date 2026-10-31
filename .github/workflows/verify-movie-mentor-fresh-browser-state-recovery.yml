@@ -12,12 +12,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+      - name: Install isolated HTTP test dependencies
+        run: npm install --no-audit --no-fund --ignore-scripts
       - name: Syntax check recovery verifiers and handler
         run: |
           node --check scripts/verify-movie-mentor-fresh-browser-state-recovery.mjs
           node --check scripts/verify-movie-mentor-creator-state-recovery-security.mjs
           node --check ai/MovieMentorCreatorStateRecoveryHandler.js
+          node --check scripts/verify-movie-mentor-recovery-http-transport.mjs
       - name: Verify creator state recovery security and safe exposure
         run: node scripts/verify-movie-mentor-creator-state-recovery-security.mjs
+      - name: Verify authenticated HTTP recovery transport
+        run: node scripts/verify-movie-mentor-recovery-http-transport.mjs
       - name: Verify creator state recovery read contract
         run: node scripts/verify-movie-mentor-fresh-browser-state-recovery.mjs
