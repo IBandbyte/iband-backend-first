@@ -39,7 +39,7 @@ async function assertCreatorHttpExposureAuthority({ result = null, authorized = 
 }
 
 function statusForCode(code) {
-  if (code === "MOVIE_MENTOR_DISCOVERY_AUTH_REQUIRED") return 401;
+  if (code === "MOVIE_MENTOR_DISCOVERY_AUTH_REQUIRED" || code === "MOVIE_MENTOR_AUTH_VERIFICATION_FAILED" || code === "MOVIE_MENTOR_AUTH_NOT_VERIFIED" || code === "MOVIE_MENTOR_AUTH_ISSUER_MISMATCH" || code === "MOVIE_MENTOR_AUTH_AUDIENCE_MISMATCH") return 401;
   if (code === "MOVIE_MENTOR_DISCOVERY_OWNERSHIP_NOT_PROVEN") return 403;
   if (code === "MOVIE_MENTOR_INFERENCE_SPEND_RESERVATION_DENIED") return 402;
   if (code === "MOVIE_MENTOR_AUTH_CREDENTIAL_REQUIRED" || code === "MOVIE_MENTOR_AUTH_BEARER_REQUIRED" || code.includes("TOKEN_VERIFICATION_FAILED") || code.includes("AUTH_EXPIRED") || code.includes("AUTH_REVOKED")) return 401;
