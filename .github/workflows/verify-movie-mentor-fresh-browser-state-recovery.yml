@@ -12,10 +12,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Syntax check fresh-browser recovery verifier
-        run: node --check scripts/verify-movie-mentor-fresh-browser-state-recovery.mjs
+      - name: Syntax check recovery verifiers and handler
+        run: |
+          node --check scripts/verify-movie-mentor-fresh-browser-state-recovery.mjs
           node --check scripts/verify-movie-mentor-creator-state-recovery-security.mjs
-      - name: Verify creator state recovery security and safe exposure (expected RED before implementation)
+          node --check ai/MovieMentorCreatorStateRecoveryHandler.js
+      - name: Verify creator state recovery security and safe exposure
         run: node scripts/verify-movie-mentor-creator-state-recovery-security.mjs
-      - name: Verify creator state recovery read contract (expected RED before implementation)
+      - name: Verify creator state recovery read contract
         run: node scripts/verify-movie-mentor-fresh-browser-state-recovery.mjs
