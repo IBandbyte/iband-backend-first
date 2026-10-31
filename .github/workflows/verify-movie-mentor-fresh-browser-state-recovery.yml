@@ -35,6 +35,8 @@ jobs:
         run: node scripts/verify-movie-mentor-owned-project-discovery.mjs
       - name: Verify physical MongoDB owner-isolated project listing
         run: node scripts/verify-movie-mentor-owned-project-physical-mongodb.mjs
+      - name: Verify authenticated owner-only discovery HTTP route
+        run: node scripts/verify-movie-mentor-owned-project-http.mjs
       - name: Verify creator state recovery security and safe exposure
         run: node scripts/verify-movie-mentor-creator-state-recovery-security.mjs
       - name: Verify authenticated HTTP recovery transport
