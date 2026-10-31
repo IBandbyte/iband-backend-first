@@ -32,8 +32,8 @@ try {
   const settlement={reconcile(){},releaseUnclaimed(){},releaseUnbound(){}};
   const app=express();app.use(express.json());
   app.use("/api/movie-mentor",createMovieMentorTurnRouter({
-    requestAuthority,inferenceSpendAuthority:{reserveTurn(){}},
-    inferenceExecutionAuthority:{},inferenceSettlementAuthority:settlement
+    requestAuthority,inferenceSpendAuthority:{reserveTurn(){},readReservation(){}},
+    inferenceExecutionAuthority:Object.fromEntries(["findExecutionByCreatorTurn","openExecution","acquireExecution","assertFence","claimProviderCall","beginProviderDispatch","assertProviderDispatch","contributeProviderEffectEvidence","stageResultCandidate","readResultCandidate","beginExecutionClosing","reconcileExecutionClosure","assertCurrentExecutionClosure","commitCanonicalResult","readCanonicalResult"].map(k=>[k,()=>{}])),inferenceSettlementAuthority:settlement
   }));
   server=app.listen(0,"127.0.0.1");
   await new Promise(resolve=>server.once("listening",resolve));
