@@ -31,6 +31,8 @@ jobs:
           node --check scripts/verify-movie-mentor-recovery-http-transport.mjs
           node --check scripts/verify-movie-mentor-recovery-mongodb-http.mjs
           node --check scripts/verify-movie-mentor-recovery-isolated-mongodb-http.mjs
+      - name: Verify owner-only project discovery court
+        run: node scripts/verify-movie-mentor-owned-project-discovery.mjs
       - name: Verify creator state recovery security and safe exposure
         run: node scripts/verify-movie-mentor-creator-state-recovery-security.mjs
       - name: Verify authenticated HTTP recovery transport
