@@ -13,5 +13,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+      - name: Install backend dependencies
+        run: npm ci --ignore-scripts
       - name: Verify repeated operation cannot create a second authoritative revision
         run: node scripts/verify-movie-mentor-creator-state-operation-idempotency.mjs
