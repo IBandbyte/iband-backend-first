@@ -1,0 +1,17 @@
+name: Verify Movie Mentor Creator State Atomic Operation Contract
+on:
+  push:
+    branches:
+      - verify/creator-state-sync-provenance-court-20261103
+  workflow_dispatch:
+jobs:
+  atomic-operation-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Verify isolated atomic operation contract
+        run: node scripts/verify-movie-mentor-creator-state-atomic-operation-contract.mjs
