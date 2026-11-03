@@ -15,6 +15,14 @@ const operationId="fixed-client-operation-id";
 const first=await applyMovieMentorCreatorStateTransition({projectId,source:"creator-memory",operationId,expectedRevision:0,state:{memoryContext:{projectMemories:[{id:"same-operation"}]}}},deps);
 assert.equal(first.revision,1);assert.equal(writes,1);
 const replay=()=>applyMovieMentorCreatorStateTransition({projectId,source:"creator-memory",operationId,expectedRevision:1,state:{memoryContext:{projectMemories:[{id:"same-operation"}]}}},deps);
-await assert.rejects(replay(),error=>error.code==="MOVIE_MENTOR_CREATOR_STATE_OPERATION_REPLAY","RED: repeated operationId must not create a second authoritative revision");
+let replayError=null,replayResult=null;
+try{replayResult=await replay();}catch(error){replayError=error;}
+if(replayResult){
+ assert.equal(replayResult.revision,2,"Physical evidence: accepted replay must advance the authoritative revision");
+ assert.equal(writes,2,"Physical evidence: accepted replay must have caused a second authoritative write");
+ console.error("BOUNDARY RED CONFIRMED: repeated operationId was accepted as revision 2 and caused two authoritative writes in the isolated CAS store.");
+}
+assert.equal(replayResult,null,"RED: repeated operationId must never produce another authoritative state");
+assert.equal(replayError?.code,"MOVIE_MENTOR_CREATOR_STATE_OPERATION_REPLAY","RED: repeated operationId must be rejected by operation-level replay authority");
 assert.equal(writes,1,"RED: repeated operationId must not cause a second durable effect");
 console.log("GREEN: repeated operationId rejected before another authoritative mutation.");
