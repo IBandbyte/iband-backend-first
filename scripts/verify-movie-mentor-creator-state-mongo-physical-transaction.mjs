@@ -41,6 +41,27 @@ try{
  if(sameRejected.length)console.error("CONTENTTION GAP: simultaneous duplicate returned error:",sameRejected[0].reason?.code||sameRejected[0].reason?.message);
  assert.equal(sameReplay.length,1,"Concurrent identical operation must return the committed replay result, not fail with a raw transaction conflict.");
  assert.deepEqual(sameReplay[0].value.result,sameAccepted[0].value.result);
+ // The server commits but the transport drops its acknowledgement. The client
+ // retries using the identical operation envelope after a new adapter instance
+ // and a fresh database connection. No second revision may be created.
+ const lost=(id)=>({envelope:{projectId:"lost-ack-project",principalId:"owner",operationId:id,source:"creator-memory",expectedRevision:0,requestDigest:"lost-ack-digest"},proposedState:{projectId:"lost-ack-project",revision:1,memoryContext:{id}}});
+ const committed=await accept(lost("ack-dropped"));
+ assert.equal(committed.kind,"accepted");
+ const committedState=await states.findOne({projectId:"lost-ack-project"});
+ assert.equal(committedState.revision,1);
+ // Simulate loss of the response: do not pass committed.result to the retry.
+ const separateClient=new mongoose.mongo.MongoClient(uri,{serverSelectionTimeoutMS:10000});
+ await separateClient.connect();
+ try{
+  const newAdapter=createMongoCreatorStateAtomicAccept({client:separateClient,states:separateClient.db().collection("isolated_creator_state"),operations:separateClient.db().collection("isolated_creator_operations")});
+  const recoveredAck=await newAdapter(lost("ack-dropped"));
+  assert.equal(recoveredAck.kind,"replay");
+  assert.equal(recoveredAck.result.revision,1);
+  assert.deepEqual(recoveredAck.result,committed.result);
+  assert.equal(await states.countDocuments({projectId:"lost-ack-project"}),1);
+  assert.equal(await operations.countDocuments({projectId:"lost-ack-project"}),1);
+ }finally{await separateClient.close();}
+ console.log("GREEN: lost acknowledgement recovered through independent Mongo client without second authoritative revision.");
  console.log("GREEN: concurrent identical operation IDs return one accepted result and one replay with exactly one durable effect.");
  console.log("GREEN: real isolated replica-set transaction persisted two revisions, refused duplicate effect, and recovered replay using fresh adapter.");
 }finally{await mongoose.disconnect();}
