@@ -28,5 +28,19 @@ try{
  const recovered=await restarted(make(winner,1));
  assert.equal(recovered.kind,"replay");assert.equal(recovered.result.revision,2);
  assert.equal(await operations.countDocuments({projectId:"physical-project"}),2);
+ // Two simultaneous identical first submissions on an independent project.
+ const same=(id)=>({envelope:{projectId:"same-key-project",principalId:"owner",operationId:id,source:"creator-memory",expectedRevision:0,requestDigest:"same-digest"},proposedState:{projectId:"same-key-project",revision:1,memoryContext:{id}}});
+ const simultaneous=await Promise.allSettled([accept(same("shared")),accept(same("shared"))]);
+ const sameAccepted=simultaneous.filter(x=>x.status==="fulfilled"&&x.value.kind==="accepted");
+ const sameReplay=simultaneous.filter(x=>x.status==="fulfilled"&&x.value.kind==="replay");
+ const sameRejected=simultaneous.filter(x=>x.status==="rejected");
+ assert.equal(await states.countDocuments({projectId:"same-key-project"}),1,"Duplicate workers must persist only one creator-state record.");
+ assert.equal(await operations.countDocuments({projectId:"same-key-project"}),1,"Duplicate workers must persist only one operation claim.");
+ assert.equal(sameAccepted.length,1,"Exactly one worker must accept the first submission.");
+ assert.equal(sameReplay.length+sameRejected.length,1,"Other worker must replay or receive an explicit transient error.");
+ if(sameRejected.length)console.error("CONTENTTION GAP: simultaneous duplicate returned error:",sameRejected[0].reason?.code||sameRejected[0].reason?.message);
+ assert.equal(sameReplay.length,1,"Concurrent identical operation must return the committed replay result, not fail with a raw transaction conflict.");
+ assert.deepEqual(sameReplay[0].value.result,sameAccepted[0].value.result);
+ console.log("GREEN: concurrent identical operation IDs return one accepted result and one replay with exactly one durable effect.");
  console.log("GREEN: real isolated replica-set transaction persisted two revisions, refused duplicate effect, and recovered replay using fresh adapter.");
 }finally{await mongoose.disconnect();}
