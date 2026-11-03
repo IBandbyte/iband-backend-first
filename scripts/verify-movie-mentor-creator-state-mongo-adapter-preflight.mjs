@@ -6,7 +6,7 @@ const present={indexes:async()=>[{key:{projectId:1,principalId:1,operationId:1},
 await assertOperationIndex(present);
 await assert.rejects(async()=>createMongoCreatorStateAtomicAccept({}),e=>e.code==="MOVIE_MENTOR_CREATOR_STATE_OPERATION_STORAGE_REQUIRED");
 let started=0;
-const adapter=createMongoCreatorStateAtomicAccept({client:{startSession:()=>{started++;throw new Error("should not start");}},states:{findOne(){},replaceOne(){}},operations:{...present,findOne(){},insertOne(){}}});
+const adapter=createMongoCreatorStateAtomicAccept({client:{startSession:()=>{started++;throw new Error("should not start");}},states:{indexes:async()=>[{key:{projectId:1},unique:true}],findOne(){},replaceOne(){}},operations:{...present,findOne(){},insertOne(){}}});
 await assert.rejects(()=>adapter({envelope:{projectId:"p",principalId:"u",operationId:"x",requestDigest:"hash"},proposedState:{projectId:"other"}}),e=>e.code==="MOVIE_MENTOR_CREATOR_STATE_OPERATION_INVALID");
 assert.equal(started,0);
 console.log("GREEN: Mongo adapter rejects absent unique index, absent storage authority and mismatched project before transaction.");
