@@ -1,0 +1,17 @@
+name: Verify Movie Mentor Mongo Operation Adapter Preflight
+on:
+  push:
+    branches:
+      - verify/creator-state-sync-provenance-court-20261103
+  workflow_dispatch:
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Verify fail-closed Mongo adapter preflight
+        run: node scripts/verify-movie-mentor-creator-state-mongo-adapter-preflight.mjs
