@@ -1,0 +1,39 @@
+name: Verify Movie Mentor Creator State Mongo Physical Transaction
+on:
+  push:
+    branches:
+      - verify/creator-state-sync-provenance-court-20261103
+  workflow_dispatch:
+jobs:
+  physical-transaction:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ping:1}).ok' || exit 1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install isolated test dependencies
+        run: npm install --ignore-scripts --no-audit --no-fund --package-lock=false
+      - name: Initialise isolated Mongo replica set
+        run: |
+          docker exec ${{ job.services.mongo.id }} mongosh --quiet --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"localhost:27017"}]})'
+          for attempt in $(seq 1 30); do
+            if docker exec ${{ job.services.mongo.id }} mongosh --quiet --eval 'quit(db.hello().isWritablePrimary ? 0 : 1)'; then exit 0; fi
+            sleep 2
+          done
+          exit 1
+      - name: Verify real isolated Mongo transaction and contention
+        env:
+          MOVIE_MENTOR_ISOLATED_MONGO_URI: mongodb://127.0.0.1:27017/movie_mentor_isolated_operation_court?replicaSet=rs0&directConnection=true
+        run: node scripts/verify-movie-mentor-creator-state-mongo-physical-transaction.mjs
