@@ -5,12 +5,14 @@
 function error(code,message){const e=new Error(message);e.code=code;return e;}
 const REQUIRED_OPERATION_INDEX={projectId:1,principalId:1,operationId:1};
 function sameIndex(index){return index?.unique===true&&Object.keys(index.key||{}).length===3&&Object.entries(REQUIRED_OPERATION_INDEX).every(([key,value])=>index.key[key]===value);}
+async function assertProjectIndex(states){const indexes=await states.indexes();if(!indexes.some(index=>index?.unique===true&&Object.keys(index.key||{}).length===1&&index.key.projectId===1))throw error("MOVIE_MENTOR_CREATOR_STATE_PROJECT_INDEX_REQUIRED","Physical unique projectId index is required before transactional creator-state CAS.");}
 async function assertOperationIndex(operations){const indexes=await operations.indexes();if(!indexes.some(sameIndex))throw error("MOVIE_MENTOR_CREATOR_STATE_OPERATION_INDEX_REQUIRED","Physical unique project/principal/operation index is required.");}
 function createMongoCreatorStateAtomicAccept({client,states,operations}={}){
- if(!client?.startSession||!states?.findOne||!states?.replaceOne||!operations?.findOne||!operations?.insertOne||!operations?.indexes)throw error("MOVIE_MENTOR_CREATOR_STATE_OPERATION_STORAGE_REQUIRED","Mongo transaction client and collections are required.");
+ if(!client?.startSession||!states?.findOne||!states?.replaceOne||!states?.indexes||!operations?.findOne||!operations?.insertOne||!operations?.indexes)throw error("MOVIE_MENTOR_CREATOR_STATE_OPERATION_STORAGE_REQUIRED","Mongo transaction client and collections are required.");
  return async function atomicAccept({envelope,proposedState}={}){
   if(!envelope?.projectId||!envelope?.principalId||!envelope?.operationId||!envelope?.requestDigest||!proposedState||proposedState.projectId!==envelope.projectId)throw error("MOVIE_MENTOR_CREATOR_STATE_OPERATION_INVALID","Operation envelope or proposed state invalid.");
   await assertOperationIndex(operations);
+  await assertProjectIndex(states);
   const session=client.startSession();
   try{
    return await session.withTransaction(async()=>{
@@ -29,4 +31,4 @@ function createMongoCreatorStateAtomicAccept({client,states,operations}={}){
   }finally{await session.endSession();}
  };
 }
-export{REQUIRED_OPERATION_INDEX,assertOperationIndex,createMongoCreatorStateAtomicAccept};
+export{REQUIRED_OPERATION_INDEX,assertOperationIndex,assertProjectIndex,createMongoCreatorStateAtomicAccept};
