@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {applyMovieMentorCreatorStateTransition} from "../ai/MovieMentorCreatorStateTransition.js";
+import {MOVIE_MENTOR_CREATOR_STATE_MUTATION_AUTHORITY_DOMAIN as AUTH_DOMAIN,MOVIE_MENTOR_CREATOR_STATE_MUTATION_PROOF_DOMAIN as PROOF_DOMAIN,MOVIE_MENTOR_CREATOR_STATE_MUTATION_SCHEMA as SCHEMA} from "../ai/MovieMentorCreatorStateMutationAuthority.js";
 
 // RED-first: no active creator-state mutation may bypass the atomic operation ledger,
 // including legacy requests that omit operationId. No database or HTTP server.
@@ -7,7 +8,7 @@ let reads=0,writes=0,authorityChecks=0;
 const deps={
  readAuthoritativeTurnSource:async()=>{reads++;throw Object.assign(new Error("missing"),{code:"MOVIE_MENTOR_CREATOR_STATE_NOT_FOUND"});},
  writeAuthoritativeCreatorState:async()=>{writes++;return {revision:1};},
- creatorStateMutationAuthority:{assertCurrentMutation:async()=>{authorityChecks++;return {authorized:true};}}
+ creatorStateMutationAuthority:{domain:AUTH_DOMAIN,schema:SCHEMA,principalId:"isolated-principal",projectId:"isolated-legacy-project",assertCurrentMutation:async target=>{authorityChecks++;return {domain:PROOF_DOMAIN,schema:SCHEMA,authorized:true,currentOwnershipVerified:true,principalId:"isolated-principal",projectId:"isolated-legacy-project",ownershipRef:"isolated-proof",ownershipRevision:1,source:target.source,expectedRevision:target.expectedRevision,revision:target.revision,creatorStateGeneration:target.creatorStateGeneration,creatorStateFingerprint:target.creatorStateFingerprint};}}
 };
 let failure;
 try{
