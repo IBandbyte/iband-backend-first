@@ -18,7 +18,7 @@ try{
  const proof={domain:"iband.movie-mentor.creator-state-mutation-authority",schema:1,principalId:"owner",projectId:"fence-project",assertCurrentMutation:async target=>({domain:"iband.movie-mentor.creator-state-mutation-proof",schema:1,authorized:active,currentOwnershipVerified:active,principalId:"owner",projectId:"fence-project",ownershipRef:"ownership-v1",ownershipRevision:1,...target})};
  const instrumentedStates={indexes:(...args)=>states.indexes(...args),findOne:async(...args)=>{signalRead();await paused;return states.findOne(...args);},replaceOne:(...args)=>states.replaceOne(...args)};
  const accept=createMongoCreatorStateAtomicAccept({client:mongoose.connection.getClient(),states:instrumentedStates,operations});
- const pending=accept({envelope:{projectId:"fence-project",principalId:"owner",operationId:"fenced",source:"creator-memory",expectedRevision:0,requestDigest:"fenced-digest"},proposedState:{projectId:"fence-project",revision:1,creatorStateGeneration:1,creatorStateFingerprint:"fenced-fingerprint"},creatorStateMutationAuthority:proof});
+ const pending=accept({envelope:{projectId:"fence-project",principalId:"owner",operationId:"fenced",source:"creator-memory",expectedRevision:0,requestDigest:"fenced-digest"},proposedState:{projectId:"fence-project",revision:1,creatorStateGeneration:1,creatorStateFingerprint:"fenced-fingerprint",revisionAuthorityReference:"fence-revision",creatorAuthorityReference:"fence-authority",snapshotReference:"fence-snapshot",capturedAt:new Date("2026-11-04T00:00:00.000Z")},creatorStateMutationAuthority:proof});
  await reached;
  active=false; // Revocation after initial authority check, before transaction write.
  releaseRead();
