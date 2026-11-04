@@ -1,0 +1,20 @@
+name: Verify Movie Mentor Creator Gateway Recovery Observer Failure
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - verify/creator-atomic-production-mount-court-20261104
+    paths:
+      - ".github/workflows/verify-movie-mentor-creator-gateway-recovery-observer-failure.yml"
+      - "scripts/verify-movie-mentor-creator-gateway-recovery-observer-failure.mjs"
+      - "ai/MovieMentorCreatorGatewayRecovery.js"
+jobs:
+  observer-failure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: node --unhandled-rejections=strict scripts/verify-movie-mentor-creator-gateway-recovery-observer-failure.mjs
