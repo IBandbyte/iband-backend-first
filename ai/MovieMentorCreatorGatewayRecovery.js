@@ -34,8 +34,10 @@ function registerMovieMentorCreatorGatewayRecovery({
     return;
    }
    const outcome=await mount();
-   if(stopped)return;
+   // A stop request cannot undo a mount that was already in flight.
+   // Record the physical outcome before suppressing any further retries.
    if(outcome?.mounted===true)mounted=true;
+   if(stopped)return;
    report(Object.freeze({mounted,reason:outcome?.reason||"creator-gateway-recovery-attempt",attempts}));
   }catch(error){
    if(!stopped)report(Object.freeze({mounted:false,reason:error?.code||"creator-gateway-recovery-attempt-failed",attempts}));
