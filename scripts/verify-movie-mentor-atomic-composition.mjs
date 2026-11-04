@@ -1,0 +1,13 @@
+import assert from "node:assert/strict";
+import {createMovieMentorCreatorStateAtomicComposition} from "../ai/MovieMentorCreatorStateAtomicComposition.js";
+const client={startSession(){throw Error("RED: composition started transaction");}};
+let collections=[];
+const db={client,collection(name){collections.push(name);return{collectionName:name,indexes:async()=>[],findOne:async()=>null,replaceOne:async()=>null,insertOne:async()=>null};}};
+const composed=createMovieMentorCreatorStateAtomicComposition({client,db});
+assert.deepEqual(collections,["movie_mentor_creator_state","movie_mentor_creator_state_operations"]);
+assert.equal(composed.activated,false);
+assert.equal(composed.ready,false);
+await assert.rejects(composed.atomicCreatorStateReadiness(),e=>e.code==="MOVIE_MENTOR_CREATOR_STATE_OPERATION_INDEX_REQUIRED"||e.code==="MOVIE_MENTOR_CREATOR_STATE_PROJECT_INDEX_REQUIRED");
+assert.throws(()=>createMovieMentorCreatorStateAtomicComposition({client:{startSession(){}},db}),e=>e.code==="MOVIE_MENTOR_CREATOR_STATE_ATOMIC_CLIENT_MISMATCH");
+assert.throws(()=>createMovieMentorCreatorStateAtomicComposition({client,db:{collection(){}}}),e=>e.code==="MOVIE_MENTOR_CREATOR_STATE_ATOMIC_COMPOSITION_REQUIRED");
+console.log("GREEN: canonical composition rejects cross-client database, requires both exact collections and never activates.");
