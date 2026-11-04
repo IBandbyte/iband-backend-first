@@ -4,6 +4,8 @@ import {createMongoCreatorStateAtomicAccept} from "../ai/MovieMentorCreatorState
 
 // RED-first integration contract: an adapter must preserve existing creator-state
 // authority fields and the durable store's strict schema, not merely a test record.
+const authorityFor=({envelope,proposedState})=>({domain:"iband.movie-mentor.creator-state-mutation-authority",schema:1,principalId:envelope.principalId,projectId:envelope.projectId,assertCurrentMutation:async target=>({domain:"iband.movie-mentor.creator-state-mutation-proof",schema:1,authorized:true,currentOwnershipVerified:true,principalId:envelope.principalId,projectId:envelope.projectId,ownershipRef:"isolated-owner-proof",ownershipRevision:1,...target})});
+const withProof=async(adapter,args)=>adapter({...args,creatorStateMutationAuthority:authorityFor(args)});
 const uri=process.env.MOVIE_MENTOR_ISOLATED_MONGO_URI;
 assert.ok(uri&&/127\.0\.0\.1|localhost/.test(uri),"Local isolated replica-set URI required.");
 await mongoose.connect(uri,{serverSelectionTimeoutMS:10000});
@@ -15,11 +17,11 @@ try{
  const capturedAt=new Date().toISOString(),transitionId="isolated-transition";
  const proposedState={projectId:"schema-project",creatorSessionId:"schema-session",revision:1,revisionAuthorityReference:"movie-mentor:revision:1:"+transitionId,creatorStateGeneration:1,creatorStateFingerprint:"a".repeat(64),creatorAuthorityReference:"movie-mentor:creator-state:1:"+transitionId,snapshotReference:"movie-mentor:snapshot:1:"+ "a".repeat(24),creatorConfirmedContext:[],projectJourney:null,memoryContext:{projectMemories:[{id:"schema"}]},responseBlueprint:null,communicationPlan:null,capturedAt,transition:{id:transitionId,source:"creator-memory",expectedRevision:0}};
  const envelope={projectId:proposedState.projectId,principalId:"schema-owner",operationId:"schema-op",source:"creator-memory",expectedRevision:0,requestDigest:"schema-digest"};
- const accepted=await accept({envelope,proposedState});
+ const accepted=await withProof(accept,{envelope,proposedState});
  assert.equal(accepted.kind,"accepted");
  const doc=await states.findOne({projectId:envelope.projectId});
  for(const field of ["revisionAuthorityReference","creatorStateGeneration","creatorStateFingerprint","creatorAuthorityReference","snapshotReference","capturedAt"])assert.ok(doc[field],field+" must survive atomic write");
- const replay=await accept({envelope,proposedState});
+ const replay=await withProof(accept,{envelope,proposedState});
  assert.equal(replay.kind,"replay");assert.deepEqual(replay.result,accepted.result);
  // Security requirement: the adapter must NOT accept an arbitrary state assembled
  // without validated current ownership and exact mutation authority.
