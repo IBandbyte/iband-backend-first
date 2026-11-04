@@ -1,0 +1,27 @@
+name: Verify Movie Mentor Production Atomic Mount Boundary
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - verify/creator-atomic-production-mount-court-20261104
+    paths:
+      - ".github/workflows/verify-movie-mentor-production-atomic-mount-boundary.yml"
+      - "scripts/verify-movie-mentor-production-atomic-mount-boundary.mjs"
+      - "server.js"
+
+jobs:
+  verify-production-atomic-mount-boundary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact commit
+        uses: actions/checkout@v4
+      - name: Use Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Syntax check
+        run: node --check scripts/verify-movie-mentor-production-atomic-mount-boundary.mjs
+      - name: Run RED-first production atomic mount boundary
+        run: node scripts/verify-movie-mentor-production-atomic-mount-boundary.mjs
