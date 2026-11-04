@@ -15,7 +15,7 @@ const router=createMovieMentorTurnRouter({
  applyStateTransition:async(_input,deps)=>{syncDeps=deps;return{revision:1};},
  runTurn:async(_input,deps)=>{
   turnDeps=deps;
-  const built=buildCreatorDecisionCandidate({creatorMessage:"Blue dragon",creatorTurnId:"strict-turn",projectId,semanticIntelligence:{understoodContext:[{key:"dragon-colour",value:"blue",confidenceSource:"creator-explicit"}]}});
+  const built=buildCreatorDecisionCandidate({creatorMessage:"Let\'s use a blue dragon",creatorTurnId:"strict-turn",projectId,semanticIntelligence:{understoodContext:[{key:"dragon-colour",value:"blue",confidenceSource:"creator-explicit"}]}});
   assert.equal(built.status,"candidate");
   await deps.commitCreatorDecision({candidate:built.candidate,expectedRevision:1,projectId,creatorTurnId:"strict-turn"},{
    applyMovieMentorCreatorStateTransition:async(_input,innerDeps)=>{decisionDeps=innerDeps;console.log("DIAGNOSTIC decision transition args",JSON.stringify({firstType:typeof _input,secondType:typeof innerDeps,firstKeys:Object.keys(_input||{}),secondKeys:Object.keys(innerDeps||{})}));throw Error("strict-probe");},
