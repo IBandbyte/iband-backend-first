@@ -29,7 +29,7 @@ try{
  assert.equal(current.revision,2);
  assert.equal(await operations.countDocuments({projectId:"physical-project"}),2);
  const winner=accepted[0].value.result.memoryContext.id;
- const restarted=createMongoCreatorStateAtomicAccept({client:mongoose.connection.getClient(),states,operations});
+ const restarted=createMongoCreatorStateAtomicAccept({client:mongoose.connection.getClient(),states,operations,ownerships});
  const recovered=await withProof(restarted,make(winner,1));
  assert.equal(recovered.kind,"replay");assert.equal(recovered.result.revision,2);
  assert.equal(await operations.countDocuments({projectId:"physical-project"}),2);
