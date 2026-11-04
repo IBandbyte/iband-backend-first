@@ -1,0 +1,21 @@
+name: Verify Movie Mentor Creator Legacy No Operation Denial
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - verify/creator-atomic-production-mount-court-20261104
+    paths:
+      - ".github/workflows/verify-movie-mentor-creator-legacy-no-operation-denial.yml"
+      - "scripts/verify-movie-mentor-creator-legacy-no-operation-denial.mjs"
+      - "ai/MovieMentorCreatorStateTransition.js"
+jobs:
+  legacy-no-operation-denial:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install --ignore-scripts --no-audit --no-fund --package-lock=false
+      - run: node scripts/verify-movie-mentor-creator-legacy-no-operation-denial.mjs
