@@ -8,6 +8,17 @@ const REQUIRED_OPERATION_INDEX={projectId:1,principalId:1,operationId:1};
 function sameIndex(index){return index?.unique===true&&Object.keys(index.key||{}).length===3&&Object.entries(REQUIRED_OPERATION_INDEX).every(([key,value])=>index.key[key]===value);}
 async function assertProjectIndex(states){const indexes=await states.indexes();if(!indexes.some(index=>index?.unique===true&&Object.keys(index.key||{}).length===1&&index.key.projectId===1&&(!index.partialFilterExpression||(Object.keys(index.partialFilterExpression).length===1&&Object.keys(index.partialFilterExpression.projectId||{}).length===1&&index.partialFilterExpression.projectId.$type==="string"))))throw error("MOVIE_MENTOR_CREATOR_STATE_PROJECT_INDEX_REQUIRED","Physical unique projectId index is required before transactional creator-state CAS.");}
 async function assertOperationIndex(operations){const indexes=await operations.indexes();if(!indexes.some(sameIndex))throw error("MOVIE_MENTOR_CREATOR_STATE_OPERATION_INDEX_REQUIRED","Physical unique project/principal/operation index is required.");}
+const CREATOR_STATE_STORAGE_FIELDS=Object.freeze(["projectId","creatorSessionId","revision","revisionAuthorityReference","creatorStateGeneration","creatorStateFingerprint","creatorAuthorityReference","snapshotReference","creatorConfirmedContext","projectJourney","memoryContext","responseBlueprint","communicationPlan","capturedAt"]);
+function serializeCreatorStateForStorage(proposedState){
+ const document={};
+ for(const field of CREATOR_STATE_STORAGE_FIELDS)if(Object.prototype.hasOwnProperty.call(proposedState,field))document[field]=proposedState[field];
+ if(document.capturedAt!==undefined)document.capturedAt=new Date(document.capturedAt);
+ if(!document.projectId||!Number.isSafeInteger(document.revision)||document.revision<1||!document.revisionAuthorityReference||!Number.isSafeInteger(document.creatorStateGeneration)||document.creatorStateGeneration<1||!document.creatorStateFingerprint||!document.creatorAuthorityReference||!document.snapshotReference||!(document.capturedAt instanceof Date)||Number.isNaN(document.capturedAt.getTime()))throw error("MOVIE_MENTOR_CREATOR_STATE_OPERATION_INVALID","Production creator-state schema authority fields and capturedAt are required.");
+ if(!Object.prototype.hasOwnProperty.call(document,"creatorConfirmedContext"))document.creatorConfirmedContext=[];
+ if(!Array.isArray(document.creatorConfirmedContext))throw error("MOVIE_MENTOR_CREATOR_STATE_OPERATION_INVALID","Confirmed creator context must be an array.");
+ for(const field of ["projectJourney","memoryContext","responseBlueprint","communicationPlan"])if(!Object.prototype.hasOwnProperty.call(document,field))document[field]=null;
+ return document;
+}
 function createMongoCreatorStateAtomicAccept({client,states,operations}={}){
  if(!client?.startSession||!states?.findOne||!states?.replaceOne||!states?.indexes||!operations?.findOne||!operations?.insertOne||!operations?.indexes)throw error("MOVIE_MENTOR_CREATOR_STATE_OPERATION_STORAGE_REQUIRED","Mongo transaction client and collections are required.");
  return async function atomicAccept({envelope,proposedState,creatorStateMutationAuthority}={}){
@@ -16,6 +27,7 @@ function createMongoCreatorStateAtomicAccept({client,states,operations}={}){
   await assertMovieMentorCreatorStateMutationAuthority({authority:creatorStateMutationAuthority,projectId:envelope.projectId,source:envelope.source,expectedRevision:envelope.expectedRevision,revision:proposedState.revision,creatorStateGeneration:proposedState.creatorStateGeneration,creatorStateFingerprint:proposedState.creatorStateFingerprint});
   await assertOperationIndex(operations);
   await assertProjectIndex(states);
+  const storageState=serializeCreatorStateForStorage(proposedState);
   const session=client.startSession();
   try{
    return await session.withTransaction(async()=>{
@@ -26,12 +38,12 @@ function createMongoCreatorStateAtomicAccept({client,states,operations}={}){
     if((current?.revision??0)!==envelope.expectedRevision)return{kind:"revision-conflict"};
     if(proposedState.revision!==envelope.expectedRevision+1)throw error("MOVIE_MENTOR_CREATOR_STATE_OPERATION_INVALID","Proposed state revision must advance exactly once.");
     const selector=current?{projectId:envelope.projectId,revision:envelope.expectedRevision}:{projectId:envelope.projectId,revision:{$exists:false}};
-    const updated=await states.replaceOne(selector,proposedState,{session,upsert:!current});
+    const updated=await states.replaceOne(selector,storageState,{session,upsert:!current});
     if(updated.matchedCount!==1&&updated.upsertedCount!==1)throw error("MOVIE_MENTOR_CREATOR_STATE_REVISION_CONFLICT","Concurrent revision change during transaction.");
-    await operations.insertOne({...key,requestDigest:envelope.requestDigest,result:proposedState,committedRevision:proposedState.revision},{session});
-    return{kind:"accepted",result:proposedState};
+    await operations.insertOne({...key,requestDigest:envelope.requestDigest,result:storageState,committedRevision:proposedState.revision},{session});
+    return{kind:"accepted",result:storageState};
    },{readConcern:{level:"snapshot"},writeConcern:{w:"majority"}});
   }finally{await session.endSession();}
  };
 }
-export{REQUIRED_OPERATION_INDEX,assertOperationIndex,assertProjectIndex,createMongoCreatorStateAtomicAccept};
+export{CREATOR_STATE_STORAGE_FIELDS,serializeCreatorStateForStorage,REQUIRED_OPERATION_INDEX,assertOperationIndex,assertProjectIndex,createMongoCreatorStateAtomicAccept};
