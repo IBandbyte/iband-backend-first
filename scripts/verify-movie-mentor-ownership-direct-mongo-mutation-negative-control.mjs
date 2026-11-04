@@ -5,7 +5,7 @@ import {MOVIE_MENTOR_PROJECT_OWNERSHIP_COLLECTION} from "../ai/MovieMentorProjec
 // Isolated physical negative control: test direct-driver mutation, not a
 // supported production ownership API. Never use production credentials.
 const uri=process.env.MOVIE_MENTOR_ISOLATED_MONGO_URI;
-assert.ok(uri&&/127\\.0\\.0\\.1|localhost/.test(uri),"Isolated localhost Mongo replica set required.");
+assert.ok(uri&&/127\.0\.0\.1|localhost/.test(uri),"Isolated localhost Mongo replica set required.");
 await mongoose.connect(uri,{serverSelectionTimeoutMS:10000});
 try{
  const ownership=mongoose.connection.db.collection(MOVIE_MENTOR_PROJECT_OWNERSHIP_COLLECTION);
