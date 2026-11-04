@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import mongoose from "mongoose";
 import {createMovieMentorTurnRouter} from "../movieMentorTurn.js";
-import {createMovieMentorCreatorStateAtomicReadiness} from "../ai/MovieMentorCreatorStateAtomicReadiness.js";
+import {createMovieMentorCreatorStateAtomicComposition} from "../ai/MovieMentorCreatorStateAtomicComposition.js";
 import {applyMovieMentorCreatorStateTransition} from "../ai/MovieMentorCreatorStateTransition.js";
 import {MOVIE_MENTOR_CREATOR_STATE_MUTATION_AUTHORITY_DOMAIN as AUTH_DOMAIN,MOVIE_MENTOR_CREATOR_STATE_MUTATION_PROOF_DOMAIN as PROOF_DOMAIN,MOVIE_MENTOR_CREATOR_STATE_MUTATION_SCHEMA as SCHEMA} from "../ai/MovieMentorCreatorStateMutationAuthority.js";
 
@@ -17,7 +17,7 @@ const request=body=>({body:{projectId,...body},headers:{authorization:"Bearer is
 try{
  await states.createIndex({projectId:1},{unique:true,partialFilterExpression:{projectId:{$type:"string"}}});
  await operations.createIndex({projectId:1,principalId:1,operationId:1},{unique:true});
- const readiness=createMovieMentorCreatorStateAtomicReadiness({client,states,operations});
+ const readiness=createMovieMentorCreatorStateAtomicComposition({client,db}).atomicCreatorStateReadiness;
  const read=async({projectId:id})=>{const state=await states.findOne({projectId:id});if(!state)throw Object.assign(new Error("not found"),{code:"MOVIE_MENTOR_CREATOR_STATE_NOT_FOUND"});return state;};
  const router=createMovieMentorTurnRouter({
   requestAuthority:{authorize:async({projectId:id})=>({authorized:true,projectId:id,principalId,ownershipRef:"physical-owner-ref",ownershipRevision:1})},
@@ -36,7 +36,7 @@ try{
  await restartedClient.connect();
  try{
   const restartedDb=restartedClient.db();
-  const restartedReadiness=createMovieMentorCreatorStateAtomicReadiness({client:restartedClient,states:restartedDb.collection("movie_mentor_creator_state"),operations:restartedDb.collection("movie_mentor_creator_state_operations")});
+  const restartedReadiness=createMovieMentorCreatorStateAtomicComposition({client:restartedClient,db:restartedDb}).atomicCreatorStateReadiness;
   const restartedRead=async({projectId:id})=>{const state=await restartedDb.collection("movie_mentor_creator_state").findOne({projectId:id});if(!state)throw Object.assign(new Error("not found"),{code:"MOVIE_MENTOR_CREATOR_STATE_NOT_FOUND"});return state;};
   const restartedRouter=createMovieMentorTurnRouter({
    requestAuthority:{authorize:async({projectId:id})=>({authorized:true,projectId:id,principalId,ownershipRef:"physical-owner-ref",ownershipRevision:1})},
