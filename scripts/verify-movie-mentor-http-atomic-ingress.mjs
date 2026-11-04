@@ -18,10 +18,14 @@ const sync=router.stack.find(x=>x.route?.path==="/state/sync").route.stack[0].ha
 const turn=router.stack.find(x=>x.route?.path==="/turn").route.stack[0].handle;
 await sync(request({operationId:"stable-sync-op",expectedRevision:0,state:{memoryContext:{}}}),response());
 assert.equal(syncDeps?.creatorStateMutationAuthority?.principalId,principalId);
-assert.equal(syncDeps?.principalId,principalId,"RED: /state/sync must bind authenticated server principal");
-assert.equal(typeof syncDeps?.atomicAcceptCreatorStateOperation,"function","RED: /state/sync must supply atomic ledger adapter");
+const failures=[];
+if(syncDeps?.principalId!==principalId)failures.push("RED: /state/sync authenticated principal not forwarded");
+if(typeof syncDeps?.atomicAcceptCreatorStateOperation!=="function")failures.push("RED: /state/sync atomic ledger adapter not forwarded");
 await turn(request({creatorTurnId:"stable-turn",input:{message:"hello"}}),response());
 assert.equal(turnDeps?.serverAuthority?.principalId,principalId);
 assert.equal(typeof turnDeps?.commitCreatorDecision,"function");
-assert.equal(typeof decisionDeps?.atomicAcceptCreatorStateOperation,"function","RED: /turn creator decision must supply atomic ledger adapter");
+if(typeof turnDeps?.atomicAcceptCreatorStateOperation!=="function")failures.push("RED: /turn runtime atomic ledger adapter not forwarded");
+if(!turnDeps?.commitCreatorDecision?.toString().includes("atomicAcceptCreatorStateOperation"))failures.push("RED: /turn creator-decision closure has no explicit atomic adapter forwarding");
+for(const failure of failures)console.error(failure);
+assert.equal(failures.length,0,"RED: HTTP ingress atomic dependency gaps: "+failures.join("; "));
 console.log("GREEN: both HTTP creator-state ingress routes bind atomic acceptance to authenticated server principal.");
