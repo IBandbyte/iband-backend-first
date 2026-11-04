@@ -7,6 +7,7 @@ const startup=server.slice(server.indexOf("await mountMovieMentorNativeProjectCr
 assert.ok(startup.length>100,"Production startup sequence must exist.");
 assert.match(startup,/await prepareMovieMentorCreatorMongoConnection\(\)/,"Canonical connection preparation must remain awaited.");
 assert.match(startup,/await mountMovieMentorCreatorGateway\(\)/,"Initial strict gateway mount must remain awaited.");
+assert.match(startup,/registerMovieMentorCreatorGatewayRecovery\(\{[^;]*initialMount:initialCreatorGatewayMount[^;]*mount:mountMovieMentorCreatorGateway/,"Recovery must reuse the initial outcome and strict gateway mount function.");
 const initial=startup.indexOf("await mountMovieMentorCreatorGateway()");
 const listening=startup.indexOf("app.listen(",initial);
 assert.ok(listening>initial,"HTTP listener must follow initial mount attempt.");
