@@ -18,6 +18,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - run: npm ci --ignore-scripts
+      - run: npm install --ignore-scripts --no-audit --no-fund --package-lock=false
       - run: node --check scripts/verify-movie-mentor-strict-atomic-transition-denial.mjs
       - run: node scripts/verify-movie-mentor-strict-atomic-transition-denial.mjs
