@@ -7,11 +7,13 @@ const withProof=async(adapter,args)=>adapter({...args,creatorStateMutationAuthor
 const uri=process.env.MOVIE_MENTOR_ISOLATED_MONGO_URI;
 assert.ok(uri&&/127\.0\.0\.1|localhost/.test(uri),"Isolated local MongoDB URI required; never run against production.");
 await mongoose.connect(uri,{serverSelectionTimeoutMS:10000});
-const db=mongoose.connection.db,states=db.collection("isolated_creator_state"),operations=db.collection("isolated_creator_operations");
+const db=mongoose.connection.db,states=db.collection("isolated_creator_state"),operations=db.collection("isolated_creator_operations"),ownerships=db.collection("movie_mentor_project_ownership");
 try{
  await states.createIndex({projectId:1},{unique:true});
  await operations.createIndex({projectId:1,principalId:1,operationId:1},{unique:true});
- const accept=createMongoCreatorStateAtomicAccept({client:mongoose.connection.getClient(),states,operations});
+ await ownerships.createIndex({projectId:1},{unique:true});
+ for(const projectId of ["physical-project","same-key-project","lost-ack-project"])await ownerships.insertOne({projectId,ownerPrincipalId:"owner",ownershipReference:"isolated-owner-proof",ownershipRevision:1,status:"active"});
+ const accept=createMongoCreatorStateAtomicAccept({client:mongoose.connection.getClient(),states,operations,ownerships});
  const lineage=(id)=>({revisionAuthorityReference:"revision-"+id,creatorAuthorityReference:"authority-"+id,snapshotReference:"snapshot-"+id,capturedAt:new Date("2026-11-04T00:00:00.000Z")});
  const make=(id,expectedRevision)=>({envelope:{projectId:"physical-project",principalId:"owner",operationId:id,source:"creator-memory",expectedRevision,requestDigest:"digest-"+id},proposedState:{projectId:"physical-project",revision:expectedRevision+1,creatorStateGeneration:expectedRevision+1,creatorStateFingerprint:"physical-fingerprint-"+id,memoryContext:{id},...lineage(id)}});
  const first=await withProof(accept,make("one",0));
@@ -56,7 +58,7 @@ try{
  const separateClient=new mongoose.mongo.MongoClient(uri,{serverSelectionTimeoutMS:10000});
  await separateClient.connect();
  try{
-  const newAdapter=createMongoCreatorStateAtomicAccept({client:separateClient,states:separateClient.db().collection("isolated_creator_state"),operations:separateClient.db().collection("isolated_creator_operations")});
+  const newAdapter=createMongoCreatorStateAtomicAccept({client:separateClient,states:separateClient.db().collection("isolated_creator_state"),operations:separateClient.db().collection("isolated_creator_operations"),ownerships:separateClient.db().collection("movie_mentor_project_ownership")});
   const recoveredAck=await withProof(newAdapter,lost("ack-dropped"));
   assert.equal(recoveredAck.kind,"replay");
   assert.equal(recoveredAck.result.revision,1);
