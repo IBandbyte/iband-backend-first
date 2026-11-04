@@ -35,6 +35,15 @@ function createMongoCreatorStateAtomicAccept({client,states,operations}={}){
     const previous=await operations.findOne(key,{session});
     if(previous)return previous.requestDigest===envelope.requestDigest?{kind:"replay",result:previous.result}:{kind:"conflict"};
     const current=await states.findOne({projectId:envelope.projectId},{session});
+    // Revalidate after the transactional state read, not only before opening the
+    // session. Revocation during the read must fail before any durable write.
+    // This is a freshness check, not a transactional ownership lock.
+    try{
+     await assertMovieMentorCreatorStateMutationAuthority({authority:creatorStateMutationAuthority,projectId:envelope.projectId,source:envelope.source,expectedRevision:envelope.expectedRevision,revision:proposedState.revision,creatorStateGeneration:proposedState.creatorStateGeneration,creatorStateFingerprint:proposedState.creatorStateFingerprint});
+    }catch(cause){
+     if(["MOVIE_MENTOR_CREATOR_STATE_CURRENT_OWNERSHIP_REQUIRED","MOVIE_MENTOR_CREATOR_STATE_OWNERSHIP_CHANGED"].includes(cause?.code))throw error("MOVIE_MENTOR_CREATOR_STATE_OWNERSHIP_CHANGED","Creator-state ownership changed before transactional mutation.");
+     throw cause;
+    }
     if((current?.revision??0)!==envelope.expectedRevision)return{kind:"revision-conflict"};
     if(proposedState.revision!==envelope.expectedRevision+1)throw error("MOVIE_MENTOR_CREATOR_STATE_OPERATION_INVALID","Proposed state revision must advance exactly once.");
     const now=new Date();
