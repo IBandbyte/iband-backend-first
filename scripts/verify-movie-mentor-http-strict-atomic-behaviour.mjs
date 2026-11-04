@@ -20,7 +20,7 @@ const router=createMovieMentorTurnRouter({
   await deps.commitCreatorDecision({candidate:built.candidate,expectedRevision:1,projectId,creatorTurnId:"strict-turn"},{
    applyMovieMentorCreatorStateTransition:async(_input,innerDeps)=>{decisionDeps=innerDeps;console.log("DIAGNOSTIC decision transition args",JSON.stringify({firstType:typeof _input,secondType:typeof innerDeps,firstKeys:Object.keys(_input||{}),secondKeys:Object.keys(innerDeps||{})}));throw Error("strict-probe");},
    readAuthoritativeTurnSource:async()=>({projectId,revision:1,creatorConfirmedContext:[]})
-  }).catch(e=>assert.equal(e.message,"strict-probe"));
+  }).catch(e=>{console.log("DIAGNOSTIC decision catch",JSON.stringify({code:e.code||null,message:e.message}));assert.equal(e.message,"strict-probe");});
   return{success:true};
  }
 });
@@ -28,7 +28,7 @@ const response=()=>({statusCode:200,status(code){this.statusCode=code;return thi
 const request=body=>({body:{projectId,...body},headers:{authorization:"Bearer isolated-test"}});
 const handler=path=>router.stack.find(x=>x.route?.path===path).route.stack[0].handle;
 await handler("/state/sync")(request({operationId:"strict-sync",expectedRevision:0,state:{memoryContext:{}}}),response());
-await handler("/turn")(request({creatorTurnId:"strict-turn",input:{message:"hello"}}),response());
+const turnResponse=response();await handler("/turn")(request({creatorTurnId:"strict-turn",input:{message:"hello"}}),turnResponse);console.log("DIAGNOSTIC turn response",JSON.stringify({status:turnResponse.statusCode,body:turnResponse.body}));
 console.log("DIAGNOSTIC strict dependency stages",JSON.stringify({sync:{strict:syncDeps?.requireAtomicCreatorStateOperation,principal:syncDeps?.principalId,adapter:typeof syncDeps?.atomicAcceptCreatorStateOperation},turn:{strict:turnDeps?.requireAtomicCreatorStateOperation,principal:turnDeps?.principalId,adapter:typeof turnDeps?.atomicAcceptCreatorStateOperation},decision:{strict:decisionDeps?.requireAtomicCreatorStateOperation,principal:decisionDeps?.principalId,adapter:typeof decisionDeps?.atomicAcceptCreatorStateOperation}}));
 for(const [label,deps] of [["sync",syncDeps],["turn",turnDeps],["decision",decisionDeps]]){
  assert.equal(deps?.requireAtomicCreatorStateOperation,true,label+" must preserve strict mutation requirement");
