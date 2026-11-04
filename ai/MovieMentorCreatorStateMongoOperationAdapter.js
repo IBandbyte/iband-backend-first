@@ -41,7 +41,7 @@ function createMongoCreatorStateAtomicAccept({client,states,operations}={}){
     try{
      await assertMovieMentorCreatorStateMutationAuthority({authority:creatorStateMutationAuthority,projectId:envelope.projectId,source:envelope.source,expectedRevision:envelope.expectedRevision,revision:proposedState.revision,creatorStateGeneration:proposedState.creatorStateGeneration,creatorStateFingerprint:proposedState.creatorStateFingerprint});
     }catch(cause){
-     if(["MOVIE_MENTOR_CREATOR_STATE_CURRENT_OWNERSHIP_REQUIRED","MOVIE_MENTOR_CREATOR_STATE_OWNERSHIP_CHANGED"].includes(cause?.code))throw error("MOVIE_MENTOR_CREATOR_STATE_OWNERSHIP_CHANGED","Creator-state ownership changed before transactional mutation.");
+     if(["MOVIE_MENTOR_CREATOR_STATE_CURRENT_OWNERSHIP_REQUIRED","MOVIE_MENTOR_CREATOR_STATE_OWNERSHIP_CHANGED","MOVIE_MENTOR_CREATOR_STATE_MUTATION_PROOF_INVALID"].includes(cause?.code))throw error("MOVIE_MENTOR_CREATOR_STATE_OWNERSHIP_CHANGED","Creator-state ownership changed before transactional mutation.");
      throw cause;
     }
     if((current?.revision??0)!==envelope.expectedRevision)return{kind:"revision-conflict"};
