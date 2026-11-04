@@ -12,7 +12,8 @@ try{
  await states.createIndex({projectId:1},{unique:true});
  await operations.createIndex({projectId:1,principalId:1,operationId:1},{unique:true});
  const accept=createMongoCreatorStateAtomicAccept({client:mongoose.connection.getClient(),states,operations});
- const make=(id,expectedRevision)=>({envelope:{projectId:"physical-project",principalId:"owner",operationId:id,source:"creator-memory",expectedRevision,requestDigest:"digest-"+id},proposedState:{projectId:"physical-project",revision:expectedRevision+1,creatorStateGeneration:expectedRevision+1,creatorStateFingerprint:"physical-fingerprint-"+id,memoryContext:{id}}});
+ const lineage=(id)=>({revisionAuthorityReference:"revision-"+id,creatorAuthorityReference:"authority-"+id,snapshotReference:"snapshot-"+id,capturedAt:new Date("2026-11-04T00:00:00.000Z")});
+ const make=(id,expectedRevision)=>({envelope:{projectId:"physical-project",principalId:"owner",operationId:id,source:"creator-memory",expectedRevision,requestDigest:"digest-"+id},proposedState:{projectId:"physical-project",revision:expectedRevision+1,creatorStateGeneration:expectedRevision+1,creatorStateFingerprint:"physical-fingerprint-"+id,memoryContext:{id},...lineage(id)}}});
  const first=await withProof(accept,make("one",0));
  assert.equal(first.kind,"accepted");
  const replay=await withProof(accept,make("one",0));
@@ -31,7 +32,7 @@ try{
  assert.equal(recovered.kind,"replay");assert.equal(recovered.result.revision,2);
  assert.equal(await operations.countDocuments({projectId:"physical-project"}),2);
  // Two simultaneous identical first submissions on an independent project.
- const same=(id)=>({envelope:{projectId:"same-key-project",principalId:"owner",operationId:id,source:"creator-memory",expectedRevision:0,requestDigest:"same-digest"},proposedState:{projectId:"same-key-project",revision:1,creatorStateGeneration:1,creatorStateFingerprint:"physical-fingerprint-"+id,memoryContext:{id}}});
+ const same=(id)=>({envelope:{projectId:"same-key-project",principalId:"owner",operationId:id,source:"creator-memory",expectedRevision:0,requestDigest:"same-digest"},proposedState:{projectId:"same-key-project",revision:1,creatorStateGeneration:1,creatorStateFingerprint:"physical-fingerprint-"+id,memoryContext:{id},...lineage(id)}}});
  const simultaneous=await Promise.allSettled([withProof(accept,same("shared")),withProof(accept,same("shared"))]);
  const sameAccepted=simultaneous.filter(x=>x.status==="fulfilled"&&x.value.kind==="accepted");
  const sameReplay=simultaneous.filter(x=>x.status==="fulfilled"&&x.value.kind==="replay");
@@ -46,7 +47,7 @@ try{
  // The server commits but the transport drops its acknowledgement. The client
  // retries using the identical operation envelope after a new adapter instance
  // and a fresh database connection. No second revision may be created.
- const lost=(id)=>({envelope:{projectId:"lost-ack-project",principalId:"owner",operationId:id,source:"creator-memory",expectedRevision:0,requestDigest:"lost-ack-digest"},proposedState:{projectId:"lost-ack-project",revision:1,creatorStateGeneration:1,creatorStateFingerprint:"physical-fingerprint-"+id,memoryContext:{id}}});
+ const lost=(id)=>({envelope:{projectId:"lost-ack-project",principalId:"owner",operationId:id,source:"creator-memory",expectedRevision:0,requestDigest:"lost-ack-digest"},proposedState:{projectId:"lost-ack-project",revision:1,creatorStateGeneration:1,creatorStateFingerprint:"physical-fingerprint-"+id,memoryContext:{id},...lineage(id)}}});
  const committed=await withProof(accept,lost("ack-dropped"));
  assert.equal(committed.kind,"accepted");
  const committedState=await states.findOne({projectId:"lost-ack-project"});
