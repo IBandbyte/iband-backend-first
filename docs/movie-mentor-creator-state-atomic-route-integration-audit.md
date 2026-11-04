@@ -16,3 +16,12 @@ At exact head 0f31747a7660ce85002b049d18b5345f378a2e13, the disposable Mongo end
 
 ## Next bounded engineering step
 Create a RED-first isolated *route-to-store* test that invokes the same request/transition entry point used by the active route with a disposable MongoDB replica set and verifies that it cannot reach the legacy writer. Resolve the storage/operation collection provisioning contract without touching production. Only after exact-head physical GREEN should the real route wiring be considered, and only on an isolated branch.
+
+## Confirmed live creator-decision caller chain (source inspection)
+- ai/MovieMentorCreatorStateConsumptionRuntime.js wraps runMovieMentorTurn, binds creatorTurnId, and supplies commitCreatorDecision.
+- ai/MovieMentorTurnRuntime.js constructs orchestrationDeps including commitCreatorDecision, readAuthoritativeTurnSource, applyMovieMentorCreatorStateTransition, and writeAuthoritativeCreatorState, but does not forward creatorStateMutationAuthority in that object.
+- ai/MovieMentorTurnOrchestrator.js calls commitCreatorDecision with read, transition, writer, and creatorStateMutationAuthority dependencies.
+- ai/MovieMentorCreatorDecisionAuthority.js commitCreatorDecision invokes transition with source creator-decision, expectedRevision and merged creatorConfirmedContext, but NO operationId. Its transition deps pass read, legacy writer, and mutation authority, but NOT principalId or atomicAcceptCreatorStateOperation.
+- Therefore the currently inspected creator-decision path cannot enter the experimental atomic transition branch. The creatorTurnId is stable but is not currently bound into an atomic operationId on this path. Do not substitute a random operationId, which would defeat retries.
+- The decision module performs its own preflight read, prior-turn detection, post-write readback, and raced-retry reconciliation. Migrating to atomic acceptance must preserve creator-decision fingerprint/turn conflict semantics and post-commit authority, not simply replace a call site.
+- These are source-level findings, not a new physical RED. A route-level verifier must first capture the current legacy behavior, then require stable turn-derived operation identity, explicit server principal/authority, and atomic storage injection without bypass.
