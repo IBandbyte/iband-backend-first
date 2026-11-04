@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import mongoose from "mongoose";
 import {createMongoCreatorStateAtomicAccept} from "../ai/MovieMentorCreatorStateMongoOperationAdapter.js";
 const uri=process.env.MOVIE_MENTOR_ISOLATED_MONGO_URI;
-assert.ok(uri&&/127\\.0\\.0\\.1|localhost/.test(uri),"Local isolated replica set required.");
+assert.ok(uri&&/127\.0\.0\.1|localhost/.test(uri),"Local isolated replica set required.");
 await mongoose.connect(uri,{serverSelectionTimeoutMS:10000});
 try{
  const client=mongoose.connection.getClient(),db=mongoose.connection.db;
