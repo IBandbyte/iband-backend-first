@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { readAuthoritativeTurnSource,writeAuthoritativeCreatorState } from "./MovieMentorCreatorStateStore.js";
+import { readAuthoritativeTurnSource } from "./MovieMentorCreatorStateStore.js";
 import { assertMovieMentorCreatorStateMutationAuthority } from "./MovieMentorCreatorStateMutationAuthority.js";
 
 const MOVIE_MENTOR_CREATOR_STATE_TRANSITION_VERSION="1.2.0";
@@ -30,7 +30,7 @@ function buildNextState({current,input,identity}={}){
 
 async function applyMovieMentorCreatorStateTransition(input={},deps={}){
  assertNoAuthorityInjection(input);const identity=identityFrom(input);assertIdentity(identity);transitionSource(input);
- if((deps.requireAtomicCreatorStateOperation===true||s(input.operationId))&&typeof deps.atomicAcceptCreatorStateOperation!=="function")throw fail("MOVIE_MENTOR_CREATOR_STATE_ATOMIC_READINESS_REQUIRED","Strict creator-state mutation requires an atomic operation adapter before any state read or write.");
+ if(typeof deps.atomicAcceptCreatorStateOperation!=="function")throw fail("MOVIE_MENTOR_CREATOR_STATE_ATOMIC_READINESS_REQUIRED","Strict creator-state mutation requires an atomic operation adapter before any state read or write.");
  // Isolated, explicit opt-in integration only. Production callers remain on
  // the existing fail-closed store path until the full physical courts pass.
  if(deps.atomicAcceptCreatorStateOperation){
@@ -53,11 +53,7 @@ async function applyMovieMentorCreatorStateTransition(input={},deps={}){
   if(outcome?.kind==="accepted"||outcome?.kind==="replay")return outcome.result;
   throw fail(outcome?.kind==="conflict"?"MOVIE_MENTOR_CREATOR_STATE_OPERATION_ID_CONFLICT":"MOVIE_MENTOR_CREATOR_STATE_REVISION_CONFLICT","Atomic creator-state operation was not accepted.");
  }
- const read=deps.readAuthoritativeTurnSource||readAuthoritativeTurnSource,write=deps.writeAuthoritativeCreatorState||writeAuthoritativeCreatorState;
- let current=null;try{current=await read(identity);}catch(error){if(error?.code!=="MOVIE_MENTOR_CREATOR_STATE_NOT_FOUND")throw error;}
- const next=buildNextState({current,input,identity});
- await assertMovieMentorCreatorStateMutationAuthority({authority:deps.creatorStateMutationAuthority,projectId:next.projectId,source:next.transition.source,expectedRevision:next.transition.expectedRevision,revision:next.revision,creatorStateGeneration:next.creatorStateGeneration,creatorStateFingerprint:next.creatorStateFingerprint});
- return write(next,{expectedRevision:next.transition.expectedRevision,creatorStateMutationAuthority:deps.creatorStateMutationAuthority});
+ // No non-atomic creator-state writer fallback: missing atomic readiness is denied above.
 }
 
 export{MOVIE_MENTOR_CREATOR_STATE_TRANSITION_VERSION,ALLOWED_FIELDS,buildNextState,applyMovieMentorCreatorStateTransition};
