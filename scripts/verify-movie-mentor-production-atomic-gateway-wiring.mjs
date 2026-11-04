@@ -9,7 +9,7 @@ assert.ok(gateway,"Canonical production creator gateway must remain discoverable
 assert.match(server,/createMovieMentorCreatorStateAtomicCompositionFromMongoose/,"RED: production must import canonical Mongoose atomic composition.");
 assert.match(server,/assertMovieMentorCreatorGatewayAtomicMountReadiness/,"RED: production must import the verified mount gate.");
 const gateAt=gateway.indexOf("assertMovieMentorCreatorGatewayAtomicMountReadiness(");
-const mountAt=gateway.indexOf('app.use("/api/movie-mentor",router)');
+const mountAt=gateway.search(/app\.use\("\/api\/movie-mentor",\s*router\)/);
 assert.ok(gateAt>=0&&mountAt>gateAt,"RED: verified atomic readiness gate must execute before production app.use.");
 const routerAt=gateway.indexOf("createMovieMentorTurnRouter({");
 assert.ok(routerAt>gateAt&&routerAt<mountAt,"RED: creator router must be constructed only after atomic gate passes.");
