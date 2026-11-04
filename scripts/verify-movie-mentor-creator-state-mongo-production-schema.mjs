@@ -23,10 +23,10 @@ try{
   responseBlueprint:{type:mongoose.Schema.Types.Mixed,default:null},
   communicationPlan:{type:mongoose.Schema.Types.Mixed,default:null},
   capturedAt:{type:Date,required:true},
- },{collection:"isolated_production_schema_creator_state",timestamps:true,minimize:false,strict:true});
+ },{collection:"isolated_production_schema_creator_state",timestamps:true,minimize:false,strict:true,autoIndex:false});
  schema.index({projectId:1},{unique:true,partialFilterExpression:{projectId:{$type:"string"}}});
  const Model=mongoose.model("IsolatedProductionSchemaCreatorState",schema);
- await Model.createIndexes();
+ await mongoose.connection.db.collection("isolated_production_schema_creator_state").createIndex({projectId:1},{unique:true,partialFilterExpression:{projectId:{$type:"string"}}});
  const states=mongoose.connection.db.collection("isolated_production_schema_creator_state");
  const operations=mongoose.connection.db.collection("isolated_production_schema_creator_operations");
  await operations.createIndex({projectId:1,principalId:1,operationId:1},{unique:true});
