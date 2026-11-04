@@ -1,0 +1,23 @@
+name: Verify Movie Mentor Strict Atomic Transition Denial
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - verify/creator-atomic-production-mount-court-20261104
+    paths:
+      - ".github/workflows/verify-movie-mentor-strict-atomic-transition-denial.yml"
+      - "scripts/verify-movie-mentor-strict-atomic-transition-denial.mjs"
+      - "ai/MovieMentorCreatorStateTransition.js"
+jobs:
+  verify-strict-atomic-transition-denial:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm ci --ignore-scripts
+      - run: node --check scripts/verify-movie-mentor-strict-atomic-transition-denial.mjs
+      - run: node scripts/verify-movie-mentor-strict-atomic-transition-denial.mjs
