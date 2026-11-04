@@ -1,0 +1,21 @@
+name: Verify Movie Mentor Canonical Ownership Transaction Participant
+on:
+  push:
+    branches:
+      - verify/creator-atomic-production-mount-court-20261104
+    paths:
+      - ai/MovieMentorCreatorStateMongoOperationAdapter.js
+      - ai/MovieMentorCreatorStateAtomicReadiness.js
+      - ai/MovieMentorCreatorStateAtomicComposition.js
+      - scripts/verify-movie-mentor-canonical-ownership-transaction-participant.mjs
+      - .github/workflows/verify-movie-mentor-canonical-ownership-transaction-participant.yml
+  workflow_dispatch:
+jobs:
+  ownership-transaction-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: node scripts/verify-movie-mentor-canonical-ownership-transaction-participant.mjs
