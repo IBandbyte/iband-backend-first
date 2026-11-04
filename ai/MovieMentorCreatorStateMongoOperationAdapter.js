@@ -1,3 +1,4 @@
+import {assertMovieMentorCreatorStateMutationAuthority} from "./MovieMentorCreatorStateMutationAuthority.js";
 // Isolated MongoDB transaction adapter for Movie Mentor operation acceptance.
 // NOT connected to /state/sync. The caller must provide collections from an
 // isolated replica-set test database and must verify the unique indexes first.
@@ -9,8 +10,10 @@ async function assertProjectIndex(states){const indexes=await states.indexes();i
 async function assertOperationIndex(operations){const indexes=await operations.indexes();if(!indexes.some(sameIndex))throw error("MOVIE_MENTOR_CREATOR_STATE_OPERATION_INDEX_REQUIRED","Physical unique project/principal/operation index is required.");}
 function createMongoCreatorStateAtomicAccept({client,states,operations}={}){
  if(!client?.startSession||!states?.findOne||!states?.replaceOne||!states?.indexes||!operations?.findOne||!operations?.insertOne||!operations?.indexes)throw error("MOVIE_MENTOR_CREATOR_STATE_OPERATION_STORAGE_REQUIRED","Mongo transaction client and collections are required.");
- return async function atomicAccept({envelope,proposedState}={}){
+ return async function atomicAccept({envelope,proposedState,creatorStateMutationAuthority}={}){
   if(!envelope?.projectId||!envelope?.principalId||!envelope?.operationId||!envelope?.requestDigest||!proposedState||proposedState.projectId!==envelope.projectId)throw error("MOVIE_MENTOR_CREATOR_STATE_OPERATION_INVALID","Operation envelope or proposed state invalid.");
+  if(!creatorStateMutationAuthority)throw error("MOVIE_MENTOR_CREATOR_STATE_MUTATION_AUTHORITY_REQUIRED","Server-created current-ownership mutation authority required before Mongo transaction.");
+  await assertMovieMentorCreatorStateMutationAuthority({authority:creatorStateMutationAuthority,projectId:envelope.projectId,source:envelope.source,expectedRevision:envelope.expectedRevision,revision:proposedState.revision,creatorStateGeneration:proposedState.creatorStateGeneration,creatorStateFingerprint:proposedState.creatorStateFingerprint});
   await assertOperationIndex(operations);
   await assertProjectIndex(states);
   const session=client.startSession();
