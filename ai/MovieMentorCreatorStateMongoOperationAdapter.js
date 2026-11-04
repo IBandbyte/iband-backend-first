@@ -19,12 +19,13 @@ function serializeCreatorStateForStorage(proposedState){
  for(const field of ["projectJourney","memoryContext","responseBlueprint","communicationPlan"])if(!Object.prototype.hasOwnProperty.call(document,field))document[field]=null;
  return document;
 }
-function createMongoCreatorStateAtomicAccept({client,states,operations}={}){
+function createMongoCreatorStateAtomicAccept({client,states,operations,ownerships}={}){
  if(!client?.startSession||!states?.findOne||!states?.replaceOne||!states?.indexes||!operations?.findOne||!operations?.insertOne||!operations?.indexes)throw error("MOVIE_MENTOR_CREATOR_STATE_OPERATION_STORAGE_REQUIRED","Mongo transaction client and collections are required.");
  return async function atomicAccept({envelope,proposedState,creatorStateMutationAuthority}={}){
   if(typeof envelope?.projectId!=="string"||!envelope.projectId.trim()||!envelope?.principalId||!envelope?.operationId||!envelope?.requestDigest||!proposedState||proposedState.projectId!==envelope.projectId)throw error("MOVIE_MENTOR_CREATOR_STATE_OPERATION_INVALID","Operation envelope or proposed state invalid.");
   if(!creatorStateMutationAuthority)throw error("MOVIE_MENTOR_CREATOR_STATE_MUTATION_AUTHORITY_REQUIRED","Server-created current-ownership mutation authority required before Mongo transaction.");
-  await assertMovieMentorCreatorStateMutationAuthority({authority:creatorStateMutationAuthority,projectId:envelope.projectId,source:envelope.source,expectedRevision:envelope.expectedRevision,revision:proposedState.revision,creatorStateGeneration:proposedState.creatorStateGeneration,creatorStateFingerprint:proposedState.creatorStateFingerprint});
+  const admissionProof=await assertMovieMentorCreatorStateMutationAuthority({authority:creatorStateMutationAuthority,projectId:envelope.projectId,source:envelope.source,expectedRevision:envelope.expectedRevision,revision:proposedState.revision,creatorStateGeneration:proposedState.creatorStateGeneration,creatorStateFingerprint:proposedState.creatorStateFingerprint});
+  if(admissionProof.principalId!==envelope.principalId)throw error("MOVIE_MENTOR_CREATOR_STATE_OWNERSHIP_CHANGED","Operation principal differs from authorized owner.");
   await assertOperationIndex(operations);
   await assertProjectIndex(states);
   const storageState=serializeCreatorStateForStorage(proposedState);
@@ -39,7 +40,13 @@ function createMongoCreatorStateAtomicAccept({client,states,operations}={}){
     // session. Revocation during the read must fail before any durable write.
     // This is a freshness check, not a transactional ownership lock.
     try{
-     await assertMovieMentorCreatorStateMutationAuthority({authority:creatorStateMutationAuthority,projectId:envelope.projectId,source:envelope.source,expectedRevision:envelope.expectedRevision,revision:proposedState.revision,creatorStateGeneration:proposedState.creatorStateGeneration,creatorStateFingerprint:proposedState.creatorStateFingerprint});
+     const currentProof=await assertMovieMentorCreatorStateMutationAuthority({authority:creatorStateMutationAuthority,projectId:envelope.projectId,source:envelope.source,expectedRevision:envelope.expectedRevision,revision:proposedState.revision,creatorStateGeneration:proposedState.creatorStateGeneration,creatorStateFingerprint:proposedState.creatorStateFingerprint});
+     if(currentProof.principalId!==envelope.principalId||currentProof.ownershipRef!==admissionProof.ownershipRef||currentProof.ownershipRevision!==admissionProof.ownershipRevision)throw error("MOVIE_MENTOR_CREATOR_STATE_OWNERSHIP_CHANGED","Ownership authority changed during acceptance.");
+     if(ownerships){
+      if(ownerships.collectionName!=="movie_mentor_project_ownership"||typeof ownerships.updateOne!=="function")throw error("MOVIE_MENTOR_CREATOR_STATE_OWNERSHIP_STORAGE_REQUIRED","Canonical ownership collection required for durable fencing.");
+      const fenced=await ownerships.updateOne({projectId:envelope.projectId,ownerPrincipalId:envelope.principalId,ownershipReference:currentProof.ownershipRef,ownershipRevision:currentProof.ownershipRevision,status:"active"},{$inc:{creatorStateFenceEpoch:1}},{session});
+      if(fenced.matchedCount!==1)throw error("MOVIE_MENTOR_CREATOR_STATE_OWNERSHIP_CHANGED","Durable ownership changed before transactional creator-state acceptance.");
+     }
     }catch(cause){
      if(["MOVIE_MENTOR_CREATOR_STATE_CURRENT_OWNERSHIP_REQUIRED","MOVIE_MENTOR_CREATOR_STATE_OWNERSHIP_CHANGED","MOVIE_MENTOR_CREATOR_STATE_MUTATION_PROOF_INVALID"].includes(cause?.code))throw error("MOVIE_MENTOR_CREATOR_STATE_OWNERSHIP_CHANGED","Creator-state ownership changed before transactional mutation.");
      throw cause;
