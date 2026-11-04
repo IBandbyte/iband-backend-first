@@ -30,6 +30,7 @@ function buildNextState({current,input,identity}={}){
 
 async function applyMovieMentorCreatorStateTransition(input={},deps={}){
  assertNoAuthorityInjection(input);const identity=identityFrom(input);assertIdentity(identity);transitionSource(input);
+ if(deps.requireAtomicCreatorStateOperation===true&&typeof deps.atomicAcceptCreatorStateOperation!=="function")throw fail("MOVIE_MENTOR_CREATOR_STATE_ATOMIC_READINESS_REQUIRED","Strict creator-state mutation requires an atomic operation adapter before any state read or write.");
  // Isolated, explicit opt-in integration only. Production callers remain on
  // the existing fail-closed store path until the full physical courts pass.
  if(deps.atomicAcceptCreatorStateOperation){
