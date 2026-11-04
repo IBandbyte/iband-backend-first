@@ -46,7 +46,7 @@ try{
  // The server commits but the transport drops its acknowledgement. The client
  // retries using the identical operation envelope after a new adapter instance
  // and a fresh database connection. No second revision may be created.
- const lost=(id)=>({envelope:{projectId:"lost-ack-project",principalId:"owner",operationId:id,source:"creator-memory",expectedRevision:0,requestDigest:"lost-ack-digest"},proposedState:{projectId:"lost-ack-project",revision:1,memoryContext:{id}}});
+ const lost=(id)=>({envelope:{projectId:"lost-ack-project",principalId:"owner",operationId:id,source:"creator-memory",expectedRevision:0,requestDigest:"lost-ack-digest"},proposedState:{projectId:"lost-ack-project",revision:1,creatorStateGeneration:1,creatorStateFingerprint:"physical-fingerprint-"+id,memoryContext:{id}}});
  const committed=await withProof(accept,lost("ack-dropped"));
  assert.equal(committed.kind,"accepted");
  const committedState=await states.findOne({projectId:"lost-ack-project"});
