@@ -1,4 +1,5 @@
 import {createMovieMentorCreatorStateAtomicReadiness,CREATOR_STATE_COLLECTION,CREATOR_STATE_OPERATION_COLLECTION} from "./MovieMentorCreatorStateAtomicReadiness.js";
+import {createMovieMentorCanonicalAtomicMongoConnection} from "./MovieMentorCreatorStateCanonicalMongoConnection.js";
 
 // Production-shape composition only. No connection, collection creation, index creation,
 // server mount or production write occurs here. The caller supplies an already connected
@@ -11,4 +12,8 @@ function createMovieMentorCreatorStateAtomicComposition({client,db}={}){
  const readiness=createMovieMentorCreatorStateAtomicReadiness({client,states,operations});
  return Object.freeze({ready:false,activated:false,atomicCreatorStateReadiness:readiness,collections:Object.freeze({states:CREATOR_STATE_COLLECTION,operations:CREATOR_STATE_OPERATION_COLLECTION})});
 }
-export{createMovieMentorCreatorStateAtomicComposition};
+function createMovieMentorCreatorStateAtomicCompositionFromMongoose(connection){
+ const {client,db}=createMovieMentorCanonicalAtomicMongoConnection(connection);
+ return createMovieMentorCreatorStateAtomicComposition({client,db});
+}
+export{createMovieMentorCreatorStateAtomicComposition,createMovieMentorCreatorStateAtomicCompositionFromMongoose};
