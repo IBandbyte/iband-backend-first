@@ -21,6 +21,7 @@ function registerMovieMentorCreatorGatewayRecovery({
   if(stopped||mounted||running||timer!==null||attempts>=maxAttempts)return;
   timer=schedule(()=>{timer=null;void retry();},delayMs);
  };
+ const report=outcome=>{try{onResult(outcome);}catch{/* Observability must never alter gateway safety or retry lifecycle. */}};
  const retry=async()=>{
   if(stopped||mounted||running||attempts>=maxAttempts)return;
   running=true;
@@ -29,15 +30,15 @@ function registerMovieMentorCreatorGatewayRecovery({
    const preparation=await prepare();
    if(stopped)return;
    if(preparation?.ready!==true){
-    onResult(Object.freeze({mounted:false,reason:preparation?.reason||"canonical-creator-state-mongo-not-ready",attempts}));
+    report(Object.freeze({mounted:false,reason:preparation?.reason||"canonical-creator-state-mongo-not-ready",attempts}));
     return;
    }
    const outcome=await mount();
    if(stopped)return;
    if(outcome?.mounted===true)mounted=true;
-   onResult(Object.freeze({mounted,reason:outcome?.reason||"creator-gateway-recovery-attempt",attempts}));
+   report(Object.freeze({mounted,reason:outcome?.reason||"creator-gateway-recovery-attempt",attempts}));
   }catch(error){
-   if(!stopped)onResult(Object.freeze({mounted:false,reason:error?.code||"creator-gateway-recovery-attempt-failed",attempts}));
+   if(!stopped)report(Object.freeze({mounted:false,reason:error?.code||"creator-gateway-recovery-attempt-failed",attempts}));
   }finally{
    running=false;
    scheduleNext();
