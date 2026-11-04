@@ -45,6 +45,7 @@ async function applyMovieMentorCreatorStateTransition(input={},deps={}){
    current={...current,revision:expectedRevision,creatorStateGeneration:Math.max(0,current.creatorStateGeneration-(current.revision-expectedRevision))};
   }
   const next=buildNextState({current,input,identity});
+  if(s(deps.creatorStateMutationAuthority?.principalId)!==principalId||s(deps.creatorStateMutationAuthority?.projectId)!==identity.projectId)throw fail("MOVIE_MENTOR_CREATOR_STATE_OPERATION_PRINCIPAL_MISMATCH","Atomic operation principal and project must match the server mutation capability.");
   await assertMovieMentorCreatorStateMutationAuthority({authority:deps.creatorStateMutationAuthority,projectId:next.projectId,source:next.transition.source,expectedRevision,revision:next.revision,creatorStateGeneration:next.creatorStateGeneration,creatorStateFingerprint:next.creatorStateFingerprint});
   const envelope={projectId:identity.projectId,principalId,operationId,source:next.transition.source,expectedRevision,requestDigest:digest({projectId:identity.projectId,principalId,operationId,source:next.transition.source,expectedRevision,state:proposedFields(input)})};
   const outcome=await deps.atomicAcceptCreatorStateOperation({envelope,proposedState:next,creatorStateMutationAuthority:deps.creatorStateMutationAuthority});
