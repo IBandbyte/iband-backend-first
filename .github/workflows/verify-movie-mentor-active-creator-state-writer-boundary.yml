@@ -1,0 +1,26 @@
+name: Verify Movie Mentor Active Creator State Writer Boundary
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - verify/creator-atomic-production-mount-court-20261104
+    paths:
+      - ".github/workflows/verify-movie-mentor-active-creator-state-writer-boundary.yml"
+      - "scripts/verify-movie-mentor-active-creator-state-writer-boundary.mjs"
+      - "ai/MovieMentorCreatorStateTransition.js"
+      - "ai/MovieMentorCreatorDecisionAuthority.js"
+      - "ai/MovieMentorCreatorStateConsumptionRuntime.js"
+      - "ai/MovieMentorTurnRuntime.js"
+      - "movieMentorTurn.js"
+jobs:
+  verify-active-creator-state-writer-boundary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: node --check scripts/verify-movie-mentor-active-creator-state-writer-boundary.mjs
+      - run: node scripts/verify-movie-mentor-active-creator-state-writer-boundary.mjs
