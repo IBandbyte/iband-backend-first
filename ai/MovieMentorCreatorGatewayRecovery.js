@@ -21,7 +21,7 @@ function registerMovieMentorCreatorGatewayRecovery({
   if(stopped||mounted||running||timer!==null||attempts>=maxAttempts)return;
   timer=schedule(()=>{timer=null;void retry();},delayMs);
  };
- const report=outcome=>{try{onResult(outcome);}catch{/* Observability must never alter gateway safety or retry lifecycle. */}};
+ const report=outcome=>{try{const result=onResult(outcome);if(result&&typeof result.then==="function")Promise.resolve(result).catch(()=>{/* Async observers are best-effort. */});}catch{/* Sync observers are best-effort. */}};
  const retry=async()=>{
   if(stopped||mounted||running||attempts>=maxAttempts)return;
   running=true;
