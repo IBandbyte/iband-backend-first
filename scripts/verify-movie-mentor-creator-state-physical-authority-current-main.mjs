@@ -15,7 +15,11 @@ assert.match(gateway,/runMovieMentorTurn|createMovieMentorTurnRouter/,"creator H
 assert.match(runtime,/readAuthoritativeTurnSource/,"live creator-state consumption runtime must read the durable creator-state authority");
 assert.match(runtime,/commitCreatorDecision/,"live creator-state runtime must reach irreversible creator-decision publication");
 assert.match(decision,/applyMovieMentorCreatorStateTransition/,"creator-decision authority must reach creator-state transition");
-assert.match(transition,/writeAuthoritativeCreatorState/,"creator-state transition must reach the durable store");
+assert.match(transition,/deps\.atomicAcceptCreatorStateOperation\(/,"creator-state transition must reach the atomic operation ledger");
+assert.doesNotMatch(transition,/writeAuthoritativeCreatorState/,"creator-state transition must not retain a direct non-atomic writer");
+const atomicReadiness=fs.readFileSync(new URL("../ai/MovieMentorCreatorStateAtomicReadiness.js",import.meta.url),"utf8");
+assert.match(atomicReadiness,/assertProjectIndex\(states\)/,"atomic state path must verify physical project index");
+assert.match(atomicReadiness,/assertOperationIndex\(operations\)/,"atomic operation path must verify physical operation index");
 assert.match(store,/schema\.index\(\{projectId:1\},\{unique:true,partialFilterExpression:\{projectId:\{\$type:\"string\"\}\}\}\)/,"declared singleton identity must be the unique partial projectId index");
 assert.match(store,/getModel\(\)\.create\(doc\)/,"initial authoritative publication must cross a durable mint");
 assert.match(store,/getModel\(\)\.findOneAndUpdate\(/,"subsequent authoritative publication must cross a durable revision CAS");
