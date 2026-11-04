@@ -41,6 +41,12 @@ try{
   assert.equal(collision?.code,"MOVIE_MENTOR_CREATOR_STATE_OPERATION_ID_CONFLICT","RED: payload collision after restart must be denied");
   assert.equal(await freshClient.db().collection("transition_physical_states").countDocuments({projectId}),1);
   assert.equal(await freshClient.db().collection("transition_physical_operations").countDocuments({projectId}),2);
+  assert.equal((await applyMovieMentorCreatorStateTransition(first,restarted)).revision,1,"RED: old operation must replay its original revision after newer revision commits");
+  const stale={...first,operationId:"stale-new-operation",state:{memoryContext:{scene:"stale"}}};
+  let staleError=null;
+  try{await applyMovieMentorCreatorStateTransition(stale,restarted);}catch(error){staleError=error;}
+  assert.equal(staleError?.code,"MOVIE_MENTOR_CREATOR_STATE_REVISION_CONFLICT","RED: new operation with stale expected revision must not commit");
+  assert.equal(await freshClient.db().collection("transition_physical_operations").countDocuments({projectId}),2,"RED: stale request cannot create an operation claim");
   assert.equal((await freshClient.db().collection("transition_physical_states").findOne({projectId})).revision,2);
  }finally{await freshClient.close();}
  console.log("GREEN: actual transition and Mongo transaction adapter recovered revision-two retry across independent connection, rejected collision, and persisted exactly two effects.");
