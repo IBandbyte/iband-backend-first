@@ -1,4 +1,4 @@
-import {MOVIE_MENTOR_PROJECT_OWNERSHIP_COLLECTION} from "./MovieMentorProjectOwnershipRegistry.js";
+const MOVIE_MENTOR_PROJECT_OWNERSHIP_COLLECTION="movie_mentor_project_ownership";
 import {createMovieMentorCreatorStateAtomicReadiness,CREATOR_STATE_COLLECTION,CREATOR_STATE_OPERATION_COLLECTION} from "./MovieMentorCreatorStateAtomicReadiness.js";
 import {createMovieMentorCanonicalAtomicMongoConnection} from "./MovieMentorCreatorStateCanonicalMongoConnection.js";
 
