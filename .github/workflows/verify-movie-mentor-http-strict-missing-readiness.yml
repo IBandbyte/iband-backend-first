@@ -1,0 +1,21 @@
+name: Verify Movie Mentor HTTP Strict Missing Readiness
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - verify/creator-atomic-production-mount-court-20261104
+    paths:
+      - ".github/workflows/verify-movie-mentor-http-strict-missing-readiness.yml"
+      - "scripts/verify-movie-mentor-http-strict-missing-readiness.mjs"
+      - "movieMentorTurn.js"
+jobs:
+  strict-missing-readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install --ignore-scripts --no-audit --no-fund --package-lock=false
+      - run: node scripts/verify-movie-mentor-http-strict-missing-readiness.mjs
