@@ -1,0 +1,40 @@
+name: Verify Movie Mentor Creator Gateway Recovery Physical
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - verify/creator-atomic-production-mount-court-20261104
+    paths:
+      - ".github/workflows/verify-movie-mentor-creator-gateway-recovery-physical.yml"
+      - "scripts/verify-movie-mentor-creator-gateway-recovery-physical.mjs"
+      - "ai/MovieMentorCreatorGatewayRecovery.js"
+      - "ai/MovieMentorCreatorMongoStartupPreparation.js"
+      - "ai/MovieMentorCreatorStateAtomicComposition.js"
+      - "ai/MovieMentorCreatorStateAtomicReadiness.js"
+jobs:
+  recovery-physical:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install --ignore-scripts --no-audit --no-fund --package-lock=false
+      - name: Start disposable Mongo replica set
+        run: |
+          docker run -d --name movie-mentor-gateway-recovery-court -p 27017:27017 mongo:7 --replSet rs0 --bind_ip_all
+          for attempt in $(seq 1 30); do
+            if docker exec movie-mentor-gateway-recovery-court mongosh --quiet --eval 'db.adminCommand({ping:1}).ok' >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+          docker exec movie-mentor-gateway-recovery-court mongosh --quiet --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"localhost:27017"}]})'
+          for attempt in $(seq 1 30); do
+            if docker exec movie-mentor-gateway-recovery-court mongosh --quiet --eval 'quit(db.hello().isWritablePrimary ? 0 : 1)'; then exit 0; fi
+            sleep 2
+          done
+          exit 1
+      - name: Verify physical Mongo recovery through strict atomic gateway readiness
+        env:
+          MOVIE_MENTOR_ISOLATED_MONGO_URI: mongodb://127.0.0.1:27017/movie_mentor_isolated_gateway_recovery_court?replicaSet=rs0&directConnection=true
+        run: node scripts/verify-movie-mentor-creator-gateway-recovery-physical.mjs
