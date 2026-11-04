@@ -37,6 +37,9 @@ function createMongoCreatorStateAtomicAccept({client,states,operations}={}){
     const current=await states.findOne({projectId:envelope.projectId},{session});
     if((current?.revision??0)!==envelope.expectedRevision)return{kind:"revision-conflict"};
     if(proposedState.revision!==envelope.expectedRevision+1)throw error("MOVIE_MENTOR_CREATOR_STATE_OPERATION_INVALID","Proposed state revision must advance exactly once.");
+    const now=new Date();
+    storageState.createdAt=current?.createdAt??now;
+    storageState.updatedAt=now;
     const selector=current?{projectId:envelope.projectId,revision:envelope.expectedRevision}:{projectId:envelope.projectId,revision:{$exists:false}};
     const updated=await states.replaceOne(selector,storageState,{session,upsert:!current});
     if(updated.matchedCount!==1&&updated.upsertedCount!==1)throw error("MOVIE_MENTOR_CREATOR_STATE_REVISION_CONFLICT","Concurrent revision change during transaction.");
