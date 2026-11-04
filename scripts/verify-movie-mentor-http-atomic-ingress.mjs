@@ -10,7 +10,7 @@ let syncDeps=null,turnDeps=null,decisionDeps=null;
 const router=createMovieMentorTurnRouter({
  requestAuthority,inferenceSpendAuthority:spend,inferenceExecutionAuthority:execution,inferenceSettlementAuthority:settlement,
  applyStateTransition:async(_input,deps)=>{syncDeps=deps;return{revision:1};},
- runTurn:async(_input,deps)=>{turnDeps=deps;await deps.commitCreatorDecision({candidate:{},expectedRevision:0,projectId,creatorTurnId:"stable-turn"},{}).catch(()=>{});return{success:true};},
+ runTurn:async(_input,deps)=>{turnDeps=deps;await deps.commitCreatorDecision({candidate:{},expectedRevision:0,projectId,creatorTurnId:"stable-turn"},{applyMovieMentorCreatorStateTransition:async(_input,innerDeps)=>{decisionDeps=innerDeps;return{};},readAuthoritativeTurnSource:async()=>({})}).catch(()=>{});return{success:true};},
 });
 const response=()=>({statusCode:200,status(code){this.statusCode=code;return this;},json(body){this.body=body;return this;}});
 const request=body=>({body:{projectId,...body},headers:{authorization:"Bearer isolated-credential"}});
