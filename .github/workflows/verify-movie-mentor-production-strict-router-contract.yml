@@ -1,0 +1,21 @@
+name: Verify Movie Mentor Production Strict Router Contract
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - verify/creator-atomic-production-mount-court-20261104
+    paths:
+      - ".github/workflows/verify-movie-mentor-production-strict-router-contract.yml"
+      - "scripts/verify-movie-mentor-production-strict-router-contract.mjs"
+      - "server.js"
+      - "movieMentorTurn.js"
+jobs:
+  production-strict-router-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: node scripts/verify-movie-mentor-production-strict-router-contract.mjs
