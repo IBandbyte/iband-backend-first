@@ -1,0 +1,19 @@
+name: Verify Movie Mentor Transition Atomic Integration
+on:
+  push:
+    branches:
+      - verify/creator-state-sync-provenance-court-20261103
+  workflow_dispatch:
+jobs:
+  transition-atomic-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install backend dependencies
+        run: npm install --ignore-scripts --no-audit --no-fund --package-lock=false
+      - name: Verify isolated transition operation authority and lost-ack replay
+        run: node scripts/verify-movie-mentor-creator-state-transition-atomic-integration.mjs
