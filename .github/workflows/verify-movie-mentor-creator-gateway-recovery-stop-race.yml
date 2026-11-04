@@ -1,0 +1,20 @@
+name: Verify Movie Mentor Creator Gateway Recovery Stop Race
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - verify/creator-atomic-production-mount-court-20261104
+    paths:
+      - ".github/workflows/verify-movie-mentor-creator-gateway-recovery-stop-race.yml"
+      - "scripts/verify-movie-mentor-creator-gateway-recovery-stop-race.mjs"
+      - "ai/MovieMentorCreatorGatewayRecovery.js"
+jobs:
+  stop-race:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: node --unhandled-rejections=strict scripts/verify-movie-mentor-creator-gateway-recovery-stop-race.mjs
