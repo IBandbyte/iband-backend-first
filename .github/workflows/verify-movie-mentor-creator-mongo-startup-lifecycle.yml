@@ -1,0 +1,22 @@
+name: Verify Movie Mentor Creator Mongo Startup Lifecycle
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - verify/creator-atomic-production-mount-court-20261104
+    paths:
+      - ".github/workflows/verify-movie-mentor-creator-mongo-startup-lifecycle.yml"
+      - "scripts/verify-movie-mentor-creator-mongo-startup-lifecycle.mjs"
+      - "server.js"
+      - "ai/MovieMentorCreatorStateStore.js"
+      - "ai/MovieMentorProjectOwnershipRegistry.js"
+jobs:
+  startup-lifecycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: node scripts/verify-movie-mentor-creator-mongo-startup-lifecycle.mjs
