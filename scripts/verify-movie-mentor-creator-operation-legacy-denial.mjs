@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import {applyMovieMentorCreatorStateTransition} from "../ai/MovieMentorCreatorStateTransition.js";
+import {MOVIE_MENTOR_CREATOR_STATE_MUTATION_AUTHORITY_DOMAIN as AUTH_DOMAIN,MOVIE_MENTOR_CREATOR_STATE_MUTATION_PROOF_DOMAIN as PROOF_DOMAIN,MOVIE_MENTOR_CREATOR_STATE_MUTATION_SCHEMA as SCHEMA} from "../ai/MovieMentorCreatorStateMutationAuthority.js";
 
 // RED-first: a supplied operationId is not sufficient idempotency authority.
 // No atomic ledger means no safe way to prove replay; deny before read/write.
 let reads=0,writes=0,checks=0;
-const authority={principalId:"isolated-principal",projectId:"isolated-project",assertCurrentMutation:async()=>{checks++;return{authorized:true};}};
+const authority={domain:AUTH_DOMAIN,schema:SCHEMA,principalId:"isolated-principal",projectId:"isolated-project",assertCurrentMutation:async target=>{checks++;return{domain:PROOF_DOMAIN,schema:SCHEMA,authorized:true,currentOwnershipVerified:true,principalId:"isolated-principal",projectId:"isolated-project",ownershipRef:"isolated-proof",ownershipRevision:1,source:target.source,expectedRevision:target.expectedRevision,revision:target.revision,creatorStateGeneration:target.creatorStateGeneration,creatorStateFingerprint:target.creatorStateFingerprint};}};
 const deps={
  readAuthoritativeTurnSource:async()=>{reads++;throw Object.assign(new Error("missing"),{code:"MOVIE_MENTOR_CREATOR_STATE_NOT_FOUND"});},
  writeAuthoritativeCreatorState:async()=>{writes++;return{revision:1};},
