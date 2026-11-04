@@ -25,7 +25,17 @@ try{
  const repeat=await prepareMovieMentorCreatorMongoConnection({env:{}});
  assert.equal(repeat.ready,true);
  assert.equal(repeat.connection,mongoose.connection);
- console.log("GREEN: fresh canonical startup connection, isolated physical indexes, atomic mount readiness, and singleton reuse.");
+ // Recovery court: deliberately close only the disposable test connection,
+ // then prove the same startup helper can re-establish canonical readiness.
+ await mongoose.disconnect();
+ assert.equal(mongoose.connection.readyState,0,"Isolated disconnect must settle before recovery.");
+ const recovered=await prepareMovieMentorCreatorMongoConnection({env:{MONGO_URI:uri}});
+ assert.equal(recovered.ready,true,"Canonical startup must reconnect after isolated disconnect.");
+ assert.equal(recovered.connection,mongoose.connection);
+ const recoveredComposition=createMovieMentorCreatorStateAtomicCompositionFromMongoose(mongoose.connection);
+ const recoveredGate=await assertMovieMentorCreatorGatewayAtomicMountReadiness({atomicCreatorStateReadiness:recoveredComposition.atomicCreatorStateReadiness});
+ assert.equal(typeof recoveredGate.atomicAcceptCreatorStateOperation,"function","Recovered connection must retain physical atomic readiness.");
+ console.log("GREEN: fresh canonical startup, physical indexes, atomic readiness, singleton reuse and isolated disconnect/reconnect recovery.");
 }finally{
  await mongoose.disconnect();
 }
