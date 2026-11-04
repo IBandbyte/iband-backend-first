@@ -6,7 +6,7 @@ import {createMongoCreatorStateAtomicAccept} from "../ai/MovieMentorCreatorState
 // mutation-authority check and the Mongo transaction's irreversible write.
 // No production credentials, route, or collection are used.
 const uri=process.env.MOVIE_MENTOR_ISOLATED_MONGO_URI;
-assert.ok(uri&&/127\\.0\\.0\\.1|localhost/.test(uri),"Isolated localhost replica set required.");
+assert.ok(uri&&/127\.0\.0\.1|localhost/.test(uri),"Isolated localhost replica set required.");
 await mongoose.connect(uri,{serverSelectionTimeoutMS:10000});
 try{
  const db=mongoose.connection.db,states=db.collection("isolated_fence_state"),operations=db.collection("isolated_fence_ops");
@@ -24,7 +24,7 @@ try{
  releaseRead();
  let outcome=null,reason=null;
  try{outcome=await pending;}catch(error){reason=error;}
- assert.equal(outcome?.kind,"accepted",false,"RED: revoked owner must never receive accepted result");
+ assert.notEqual(outcome?.kind,"accepted","RED: revoked owner must never receive accepted result");
  assert.equal(await states.countDocuments({projectId:"fence-project"}),0,"RED: revoked owner must not commit creator state");
  assert.equal(await operations.countDocuments({projectId:"fence-project"}),0,"RED: revoked owner must not claim operation");
  assert.equal(reason?.code,"MOVIE_MENTOR_CREATOR_STATE_OWNERSHIP_CHANGED","RED: ownership revocation must return explicit fence denial");
