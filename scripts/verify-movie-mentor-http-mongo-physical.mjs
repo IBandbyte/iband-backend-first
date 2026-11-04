@@ -32,7 +32,27 @@ try{
  const accepted=response();await sync(request(first),accepted);assert.equal(accepted.statusCode,200,JSON.stringify(accepted.body));assert.equal(accepted.body.state.revision,1);
  const replay=response();await sync(request(first),replay);assert.equal(replay.statusCode,200,JSON.stringify(replay.body));assert.equal(replay.body.state.revision,1);
  const collision=response();await sync(request({...first,state:{memoryContext:{scene:"forged"}}}),collision);assert.notEqual(collision.statusCode,200,"Operation payload collision must fail closed");
+ const restartedClient=new mongoose.mongo.MongoClient(uri,{serverSelectionTimeoutMS:10000});
+ await restartedClient.connect();
+ try{
+  const restartedDb=restartedClient.db();
+  const restartedReadiness=createMovieMentorCreatorStateAtomicReadiness({client:restartedClient,states:restartedDb.collection("movie_mentor_creator_state"),operations:restartedDb.collection("movie_mentor_creator_state_operations")});
+  const restartedRead=async({projectId:id})=>{const state=await restartedDb.collection("movie_mentor_creator_state").findOne({projectId:id});if(!state)throw Object.assign(new Error("not found"),{code:"MOVIE_MENTOR_CREATOR_STATE_NOT_FOUND"});return state;};
+  const restartedRouter=createMovieMentorTurnRouter({
+   requestAuthority:{authorize:async({projectId:id})=>({authorized:true,projectId:id,principalId,ownershipRef:"physical-owner-ref",ownershipRevision:1})},
+   inferenceSpendAuthority:{reserveTurn:async()=>({}),readReservation:async()=>({})},
+   inferenceExecutionAuthority:Object.fromEntries(["findExecutionByCreatorTurn","openExecution","acquireExecution","assertFence","claimProviderCall","beginProviderDispatch","assertProviderDispatch","contributeProviderEffectEvidence","stageResultCandidate","readResultCandidate","beginExecutionClosing","reconcileExecutionClosure","assertCurrentExecutionClosure","commitCanonicalResult","readCanonicalResult"].map(key=>[key,async()=>({})])),
+   inferenceSettlementAuthority:{reconcile:async()=>({}),releaseUnclaimed:async()=>({}),releaseUnbound:async()=>({})},
+   atomicCreatorStateReadiness:restartedReadiness,
+   applyStateTransition:(input,deps)=>applyMovieMentorCreatorStateTransition(input,{...deps,readAuthoritativeTurnSource:restartedRead,writeAuthoritativeCreatorState:async()=>{throw Error("RED: legacy restarted HTTP writer reached");}})
+  });
+  const restartedSync=restartedRouter.stack.find(x=>x.route?.path==="/state/sync").route.stack[0].handle;
+  const lostAckReplay=response();await restartedSync(request(first),lostAckReplay);
+  assert.equal(lostAckReplay.statusCode,200,JSON.stringify(lostAckReplay.body));
+  assert.equal(lostAckReplay.body.state.revision,1,"Restart replay must return original committed revision");
+  assert.equal(await restartedDb.collection("movie_mentor_creator_state_operations").countDocuments({projectId}),1,"Restart replay cannot mint another operation");
+ }finally{await restartedClient.close();}
  assert.equal(await states.countDocuments({projectId}),1);
  assert.equal(await operations.countDocuments({projectId}),1);
- console.log("GREEN: real HTTP /state/sync through readiness and disposable Mongo transaction commits once, replays and rejects collision.");
+ console.log("GREEN: real HTTP /state/sync through readiness and disposable Mongo transaction commits once, replays after independent connection restart and rejects collision.");
 }finally{await mongoose.disconnect();}
