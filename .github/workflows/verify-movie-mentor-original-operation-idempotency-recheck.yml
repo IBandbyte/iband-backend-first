@@ -1,0 +1,21 @@
+name: Verify Movie Mentor Original Operation Idempotency Recheck
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - verify/creator-atomic-production-mount-court-20261104
+    paths:
+      - ".github/workflows/verify-movie-mentor-original-operation-idempotency-recheck.yml"
+      - "scripts/verify-movie-mentor-creator-state-operation-idempotency.mjs"
+      - "ai/MovieMentorCreatorStateTransition.js"
+jobs:
+  original-operation-idempotency:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install --ignore-scripts --no-audit --no-fund --package-lock=false
+      - run: node scripts/verify-movie-mentor-creator-state-operation-idempotency.mjs
