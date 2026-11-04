@@ -9,15 +9,17 @@ const uri=process.env.MOVIE_MENTOR_ISOLATED_MONGO_URI;
 assert.ok(uri&&/127\.0\.0\.1|localhost/.test(uri),"Isolated localhost replica set required.");
 await mongoose.connect(uri,{serverSelectionTimeoutMS:10000});
 try{
- const db=mongoose.connection.db,states=db.collection("isolated_fence_state"),operations=db.collection("isolated_fence_ops");
+ const db=mongoose.connection.db,states=db.collection("isolated_fence_state"),operations=db.collection("isolated_fence_ops"),ownerships=db.collection("movie_mentor_project_ownership");
  await states.createIndex({projectId:1},{unique:true});
  await operations.createIndex({projectId:1,principalId:1,operationId:1},{unique:true});
+ await ownerships.createIndex({projectId:1},{unique:true});
+ await ownerships.insertOne({projectId:"fence-project",ownerPrincipalId:"owner",ownershipReference:"ownership-v1",ownershipRevision:1,status:"active"});
  let releaseRead;const paused=new Promise(resolve=>releaseRead=resolve);
  let signalRead;const reached=new Promise(resolve=>signalRead=resolve);
  let active=true;
  const proof={domain:"iband.movie-mentor.creator-state-mutation-authority",schema:1,principalId:"owner",projectId:"fence-project",assertCurrentMutation:async target=>({domain:"iband.movie-mentor.creator-state-mutation-proof",schema:1,authorized:active,currentOwnershipVerified:active,principalId:"owner",projectId:"fence-project",ownershipRef:"ownership-v1",ownershipRevision:1,...target})};
  const instrumentedStates={indexes:(...args)=>states.indexes(...args),findOne:async(...args)=>{signalRead();await paused;return states.findOne(...args);},replaceOne:(...args)=>states.replaceOne(...args)};
- const accept=createMongoCreatorStateAtomicAccept({client:mongoose.connection.getClient(),states:instrumentedStates,operations});
+ const accept=createMongoCreatorStateAtomicAccept({client:mongoose.connection.getClient(),states:instrumentedStates,operations,ownerships});
  const pending=accept({envelope:{projectId:"fence-project",principalId:"owner",operationId:"fenced",source:"creator-memory",expectedRevision:0,requestDigest:"fenced-digest"},proposedState:{projectId:"fence-project",revision:1,creatorStateGeneration:1,creatorStateFingerprint:"fenced-fingerprint",revisionAuthorityReference:"fence-revision",creatorAuthorityReference:"fence-authority",snapshotReference:"fence-snapshot",capturedAt:new Date("2026-11-04T00:00:00.000Z")},creatorStateMutationAuthority:proof});
  await reached;
  active=false; // Revocation after initial authority check, before transaction write.
