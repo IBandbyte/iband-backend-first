@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {commitCreatorDecision,buildCreatorDecisionCandidate} from "../ai/MovieMentorCreatorDecisionAuthority.js";
+import {MOVIE_MENTOR_CREATOR_STATE_MUTATION_AUTHORITY_DOMAIN as AUTH_DOMAIN,MOVIE_MENTOR_CREATOR_STATE_MUTATION_PROOF_DOMAIN as PROOF_DOMAIN,MOVIE_MENTOR_CREATOR_STATE_MUTATION_SCHEMA as SCHEMA} from "../ai/MovieMentorCreatorStateMutationAuthority.js";
 
 const projectId="creator-decision-atomic-court",creatorTurnId="stable-turn-001";
 const result=buildCreatorDecisionCandidate({
@@ -14,7 +15,7 @@ let state={projectId,creatorSessionId:"court-session",revision:1,creatorStateGen
 let legacyWrites=0,atomicCalls=0;
 const deps={
  principalId:"isolated-owner",
- creatorStateMutationAuthority:{principalId:"isolated-owner",projectId},
+ creatorStateMutationAuthority:{domain:AUTH_DOMAIN,schema:SCHEMA,principalId:"isolated-owner",projectId,assertCurrentMutation:async target=>({domain:PROOF_DOMAIN,schema:SCHEMA,authorized:true,currentOwnershipVerified:true,principalId:"isolated-owner",projectId,ownershipRef:"isolated-owner-ref",ownershipRevision:1,...target})},
  readAuthoritativeTurnSource:async()=>structuredClone(state),
  writeAuthoritativeCreatorState:async()=>{legacyWrites++;throw Error("RED: legacy writer reached");},
  atomicAcceptCreatorStateOperation:async({envelope,proposedState})=>{
