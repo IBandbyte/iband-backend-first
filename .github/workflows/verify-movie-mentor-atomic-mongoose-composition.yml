@@ -1,0 +1,24 @@
+name: Verify Movie Mentor Atomic Mongoose Composition
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - verify/creator-atomic-production-mount-court-20261104
+    paths:
+      - ".github/workflows/verify-movie-mentor-atomic-mongoose-composition.yml"
+      - "scripts/verify-movie-mentor-atomic-mongoose-composition.mjs"
+      - "ai/MovieMentorCreatorStateAtomicComposition.js"
+      - "ai/MovieMentorCreatorStateCanonicalMongoConnection.js"
+
+jobs:
+  verify-atomic-mongoose-composition:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: node --check scripts/verify-movie-mentor-atomic-mongoose-composition.mjs
+      - run: node scripts/verify-movie-mentor-atomic-mongoose-composition.mjs
