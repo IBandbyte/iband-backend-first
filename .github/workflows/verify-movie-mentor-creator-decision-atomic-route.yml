@@ -1,0 +1,19 @@
+name: Verify Movie Mentor Creator Decision Atomic Route
+on:
+  push:
+    branches:
+      - verify/creator-state-sync-provenance-court-20261103
+  workflow_dispatch:
+jobs:
+  creator-decision-atomic-route:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install backend dependencies
+        run: npm install --ignore-scripts --no-audit --no-fund --package-lock=false
+      - name: Require creator decision atomic acceptance and stable turn operation
+        run: node scripts/verify-movie-mentor-creator-decision-atomic-route.mjs
