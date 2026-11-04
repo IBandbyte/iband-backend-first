@@ -30,6 +30,19 @@ function buildNextState({current,input,identity}={}){
 
 async function applyMovieMentorCreatorStateTransition(input={},deps={}){
  assertNoAuthorityInjection(input);const identity=identityFrom(input);assertIdentity(identity);transitionSource(input);
+ // Isolated, explicit opt-in integration only. Production callers remain on
+ // the existing fail-closed store path until the full physical courts pass.
+ if(deps.atomicAcceptCreatorStateOperation){
+  const operationId=s(input.operationId),principalId=s(deps.principalId),expectedRevision=n(input.expectedRevision);
+  if(!operationId||!principalId||expectedRevision===null)throw fail("MOVIE_MENTOR_CREATOR_STATE_OPERATION_INVALID","Atomic transition requires server-bound principal, operation ID and expected revision.");
+  if(expectedRevision!==0)throw fail("MOVIE_MENTOR_CREATOR_STATE_ATOMIC_INTEGRATION_NOT_READY","Isolated atomic transition currently permits only initial revision; later revisions require durable operation lookup before reading.");
+  const next=buildNextState({current:null,input,identity});
+  await assertMovieMentorCreatorStateMutationAuthority({authority:deps.creatorStateMutationAuthority,projectId:next.projectId,source:next.transition.source,expectedRevision,revision:next.revision,creatorStateGeneration:next.creatorStateGeneration,creatorStateFingerprint:next.creatorStateFingerprint});
+  const envelope={projectId:identity.projectId,principalId,operationId,source:next.transition.source,expectedRevision,requestDigest:digest({projectId:identity.projectId,principalId,operationId,source:next.transition.source,expectedRevision,state:proposedFields(input)})};
+  const outcome=await deps.atomicAcceptCreatorStateOperation({envelope,proposedState:next,creatorStateMutationAuthority:deps.creatorStateMutationAuthority});
+  if(outcome?.kind==="accepted"||outcome?.kind==="replay")return outcome.result;
+  throw fail(outcome?.kind==="conflict"?"MOVIE_MENTOR_CREATOR_STATE_OPERATION_ID_CONFLICT":"MOVIE_MENTOR_CREATOR_STATE_REVISION_CONFLICT","Atomic creator-state operation was not accepted.");
+ }
  const read=deps.readAuthoritativeTurnSource||readAuthoritativeTurnSource,write=deps.writeAuthoritativeCreatorState||writeAuthoritativeCreatorState;
  let current=null;try{current=await read(identity);}catch(error){if(error?.code!=="MOVIE_MENTOR_CREATOR_STATE_NOT_FOUND")throw error;}
  const next=buildNextState({current,input,identity});
