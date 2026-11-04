@@ -15,3 +15,10 @@ await assert.rejects(
 );
 assert.equal(sessions,0);
 console.log("GREEN: transactional adapter refuses absent physical unique project index before session.");
+
+const {assertProjectIndex}=await import("../ai/MovieMentorCreatorStateMongoOperationAdapter.js");
+const productionIndex={key:{projectId:1},unique:true,partialFilterExpression:{projectId:{$type:"string"}}};
+await assertProjectIndex({indexes:async()=>[productionIndex]});
+await assert.rejects(()=>assertProjectIndex({indexes:async()=>[{...productionIndex,partialFilterExpression:{projectId:{$exists:true}}}]}),e=>e.code==="MOVIE_MENTOR_CREATOR_STATE_PROJECT_INDEX_REQUIRED","Wrong partial predicate must not authorize project uniqueness.");
+await assert.rejects(()=>assertProjectIndex({indexes:async()=>[{...productionIndex,unique:false}]}),e=>e.code==="MOVIE_MENTOR_CREATOR_STATE_PROJECT_INDEX_REQUIRED","Nonunique project index must not authorize CAS.");
+console.log("GREEN: exact production partial unique project index accepted; weaker variants denied.");
