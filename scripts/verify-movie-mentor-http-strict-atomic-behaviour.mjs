@@ -29,6 +29,7 @@ const request=body=>({body:{projectId,...body},headers:{authorization:"Bearer is
 const handler=path=>router.stack.find(x=>x.route?.path===path).route.stack[0].handle;
 await handler("/state/sync")(request({operationId:"strict-sync",expectedRevision:0,state:{memoryContext:{}}}),response());
 await handler("/turn")(request({creatorTurnId:"strict-turn",input:{message:"hello"}}),response());
+console.log("DIAGNOSTIC strict dependency stages",JSON.stringify({sync:{strict:syncDeps?.requireAtomicCreatorStateOperation,principal:syncDeps?.principalId,adapter:typeof syncDeps?.atomicAcceptCreatorStateOperation},turn:{strict:turnDeps?.requireAtomicCreatorStateOperation,principal:turnDeps?.principalId,adapter:typeof turnDeps?.atomicAcceptCreatorStateOperation},decision:{strict:decisionDeps?.requireAtomicCreatorStateOperation,principal:decisionDeps?.principalId,adapter:typeof decisionDeps?.atomicAcceptCreatorStateOperation}}));
 for(const [label,deps] of [["sync",syncDeps],["turn",turnDeps],["decision",decisionDeps]]){
  assert.equal(deps?.requireAtomicCreatorStateOperation,true,label+" must preserve strict mutation requirement");
  assert.equal(deps?.principalId,principalId,label+" must preserve authenticated principal");
