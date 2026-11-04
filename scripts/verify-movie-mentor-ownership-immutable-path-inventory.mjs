@@ -15,6 +15,6 @@ for(const mutation of [".updateOne(",".updateMany(",".findOneAndUpdate(",".repla
  assert.ok(!registry.includes(mutation),`RED: ownership registry unexpectedly exposes mutation ${mutation}`);
 }
 assert.match(composition,/db\.client!==client/,"Canonical Mongo composition must reject client mismatch.");
-assert.match(readiness,/createMongoCreatorStateAtomicAccept\(\{client,states,operations\}\)/,"Current atomic readiness must expose exact state and ledger.");
+assert.match(readiness,/createMongoCreatorStateAtomicAccept\(\{client,states,operations,ownerships\}\)/,"Atomic readiness must expose exact state, ledger and canonical ownership storage.");
 console.log("GREEN: registered ownership module is create-only, transfer-disabled, and creator-state composition shares canonical state/ledger client.");
 console.log("LIMITATION: source inventory does not rule out direct MongoDB writes, external administrative mutations, or future revocation paths.");
