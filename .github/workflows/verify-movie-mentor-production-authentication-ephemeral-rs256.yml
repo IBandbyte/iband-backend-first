@@ -1,0 +1,19 @@
+name: Verify Movie Mentor Production Authentication Ephemeral RS256
+on:
+  push:
+    branches:
+      - verify/creator-atomic-production-mount-court-20261104
+  workflow_dispatch:
+jobs:
+  authentication-ephemeral-rs256:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install isolated dependencies
+        run: npm install --ignore-scripts --no-audit --no-fund --package-lock=false
+      - name: Verify ephemeral signed Clerk credential and negative controls
+        run: node scripts/verify-movie-mentor-production-authentication-ephemeral-rs256.mjs
