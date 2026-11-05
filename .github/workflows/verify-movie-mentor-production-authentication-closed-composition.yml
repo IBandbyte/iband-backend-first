@@ -1,0 +1,17 @@
+name: Verify Movie Mentor Production Authentication Closed Composition
+on:
+  push:
+    branches:
+      - verify/creator-atomic-production-mount-court-20261104
+  workflow_dispatch:
+jobs:
+  authentication-closed-composition:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Verify authentication fail-closed composition and owner proof
+        run: node scripts/verify-movie-mentor-production-authentication-closed-composition.mjs
