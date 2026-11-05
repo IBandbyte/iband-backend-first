@@ -26,15 +26,19 @@ try{
  const instrumentedStates={
   indexes:(...args)=>states.indexes(...args),
   findOne:(...args)=>states.findOne(...args),
-  replaceOne:async(...args)=>{
+  replaceOne:(...args)=>states.replaceOne(...args)
+ };
+ const instrumentedOwnership={
+  collectionName:MOVIE_MENTOR_PROJECT_OWNERSHIP_COLLECTION,
+  updateOne:async(...args)=>{
    assert.ok(authorityChecks>=2,"Revocation must happen after the post-read authority recheck.");
    const changed=await ownership.updateOne({projectId,ownerPrincipalId:"owner",status:"active"},{$set:{ownerPrincipalId:"other-owner",ownershipRevision:2,status:"revoked"}});
-   assert.equal(changed.modifiedCount,1,"Adversarial durable revocation must physically commit before state write.");
+   assert.equal(changed.modifiedCount,1,"Adversarial durable revocation must physically commit before the ownership fence.");
    revocationCount++;
-   return states.replaceOne(...args);
+   return ownership.updateOne(...args);
   }
  };
- const accept=createMongoCreatorStateAtomicAccept({client:mongoose.connection.getClient(),states:instrumentedStates,operations});
+ const accept=createMongoCreatorStateAtomicAccept({client:mongoose.connection.getClient(),states:instrumentedStates,operations,ownerships:instrumentedOwnership});
  let outcome=null,reason=null;
  try{
   outcome=await accept({envelope:{projectId,principalId:"owner",operationId:"durable-race",source:"creator-memory",expectedRevision:0,requestDigest:"durable-race-digest"},proposedState:{projectId,revision:1,creatorStateGeneration:1,creatorStateFingerprint:"durable-race-fingerprint",revisionAuthorityReference:"durable-revision",creatorAuthorityReference:"durable-authority",snapshotReference:"durable-snapshot",capturedAt:new Date("2026-11-04T00:00:00.000Z")},creatorStateMutationAuthority:proof});
