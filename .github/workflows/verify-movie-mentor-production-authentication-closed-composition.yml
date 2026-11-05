@@ -13,5 +13,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+      - name: Install isolated dependencies
+        run: npm install --ignore-scripts --no-audit --no-fund --package-lock=false
       - name: Verify authentication fail-closed composition and owner proof
         run: node scripts/verify-movie-mentor-production-authentication-closed-composition.mjs
