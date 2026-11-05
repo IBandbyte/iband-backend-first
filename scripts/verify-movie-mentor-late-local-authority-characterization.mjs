@@ -5,7 +5,7 @@ import {createMongoCreatorStateAtomicAccept} from "../ai/MovieMentorCreatorState
 // the durable fence. This deliberately records the distinction from a durable
 // ownership mutation and must not replace the original postcheck RED court.
 const uri=process.env.MOVIE_MENTOR_ISOLATED_MONGO_URI;
-assert.ok(uri&&/127\\.0\\.0\\.1|localhost/.test(uri),"Isolated localhost Mongo replica set required.");
+assert.ok(uri&&/^mongodb:\/\/(?:127\.0\.0\.1|localhost):27017\//.test(uri),"Isolated localhost Mongo replica set required.");
 await mongoose.connect(uri,{serverSelectionTimeoutMS:10000});
 try{
  const db=mongoose.connection.db,states=db.collection("isolated_late_local_flip_states"),operations=db.collection("isolated_late_local_flip_operations"),ownerships=db.collection("movie_mentor_project_ownership");
