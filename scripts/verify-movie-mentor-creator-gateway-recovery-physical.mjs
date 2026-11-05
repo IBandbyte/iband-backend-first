@@ -38,17 +38,19 @@ try{
  const db=mongoose.connection.db;
  await db.collection("movie_mentor_creator_state").createIndex({projectId:1},{unique:true,partialFilterExpression:{projectId:{$type:"string"}}});
  await db.collection("movie_mentor_creator_state_operations").createIndex({projectId:1,principalId:1,operationId:1},{unique:true});
- // New production readiness contract also requires physical canonical ownership
- // project uniqueness; prove its absence denies recovery before installing it.
+ // Second retry: project ownership uniqueness exists but establishment authority uniqueness is absent.
  await db.collection("movie_mentor_project_ownership").createIndex({projectId:1},{unique:true});
+ await tick();
+ assert.equal(mounts,0,"Must deny gateway when establishmentAuthorityId unique index is absent.");
+ assert.equal(recovery.getStatus().mounted,false);
+ // Third retry: only after both canonical ownership indexes exist may recovery mount.
  await db.collection("movie_mentor_project_ownership").createIndex({establishmentAuthorityId:1},{unique:true});
  await mongoose.disconnect();
- // Second retry must reconnect, validate state, operation and ownership indexes, and mount exactly once.
  await tick();
  assert.equal(mounts,1);
  assert.equal(recovery.getStatus().mounted,true);
  assert.equal(scheduled.size,0,"Successful physical readiness must stop recovery.");
- console.log("GREEN: physical Mongo outage/absent-index denial, canonical reconnect, atomic readiness, and exactly-once simulated mount.");
+ console.log("GREEN: physical Mongo absent-index denial, missing establishment-index denial, canonical reconnect, and exactly-once simulated mount.");
 }finally{
  recovery?.stop();
  await mongoose.disconnect();
