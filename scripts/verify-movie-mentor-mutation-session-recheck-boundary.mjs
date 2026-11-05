@@ -1,0 +1,13 @@
+import assert from "node:assert/strict";
+import {createMovieMentorCreatorStateMutationAuthority,assertMovieMentorCreatorStateMutationAuthority} from "../ai/MovieMentorCreatorStateMutationAuthority.js";
+const authorization=Object.freeze({authorized:true,principalId:"owner",projectId:"project",ownershipRef:"durable-ref",ownershipRevision:1});
+const target={projectId:"project",source:"creator-memory",expectedRevision:0,revision:1,creatorStateGeneration:1,creatorStateFingerprint:"isolated-fingerprint"};
+let checks=0,sessionActive=true;
+const requestAuthority={async authorize(){checks++;if(!sessionActive){const error=new Error("Credential no longer authorized");error.code="MOVIE_MENTOR_CREATOR_PROJECT_NOT_AUTHORIZED";throw error;}return authorization;}};
+const mutation=createMovieMentorCreatorStateMutationAuthority({request:{headers:{authorization:"Bearer isolated"}},authorization,requestAuthority});
+const before=await assertMovieMentorCreatorStateMutationAuthority({authority:mutation,...target});
+assert.equal(before.currentOwnershipVerified,true);
+sessionActive=false;
+await assert.rejects(()=>assertMovieMentorCreatorStateMutationAuthority({authority:mutation,...target}),{code:"MOVIE_MENTOR_CREATOR_PROJECT_NOT_AUTHORIZED"});
+assert.equal(checks,2);
+console.log("GREEN: real mutation authority rechecks credential-backed request authority and denies revoked session before transactional fence. This does NOT test revocation after the durable fence or resolve the original postcheck RED.");
