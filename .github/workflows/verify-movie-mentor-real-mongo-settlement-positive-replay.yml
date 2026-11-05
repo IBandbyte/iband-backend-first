@@ -2,7 +2,7 @@ name: Verify Movie Mentor Real Mongo Settlement Positive Replay
 on:
   push:
     branches:
-      - verify/settlement-mongo-positive-replay-court-20261105
+      - verify/settlement-mongo-positive-replay-20261105
   workflow_dispatch:
 jobs:
   real-mongo-settlement-positive-replay:
