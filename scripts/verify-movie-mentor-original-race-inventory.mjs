@@ -6,11 +6,11 @@ const adapter=fs.readFileSync(new URL("../ai/MovieMentorCreatorStateMongoOperati
 assert.ok(adapter.includes('if(!ownerships)throw error("MOVIE_MENTOR_CREATOR_STATE_OWNERSHIP_STORAGE_REQUIRED"'));
 for(const [name,source] of [["durable-write-race",durable],["postcheck-revocation",postcheck]]){
  if(name==="durable-write-race")assert.ok(source.includes("states:instrumentedStates,operations,ownerships:instrumentedOwnership});"),"Durable race must exercise the canonical ownership participant");
- else assert.ok(source.includes("states:instrumentedStates,operations});"),"Postcheck revocation remains an unfenced legacy test caller");
+ else assert.ok(source.includes("states:instrumentedStates,operations,ownerships});"),"Postcheck revocation must exercise canonical ownership participant");
  assert.ok(source.includes('assert.notEqual(outcome?.kind,"accepted"'),name+" must retain no-accept assertion");
  assert.ok(source.includes("states.countDocuments"));
  assert.ok(source.includes("operations.countDocuments"));
  assert.ok(source.includes("MOVIE_MENTOR_CREATOR_STATE_OWNERSHIP_CHANGED"));
 }
-console.log("GREEN: original adversarial assertions remain intact; durable race now uses canonical ownership participant; postcheck caller remains legacy.");
+console.log("GREEN: original adversarial assertions remain intact; durable race now uses canonical ownership participant; postcheck also uses canonical ownership participant; original late-local denial remains contested.");
 console.log("LIMITATION: inventory is not a physical race verdict; RED workflows remain RED.");
