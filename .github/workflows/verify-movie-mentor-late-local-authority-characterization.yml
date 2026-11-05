@@ -12,8 +12,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: npm
-      - run: npm ci
+      - run: npm install --no-save --package-lock=false mongoose
       - run: docker run -d --rm --name mm-late-local-mongo -p 127.0.0.1:27017:27017 mongo:7 --replSet rs0 --bind_ip_all
       - run: |
           for i in $(seq 1 40); do
