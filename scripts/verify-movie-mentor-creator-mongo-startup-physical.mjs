@@ -17,8 +17,17 @@ try{
  const db=mongoose.connection.db;
  const states=db.collection("movie_mentor_creator_state");
  const operations=db.collection("movie_mentor_creator_state_operations");
+ const ownerships=db.collection("movie_mentor_project_ownership");
  await states.createIndex({projectId:1},{unique:true,partialFilterExpression:{projectId:{$type:"string"}}});
  await operations.createIndex({projectId:1,principalId:1,operationId:1},{unique:true});
+ // Production-shaped durable ownership fixture. The current atomic readiness
+ // gate validates ownership collection identity, not ownership index existence;
+ // this separate assertion prevents accidentally claiming that it does.
+ await ownerships.createIndex({projectId:1},{unique:true});
+ await ownerships.createIndex({establishmentAuthorityId:1},{unique:true});
+ const ownershipIndexes=await ownerships.indexes();
+ assert.ok(ownershipIndexes.some(index=>index.unique===true&&index.key?.projectId===1),"Physical ownership project uniqueness required in this startup fixture.");
+ assert.ok(ownershipIndexes.some(index=>index.unique===true&&index.key?.establishmentAuthorityId===1),"Physical ownership establishment-authority uniqueness required in this startup fixture.");
  const composition=createMovieMentorCreatorStateAtomicCompositionFromMongoose(mongoose.connection);
  const verified=await assertMovieMentorCreatorGatewayAtomicMountReadiness({atomicCreatorStateReadiness:composition.atomicCreatorStateReadiness});
  assert.equal(typeof verified.atomicAcceptCreatorStateOperation,"function");
@@ -32,10 +41,13 @@ try{
  const recovered=await prepareMovieMentorCreatorMongoConnection({env:{MONGO_URI:uri}});
  assert.equal(recovered.ready,true,"Canonical startup must reconnect after isolated disconnect.");
  assert.equal(recovered.connection,mongoose.connection);
+ const recoveredOwnershipIndexes=await mongoose.connection.db.collection("movie_mentor_project_ownership").indexes();
+ assert.ok(recoveredOwnershipIndexes.some(index=>index.unique===true&&index.key?.projectId===1),"Recovered startup must retain physical ownership project uniqueness.");
+ assert.ok(recoveredOwnershipIndexes.some(index=>index.unique===true&&index.key?.establishmentAuthorityId===1),"Recovered startup must retain physical establishment-authority uniqueness.");
  const recoveredComposition=createMovieMentorCreatorStateAtomicCompositionFromMongoose(mongoose.connection);
  const recoveredGate=await assertMovieMentorCreatorGatewayAtomicMountReadiness({atomicCreatorStateReadiness:recoveredComposition.atomicCreatorStateReadiness});
  assert.equal(typeof recoveredGate.atomicAcceptCreatorStateOperation,"function","Recovered connection must retain physical atomic readiness.");
- console.log("GREEN: fresh canonical startup, physical indexes, atomic readiness, singleton reuse and isolated disconnect/reconnect recovery.");
+ console.log("GREEN: fresh canonical startup, physical state/operation/ownership indexes, atomic readiness, singleton reuse and isolated disconnect/reconnect recovery.");
 }finally{
  await mongoose.disconnect();
 }
