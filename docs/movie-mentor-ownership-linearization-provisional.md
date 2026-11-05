@@ -25,3 +25,9 @@ The original postcheck test changes only a process-local `active` flag inside `s
 - Verify all actual production ownership transfer/revocation paths participate in the same durable fence protocol; tests using direct Mongo mutations do not establish this by themselves.
 - Independently verify full HTTP startup/composition and frontend integration.
 - Preserve Phase 01 HOLD, no production database write, no merge, and no deploy.
+
+## Production ownership registry source audit (2026-11-05)
+
+At exact head `4f2cdd4c`, `ai/MovieMentorProjectOwnershipRegistry.js` advertises `ownershipTransfer:false`, `processLocalFallback:false`, and an ownership schema with immutable `ownerPrincipalId` and `ownershipReference`; its `status` enum contains only `active`. Its exported registry authority has establishment, adoption, and authorization paths, but no native transfer/revocation operation. `ai/MovieMentorCreatorRequestAuthority.js` requires the durable registry capability and rejects process-local fallback. These findings are consistent with the earlier `docs/movie-mentor-ownership-registry-source-audit.md`.
+
+**Implication:** the original postcheck test's mutable process-local `active` flag is an injected hypothetical, not a demonstrated production ownership-revocation path. The direct Mongo revocation in physical tests is also an adversarial test mutation, not evidence of a supported production API. The test's RED must remain visible until the security policy explicitly decides whether non-registry revocation is a Phase 01 requirement. Do not add a production transfer/revocation endpoint merely to satisfy the test.
