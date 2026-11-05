@@ -11,12 +11,14 @@ const projectId="http-physical-atomic-project",principalId="http-physical-owner"
 const authority={domain:AUTH_DOMAIN,schema:SCHEMA,principalId,projectId,assertCurrentMutation:async target=>({domain:PROOF_DOMAIN,schema:SCHEMA,authorized:true,currentOwnershipVerified:true,principalId,projectId,ownershipRef:"physical-owner-ref",ownershipRevision:1,...target})};
 await mongoose.connect(uri,{serverSelectionTimeoutMS:10000});
 const client=mongoose.connection.getClient(),db=mongoose.connection.db;
-const states=db.collection("movie_mentor_creator_state"),operations=db.collection("movie_mentor_creator_state_operations");
+const states=db.collection("movie_mentor_creator_state"),operations=db.collection("movie_mentor_creator_state_operations"),ownerships=db.collection("movie_mentor_project_ownership");
 const response=()=>({statusCode:200,status(code){this.statusCode=code;return this;},json(body){this.body=body;return this;}});
 const request=body=>({body:{projectId,...body},headers:{authorization:"Bearer isolated-credential"}});
 try{
  await states.createIndex({projectId:1},{unique:true,partialFilterExpression:{projectId:{$type:"string"}}});
  await operations.createIndex({projectId:1,principalId:1,operationId:1},{unique:true});
+ await ownerships.createIndex({projectId:1},{unique:true});
+ await ownerships.createIndex({establishmentAuthorityId:1},{unique:true});
  const readiness=createMovieMentorCreatorStateAtomicComposition({client,db}).atomicCreatorStateReadiness;
  const read=async({projectId:id})=>{const state=await states.findOne({projectId:id});if(!state)throw Object.assign(new Error("not found"),{code:"MOVIE_MENTOR_CREATOR_STATE_NOT_FOUND"});return state;};
  const router=createMovieMentorTurnRouter({
