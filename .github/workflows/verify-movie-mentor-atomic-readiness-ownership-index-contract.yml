@@ -1,0 +1,15 @@
+name: Verify Movie Mentor Atomic Readiness Ownership Index Contract
+on:
+  push:
+    branches:
+      - verify/creator-atomic-production-mount-court-20261104
+  workflow_dispatch:
+jobs:
+  atomic-readiness-ownership-index:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: node scripts/verify-movie-mentor-atomic-readiness-ownership-index-contract.mjs
