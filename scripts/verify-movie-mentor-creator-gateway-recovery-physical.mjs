@@ -38,8 +38,12 @@ try{
  const db=mongoose.connection.db;
  await db.collection("movie_mentor_creator_state").createIndex({projectId:1},{unique:true,partialFilterExpression:{projectId:{$type:"string"}}});
  await db.collection("movie_mentor_creator_state_operations").createIndex({projectId:1,principalId:1,operationId:1},{unique:true});
+ // New production readiness contract also requires physical canonical ownership
+ // project uniqueness; prove its absence denies recovery before installing it.
+ await db.collection("movie_mentor_project_ownership").createIndex({projectId:1},{unique:true});
+ await db.collection("movie_mentor_project_ownership").createIndex({establishmentAuthorityId:1},{unique:true});
  await mongoose.disconnect();
- // Second retry must reconnect, validate physical indexes, and mount exactly once.
+ // Second retry must reconnect, validate state, operation and ownership indexes, and mount exactly once.
  await tick();
  assert.equal(mounts,1);
  assert.equal(recovery.getStatus().mounted,true);
