@@ -15,6 +15,9 @@ try{
  assert.equal((await response.json()).ok,true);
  const denied=await fetch("http://127.0.0.1:"+port+"/api/movie-mentor/state/sync",{method:"POST",headers:{"Origin":"https://untrusted.example","Content-Type":"application/json"},body:"{}"});
  assert.equal(denied.status,403,"Untrusted browser origin must be denied");
- assert.match(logs,/\[mount:closed\] \/api\/movie-mentor/,"Creator gateway must remain closed without production authority");
- console.log("GREEN: real server entrypoint booted with isolated Mongo and enforced browser-origin denial; authenticated production composition remains unverified.");
+ const allowedOriginWithoutCredentials=await fetch("http://127.0.0.1:"+port+"/api/movie-mentor/state/sync",{method:"POST",headers:{"Origin":"https://isolated.example","Content-Type":"application/json"},body:"{}"});
+ assert.notEqual(allowedOriginWithoutCredentials.status,200,"Allowed browser origin must not bypass missing creator authentication");
+ assert.match(logs,/\[mount:closed\] \/api\/movie-mentor \(production-authentication-unconfigured\)/,"Real server must explicitly deny creator gateway without Clerk authentication");
+ assert.match(logs,/\[mount:closed\] \/api\/movie-mentor\/projects \(production-authentication-unconfigured\)/,"Real server must explicitly deny native project creation without Clerk authentication");
+ console.log("GREEN: real server entrypoint booted with isolated Mongo and enforced browser-origin denial, missing-auth creator gateway denial, and missing-auth native project creation denial; authenticated production composition remains unverified.");
 }finally{child.kill("SIGTERM");}
