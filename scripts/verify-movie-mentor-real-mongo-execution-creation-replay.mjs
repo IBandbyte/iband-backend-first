@@ -1,0 +1,36 @@
+import assert from "node:assert/strict";
+import mongoose from "mongoose";
+import {createMovieMentorProductionInferenceExecutionComposition} from "../ai/MovieMentorProductionInferenceExecutionComposition.js";
+import {MOVIE_MENTOR_INFERENCE_EXECUTION_REQUIRED_UNIQUE_INDEXES as executionIndexes} from "../ai/MovieMentorInferenceExecutionPhysicalAuthority.js";
+import {MOVIE_MENTOR_INFERENCE_SETTLEMENT_REQUIRED_UNIQUE_INDEXES as settlementIndexes} from "../ai/MovieMentorInferenceSettlementPhysicalAuthority.js";
+const uri=process.env.MOVIE_MENTOR_ISOLATED_MONGO_URI;
+assert.match(uri||"",/^mongodb:\/\/(?:127\.0\.0\.1|localhost):27017\//);
+process.env.MONGO_URI=uri;
+await mongoose.connect(uri,{autoIndex:false,serverSelectionTimeoutMS:5000});
+try{
+ const db=mongoose.connection.db;
+ const requirements=new Map([...executionIndexes,...settlementIndexes].map(r=>[r.collection+":"+JSON.stringify(r.key),r]));
+ for(const r of requirements.values())await db.collection(r.collection).createIndex(r.key,{unique:true});
+ const ids={principalId:"isolated-owner",projectId:"isolated-project",creatorTurnId:"isolated-turn",reservationId:"isolated-reservation",requestDigest:"isolated-request-digest",ownerId:"isolated-worker"};
+ await db.collection("movie_mentor_inference_spend_reservation").insertOne({domain:"iband.movie-mentor.inference-spend",schema:1,...ids,operation:"movie-mentor-turn",status:"reserved",executionBindingBarrierRevision:0});
+ const composition=createMovieMentorProductionInferenceExecutionComposition();
+ assert.equal(composition.ready,true);
+ const input={...ids,maxProviderCalls:1,assertCurrentCreationAuthority:async candidate=>({authorized:true,currentOwnershipVerified:true,transition:"execution-creation",...candidate})};
+ const first=await composition.authority.openExecution(input);
+ assert.equal(first.created,true,"Real production composition must create a durable execution");
+ assert.equal(first.idempotent,false);
+ assert.equal(first.executionAuthorized,true);
+ const persisted=await db.collection("movie_mentor_inference_execution").findOne({creatorTurnId:ids.creatorTurnId});
+ assert.ok(persisted,"Execution must be physically persisted");
+ assert.equal(persisted.reservationId,ids.reservationId);
+ assert.equal(persisted.phase,"active");
+ const reservation=await db.collection("movie_mentor_inference_spend_reservation").findOne({reservationId:ids.reservationId});
+ assert.equal(reservation.executionBindingBarrierRevision,1,"Creation must transactionally fence reservation binding");
+ const replay=await composition.authority.openExecution(input);
+ assert.equal(replay.idempotent,true);
+ assert.equal(replay.created,false);
+ assert.equal(replay.executionId,first.executionId);
+ assert.equal(await db.collection("movie_mentor_inference_execution").countDocuments({creatorTurnId:ids.creatorTurnId}),1);
+ assert.equal((await db.collection("movie_mentor_inference_spend_reservation").findOne({reservationId:ids.reservationId})).executionBindingBarrierRevision,1,"Replay must not rebind reservation");
+ console.log("GREEN: real indexed production execution composition created durable Mongo execution against reserved spend ledger, transactionally fenced reservation, and converged replay to one execution. Settlement and HTTP remain uncertified.");
+}finally{await mongoose.disconnect();}
