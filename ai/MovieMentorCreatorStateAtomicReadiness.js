@@ -4,7 +4,8 @@ async function assertOwnershipIndex(ownerships){
  if(typeof ownerships?.indexes!=="function")throw readinessError("MOVIE_MENTOR_CREATOR_STATE_OWNERSHIP_INDEX_REQUIRED","Physical canonical ownership index inspection required before creator gateway mounting.");
  let indexes;
  try{indexes=await ownerships.indexes();}catch{throw readinessError("MOVIE_MENTOR_CREATOR_STATE_OWNERSHIP_INDEX_REQUIRED","Physical canonical ownership index inspection unavailable.");}
- if(!Array.isArray(indexes)||!indexes.some(index=>index?.unique===true&&Object.keys(index.key||{}).length===1&&index.key.projectId===1))throw readinessError("MOVIE_MENTOR_CREATOR_STATE_OWNERSHIP_INDEX_REQUIRED","Physical unique projectId ownership index required before creator gateway mounting.");
+ const uniqueSingleKey=field=>Array.isArray(indexes)&&indexes.some(index=>index?.unique===true&&Object.keys(index.key||{}).length===1&&index.key[field]===1);
+ if(!uniqueSingleKey("projectId")||!uniqueSingleKey("establishmentAuthorityId"))throw readinessError("MOVIE_MENTOR_CREATOR_STATE_OWNERSHIP_INDEX_REQUIRED","Physical unique projectId and establishmentAuthorityId ownership indexes required before creator gateway mounting.");
 }
 
 const CREATOR_STATE_COLLECTION="movie_mentor_creator_state";
