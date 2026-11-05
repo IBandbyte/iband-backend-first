@@ -1,0 +1,18 @@
+name: Verify Movie Mentor Production Atomic Mount Behaviour Isolated
+on:
+  push:
+    branches:
+      - verify/creator-atomic-production-mount-court-20261104
+  workflow_dispatch:
+jobs:
+  production-atomic-mount-isolated:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Verify production gateway source-bound mount ordering
+        run: node scripts/verify-movie-mentor-production-atomic-mount-boundary.mjs
+      - name: Execute actual gateway body with isolated injected authorities
+        run: node scripts/verify-movie-mentor-production-atomic-mount-behaviour.mjs
