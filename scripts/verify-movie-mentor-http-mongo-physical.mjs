@@ -19,6 +19,8 @@ try{
  await operations.createIndex({projectId:1,principalId:1,operationId:1},{unique:true});
  await ownerships.createIndex({projectId:1},{unique:true});
  await ownerships.createIndex({establishmentAuthorityId:1},{unique:true});
+ // Disposable synthetic owner matches the durable transactional ownership fence.
+ await ownerships.insertOne({domain:"iband.movie-mentor.project-ownership",schema:1,projectId,ownerPrincipalId:principalId,ownershipRevision:1,ownershipReference:"physical-owner-ref",establishmentAuthorityId:`isolated-${projectId}`,establishmentSource:"isolated-physical-http-court",status:"active",establishedAt:new Date()});
  const readiness=createMovieMentorCreatorStateAtomicComposition({client,db}).atomicCreatorStateReadiness;
  const read=async({projectId:id})=>{const state=await states.findOne({projectId:id});if(!state)throw Object.assign(new Error("not found"),{code:"MOVIE_MENTOR_CREATOR_STATE_NOT_FOUND"});return state;};
  const router=createMovieMentorTurnRouter({
