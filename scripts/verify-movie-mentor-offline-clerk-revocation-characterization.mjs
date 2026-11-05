@@ -1,0 +1,18 @@
+import assert from "node:assert/strict";
+import {generateKeyPairSync,sign} from "node:crypto";
+import {createMovieMentorJourneyRecoveryClerkCredentialVerifier} from "../ai/MovieMentorJourneyRecoveryClerkCredentialVerifier.js";
+const {privateKey,publicKey}=generateKeyPairSync("rsa",{modulusLength:2048,publicKeyEncoding:{format:"pem",type:"spki"},privateKeyEncoding:{format:"pem",type:"pkcs8"}});
+const issuer="https://isolated-issuer.example",audience="isolated-movie-mentor",party="https://isolated-creator.example",now=Math.floor(Date.now()/1000);
+const b64=x=>Buffer.from(JSON.stringify(x)).toString("base64url");
+const payload=b64({sub:"isolated-owner",iss:issuer,aud:audience,azp:party,sid:"isolated-session",iat:now-1,nbf:now-1,exp:now+600});
+const unsigned=b64({alg:"RS256",typ:"JWT"})+"."+payload;
+const credential=unsigned+"."+sign("RSA-SHA256",Buffer.from(unsigned),privateKey).toString("base64url");
+const verifier=createMovieMentorJourneyRecoveryClerkCredentialVerifier({jwtKey:publicKey,authorizedParties:[party]});
+const first=await verifier.verifyCredential({credential,expectedIssuer:issuer,expectedAudience:audience});
+assert.equal(first.verified,true);
+let simulatedRemoteSessionRevoked=true;
+assert.equal(simulatedRemoteSessionRevoked,true);
+const second=await verifier.verifyCredential({credential,expectedIssuer:issuer,expectedAudience:audience});
+assert.equal(second.verified,true,"Characterization: offline JWT verification has no independent remote revocation observation.");
+assert.equal(second.sessionReference,first.sessionReference);
+console.log("GREEN CHARACTERIZATION ONLY: an unexpired, correctly signed JWT remains accepted by pinned-public-key verification after an independent simulated remote revocation flag. No live Clerk revocation API was called. NOT post-fence certification.");
