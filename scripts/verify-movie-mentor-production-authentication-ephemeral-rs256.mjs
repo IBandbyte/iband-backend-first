@@ -1,0 +1,22 @@
+import assert from "node:assert/strict";
+import {generateKeyPairSync,sign} from "node:crypto";
+import {createMovieMentorProductionAuthenticationComposition,isMovieMentorProductionAuthenticationOwnerProof} from "../ai/MovieMentorProductionAuthenticationComposition.js";
+const {privateKey,publicKey}=generateKeyPairSync("rsa",{modulusLength:2048,publicKeyEncoding:{type:"spki",format:"pem"},privateKeyEncoding:{type:"pkcs8",format:"pem"}});
+const issuer="https://isolated-issuer.example",audience="isolated-movie-mentor",party="https://isolated-creator.example";
+const env={MOVIE_MENTOR_CLERK_JWT_KEY:publicKey,MOVIE_MENTOR_CLERK_AUTHORIZED_PARTIES_JSON:JSON.stringify([party]),MOVIE_MENTOR_CLERK_ISSUER:issuer,MOVIE_MENTOR_AUDIENCE:audience};
+const composition=createMovieMentorProductionAuthenticationComposition({env});
+assert.equal(composition.ready,true);
+assert.equal(isMovieMentorProductionAuthenticationOwnerProof(composition,composition.getStatus()),true);
+const b64=value=>Buffer.from(JSON.stringify(value)).toString("base64url");
+const now=Math.floor(Date.now()/1000);
+function token(payload){const body=b64({alg:"RS256",typ:"JWT"})+"."+b64(payload);return body+"."+sign("RSA-SHA256",Buffer.from(body),privateKey).toString("base64url");}
+const claims={sub:"isolated-creator-01",iss:issuer,aud:audience,azp:party,sid:"isolated-session-01",iat:now,nbf:now-1,exp:now+600};
+const credential=token(claims);
+const result=await composition.verifyCredential({credential,expectedIssuer:issuer,expectedAudience:audience});
+assert.equal(result.verified,true);
+assert.equal(result.subject,claims.sub);
+assert.equal(result.sessionReference,claims.sid);
+await assert.rejects(()=>composition.verifyCredential({credential:token({...claims,sub:"tampered"})+"corruption",expectedIssuer:issuer,expectedAudience:audience}));
+await assert.rejects(()=>composition.verifyCredential({credential,expectedIssuer:"https://wrong-issuer.example",expectedAudience:audience}),{code:"MOVIE_MENTOR_RECOVERY_CLERK_ISSUER_MISMATCH"});
+await assert.rejects(()=>composition.verifyCredential({credential,expectedIssuer:issuer,expectedAudience:"wrong-audience"}));
+console.log("GREEN: ephemeral RS256 signed credential accepted by real pinned-key Clerk verifier, forged signature and issuer/audience mismatches rejected; no production credentials.");
