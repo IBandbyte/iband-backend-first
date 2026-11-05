@@ -1,0 +1,17 @@
+name: Verify Movie Mentor Mutation Session Recheck Boundary
+on:
+  push:
+    branches:
+      - verify/creator-atomic-production-mount-court-20261104
+  workflow_dispatch:
+jobs:
+  session-recheck-boundary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Verify mutation authority session denial at recheck
+        run: node scripts/verify-movie-mentor-mutation-session-recheck-boundary.mjs
