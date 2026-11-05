@@ -1,0 +1,14 @@
+import assert from "node:assert/strict";
+import {createMovieMentorProductionAuthenticationComposition,isMovieMentorProductionAuthenticationOwnerProof} from "../ai/MovieMentorProductionAuthenticationComposition.js";
+const empty=createMovieMentorProductionAuthenticationComposition({env:{}});
+assert.equal(empty.ready,false);
+assert.equal(empty.reason,"production-authentication-unconfigured");
+assert.equal(empty.verifyCredential,null);
+assert.equal(isMovieMentorProductionAuthenticationOwnerProof(empty,empty.getStatus()),false);
+const partial=createMovieMentorProductionAuthenticationComposition({env:{MOVIE_MENTOR_CLERK_ISSUER:"https://isolated.example"}});
+assert.equal(partial.ready,false);
+assert.equal(partial.reason,"production-authentication-partially-configured");
+assert.equal(partial.verifyCredential,null);
+const fabricated={...partial,ready:true,verifyCredential:()=>({sub:"fabricated"}),getStatus(){return {ready:true,production:true}}};
+assert.equal(isMovieMentorProductionAuthenticationOwnerProof(fabricated,fabricated.getStatus()),false);
+console.log("GREEN: unconfigured and partially configured Clerk composition deny authentication; fabricated owner proof rejected. Valid signed credential verification remains untested.");
