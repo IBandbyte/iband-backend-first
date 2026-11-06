@@ -2,7 +2,7 @@ name: Verify Movie Mentor Real Mongo Settlement Physical Overlap
 on:
   push:
     branches:
-      - verify/settlement-mongo-concurrency-20261105
+      - verify/settlement-mongo-physical-overlap-20261106
   workflow_dispatch:
 jobs:
   real-mongo-settlement-physical-overlap:
