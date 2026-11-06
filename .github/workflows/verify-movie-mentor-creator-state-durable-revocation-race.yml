@@ -1,0 +1,33 @@
+name: Verify Movie Mentor Creator State Durable Revocation Race
+on:
+  push:
+    branches:
+      - verify/creator-state-durable-revocation-race-20261106
+  workflow_dispatch:
+jobs:
+  creator-state-durable-revocation-race:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install isolated dependencies
+        run: npm install --ignore-scripts
+      - name: Start disposable Mongo replica set
+        run: |
+          docker run -d --name movie-mentor-creator-race-mongo -p 127.0.0.1:27017:27017 mongo:7 --replSet rs0 --bind_ip_all
+          for i in $(seq 1 40); do
+            if docker exec movie-mentor-creator-race-mongo mongosh --quiet --eval 'db.adminCommand({ping:1})' >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+          docker exec movie-mentor-creator-race-mongo mongosh --quiet --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"127.0.0.1:27017"}]})'
+          for i in $(seq 1 40); do
+            if docker exec movie-mentor-creator-race-mongo mongosh --quiet --eval 'db.hello().isWritablePrimary' | grep -q true; then break; fi
+            sleep 2
+          done
+      - name: Verify durable ownership revision race denies stale acceptance without partial writes
+        env:
+          MOVIE_MENTOR_ISOLATED_MONGO_URI: mongodb://127.0.0.1:27017/movie_mentor_creator_durable_revocation_race?replicaSet=rs0&directConnection=true
+        run: node scripts/verify-movie-mentor-creator-state-durable-revocation-race.mjs
