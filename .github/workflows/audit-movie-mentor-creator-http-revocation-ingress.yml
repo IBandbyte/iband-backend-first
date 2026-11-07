@@ -23,5 +23,14 @@ jobs:
           test "$(git show d86fc6e2aa4bce0245f540fd62e3dc9b01f721a9:scripts/verify-movie-mentor-creator-state-mongo-postcheck-revocation.mjs | sha256sum | cut -d' ' -f1)" = "$(sha256sum scripts/verify-movie-mentor-creator-state-mongo-postcheck-revocation.mjs | cut -d' ' -f1)"
       - name: Install isolated verifier dependencies (repository has no npm lockfile)
         run: npm install --no-package-lock --ignore-scripts --no-audit --no-fund
+      - name: Start disposable MongoDB replica set
+        uses: supercharge/mongodb-github-action@1.12.0
+        with:
+          mongodb-version: '7.0'
+          mongodb-replica-set: rs0
+      - name: Physical HTTP and MongoDB revocation court
+        env:
+          MOVIE_MENTOR_ISOLATED_MONGO_URI: mongodb://127.0.0.1:27017/movie_mentor_http_mongo_revocation?replicaSet=rs0&directConnection=true
+        run: node scripts/verify-movie-mentor-creator-http-mongo-revocation.mjs
       - name: Physical loopback HTTP credential-denial court
         run: node scripts/verify-movie-mentor-creator-http-revocation-ingress.mjs
