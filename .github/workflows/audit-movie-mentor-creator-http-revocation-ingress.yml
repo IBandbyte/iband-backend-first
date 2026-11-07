@@ -52,5 +52,9 @@ jobs:
         env:
           MOVIE_MENTOR_ISOLATED_MONGO_URI: mongodb://127.0.0.1:27017/movie_mentor_real_turn_identity?replicaSet=rs0&directConnection=true
         run: node scripts/verify-movie-mentor-real-runtime-turn-id-denial.mjs
+      - name: Real forward runtime durable identity lookup fail-closed court
+        env:
+          MOVIE_MENTOR_ISOLATED_MONGO_URI: mongodb://127.0.0.1:27017/movie_mentor_real_turn_lookup_failure?replicaSet=rs0&directConnection=true
+        run: node scripts/verify-movie-mentor-real-runtime-lookup-fail-closed.mjs
       - name: Physical loopback HTTP credential-denial court
         run: node scripts/verify-movie-mentor-creator-http-revocation-ingress.mjs
