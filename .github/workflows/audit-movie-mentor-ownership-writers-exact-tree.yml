@@ -1,0 +1,33 @@
+name: Audit Movie Mentor Ownership Writers Exact Tree
+on:
+  push:
+    branches:
+      - audit/ownership-writers-exact-tree-20261107
+  workflow_dispatch:
+jobs:
+  ownership-writer-inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Confirm exact tree and preserve original RED
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "AUDIT_SHA=$(git rev-parse HEAD)"
+          git diff --exit-code e22e7da030bb01dc79d23a4b8fdf298f3555ef0d HEAD -- scripts/verify-movie-mentor-creator-state-mongo-postcheck-revocation.mjs
+      - name: Inventory ownership collection and mutation call sites
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== EXACT HEAD ==='
+          git rev-parse HEAD
+          echo '=== COLLECTION / FENCE / OWNERSHIP WRITER REFERENCES (all tracked files) ==='
+          git grep -n -I -E 'movie_mentor_project_ownership|MOVIE_MENTOR_PROJECT_OWNERSHIP_COLLECTION|creatorStateFenceEpoch|createMovieMentorProjectOwnership|establishNativeOwnership|adoptLegacyOwnership' HEAD -- ':!package-lock.json' || true
+          echo '=== POTENTIAL DIRECT MONGO WRITERS (production JS only) ==='
+          git grep -n -I -E '(updateOne|updateMany|replaceOne|findOneAndUpdate|findOneAndReplace|insertOne|insertMany|deleteOne|deleteMany|bulkWrite|\.create\(|\.save\(|\.collection\()' HEAD -- '*.js' ':!scripts/**' || true
+          echo '=== OWNERSHIP REVOCATION / TRANSFER TERMS (all tracked files) ==='
+          git grep -n -I -E 'ownershipTransfer|revokeOwnership|transferOwnership|ownershipRevision|ownerPrincipalId' HEAD -- ':!package-lock.json' || true
+          echo '=== AUDIT INVENTORY COMPLETE: REVIEW MATCHES BEFORE CONTRACT DISPOSITION ==='
