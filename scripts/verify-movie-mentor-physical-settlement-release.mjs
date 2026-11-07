@@ -4,6 +4,7 @@ import {createMovieMentorProductionInferenceSpendComposition} from "../ai/MovieM
 import {createMovieMentorProductionInferenceExecutionComposition,isMovieMentorProductionInferenceExecutionOwnerProof} from "../ai/MovieMentorProductionInferenceExecutionComposition.js";
 import {createMovieMentorProductionInferenceSettlementComposition,isMovieMentorProductionInferenceSettlementOwnerProof} from "../ai/MovieMentorProductionInferenceSettlementComposition.js";
 import {MOVIE_MENTOR_INFERENCE_SPEND_DOMAIN as DOMAIN,MOVIE_MENTOR_INFERENCE_SPEND_SCHEMA as SCHEMA,MOVIE_MENTOR_INFERENCE_ENTITLEMENT_COLLECTION as ENTITLEMENTS,MOVIE_MENTOR_INFERENCE_SPEND_RESERVATION_COLLECTION as RESERVATIONS} from "../ai/MovieMentorInferenceSpendMongoStore.js";
+import {MOVIE_MENTOR_INFERENCE_SETTLEMENT_REQUIRED_UNIQUE_INDEXES as SETTLEMENT_REQUIRED} from "../ai/MovieMentorInferenceSettlementPhysicalAuthority.js";
 import {MOVIE_MENTOR_INFERENCE_EXECUTION_REQUIRED_UNIQUE_INDEXES as REQUIRED} from "../ai/MovieMentorInferenceExecutionPhysicalAuthority.js";
 
 // Positive reservation -> execution -> identity convergence. No provider or settlement certification.
@@ -15,7 +16,7 @@ try{
  const db=mongoose.connection.db;
  await db.collection(ENTITLEMENTS).createIndex({principalId:1},{unique:true});
  await db.collection(RESERVATIONS).createIndex({reservationId:1},{unique:true});
- for(const requirement of REQUIRED)await db.collection(requirement.collection).createIndex(requirement.key,{unique:true});
+ for(const requirement of [...REQUIRED,...SETTLEMENT_REQUIRED])await db.collection(requirement.collection).createIndex(requirement.key,{unique:true});
  const principalId="isolated-execution-"+Date.now(),projectId="isolated-execution-project",creatorTurnId="isolated-turn-"+Date.now(),requestDigest="a".repeat(64),ownerId="isolated-worker";
  await db.collection(ENTITLEMENTS).insertOne({domain:DOMAIN,schema:SCHEMA,principalId,status:"active",remainingUnits:2,reservedUnits:0,consumedUnits:0,entitlementRevision:1});
  const spend=createMovieMentorProductionInferenceSpendComposition();
