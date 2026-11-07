@@ -1,0 +1,47 @@
+import assert from "node:assert/strict";
+import mongoose from "mongoose";
+import {createMovieMentorProductionInferenceSpendComposition} from "../ai/MovieMentorProductionInferenceSpendComposition.js";
+import {createMovieMentorProductionInferenceExecutionComposition,isMovieMentorProductionInferenceExecutionOwnerProof} from "../ai/MovieMentorProductionInferenceExecutionComposition.js";
+import {MOVIE_MENTOR_INFERENCE_SPEND_DOMAIN as DOMAIN,MOVIE_MENTOR_INFERENCE_SPEND_SCHEMA as SCHEMA,MOVIE_MENTOR_INFERENCE_ENTITLEMENT_COLLECTION as ENTITLEMENTS,MOVIE_MENTOR_INFERENCE_SPEND_RESERVATION_COLLECTION as RESERVATIONS} from "../ai/MovieMentorInferenceSpendMongoStore.js";
+import {MOVIE_MENTOR_INFERENCE_EXECUTION_REQUIRED_UNIQUE_INDEXES as REQUIRED} from "../ai/MovieMentorInferenceExecutionPhysicalAuthority.js";
+
+// Positive reservation -> execution -> identity convergence. No provider or settlement certification.
+const uri=process.env.MOVIE_MENTOR_ISOLATED_MONGO_URI;
+assert.ok(uri&&/^mongodb:\/\/(127\.0\.0\.1|localhost)(:|\/)/.test(uri),"Disposable localhost Mongo required");
+process.env.MONGO_URI=uri;
+await mongoose.connect(uri,{serverSelectionTimeoutMS:10000});
+try{
+ const db=mongoose.connection.db;
+ await db.collection(ENTITLEMENTS).createIndex({principalId:1},{unique:true});
+ await db.collection(RESERVATIONS).createIndex({reservationId:1},{unique:true});
+ for(const requirement of REQUIRED)await db.collection(requirement.collection).createIndex(requirement.key,{unique:true});
+ const principalId="isolated-execution-"+Date.now(),projectId="isolated-execution-project",creatorTurnId="isolated-turn-"+Date.now(),requestDigest="a".repeat(64),ownerId="isolated-worker";
+ await db.collection(ENTITLEMENTS).insertOne({domain:DOMAIN,schema:SCHEMA,principalId,status:"active",remainingUnits:2,reservedUnits:0,consumedUnits:0,entitlementRevision:1});
+ const spend=createMovieMentorProductionInferenceSpendComposition();
+ assert.equal(spend.ready,true,spend.reason);
+ const reservation=await spend.authority.reserveTurn({serverAuthority:{authenticated:true,projectAuthorized:true,principalId,projectId},projectId});
+ assert.equal(reservation.status,"reserved");
+ const execution=createMovieMentorProductionInferenceExecutionComposition();
+ assert.equal(execution.ready,true,execution.reason);
+ assert.equal(isMovieMentorProductionInferenceExecutionOwnerProof(execution,execution.getStatus()),true);
+ const input={creatorTurnId,principalId,projectId,reservationId:reservation.reservationId,requestDigest,ownerId,maxProviderCalls:1};
+ const proof=next=>({authorized:true,currentOwnershipVerified:true,transition:"execution-creation",principalId:next.principalId,projectId:next.projectId,creatorTurnId:next.creatorTurnId,executionId:next.executionId,reservationId:next.reservationId,requestDigest:next.requestDigest,ownerId:next.ownerId,leaseGeneration:next.leaseGeneration,leaseReference:next.leaseReference,fencingToken:next.fencingToken});
+ const opened=await execution.authority.openExecution({...input,assertCurrentCreationAuthority:async next=>proof(next)});
+ assert.equal(opened.created,true);
+ const record=await db.collection("movie_mentor_inference_execution").findOne({principalId,projectId,creatorTurnId});
+ assert.ok(record,"physical execution required");
+ assert.equal(record.reservationId,reservation.reservationId);
+ assert.equal(record.requestDigest,requestDigest);
+ assert.equal(record.phase,"active");
+ const replay=await execution.authority.openExecution({...input,assertCurrentCreationAuthority:async()=>{throw Error("replay must not create");}});
+ assert.equal(replay.idempotent,true);
+ assert.equal(replay.executionId,opened.executionId);
+ assert.equal(await db.collection("movie_mentor_inference_execution").countDocuments({principalId,projectId,creatorTurnId}),1);
+ assert.equal(await db.collection(RESERVATIONS).countDocuments({principalId}),1);
+ const entitlement=await db.collection(ENTITLEMENTS).findOne({principalId});
+ assert.equal(entitlement.remainingUnits,1);
+ assert.equal(entitlement.reservedUnits,1);
+ assert.equal(entitlement.consumedUnits,0);
+ console.log("GREEN PHYSICAL EXECUTION: production spend reservation bound to one durable execution; identical open converged without a second reservation or execution");
+ console.log("LIMITATION: test supplies exact-bound creation proof callback; no independent ownership recheck, provider dispatch, canonical settlement, debit, terminal replay or HTTP success certified.");
+}finally{await mongoose.disconnect();}
