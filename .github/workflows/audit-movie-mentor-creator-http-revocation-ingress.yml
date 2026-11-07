@@ -21,6 +21,7 @@ jobs:
           echo "AUDIT_SHA=$(git rev-parse HEAD)"
           git cat-file -e d86fc6e2aa4bce0245f540fd62e3dc9b01f721a9:scripts/verify-movie-mentor-creator-state-mongo-postcheck-revocation.mjs
           test "$(git show d86fc6e2aa4bce0245f540fd62e3dc9b01f721a9:scripts/verify-movie-mentor-creator-state-mongo-postcheck-revocation.mjs | sha256sum | cut -d' ' -f1)" = "$(sha256sum scripts/verify-movie-mentor-creator-state-mongo-postcheck-revocation.mjs | cut -d' ' -f1)"
-      - run: npm ci
+      - name: Install isolated verifier dependencies (repository has no npm lockfile)
+        run: npm install --no-package-lock --ignore-scripts --no-audit --no-fund
       - name: Physical loopback HTTP credential-denial court
         run: node scripts/verify-movie-mentor-creator-http-revocation-ingress.mjs
