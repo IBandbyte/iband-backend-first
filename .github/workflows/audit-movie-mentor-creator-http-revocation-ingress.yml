@@ -40,5 +40,9 @@ jobs:
         env:
           MOVIE_MENTOR_ISOLATED_MONGO_URI: mongodb://127.0.0.1:27017/movie_mentor_clerk_ownership?replicaSet=rs0&directConnection=true
         run: node scripts/verify-movie-mentor-real-clerk-durable-ownership.mjs
+      - name: Real Clerk and Mongo ownership HTTP turn denial court
+        env:
+          MOVIE_MENTOR_ISOLATED_MONGO_URI: mongodb://127.0.0.1:27017/movie_mentor_clerk_http_turn?replicaSet=rs0&directConnection=true
+        run: node scripts/verify-movie-mentor-real-clerk-http-turn-denial.mjs
       - name: Physical loopback HTTP credential-denial court
         run: node scripts/verify-movie-mentor-creator-http-revocation-ingress.mjs
