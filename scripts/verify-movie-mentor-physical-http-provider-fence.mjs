@@ -41,12 +41,14 @@ try{
  assert.deepEqual(persisted.reconstructionInput,winner.reconstructionInput,"digest and reconstruction payload must belong to same winner");
  assert.ok(outcomes.every(outcome=>outcome.status==="rejected"||(outcome.value.reconstructionInputDigest===persisted.reconstructionInputDigest&&JSON.stringify(outcome.value.reconstructionInput)===JSON.stringify(winner.reconstructionInput))),"every successful contender must observe the one durable winner");
  const conflicting=contenders.find(input=>input.reconstructionInputDigest!==persisted.reconstructionInputDigest);
- await operationStore.bindReconstructionInput(conflicting);
+ await assert.rejects(()=>operationStore.bindReconstructionInput(conflicting),error=>error?.code==="MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_CONFLICT","conflicting replay must be denied rather than silently returning the first durable input");
+ const identical=await operationStore.bindReconstructionInput(winner);
+ assert.equal(identical.reconstructionInputDigest,persisted.reconstructionInputDigest,"identical replay must remain idempotent");
  const afterConflict=await operationStore.readOperation(raceId);
  assert.equal(afterConflict.reconstructionInputDigest,persisted.reconstructionInputDigest);
  assert.deepEqual(afterConflict.reconstructionInput,persisted.reconstructionInput);
  assert.equal(await db.collection("movie_mentor_provider_operation_reality").countDocuments({providerCallId:raceId}),1);
- console.log("GREEN PHYSICAL RECONSTRUCTION CAS: eight competing reconstruction inputs converged to one immutable durable digest and payload; later conflicting replay did not overwrite");
+ console.log("GREEN PHYSICAL RECONSTRUCTION CAS: eight competing inputs converge to one durable winner; conflicting replay explicitly denied; identical replay idempotent");
  console.log("LIMITATION: conflicting bind currently returns the existing winner rather than rejecting the attempted mismatch; caller-level mismatch handling remains a separate authority question.");
  await db.collection("movie_mentor_result_candidate").createIndex({candidateReference:1},{unique:true});
  for(const key of [{resultReference:1},{candidateReference:1},{executionId:1},{principalId:1,projectId:1,creatorTurnId:1},{reservationId:1}])await db.collection("movie_mentor_canonical_result").createIndex(key,{unique:true});
