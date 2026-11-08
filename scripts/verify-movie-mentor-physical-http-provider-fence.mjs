@@ -216,14 +216,7 @@ try{
   assert.equal(replay.body.metadata.canonicalResult.replayedFromDurableResult,true);
   assert.equal(providerInvocations,1);
   console.log("GREEN PHYSICAL HTTP PROVIDER POSITIVE: durable provider admission, UNKNOWN-before-network, fenced isolated provider invocation, evidence and settlement, replay without second provider invocation");
-  const secondTurn=creatorTurnId+"-provider-revoked";
-  denyAtDispatch=true;
-  const denied=await invoke(secondTurn);
-  assert.notEqual(denied.status,200,JSON.stringify(denied.body));
-  assert.equal(providerInvocations,1,"revoked ownership must prevent irreversible provider function invocation");
-  assert.equal(await db.collection("movie_mentor_canonical_result").countDocuments({principalId,projectId,creatorTurnId:secondTurn}),0);
-  console.log("GREEN PHYSICAL HTTP PROVIDER REVOCATION: ownership revoked at UNKNOWN boundary and provider function never invoked");
-  revoked=false;denyAtDispatch=false;denyDurableAtDispatch=true;
+  denyDurableAtDispatch=true;
   const durableTurn=creatorTurnId+"-provider-durable-revoked";
   const durableDenied=await invoke(durableTurn);
   assert.notEqual(durableDenied.status,200,JSON.stringify(durableDenied.body));
@@ -231,6 +224,16 @@ try{
   assert.equal((await ownershipCollection.findOne({projectId,principalId})).status,"revoked");
   assert.equal(await db.collection("movie_mentor_canonical_result").countDocuments({principalId,projectId,creatorTurnId:durableTurn}),0);
   console.log("GREEN PHYSICAL HTTP DURABLE OWNERSHIP REVOCATION: Mongo ownership changed after HTTP admission and before dispatch, fresh ownership read denied provider invocation");
+  const restored=await ownershipCollection.updateOne({projectId,principalId,status:"revoked"},{$set:{status:"active"},$inc:{revision:1}});
+  assert.equal(restored.modifiedCount,1,"isolated fixture must restore ownership before independent in-memory revocation court");
+  denyDurableAtDispatch=false;
+  const secondTurn=creatorTurnId+"-provider-revoked";
+  denyAtDispatch=true;
+  const denied=await invoke(secondTurn);
+  assert.notEqual(denied.status,200,JSON.stringify(denied.body));
+  assert.equal(providerInvocations,1,"revoked ownership must prevent irreversible provider function invocation");
+  assert.equal(await db.collection("movie_mentor_canonical_result").countDocuments({principalId,projectId,creatorTurnId:secondTurn}),0);
+  console.log("GREEN PHYSICAL HTTP PROVIDER REVOCATION: ownership revoked at UNKNOWN boundary and provider function never invoked");
   console.log("LIMITATION: isolated provider function and injected request authority; real provider transport and live Clerk not certified.");
  }finally{await new Promise((resolve,reject)=>server.close(error=>error?reject(error):resolve()));}
 }finally{await mongoose.disconnect();}
