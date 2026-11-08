@@ -182,7 +182,7 @@ try{
    interpretSemantics:async()=>{semanticCalls++;providerInvocations++;return {responseId:"isolated-provider-effect-"+semanticCalls,provider:"isolated-test-provider",meaning:"isolated"};},
    orchestrateTurn:async(_input,orchestrationDeps)=>{
     orchestrations++;
-    const semantic=await orchestrationDeps.interpretSemantics({message:"isolated-provider-boundary"});
+    const semantic=await orchestrationDeps.interpretSemantics({message:"isolated-provider-boundary"}).catch(error=>{console.error("PROVIDER_COURT_DIAGNOSTIC",JSON.stringify({code:error?.code||null,message:error?.message||null,reason:error?.reason||null,details:error?.details||null}));throw error;});
     return {success:true,message:"isolated-provider-result",semantic,metadata:{}};
    }
   }),
