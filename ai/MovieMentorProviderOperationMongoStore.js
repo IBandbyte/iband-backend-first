@@ -142,11 +142,17 @@ function createMovieMentorProviderOperationMongoStore({ mongoModel = null, conne
     const identity = { providerCallId: callId, executionId: text(executionId), slotId: text(slotId), task: text(task) };
     const existing = await readOperation(callId);
     if (!existing || !sameIdentity(existing, identity)) fail("MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_OPERATION_INVALID", "Provider reconstruction input may bind only to the exact durable provider operation universe.");
-    if (existing.reconstructionInputDigest) return existing;
+    function assertSameReconstructionInput(durable) {
+      if (durable.reconstructionInputDigest !== digest || JSON.stringify(durable.reconstructionInput) !== JSON.stringify(clone(reconstructionInput))) {
+        fail("MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_CONFLICT", "Provider reconstruction input is already durably bound to different input provenance.", { providerCallId: callId });
+      }
+      return durable;
+    }
+    if (existing.reconstructionInputDigest) return assertSameReconstructionInput(existing);
     const result = await storeModel().collection.updateOne({ providerCallId: callId, executionId: identity.executionId, slotId: identity.slotId, task: identity.task, $or: [{ reconstructionInputDigest: null }, { reconstructionInputDigest: { $exists: false } }] }, { $set: { reconstructionInputDigest: digest, reconstructionInput: clone(reconstructionInput), reconstructionInputBoundAt: timestamp } });
     const durable = await readOperation(callId);
     if (!durable?.reconstructionInputDigest) fail("MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_NOT_DURABLE", "Provider reconstruction input did not become durable.", { modifiedCount: result?.modifiedCount ?? null });
-    return durable;
+    return assertSameReconstructionInput(durable);
   }
 
   return Object.freeze({ readOperation, bindOperation, bindReconstructionInput });
