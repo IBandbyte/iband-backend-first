@@ -162,9 +162,12 @@ try{
   revisionAuthorityReference:"isolated-revision-ref",creatorAuthorityReference:"isolated-creator-ref",
   snapshotReference:"isolated-snapshot-ref",capturedAt:new Date(),creatorConfirmedContext:[]
  }});
- let revoked=false,denyAtDispatch=false,providerInvocations=0,semanticCalls=0,orchestrations=0;
+ const ownershipCollection=db.collection("movie_mentor_isolated_http_ownership");
+ await ownershipCollection.insertOne({projectId,principalId,status:"active",revision:1});
+ let revoked=false,denyAtDispatch=false,denyDurableAtDispatch=false,providerInvocations=0,semanticCalls=0,orchestrations=0;
  const requestAuthority={authorize:async ({request,projectId:requested})=>{
-  if(revoked||request.headers.authorization!=="Bearer isolated-http"||requested!==projectId){
+  const currentOwnership=await ownershipCollection.findOne({projectId:requested,principalId});
+  if(revoked||currentOwnership?.status!=="active"||request.headers.authorization!=="Bearer isolated-http"||requested!==projectId){
    const e=new Error("Current creator ownership revoked");e.code="MOVIE_MENTOR_AUTH_REVOKED";throw e;
   }
   return {authorized:true,principalId,projectId,ownershipRef:"isolated-http-owner",ownershipRevision:1};
@@ -173,6 +176,10 @@ try{
   ...execution.authority,
   beginProviderDispatch:async input=>{
    if(denyAtDispatch)revoked=true;
+   if(denyDurableAtDispatch){
+    const changed=await ownershipCollection.updateOne({projectId,principalId,status:"active"},{$set:{status:"revoked"},$inc:{revision:1}});
+    assert.equal(changed.modifiedCount,1,"physical ownership revocation must commit before provider dispatch");
+   }
    return execution.authority.beginProviderDispatch(input);
   }
  };
@@ -216,6 +223,14 @@ try{
   assert.equal(providerInvocations,1,"revoked ownership must prevent irreversible provider function invocation");
   assert.equal(await db.collection("movie_mentor_canonical_result").countDocuments({principalId,projectId,creatorTurnId:secondTurn}),0);
   console.log("GREEN PHYSICAL HTTP PROVIDER REVOCATION: ownership revoked at UNKNOWN boundary and provider function never invoked");
+  revoked=false;denyAtDispatch=false;denyDurableAtDispatch=true;
+  const durableTurn=creatorTurnId+"-provider-durable-revoked";
+  const durableDenied=await invoke(durableTurn);
+  assert.notEqual(durableDenied.status,200,JSON.stringify(durableDenied.body));
+  assert.equal(providerInvocations,1,"durably revoked ownership must prevent irreversible provider function invocation");
+  assert.equal((await ownershipCollection.findOne({projectId,principalId})).status,"revoked");
+  assert.equal(await db.collection("movie_mentor_canonical_result").countDocuments({principalId,projectId,creatorTurnId:durableTurn}),0);
+  console.log("GREEN PHYSICAL HTTP DURABLE OWNERSHIP REVOCATION: Mongo ownership changed after HTTP admission and before dispatch, fresh ownership read denied provider invocation");
   console.log("LIMITATION: isolated provider function and injected request authority; real provider transport and live Clerk not certified.");
  }finally{await new Promise((resolve,reject)=>server.close(error=>error?reject(error):resolve()));}
 }finally{await mongoose.disconnect();}
