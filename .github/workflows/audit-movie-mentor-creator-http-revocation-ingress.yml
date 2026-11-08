@@ -54,6 +54,8 @@ jobs:
         run: node scripts/verify-movie-mentor-real-runtime-turn-id-denial.mjs
       - name: Physical HTTP provider admission and revocation court
         env:
+          IBAND_AI_PROVIDER: openai
+          IBAND_AI_MODEL: movie-mentor-isolated-verifier-model
           MOVIE_MENTOR_ISOLATED_MONGO_URI: mongodb://127.0.0.1:27017/movie_mentor_http_provider_fence?replicaSet=rs0&directConnection=true
         run: node scripts/verify-movie-mentor-physical-http-provider-fence.mjs
       - name: Physical HTTP fresh forward execution and settlement court
