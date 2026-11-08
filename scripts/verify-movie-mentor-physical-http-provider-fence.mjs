@@ -42,6 +42,8 @@ try{
  assert.ok(outcomes.every(outcome=>outcome.status==="rejected"||(outcome.value.reconstructionInputDigest===persisted.reconstructionInputDigest&&JSON.stringify(outcome.value.reconstructionInput)===JSON.stringify(winner.reconstructionInput))),"every successful contender must observe the one durable winner");
  const conflicting=contenders.find(input=>input.reconstructionInputDigest!==persisted.reconstructionInputDigest);
  await assert.rejects(()=>operationStore.bindReconstructionInput(conflicting),error=>error?.code==="MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_CONFLICT","conflicting replay must be denied rather than silently returning the first durable input");
+ await assert.rejects(()=>operationStore.bindReconstructionInput({...winner,reconstructionInput:{contender:"tampered-payload"}}),error=>error?.code==="MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_CONFLICT","reusing the winning digest with altered payload must be denied");
+ await assert.rejects(()=>operationStore.bindReconstructionInput({...winner,reconstructionInputDigest:"forged-digest"}),error=>error?.code==="MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_CONFLICT","reusing the winning payload with altered digest must be denied");
  const identical=await operationStore.bindReconstructionInput(winner);
  assert.equal(identical.reconstructionInputDigest,persisted.reconstructionInputDigest,"identical replay must remain idempotent");
  const afterConflict=await operationStore.readOperation(raceId);
@@ -49,7 +51,7 @@ try{
  assert.deepEqual(afterConflict.reconstructionInput,persisted.reconstructionInput);
  assert.equal(await db.collection("movie_mentor_provider_operation_reality").countDocuments({providerCallId:raceId}),1);
  console.log("GREEN PHYSICAL RECONSTRUCTION CAS: eight competing inputs converge to one durable winner; conflicting replay explicitly denied; identical replay idempotent");
- console.log("LIMITATION: conflicting bind currently returns the existing winner rather than rejecting the attempted mismatch; caller-level mismatch handling remains a separate authority question.");
+ console.log("GREEN PHYSICAL RECONSTRUCTION REPLAY INTEGRITY: forged digest and forged payload independently denied; original replay remains idempotent");
  await db.collection("movie_mentor_result_candidate").createIndex({candidateReference:1},{unique:true});
  for(const key of [{resultReference:1},{candidateReference:1},{executionId:1},{principalId:1,projectId:1,creatorTurnId:1},{reservationId:1}])await db.collection("movie_mentor_canonical_result").createIndex(key,{unique:true});
  await db.collection("movie_mentor_creator_state").createIndex({projectId:1},{unique:true,partialFilterExpression:{projectId:{$type:"string"}}});
