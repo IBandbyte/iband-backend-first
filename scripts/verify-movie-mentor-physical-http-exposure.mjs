@@ -55,7 +55,7 @@ try{
  const settlement=createMovieMentorProductionInferenceSettlementComposition();
  assert.equal(settlement.ready,true,settlement.reason);
  assert.equal(isMovieMentorProductionInferenceSettlementOwnerProof(settlement,settlement.getStatus()),true);
- const payload={success:true,message:"isolated-positive-candidate-boundary"};
+ const payload={success:true,message:"isolated-positive-candidate-boundary",metadata:{}};
  await assert.rejects(
   ()=>execution.authority.stageResultCandidate({execution:opened,resultPayload:payload,creatorStateConsumptionProof:null}),
   error=>error?.code==="MOVIE_MENTOR_RESULT_CANDIDATE_CREATOR_STATE_PROOF_REQUIRED"
