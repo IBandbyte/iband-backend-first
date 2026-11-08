@@ -143,7 +143,7 @@ function createMovieMentorProviderOperationMongoStore({ mongoModel = null, conne
     const existing = await readOperation(callId);
     if (!existing || !sameIdentity(existing, identity)) fail("MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_OPERATION_INVALID", "Provider reconstruction input may bind only to the exact durable provider operation universe.");
     if (existing.reconstructionInputDigest) return existing;
-    const result = await storeModel().updateOne({ providerCallId: callId, executionId: identity.executionId, slotId: identity.slotId, task: identity.task, $or: [{ reconstructionInputDigest: null }, { reconstructionInputDigest: { $exists: false } }] }, { $set: { reconstructionInputDigest: digest, reconstructionInput: clone(reconstructionInput), reconstructionInputBoundAt: timestamp } }).exec();
+    const result = await storeModel().collection.updateOne({ providerCallId: callId, executionId: identity.executionId, slotId: identity.slotId, task: identity.task, $or: [{ reconstructionInputDigest: null }, { reconstructionInputDigest: { $exists: false } }] }, { $set: { reconstructionInputDigest: digest, reconstructionInput: clone(reconstructionInput), reconstructionInputBoundAt: timestamp } });
     const durable = await readOperation(callId);
     if (!durable?.reconstructionInputDigest) fail("MOVIE_MENTOR_PROVIDER_RECONSTRUCTION_INPUT_NOT_DURABLE", "Provider reconstruction input did not become durable.", { modifiedCount: result?.modifiedCount ?? null });
     return durable;
