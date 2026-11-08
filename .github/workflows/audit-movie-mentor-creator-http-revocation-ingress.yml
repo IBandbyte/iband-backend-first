@@ -36,6 +36,10 @@ jobs:
         env:
           MOVIE_MENTOR_ISOLATED_MONGO_URI: mongodb://127.0.0.1:27017/movie_mentor_durable_write_boundary_race?replicaSet=rs0&directConnection=true
         run: node scripts/verify-movie-mentor-durable-ownership-write-boundary-race.mjs
+      - name: Original postcheck authorization-freshness RED court (unaltered)
+        env:
+          MOVIE_MENTOR_ISOLATED_MONGO_URI: mongodb://127.0.0.1:27017/movie_mentor_original_postcheck?replicaSet=rs0&directConnection=true
+        run: node scripts/verify-movie-mentor-creator-state-mongo-postcheck-revocation.mjs
       - name: Real state transition HTTP Mongo court
         env:
           MOVIE_MENTOR_ISOLATED_MONGO_URI: mongodb://127.0.0.1:27017/movie_mentor_real_transition_http?replicaSet=rs0&directConnection=true
