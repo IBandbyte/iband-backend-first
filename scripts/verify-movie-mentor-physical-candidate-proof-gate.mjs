@@ -1,0 +1,85 @@
+import assert from "node:assert/strict";
+import mongoose from "mongoose";
+import {createMovieMentorProductionInferenceSpendComposition} from "../ai/MovieMentorProductionInferenceSpendComposition.js";
+import {createMovieMentorProductionInferenceExecutionComposition,isMovieMentorProductionInferenceExecutionOwnerProof} from "../ai/MovieMentorProductionInferenceExecutionComposition.js";
+import {createMovieMentorProductionInferenceSettlementComposition,isMovieMentorProductionInferenceSettlementOwnerProof} from "../ai/MovieMentorProductionInferenceSettlementComposition.js";
+import {MOVIE_MENTOR_INFERENCE_SPEND_DOMAIN as DOMAIN,MOVIE_MENTOR_INFERENCE_SPEND_SCHEMA as SCHEMA,MOVIE_MENTOR_INFERENCE_ENTITLEMENT_COLLECTION as ENTITLEMENTS,MOVIE_MENTOR_INFERENCE_SPEND_RESERVATION_COLLECTION as RESERVATIONS} from "../ai/MovieMentorInferenceSpendMongoStore.js";
+import {MOVIE_MENTOR_INFERENCE_SETTLEMENT_REQUIRED_UNIQUE_INDEXES as SETTLEMENT_REQUIRED} from "../ai/MovieMentorInferenceSettlementPhysicalAuthority.js";
+import {MOVIE_MENTOR_INFERENCE_EXECUTION_REQUIRED_UNIQUE_INDEXES as REQUIRED} from "../ai/MovieMentorInferenceExecutionPhysicalAuthority.js";
+
+// Positive reservation -> execution -> identity convergence. No provider or settlement certification.
+const uri=process.env.MOVIE_MENTOR_ISOLATED_MONGO_URI;
+assert.ok(uri&&/^mongodb:\/\/(127\.0\.0\.1|localhost)(:|\/)/.test(uri),"Disposable localhost Mongo required");
+process.env.MONGO_URI=uri;
+await mongoose.connect(uri,{serverSelectionTimeoutMS:10000});
+try{
+ const db=mongoose.connection.db;
+ await db.collection(ENTITLEMENTS).createIndex({principalId:1},{unique:true});
+ await db.collection(RESERVATIONS).createIndex({reservationId:1},{unique:true});
+ for(const requirement of [...REQUIRED,...SETTLEMENT_REQUIRED])await db.collection(requirement.collection).createIndex(requirement.key,{unique:true});
+ const principalId="isolated-execution-"+Date.now(),projectId="isolated-execution-project",creatorTurnId="isolated-turn-"+Date.now(),requestDigest="a".repeat(64),ownerId="isolated-worker";
+ await db.collection(ENTITLEMENTS).insertOne({domain:DOMAIN,schema:SCHEMA,principalId,status:"active",remainingUnits:2,reservedUnits:0,consumedUnits:0,entitlementRevision:1});
+ const spend=createMovieMentorProductionInferenceSpendComposition();
+ assert.equal(spend.ready,true,spend.reason);
+ const reservation=await spend.authority.reserveTurn({serverAuthority:{authenticated:true,projectAuthorized:true,principalId,projectId},projectId});
+ assert.equal(reservation.status,"reserved");
+ const execution=createMovieMentorProductionInferenceExecutionComposition();
+ assert.equal(execution.ready,true,execution.reason);
+ assert.equal(isMovieMentorProductionInferenceExecutionOwnerProof(execution,execution.getStatus()),true);
+ const input={creatorTurnId,principalId,projectId,reservationId:reservation.reservationId,requestDigest,ownerId,maxProviderCalls:1};
+ const proof=next=>({authorized:true,currentOwnershipVerified:true,transition:"execution-creation",principalId:next.principalId,projectId:next.projectId,creatorTurnId:next.creatorTurnId,executionId:next.executionId,reservationId:next.reservationId,requestDigest:next.requestDigest,ownerId:next.ownerId,leaseGeneration:next.leaseGeneration,leaseReference:next.leaseReference,fencingToken:next.fencingToken});
+ const opened=await execution.authority.openExecution({...input,assertCurrentCreationAuthority:async next=>proof(next)});
+ assert.equal(opened.created,true);
+ const record=await db.collection("movie_mentor_inference_execution").findOne({principalId,projectId,creatorTurnId});
+ assert.ok(record,"physical execution required");
+ assert.equal(record.reservationId,reservation.reservationId);
+ assert.equal(record.requestDigest,requestDigest);
+ assert.equal(record.phase,"active");
+ const replay=await execution.authority.openExecution({...input,assertCurrentCreationAuthority:async()=>{throw Error("replay must not create");}});
+ assert.equal(replay.idempotent,true);
+ assert.equal(replay.executionId,opened.executionId);
+ assert.equal(await db.collection("movie_mentor_inference_execution").countDocuments({principalId,projectId,creatorTurnId}),1);
+ assert.equal(await db.collection(RESERVATIONS).countDocuments({principalId}),1);
+ const entitlement=await db.collection(ENTITLEMENTS).findOne({principalId});
+ assert.equal(entitlement.remainingUnits,1);
+ assert.equal(entitlement.reservedUnits,1);
+ assert.equal(entitlement.consumedUnits,0);
+ const settlement=createMovieMentorProductionInferenceSettlementComposition();
+ assert.equal(settlement.ready,true,settlement.reason);
+ assert.equal(isMovieMentorProductionInferenceSettlementOwnerProof(settlement,settlement.getStatus()),true);
+ const payload={message:"isolated-positive-candidate-boundary"};
+ await assert.rejects(
+  ()=>execution.authority.stageResultCandidate({execution:opened,resultPayload:payload,creatorStateConsumptionProof:null}),
+  error=>error?.code==="MOVIE_MENTOR_RESULT_CANDIDATE_CREATOR_STATE_PROOF_REQUIRED"
+ );
+ assert.equal(await db.collection("movie_mentor_result_candidate").countDocuments({executionId:opened.executionId}),0);
+ const balanceBefore=await db.collection(ENTITLEMENTS).findOne({principalId});
+ assert.equal(balanceBefore.consumedUnits,0);
+ console.log("GREEN PHYSICAL CANDIDATE DENIAL: production candidate staging rejects missing creator-state consumption proof without minting a candidate or debiting entitlement");
+ console.log("LIMITATION: missing-proof negative control only; valid creator-state proof and positive candidate mint remain unproven.");
+ const closing=await execution.authority.beginExecutionClosing({execution:opened});
+ assert.equal(closing.authorized,true);
+ assert.equal(closing.phase,"closing");
+ const closed=await execution.authority.reconcileExecutionClosure({executionId:opened.executionId});
+ assert.equal(closed.authorized,true);
+ assert.equal(closed.phase,"closed");
+ assert.equal(closed.currentRealityVerified,true);
+ const persistedClosure=await db.collection("movie_mentor_inference_execution").findOne({executionId:opened.executionId});
+ assert.equal(persistedClosure.phase,"closed");
+ assert.ok(persistedClosure.closureCertificateDigest);
+ const confirmed=await execution.authority.assertCurrentExecutionClosure({executionId:opened.executionId,closureReference:closed.closureReference,closureCertificateDigest:closed.closureCertificateDigest});
+ assert.equal(confirmed.currentRealityVerified,true);
+ const denied=await settlement.authority.reconcile({executionId:opened.executionId});
+ assert.equal(denied.settled,false);
+ assert.equal(denied.authorized,false);
+ assert.equal(denied.reason,"execution-not-finalized");
+ assert.equal(denied.reason,"execution-not-finalized");
+ const balance=await db.collection(ENTITLEMENTS).findOne({principalId});
+ assert.equal(balance.remainingUnits,1);
+ assert.equal(balance.reservedUnits,1);
+ assert.equal(balance.consumedUnits,0);
+ const row=await db.collection(RESERVATIONS).findOne({reservationId:reservation.reservationId});
+ assert.equal(row.status,"reserved");
+ console.log("GREEN PHYSICAL CLOSURE: zero-provider-call execution closed with durable current-reality certificate; settlement denied debit without canonical finalization");
+ console.log("LIMITATION: zero-call closure and negative settlement only; positive candidate, finalized canonical result, provider dispatch, debit and replay remain uncertified.");
+}finally{await mongoose.disconnect();}
