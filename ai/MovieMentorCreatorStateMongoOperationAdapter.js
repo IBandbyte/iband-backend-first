@@ -60,6 +60,17 @@ function createMongoCreatorStateAtomicAccept({client,states,operations,ownership
     const selector=current?{projectId:envelope.projectId,revision:envelope.expectedRevision}:{projectId:envelope.projectId,revision:{$exists:false}};
     const updated=await states.replaceOne(selector,storageState,{session,upsert:!current});
     if(updated.matchedCount!==1&&updated.upsertedCount!==1)throw error("MOVIE_MENTOR_CREATOR_STATE_REVISION_CONFLICT","Concurrent revision change during transaction.");
+    // Final capability freshness check occurs after the physical state write but
+    // before operation claim / transaction commit. A denial aborts both writes.
+    // The transactional ownership update above remains the durable race fence.
+    let finalProof;
+    try {
+     finalProof=await assertMovieMentorCreatorStateMutationAuthority({authority:creatorStateMutationAuthority,projectId:envelope.projectId,source:envelope.source,expectedRevision:envelope.expectedRevision,revision:proposedState.revision,creatorStateGeneration:proposedState.creatorStateGeneration,creatorStateFingerprint:proposedState.creatorStateFingerprint});
+    } catch(cause) {
+     if(["MOVIE_MENTOR_CREATOR_STATE_CURRENT_OWNERSHIP_REQUIRED","MOVIE_MENTOR_CREATOR_STATE_OWNERSHIP_CHANGED","MOVIE_MENTOR_CREATOR_STATE_MUTATION_PROOF_INVALID"].includes(cause?.code))throw error("MOVIE_MENTOR_CREATOR_STATE_OWNERSHIP_CHANGED","Creator-state ownership revoked at final write boundary.");
+     throw cause;
+    }
+    if(finalProof.principalId!==envelope.principalId||finalProof.ownershipRef!==admissionProof.ownershipRef||finalProof.ownershipRevision!==admissionProof.ownershipRevision)throw error("MOVIE_MENTOR_CREATOR_STATE_OWNERSHIP_CHANGED","Creator-state ownership changed at final write boundary.");
     await operations.insertOne({...key,requestDigest:envelope.requestDigest,result:storageState,committedRevision:proposedState.revision},{session});
     return{kind:"accepted",result:storageState};
    },{readConcern:{level:"snapshot"},writeConcern:{w:"majority"}});
