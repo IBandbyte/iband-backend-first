@@ -109,10 +109,22 @@ try{
  assert.equal(await db.collection("movie_mentor_canonical_result").countDocuments({executionId:opened.executionId}),1);
  console.log("GREEN PHYSICAL CANONICAL FINALIZATION: immutable candidate and current closure certificate converged atomically to one finalized canonical result; repeated commit idempotent");
  console.log("LIMITATION: zero-provider-call fixture, injected ownership recheck; settlement debit, terminal replay and real HTTP/provider execution not certified.");
+ const simultaneous=await Promise.allSettled(Array.from({length:4},()=>settlement.authority.reconcile({executionId:opened.executionId})));
+ const successful=simultaneous.filter(item=>item.status==="fulfilled").map(item=>item.value);
+ assert.ok(successful.length>0,"At least one simultaneous settlement must succeed");
+ assert.ok(successful.every(item=>item.settled===true&&item.authorized===true),"Every successful contender must prove settlement");
+ const concurrentEntitlement=await db.collection(ENTITLEMENTS).findOne({principalId});
+ assert.equal(concurrentEntitlement.remainingUnits,1);
+ assert.equal(concurrentEntitlement.reservedUnits,0);
+ assert.equal(concurrentEntitlement.consumedUnits,1);
+ assert.equal(await db.collection(RESERVATIONS).countDocuments({reservationId:reservation.reservationId,status:"consumed"}),1);
+ const rejected=simultaneous.filter(item=>item.status==="rejected");
+ console.log("GREEN PHYSICAL CONCURRENT DEBIT FENCE: four overlapping settlement attempts produced one consumed reservation and exactly one entitlement debit; rejected contenders="+rejected.length);
+ if(rejected.length)console.log("LIMITATION: "+rejected.length+" concurrent attempts rejected under contention; subsequent sequential retry must converge");
  const denied=await settlement.authority.reconcile({executionId:opened.executionId});
  assert.equal(denied.settled,true);
  assert.equal(denied.authorized,true);
- assert.equal(denied.idempotent,false);
+ assert.equal(denied.idempotent,true);
  const settlementReplay=await settlement.authority.reconcile({executionId:opened.executionId});
  assert.equal(settlementReplay.settled,true);
  assert.equal(settlementReplay.authorized,true);
@@ -137,5 +149,5 @@ try{
  const row=await db.collection(RESERVATIONS).findOne({reservationId:reservation.reservationId});
  assert.equal(row.status,"consumed");
  console.log("GREEN PHYSICAL SETTLEMENT REPLAY: finalized result consumed one reserved unit; repeated settlement idempotent without second debit");
- console.log("LIMITATION: zero-provider-call fixture and injected ownership; provider dispatch, real HTTP and terminal replay remain uncertified.");
+ console.log("LIMITATION: zero-provider-call fixture and injected ownership; provider dispatch and real HTTP remain uncertified.");
 }finally{await mongoose.disconnect();}
