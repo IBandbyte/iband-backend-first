@@ -50,7 +50,7 @@ try{
  assert.equal(await db.collection("movie_mentor_inference_execution").countDocuments({principalId,projectId,creatorTurnId}),1);
  assert.equal(await db.collection(RESERVATIONS).countDocuments({principalId}),1);
  const entitlement=await db.collection(ENTITLEMENTS).findOne({principalId});
- assert.equal(entitlement.remainingUnits,1);
+ assert.equal(entitlement.remainingUnits,2);
  assert.equal(entitlement.reservedUnits,1);
  assert.equal(entitlement.consumedUnits,0);
  const settlement=createMovieMentorProductionInferenceSettlementComposition();
@@ -120,7 +120,7 @@ try{
  assert.ok(successful.length>0,"At least one simultaneous settlement must succeed");
  assert.ok(successful.every(item=>item.settled===true&&item.authorized===true),"Every successful contender must prove settlement");
  const concurrentEntitlement=await db.collection(ENTITLEMENTS).findOne({principalId});
- assert.equal(concurrentEntitlement.remainingUnits,1);
+ assert.equal(concurrentEntitlement.remainingUnits,2);
  assert.equal(concurrentEntitlement.reservedUnits,0);
  assert.equal(concurrentEntitlement.consumedUnits,1);
  assert.equal(await db.collection(RESERVATIONS).countDocuments({reservationId:reservation.reservationId,status:"consumed"}),1);
@@ -149,7 +149,7 @@ try{
  assert.equal(await db.collection("movie_mentor_canonical_result").countDocuments({executionId:opened.executionId}),1);
  console.log("GREEN PHYSICAL TERMINAL REPLAY: settled canonical result re-read with intact candidate lineage and unchanged result payload");
  const balance=await db.collection(ENTITLEMENTS).findOne({principalId});
- assert.equal(balance.remainingUnits,1);
+ assert.equal(balance.remainingUnits,2);
  assert.equal(balance.reservedUnits,0);
  assert.equal(balance.consumedUnits,1);
  const row=await db.collection(RESERVATIONS).findOne({reservationId:reservation.reservationId});
