@@ -17,6 +17,8 @@ try{
  await db.collection(ENTITLEMENTS).createIndex({principalId:1},{unique:true});
  await db.collection(RESERVATIONS).createIndex({reservationId:1},{unique:true});
  for(const requirement of [...REQUIRED,...SETTLEMENT_REQUIRED])await db.collection(requirement.collection).createIndex(requirement.key,{unique:true});
+ await db.collection("movie_mentor_result_candidate").createIndex({candidateReference:1},{unique:true});
+ await db.collection("movie_mentor_creator_state").createIndex({projectId:1},{unique:true,partialFilterExpression:{projectId:{$type:"string"}}});
  const principalId="isolated-execution-"+Date.now(),projectId="isolated-execution-project",creatorTurnId="isolated-turn-"+Date.now(),requestDigest="a".repeat(64),ownerId="isolated-worker";
  await db.collection(ENTITLEMENTS).insertOne({domain:DOMAIN,schema:SCHEMA,principalId,status:"active",remainingUnits:2,reservedUnits:0,consumedUnits:0,entitlementRevision:1});
  const spend=createMovieMentorProductionInferenceSpendComposition();
