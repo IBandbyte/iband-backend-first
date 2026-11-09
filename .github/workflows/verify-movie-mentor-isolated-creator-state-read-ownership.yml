@@ -15,3 +15,5 @@ jobs:
           node-version: '20'
       - name: Authenticated ownership-bound read-only contract
         run: node scripts/verify-movie-mentor-creator-state-read-ownership.mjs
+      - name: Owner provenance and durable identity denial matrix
+        run: node scripts/verify-movie-mentor-creator-state-read-denial-matrix.mjs
