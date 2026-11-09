@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
+import http from "node:http";
+import { executeStructuredAI } from "../ai/StructuredAIProviderClient.js";
 import express from "express";
 import mongoose from "mongoose";
 import { createMovieMentorProductionAuthenticationComposition } from "../ai/MovieMentorProductionAuthenticationComposition.js";
@@ -14,8 +16,9 @@ const uri=process.env.MOVIE_MENTOR_ISOLATED_MONGO_URI||"";
 assert.match(uri,/^mongodb:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?\//);
 assert.match(uri,/replicaSet=/);
 process.env.MONGO_URI=uri;
-process.env.IBAND_AI_PROVIDER="generic-http";
-process.env.IBAND_AI_BASE_URL="http://127.0.0.1:1/isolated-never-contact-provider";
+process.env.IBAND_AI_PROVIDER="openai";
+process.env.IBAND_AI_MODEL="gpt-isolated";
+process.env.IBAND_AI_API_KEY="isolated-only";
 const suffix=`jwt-http-${process.pid}-${Date.now()}`;
 const principalId=`${suffix}-owner`,projectId=`${suffix}-project`;
 const issuer="https://isolated-clerk.example.test",audience="isolated-movie-mentor",party="https://isolated-app.example.test";
@@ -37,8 +40,16 @@ const authentication=createMovieMentorProductionAuthenticationComposition({env:{
 assert.equal(authentication.ready,true);
 const dbConnection=await mongoose.connect(uri,{serverSelectionTimeoutMS:10000});
 const db=dbConnection.connection.db;
-let server;
+let server,socketServer;
+const acceptedSockets=[];
 try{
+ socketServer=http.createServer(async(req,res)=>{
+  let body="";for await(const chunk of req)body+=chunk;
+  acceptedSockets.push({key:req.headers["idempotency-key"],body:JSON.parse(body)});
+  res.destroy();
+ });
+ await new Promise(resolve=>socketServer.listen(0,"127.0.0.1",resolve));
+ process.env.IBAND_AI_BASE_URL=`http://127.0.0.1:${socketServer.address().port}/v1/responses`;
  const ownership=db.collection("movie_mentor_project_ownership");
  await ownership.createIndex({projectId:1},{unique:true});
  await ownership.createIndex({establishmentAuthorityId:1},{unique:true});
@@ -104,6 +115,17 @@ try{
    });
    assert.equal(unknown.dispatchAuthorized,true);
    assert.equal(unknown.effectState,"unknown");
+   const durableEffect=await db.collection("movie_mentor_provider_effect_reality").findOne({providerCallId:admitted.providerCallId});
+   assert.equal(durableEffect.state,"unknown","durable UNKNOWN must precede socket");
+   await assert.rejects(()=>executeStructuredAI({
+    task:"isolated-pre-dispatch-task",systemInstructions:"Return JSON.",
+    input:{isolated:true},
+    schema:{type:"object",additionalProperties:false,properties:{value:{type:"string"}},required:["value"]},
+    schemaName:"isolated_authenticated_http_socket_loss",
+    providerOperation:{providerOperationId:admitted.providerCallId,executionId:opened.executionId,slotId:admitted.slotId,task:admitted.task}
+   }));
+   assert.equal(acceptedSockets.length,1,"provider socket must accept exactly one request");
+   assert.equal(acceptedSockets[0].key,admitted.providerCallId);
    const error=new Error("Isolated post-reservation stop: never dispatch provider");
    error.code="MOVIE_MENTOR_INFERENCE_EXECUTION_UNRESOLVED";
    throw error;
@@ -142,7 +164,8 @@ try{
  assert.equal(await operations.countDocuments({executionId:createdExecution.executionId}),1);
  const operation=await operations.findOne({executionId:createdExecution.executionId});
  assert.equal(operation.providerCallId,effect.providerCallId);
- assert.equal(operation.providerTarget.provider,"generic-http");
+ assert.equal(operation.providerTarget.provider,"openai");
+ assert.equal(acceptedSockets.length,1);
  exposureAttempt=true;
  const forged=await post(token(principalId));
  assert.notEqual(forged.status,200,"HTTP gateway must refuse forged runtime completion");
@@ -159,8 +182,10 @@ try{
  console.log("GREEN fresh authenticated HTTP turn -> real current-ownership execution-creation proof -> production-composed schema-6 Mongo execution");
  console.log("GREEN authenticated HTTP current-owner provider-call admission -> exactly one durable claim");
  console.log("GREEN authenticated HTTP current-owner UNKNOWN transition -> immutable provider operation and one durable UNKNOWN effect before socket dispatch");
- console.log("LIMITATION: locally generated isolated RSA test keys and native ownership fixture; injected runtime halts after durable provider UNKNOWN; no provider socket contacted, positive settlement HTTP journey not certified.");
+ console.log("GREEN authenticated HTTP chain -> exactly one provider socket accepted then response lost, durable UNKNOWN retained");
+ console.log("LIMITATION: locally generated isolated RSA test keys and native ownership fixture; injected runtime simulates socket loss after durable UNKNOWN; fresh-worker restart and positive settlement HTTP journey not certified.");
 }finally{
  if(server)await new Promise(resolve=>server.close(resolve));
+ if(socketServer)await new Promise(resolve=>socketServer.close(resolve));
  await mongoose.disconnect();
 }
