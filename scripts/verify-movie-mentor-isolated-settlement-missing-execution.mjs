@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import mongoose from "mongoose";
 import { createMovieMentorProductionInferenceSpendComposition } from "../ai/MovieMentorProductionInferenceSpendComposition.js";
 import { createMovieMentorInferenceExecutionMongoStore } from "../ai/MovieMentorInferenceExecutionMongoStore.js";
@@ -158,6 +159,11 @@ try{
  assert.deepEqual(await reservationCollection.findOne({principalId}),settledReservation);
  assert.deepEqual(await entitlements.findOne({principalId}),settledEntitlement);
  assert.equal(await results.countDocuments({executionId}),1);
+ execFileSync(process.execPath,["scripts/verify-movie-mentor-isolated-settled-fresh-worker.mjs",executionId,principalId],{
+  cwd:process.cwd(),env:process.env,stdio:"inherit",timeout:30000
+ });
+ assert.deepEqual(await reservationCollection.findOne({principalId}),settledReservation);
+ assert.deepEqual(await entitlements.findOne({principalId}),settledEntitlement);
  console.log("GREEN physical canonical finalization and exactly-once Mongo spend settlement with repeated replay");
  console.log("LIMITATION: isolated creator-state and synthetic ownership fixtures; authenticated complete HTTP turn/restart replay not certified.");
  console.log("GREEN real closure authority closes zero-call execution; settlement refuses absent canonical finalization");
