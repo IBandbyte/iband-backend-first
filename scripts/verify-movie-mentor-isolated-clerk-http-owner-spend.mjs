@@ -102,12 +102,28 @@ if(process.argv[2]==="--verify-unknown-http-retry"){
    return state;
   };
   const forbidden=(operation)=>()=>{const error=new Error(`UNKNOWN HTTP retry unexpectedly reached ${operation}`);error.code="ISOLATED_UNEXPECTED_RETRY_OPERATION";throw error;};
-  const guardedSpend={...spend.authority,reserveTurn:forbidden("spend.reserveTurn")};
+  const entitlementRevisionAt=async(stage)=>{
+   const current=await entitlementCollection.findOne({principalId});
+   console.log(`ISOLATED UNKNOWN ENTITLEMENT CHECKPOINT: stage=${stage} revision=${current?.entitlementRevision} remaining=${current?.remainingUnits} reserved=${current?.reservedUnits} consumed=${current?.consumedUnits}`);
+  };
+  await entitlementRevisionAt("before-retry");
+  const guardedSpend={
+   ...spend.authority,
+   reserveTurn:forbidden("spend.reserveTurn"),
+   readReservation:async(input)=>{
+    await entitlementRevisionAt("before-readReservation");
+    const result=await spend.authority.readReservation(input);
+    await entitlementRevisionAt("after-readReservation");
+    return result;
+   }
+  };
   let earlyExecutionLookups=0;
   const observedExecutionAuthority={
    ...composed.authority,
    findExecutionByCreatorTurn:async(input)=>{
+    await entitlementRevisionAt("before-findExecution");
     const found=await composed.authority.findExecutionByCreatorTurn(input);
+    await entitlementRevisionAt("after-findExecution");
     earlyExecutionLookups++;
     console.log(`ISOLATED UNKNOWN EARLY EXECUTION LOOKUP: found=${found?.found===true} phase=${found?.phase||"none"} executionMatch=${found?.executionId===executionId}`);
     return found;
@@ -138,6 +154,7 @@ if(process.argv[2]==="--verify-unknown-http-retry"){
    body:JSON.stringify({projectId,creatorTurnId,message:"isolated",options:{}})});
   assert.notEqual(response.status,200,"UNKNOWN HTTP retry must not expose completion");
   const retryFailure=await response.json();
+  await entitlementRevisionAt("after-http-response");
   assert.equal(typeof retryFailure.code,"string","retry denial must carry a machine-readable error code");
   assert.notEqual(retryFailure.code,"MOVIE_MENTOR_CREATOR_STATE_CONSUMPTION_STATE_PROOF_REQUIRED","retry must not pass merely because a test fixture omits creator-state provenance");
   assert.notEqual(retryFailure.code,"MOVIE_MENTOR_CREATOR_STATE_CONSUMPTION_AUTHORITY_REQUIRED","retry must not pass merely because a test fixture omits consumption authority");
@@ -353,6 +370,7 @@ try{
  if(liveLookup)console.log(`PHYSICAL LIVE-LEASE EARLY LOOKUP: ${liveLookup[1]}`);
  const liveState=retry.stdout.match(/ISOLATED UNKNOWN DURABLE CREATOR STATE READ: ([^\r\n]+)/);
  if(liveState)console.log(`PHYSICAL LIVE-LEASE DURABLE STATE: ${liveState[1]}`);
+ for(const checkpoint of retry.stdout.matchAll(/ISOLATED UNKNOWN ENTITLEMENT CHECKPOINT: ([^\r\n]+)/g))console.log(`PHYSICAL LIVE-LEASE ENTITLEMENT: ${checkpoint[1]}`);
  const liveRoot=retry.stdout.match(/ISOLATED UNKNOWN RETRY ROOT EXCEPTION: ([^\r\n]+)/);
  if(liveRoot)console.log(`PHYSICAL LIVE-LEASE ROOT EXCEPTION: ${liveRoot[1]}`);
  assert.equal(acceptedSockets.length,1,"HTTP retry must not dispatch another provider socket");
