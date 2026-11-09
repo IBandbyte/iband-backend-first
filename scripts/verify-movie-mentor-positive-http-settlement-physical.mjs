@@ -10,6 +10,9 @@ import { createMovieMentorProductionInferenceExecutionComposition } from "../ai/
 import { createMovieMentorInferenceSettlementMongoStore } from "../ai/MovieMentorInferenceSettlementMongoStore.js";
 import { createMovieMentorInferenceSettlementReconciliationAuthority } from "../ai/MovieMentorInferenceSettlementReconciliationAuthority.js";
 import mongoose from "mongoose";
+import { runMovieMentorTurnWithForwardExecutionAuthority } from "../ai/MovieMentorForwardExecutionRuntime.js";
+import { readAuthoritativeTurnSource } from "../ai/MovieMentorCreatorStateStore.js";
+import { orchestrateMovieMentorTurn } from "../ai/MovieMentorTurnOrchestrator.js";
 
 // Fail-closed registration of the missing positive HTTP-origin settlement court.
 // This verifier must not borrow the seeded canonical-settlement or replay GREENs.
@@ -56,6 +59,11 @@ try{
   expectedIssuer:authentication.expectedIssuer,expectedAudience:authentication.expectedAudience,
   ownershipAuthority
  });
+ const entitlements=mongoose.connection.db.collection("movie_mentor_inference_entitlement");
+ await entitlements.insertOne({domain:"iband.movie-mentor.inference-spend",schema:1,principalId,status:"active",remainingUnits:1,reservedUnits:0,consumedUnits:0,entitlementRevision:1});
+ const creatorState=mongoose.connection.db.collection("movie_mentor_creator_state");
+ await creatorState.createIndex({projectId:1},{unique:true,partialFilterExpression:{projectId:{$type:"string"}}});
+ await creatorState.insertOne({projectId,revision:0,revisionAuthorityReference:`${prefix}-revision`,creatorStateGeneration:1,creatorStateFingerprint:`${prefix}-fingerprint`,creatorAuthorityReference:`${prefix}-authority`});
  const spend=createMovieMentorProductionInferenceSpendComposition();
  assert.equal(spend.ready,true,"physical spend composition required");
  const execution=createMovieMentorProductionInferenceExecutionComposition();
@@ -66,7 +74,10 @@ try{
   inferenceSpendAuthority:spend.authority,
   inferenceExecutionAuthority:execution.authority,
   inferenceSettlementAuthority:settlement,
-  runTurn:async()=>{throw Object.assign(new Error("positive HTTP runtime not yet composed"),{code:"POSITIVE_HTTP_RUNTIME_NOT_COMPOSED"});}
+  runTurn:async(body,deps)=>runMovieMentorTurnWithForwardExecutionAuthority(body,{
+   ...deps,readAuthoritativeTurnSource,orchestrateTurn:orchestrateMovieMentorTurn,
+   createExecutionOwnerId:()=>`${prefix}-http-owner`
+  })
  });
  const app=express();app.use(express.json());app.use("/api/movie-mentor",router);
  const server=await new Promise(resolve=>{const s=app.listen(0,"127.0.0.1",()=>resolve(s));});
@@ -80,13 +91,17 @@ try{
    method:"POST",headers:{"content-type":"application/json",authorization:`Bearer ${jwt}`},
    body:JSON.stringify({projectId,creatorTurnId,message:"isolated positive creator turn",options:{}})
   });
-  assert.notEqual(response.status,200,"uncomposed positive HTTP runtime must not expose completion");
-  console.log(`PHYSICAL POSITIVE HTTP INGRESS: status=${response.status} (not a settlement certification)`);
+  const responseBody=await response.json();
+  console.log(`PHYSICAL POSITIVE HTTP RUNTIME: status=${response.status} code=${responseBody?.code||"none"} success=${responseBody?.success===true}`);
+  const actualExecution=await mongoose.connection.db.collection("movie_mentor_inference_execution").findOne({creatorTurnId});
+  const actualReservation=await mongoose.connection.db.collection("movie_mentor_inference_spend_reservation").findOne({principalId});
+  console.log(`PHYSICAL POSITIVE DURABLE CHECKPOINT: execution=${actualExecution?.executionId||"none"} phase=${actualExecution?.phase||"none"} reservation=${actualReservation?.status||"none"}`);
+  assert.notEqual(response.status,200,"positive HTTP cannot claim completion without proven canonical finalization, settlement and replay");
  }finally{
   await new Promise((resolve,reject)=>server.close(error=>error?reject(error):resolve()));
  }
 
- console.error("RED POSITIVE_HTTP_SETTLEMENT_JOURNEY_NOT_IMPLEMENTED: signed-JWT initial HTTP creation, real orchestrator, candidate/closure/canonical settlement and fresh-process replay must run in this same court; existing seeded-settlement GREEN is not sufficient.");
+ console.error("RED POSITIVE_HTTP_SETTLEMENT_JOURNEY_NOT_IMPLEMENTED: genuine HTTP runtime attempted; full positive provider response, canonical settlement and fresh-process replay remain uncertified.");
  process.exitCode=1;
 }finally{
  await mongoose.disconnect();
