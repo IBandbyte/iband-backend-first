@@ -17,3 +17,5 @@ jobs:
         run: node scripts/verify-movie-mentor-creator-state-read-ownership.mjs
       - name: Owner provenance and durable identity denial matrix
         run: node scripts/verify-movie-mentor-creator-state-read-denial-matrix.mjs
+      - name: In-flight ownership revocation denial
+        run: node scripts/verify-movie-mentor-creator-state-read-revocation-race.mjs
