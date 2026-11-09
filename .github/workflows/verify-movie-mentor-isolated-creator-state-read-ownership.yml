@@ -21,3 +21,5 @@ jobs:
         run: node scripts/verify-movie-mentor-creator-state-read-revocation-race.mjs
       - name: Authenticated read-only HTTP recovery contract
         run: node scripts/verify-movie-mentor-creator-state-recovery-http-contract.mjs
+      - name: Signed credential and durable read composition contract
+        run: node scripts/verify-movie-mentor-creator-state-recovery-production-composition.mjs
