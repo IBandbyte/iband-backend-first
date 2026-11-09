@@ -164,7 +164,13 @@ if(process.argv[2]==="--verify-unknown-http-retry"){
   assert.equal(calls,1,"authenticated retry must enter actual forward runtime");
   assert.ok(earlyExecutionLookups>=1,"retry must consult durable execution before creator-state read");
   assert.deepEqual(await reservationCollection.findOne({principalId}),beforeReservation);
-  assert.deepEqual(await entitlementCollection.findOne({principalId}),beforeEntitlement);
+  const afterEntitlement=await entitlementCollection.findOne({principalId});
+  assert.equal(afterEntitlement?.entitlementRevision,beforeEntitlement.entitlementRevision+1,"reserved execution rehydration must advance current entitlement authority exactly once");
+  assert.ok(new Date(afterEntitlement.updatedAt).getTime()>=new Date(beforeEntitlement.updatedAt).getTime(),"rehydration revision timestamp must not move backwards");
+  const {entitlementRevision:oldRevision,updatedAt:oldUpdatedAt,...beforeEntitlementImmutable}=beforeEntitlement;
+  const {entitlementRevision:newRevision,updatedAt:newUpdatedAt,...afterEntitlementImmutable}=afterEntitlement;
+  assert.deepEqual(afterEntitlementImmutable,beforeEntitlementImmutable,"rehydration must preserve all financial balances and entitlement identity");
+  console.log(`GREEN isolated reserved entitlement rehydration: revision ${oldRevision} -> ${newRevision}, no balance or identity mutation`);
   assert.deepEqual(await effectCollection.findOne({executionId}),beforeEffect);
   assert.equal(await reservationCollection.countDocuments({principalId}),1);
   assert.equal(await effectCollection.countDocuments({executionId}),1);
