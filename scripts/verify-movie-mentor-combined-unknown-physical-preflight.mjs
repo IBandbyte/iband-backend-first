@@ -7,6 +7,7 @@ import { createMovieMentorProviderOperationMongoStore } from "../ai/MovieMentorP
 import { describeCurrentMovieMentorProviderTarget } from "../ai/MovieMentorProviderTargetAuthority.js";
 import { createMovieMentorProviderOutcomeRecoveryAuthority } from "../ai/MovieMentorProviderOutcomeRecoveryAuthority.js";
 import { recoverPreviouslyAdmittedProviderResult } from "../ai/MovieMentorRecoveredProviderResultAuthority.js";
+import { createMovieMentorProductionInferenceSpendComposition, isMovieMentorProductionInferenceSpendOwnerProof } from "../ai/MovieMentorProductionInferenceSpendComposition.js";
 import { createMovieMentorInferenceExecutionMongoStore } from "../ai/MovieMentorInferenceExecutionMongoStore.js";
 import { createMovieMentorProviderEffectMongoStore } from "../ai/MovieMentorProviderEffectMongoStore.js";
 
@@ -73,15 +74,33 @@ try {
     { principalId: 1, projectId: 1, creatorTurnId: 1 }, { unique: true });
   await db.collection(names.execution).createIndex({ reservationId: 1 }, { unique: true });
   await db.collection(names.effect).createIndex({ providerCallId: 1 }, { unique: true });
-  const reservationId = `${suffix}-reservation`;
+  let reservationId;
   const principalId = `${suffix}-principal`;
   const projectId = `${suffix}-project`;
-  // Reservation is the isolated spend fixture, not proof of production spend admission.
-  await db.collection(names.reservation).insertOne({
-    domain: "iband.movie-mentor.inference-spend", schema: 1,
-    reservationId, principalId, projectId, operation: "movie-mentor-turn",
-    status: "reserved", executionBindingBarrierRevision: 0
+  // Seed only the isolated entitlement; reservation must be produced by the real
+  // production-composed spend authority and its Mongo transaction.
+  await db.collection(names.entitlement).insertOne({
+    domain: "iband.movie-mentor.inference-spend", schema: 1, principalId,
+    status: "active", remainingUnits: 1, reservedUnits: 0,
+    consumedUnits: 0, entitlementRevision: 1
   });
+  const spendComposition = createMovieMentorProductionInferenceSpendComposition();
+  assert.equal(spendComposition.ready, true, "production spend composition must be ready");
+  assert.equal(isMovieMentorProductionInferenceSpendOwnerProof(spendComposition, spendComposition.status), true);
+  const spend = await spendComposition.authority.reserveTurn({
+    serverAuthority: { authenticated: true, projectAuthorized: true, principalId, projectId },
+    projectId, units: 1
+  });
+  assert.equal(spend.authorized, true);
+  assert.equal(spend.status, "reserved");
+  reservationId = spend.reservationId;
+  const physicalReservation = await db.collection(names.reservation).findOne({ reservationId });
+  assert.equal(physicalReservation?.units, 1);
+  assert.equal(physicalReservation?.status, "reserved");
+  const physicalEntitlement = await db.collection(names.entitlement).findOne({ principalId });
+  assert.equal(physicalEntitlement?.remainingUnits, 0);
+  assert.equal(physicalEntitlement?.reservedUnits, 1);
+  assert.equal(physicalEntitlement?.entitlementRevision, 2);
   const executionStore = createMovieMentorInferenceExecutionMongoStore();
   const created = await executionStore.createExecution({
     executionId, creatorTurnId: `${suffix}-turn`, principalId, projectId,
@@ -145,7 +164,8 @@ try {
   }
   console.log(child.stdout.trim());
   console.log("GREEN combined physical chain: production-store UNKNOWN -> one accepted socket with lost response -> fresh worker durable denial -> immutable ledgers");
-  console.log("LIMITATION: isolated reservation fixture; full production ownership and HTTP journey not certified.");
+  console.log("GREEN production-composed durable spend reservation: physical entitlement debit and reservation transaction");
+  console.log("LIMITATION: isolated seeded entitlement and simulated server-authority binding; full authenticated ownership and HTTP journey not certified.");
 } finally {
   await mongoose.disconnect();
 }
