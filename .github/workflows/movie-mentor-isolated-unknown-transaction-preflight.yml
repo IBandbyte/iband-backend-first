@@ -1,0 +1,41 @@
+name: Movie Mentor isolated UNKNOWN transaction preflight
+
+on:
+  push:
+    branches:
+      - audit-combined-socket-restart-unknown-8af140aa
+  workflow_dispatch:
+
+jobs:
+  isolated-unknown-transaction-preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ping:1}).ok'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      MOVIE_MENTOR_ISOLATED_MONGO_URI: mongodb://127.0.0.1:27017/movie_mentor_combined_preflight?replicaSet=rs0&directConnection=true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Initialize isolated Mongo replica set
+        run: |
+          docker exec "${{ job.services.mongo.id }}" mongosh --quiet --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"localhost:27017"}]})'
+          for i in $(seq 1 30); do
+            if docker exec "${{ job.services.mongo.id }}" mongosh --quiet --eval 'rs.status().myState' | grep -qx '1'; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Physical UNKNOWN transaction preflight
+        run: node scripts/verify-movie-mentor-combined-unknown-physical-preflight.mjs
