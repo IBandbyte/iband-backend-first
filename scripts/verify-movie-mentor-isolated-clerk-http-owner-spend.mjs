@@ -55,7 +55,8 @@ if(process.argv[2]==="--verify-unknown-http-retry"){
   const beforeExecution=await executionCollection.findOne({executionId});
   assert.equal(beforeExecution?.phase,"active");
   const takeoverMode=process.argv[7]==="--expired-lease";
-  if(takeoverMode){
+  const httpTakeoverMode=process.argv[7]==="--http-owned-takeover";
+  if(takeoverMode||httpTakeoverMode){
    const expired=new Date(Date.now()-120000).toISOString();
    const acquired=new Date(Date.now()-240000).toISOString();
    const result=await executionCollection.updateOne({
@@ -160,7 +161,8 @@ if(process.argv[2]==="--verify-unknown-http-retry"){
   assert.notEqual(retryFailure.code,"MOVIE_MENTOR_CREATOR_STATE_CONSUMPTION_AUTHORITY_REQUIRED","retry must not pass merely because a test fixture omits consumption authority");
   assert.notEqual(retryFailure.code,"MOVIE_MENTOR_TURN_FAILED","generic gateway failure cannot certify UNKNOWN recovery denial");
   assert.notEqual(retryFailure.code,"ISOLATED_UNEXPECTED_RETRY_OPERATION","fixture guard cannot certify durable UNKNOWN recovery denial");
-  assert.equal(retryFailure.code,"MOVIE_MENTOR_INFERENCE_EXECUTION_LEASE_NOT_AUTHORIZED","current physical retry court must demonstrate the specific durable lease fence, not an unrelated denial");
+  if(!httpTakeoverMode)assert.equal(retryFailure.code,"MOVIE_MENTOR_INFERENCE_EXECUTION_LEASE_NOT_AUTHORIZED","current physical retry court must demonstrate the specific durable lease fence, not an unrelated denial");
+  if(httpTakeoverMode)assert.notEqual(retryFailure.code,"MOVIE_MENTOR_INFERENCE_EXECUTION_LEASE_NOT_AUTHORIZED","HTTP-owned takeover must pass lease acquisition before any recovery denial");
   console.log(`PHYSICAL UNKNOWN RETRY DENIAL CODE: ${retryFailure.code}`);
   assert.equal(calls,1,"authenticated retry must enter actual forward runtime");
   assert.ok(earlyExecutionLookups>=1,"retry must consult durable execution before creator-state read");
@@ -173,6 +175,12 @@ if(process.argv[2]==="--verify-unknown-http-retry"){
   assert.deepEqual(afterEntitlementImmutable,beforeEntitlementImmutable,"rehydration must preserve all financial balances and entitlement identity");
   console.log(`GREEN isolated reserved entitlement rehydration: revision ${oldRevision} -> ${newRevision}, no balance or identity mutation`);
   assert.deepEqual(await effectCollection.findOne({executionId}),beforeEffect);
+  if(httpTakeoverMode){
+   const afterExecution=await executionCollection.findOne({executionId});
+   assert.equal(afterExecution.leaseGeneration,beforeExecution.leaseGeneration+1,"HTTP retry itself must acquire exactly one fresh lease generation");
+   assert.equal(afterExecution.providerCallsClaimed,1,"HTTP takeover must not claim another provider call");
+   console.log(`PHYSICAL HTTP-OWNED TAKEOVER: leaseGeneration=${afterExecution.leaseGeneration} denial=${retryFailure.code}`);
+  }
   assert.equal(await reservationCollection.countDocuments({principalId}),1);
   assert.equal(await effectCollection.countDocuments({executionId}),1);
   console.log(takeoverMode?"GREEN authenticated HTTP retry after isolated expired-lease takeover denies completion without second spend or effect":"GREEN fresh-process authenticated HTTP UNKNOWN retry -> real forward runtime denies completion without new spend or provider effect");
@@ -381,6 +389,13 @@ try{
  const liveRoot=retry.stdout.match(/ISOLATED UNKNOWN RETRY ROOT EXCEPTION: ([^\r\n]+)/);
  if(liveRoot)console.log(`PHYSICAL LIVE-LEASE ROOT EXCEPTION: ${liveRoot[1]}`);
  assert.equal(acceptedSockets.length,1,"HTTP retry must not dispatch another provider socket");
+ const httpTakeover=spawnSync(process.execPath,[new URL(import.meta.url).pathname,"--verify-unknown-http-retry",
+  createdExecution.executionId,principalId,projectId,`${suffix}-turn`,"--http-owned-takeover"],{
+  encoding:"utf8",timeout:30000,env:{...process.env,MOVIE_MENTOR_ISOLATED_MONGO_URI:uri}
+ });
+ assert.equal(httpTakeover.status,0,`HTTP-owned takeover worker failed: ${httpTakeover.stderr} ${httpTakeover.stdout}`);
+ assert.match(httpTakeover.stdout,/PHYSICAL HTTP-OWNED TAKEOVER:/);
+ assert.equal(acceptedSockets.length,1,"HTTP-owned takeover must not open another provider socket");
  const takeover=spawnSync(process.execPath,[new URL(import.meta.url).pathname,"--verify-unknown-http-retry",
   createdExecution.executionId,principalId,projectId,`${suffix}-turn`,"--expired-lease"],{
   encoding:"utf8",timeout:30000,env:{...process.env,MOVIE_MENTOR_ISOLATED_MONGO_URI:uri}
