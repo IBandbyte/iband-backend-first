@@ -21,7 +21,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Install locked dependencies
-        run: npm ci
+      - name: Install isolated test dependencies without writing a lockfile
+        run: npm install --no-package-lock --ignore-scripts --no-audit --no-fund
       - name: Physical signed HTTP and durable Mongo creator recovery court
         run: node scripts/verify-movie-mentor-physical-creator-recovery.mjs
