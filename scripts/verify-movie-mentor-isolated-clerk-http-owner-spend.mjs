@@ -298,6 +298,14 @@ try{
  await executionCollection.createIndex({reservationId:1},{unique:true});
  await db.collection("movie_mentor_provider_operation_reality").createIndex({providerCallId:1},{unique:true});
  await db.collection("movie_mentor_provider_effect_reality").createIndex({providerCallId:1},{unique:true});
+ // The physical settlement composition requires all seven independent unique indexes.
+ // Provision them only inside this disposable isolated Mongo replica set; never weaken readiness.
+ for(const [collection,key] of [
+  ["movie_mentor_canonical_result",{executionId:1}],
+  ["movie_mentor_result_candidate",{executionId:1}],
+  ["movie_mentor_inference_spend_reservation",{reservationId:1}],
+  ["movie_mentor_inference_entitlement",{principalId:1}]
+ ])await db.collection(collection).createIndex(key,{unique:true});
  const productionExecution=createMovieMentorProductionInferenceExecutionComposition();
  assert.equal(productionExecution.ready,true,`production execution composition: ${productionExecution.reason}`);
  assert.equal(isMovieMentorProductionInferenceExecutionOwnerProof(productionExecution,productionExecution.status),true);
