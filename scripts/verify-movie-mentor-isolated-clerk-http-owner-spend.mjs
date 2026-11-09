@@ -178,6 +178,19 @@ if(process.argv[2]==="--verify-unknown-http-retry"){
   console.log(`GREEN isolated reserved entitlement rehydration: revision ${oldRevision} -> ${newRevision}, no balance or identity mutation`);
   assert.deepEqual(await effectCollection.findOne({executionId}),beforeEffect);
   if(httpTakeoverMode){
+   const operationStore=createMovieMentorProviderOperationMongoStore();
+   const historicalOperation=await db.collection("movie_mentor_provider_operation_reality").findOne({executionId});
+   assert.ok(historicalOperation?.providerCallId,"HTTP-owned takeover must retain exactly one historical provider operation");
+   const recovery=createMovieMentorProviderOutcomeRecoveryAuthority({
+    readProviderOperation:key=>operationStore.readOperation(key),
+    readProviderEffectReality:key=>effectCollection.findOne({providerCallId:key}),
+    recoverProviderResponse:async()=>{throw Error("No recovered provider response exists for durable UNKNOWN");},
+    resolveCurrentTarget:()=>historicalOperation.providerTarget
+   });
+   const recoveryVerdict=await recovery.reconcile({providerCallId:historicalOperation.providerCallId});
+   assert.equal(recoveryVerdict.outcome,"STILL_UNKNOWN","real durable recovery must preserve UNKNOWN after HTTP lease takeover");
+   for(const key of ["redispatchAuthorized","refundAuthorized","recoveryAuthorized"])assert.equal(recoveryVerdict[key],false,`UNKNOWN recovery must deny ${key}`);
+   console.log(`PHYSICAL HTTP-OWNED DURABLE RECOVERY: outcome=${recoveryVerdict.outcome} redispatch=false refund=false recovered=false`);
    const afterExecution=await executionCollection.findOne({executionId});
    assert.equal(afterExecution.leaseGeneration,beforeExecution.leaseGeneration+1,"HTTP retry itself must acquire exactly one fresh lease generation");
    assert.equal(afterExecution.providerCallsClaimed,1,"HTTP takeover must not claim another provider call");
