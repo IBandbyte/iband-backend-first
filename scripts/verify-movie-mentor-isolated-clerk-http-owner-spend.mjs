@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import http from "node:http";
+import { spawnSync } from "node:child_process";
+import { createMovieMentorProviderOperationMongoStore } from "../ai/MovieMentorProviderOperationMongoStore.js";
+import { createMovieMentorProviderOutcomeRecoveryAuthority } from "../ai/MovieMentorProviderOutcomeRecoveryAuthority.js";
 import { executeStructuredAI } from "../ai/StructuredAIProviderClient.js";
 import express from "express";
 import mongoose from "mongoose";
@@ -19,6 +22,33 @@ process.env.MONGO_URI=uri;
 process.env.IBAND_AI_PROVIDER="openai";
 process.env.IBAND_AI_MODEL="gpt-isolated";
 process.env.IBAND_AI_API_KEY="isolated-only";
+if(process.argv[2]==="--verify-unknown-restart"){
+ const callId=process.argv[3];
+ assert.match(callId||"",/^provider-call-[a-zA-Z0-9-]+$/);
+ await mongoose.connect(uri,{serverSelectionTimeoutMS:10000});
+ try{
+  const db=mongoose.connection.db;
+  const operationStore=createMovieMentorProviderOperationMongoStore();
+  const operation=await operationStore.readOperation(callId);
+  assert.equal(operation?.providerCallId,callId);
+  const effect=await db.collection("movie_mentor_provider_effect_reality").findOne({providerCallId:callId});
+  assert.equal(effect?.state,"unknown");
+  const execution=await db.collection("movie_mentor_inference_execution").findOne({executionId:operation.executionId});
+  assert.equal(execution?.providerCallsClaimed,1);
+  const recovery=createMovieMentorProviderOutcomeRecoveryAuthority({
+   readProviderOperation:key=>operationStore.readOperation(key),
+   readProviderEffectReality:key=>db.collection("movie_mentor_provider_effect_reality").findOne({providerCallId:key}),
+   recoverProviderResponse:async()=>{throw Error("UNKNOWN cannot recover a missing provider response");},
+   resolveCurrentTarget:()=>operation.providerTarget
+  });
+  const verdict=await recovery.reconcile({providerCallId:callId});
+  assert.equal(verdict.outcome,"STILL_UNKNOWN");
+  for(const key of ["redispatchAuthorized","refundAuthorized","recoveryAuthorized"])assert.equal(verdict[key],false);
+  console.log("GREEN fresh-worker authenticated-origin socket-loss UNKNOWN -> no redispatch/refund/recovery");
+ }finally{await mongoose.disconnect();}
+ process.exit(0);
+}
+
 const suffix=`jwt-http-${process.pid}-${Date.now()}`;
 const principalId=`${suffix}-owner`,projectId=`${suffix}-project`;
 const issuer="https://isolated-clerk.example.test",audience="isolated-movie-mentor",party="https://isolated-app.example.test";
@@ -165,6 +195,14 @@ try{
  const operation=await operations.findOne({executionId:createdExecution.executionId});
  assert.equal(operation.providerCallId,effect.providerCallId);
  assert.equal(operation.providerTarget.provider,"openai");
+ const child=spawnSync(process.execPath,[new URL(import.meta.url).pathname,"--verify-unknown-restart",effect.providerCallId],{
+  encoding:"utf8",timeout:30000,env:{...process.env,MOVIE_MENTOR_ISOLATED_MONGO_URI:uri}
+ });
+ assert.equal(child.status,0,`fresh worker failed: ${child.stderr} ${child.stdout}`);
+ assert.match(child.stdout,/GREEN fresh-worker authenticated-origin socket-loss UNKNOWN/);
+ assert.equal(await effects.countDocuments({executionId:createdExecution.executionId}),1);
+ assert.equal((await executionCollection.findOne({executionId:createdExecution.executionId})).providerCallsClaimed,1);
+
  assert.equal(acceptedSockets.length,1);
  exposureAttempt=true;
  const forged=await post(token(principalId));
@@ -183,7 +221,8 @@ try{
  console.log("GREEN authenticated HTTP current-owner provider-call admission -> exactly one durable claim");
  console.log("GREEN authenticated HTTP current-owner UNKNOWN transition -> immutable provider operation and one durable UNKNOWN effect before socket dispatch");
  console.log("GREEN authenticated HTTP chain -> exactly one provider socket accepted then response lost, durable UNKNOWN retained");
- console.log("LIMITATION: locally generated isolated RSA test keys and native ownership fixture; injected runtime simulates socket loss after durable UNKNOWN; fresh-worker restart and positive settlement HTTP journey not certified.");
+ console.log("GREEN fresh worker independently reads HTTP-origin durable UNKNOWN and denies redispatch, refund and speculative recovery");
+ console.log("LIMITATION: locally generated isolated RSA test keys and native ownership fixture; injected runtime simulates socket loss after durable UNKNOWN; fresh-worker durable UNKNOWN recovery tested, but fresh authenticated HTTP restart and positive settlement journey not certified.");
 }finally{
  if(server)await new Promise(resolve=>server.close(resolve));
  if(socketServer)await new Promise(resolve=>socketServer.close(resolve));
