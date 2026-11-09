@@ -121,6 +121,20 @@ try{
    res.end(JSON.stringify({id:responseId,model:"gpt-isolated",output:[{type:"message",content:[{type:"output_text",text:JSON.stringify(fixture)}]}]}));
    return;
   }
+  if(schemaName==="movie_mentor_synthesis"){
+   const synthesis={
+    text:"I understand your isolated creator request. What would you like to develop next?",
+    usedContributionAgentIds:["story","character","continuity"],
+    deferredContributionAgentIds:[],
+    continuationObedienceClaims:[],
+    conflictsHandled:[],
+    confidence:0.9,
+    provenance:{source:"isolated-local-provider",model:"gpt-isolated",contractVersion:"1"}
+   };
+   res.writeHead(200,{"content-type":"application/json"});
+   res.end(JSON.stringify({id:"isolated-synthesis-response-1",model:"gpt-isolated",output:[{type:"message",content:[{type:"output_text",text:JSON.stringify(synthesis)}]}]}));
+   return;
+  }
   res.writeHead(503,{"content-type":"application/json"});
   res.end(JSON.stringify({error:{message:"Unimplemented isolated provider stage: "+String(requestBody?.text?.format?.name||"unknown"),type:"isolated_fixture_pending"}}));
  });
