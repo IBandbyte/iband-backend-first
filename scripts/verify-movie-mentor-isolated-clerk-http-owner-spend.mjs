@@ -4,6 +4,7 @@ import http from "node:http";
 import { spawnSync } from "node:child_process";
 import { createMovieMentorProviderOperationMongoStore } from "../ai/MovieMentorProviderOperationMongoStore.js";
 import { createMovieMentorProviderOutcomeRecoveryAuthority } from "../ai/MovieMentorProviderOutcomeRecoveryAuthority.js";
+import { createMovieMentorProductionInferenceSettlementComposition } from "../ai/MovieMentorProductionInferenceSettlementComposition.js";
 import { executeStructuredAI } from "../ai/StructuredAIProviderClient.js";
 import { runMovieMentorTurnWithForwardExecutionAuthority } from "../ai/MovieMentorForwardExecutionRuntime.js";
 import express from "express";
@@ -130,7 +131,13 @@ if(process.argv[2]==="--verify-unknown-http-retry"){
     return found;
    }
   };
-  const settlement={reconcile:forbidden("settlement.reconcile"),releaseUnclaimed:forbidden("settlement.releaseUnclaimed"),releaseUnbound:forbidden("settlement.releaseUnbound")};
+  const physicalSettlement=httpTakeoverMode?createMovieMentorProductionInferenceSettlementComposition():null;
+  if(httpTakeoverMode)assert.equal(physicalSettlement?.ready,true,`physical HTTP takeover settlement composition: ${physicalSettlement?.reason}`);
+  const settlement=httpTakeoverMode?physicalSettlement.authority:{
+   reconcile:forbidden("settlement.reconcile"),
+   releaseUnclaimed:forbidden("settlement.releaseUnclaimed"),
+   releaseUnbound:forbidden("settlement.releaseUnbound")
+  };
   let calls=0;
   const router=createMovieMentorTurnRouter({
    requestAuthority,inferenceSpendAuthority:guardedSpend,
