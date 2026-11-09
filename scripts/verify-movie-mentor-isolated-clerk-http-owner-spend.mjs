@@ -92,10 +92,15 @@ if(process.argv[2]==="--verify-unknown-http-retry"){
    inferenceExecutionAuthority:composed.authority,inferenceSettlementAuthority:settlement,
    runTurn:async(body,deps)=>{
     calls++;
-    return runMovieMentorTurnWithForwardExecutionAuthority(body,{
-     ...deps,readAuthoritativeTurnSource:forbidden,orchestrateTurn:forbidden,
-     createExecutionOwnerId:()=>`isolated-restarted-owner-${process.pid}`
-    });
+    try{
+     return await runMovieMentorTurnWithForwardExecutionAuthority(body,{
+      ...deps,readAuthoritativeTurnSource:forbidden,orchestrateTurn:forbidden,
+      createExecutionOwnerId:()=>`isolated-restarted-owner-${process.pid}`
+     });
+    }catch(error){
+     console.log(`ISOLATED UNKNOWN RETRY ROOT EXCEPTION: ${error?.code||"UNCLASSIFIED"} ${error?.message||String(error)}`);
+     throw error;
+    }
    }
   });
   const app=express();app.use(express.json());app.use("/api/movie-mentor",router);
