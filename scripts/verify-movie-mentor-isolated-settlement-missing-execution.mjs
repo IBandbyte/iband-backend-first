@@ -130,7 +130,9 @@ try{
  const results=db.collection("movie_mentor_canonical_result");
  await results.createIndex({executionId:1},{unique:true});
  await results.createIndex({resultReference:1},{unique:true});
- await results.createIndex({creatorTurnId:1,principalId:1,projectId:1},{unique:true});
+ await results.createIndex({candidateReference:1},{unique:true});
+ await results.createIndex({principalId:1,projectId:1,creatorTurnId:1},{unique:true});
+ await results.createIndex({reservationId:1},{unique:true});
  const canonical=createMovieMentorCanonicalResultAuthority({
   store:createMovieMentorCanonicalResultMongoStore(),
   assertCurrentClosure:closure.assertCurrentClosure,
