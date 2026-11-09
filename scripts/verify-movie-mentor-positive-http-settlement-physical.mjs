@@ -85,6 +85,7 @@ try{
    schemaName:requestBody?.text?.format?.name||null,
    topLevelRequired:Array.isArray(schema?.required)?schema.required:[],
    topLevelProperties:Object.keys(schema?.properties||{}),
+   propertyContracts:Object.fromEntries(Object.entries(schema?.properties||{}).map(([key,value])=>[key,{type:value?.type||null,required:value?.required||[],properties:Object.keys(value?.properties||{}),itemsType:value?.items?.type||null,enum:value?.enum||null}])),
    model:requestBody?.model||null
   }));
   res.writeHead(503,{"content-type":"application/json"});
