@@ -33,3 +33,6 @@ jobs:
           exit 1
       - name: Physical UNKNOWN transaction preflight
         run: node scripts/verify-movie-mentor-combined-unknown-physical-preflight.mjs
+
+      - name: Physical Clerk JWT HTTP ownership and spend court
+        run: node scripts/verify-movie-mentor-isolated-clerk-http-owner-spend.mjs
