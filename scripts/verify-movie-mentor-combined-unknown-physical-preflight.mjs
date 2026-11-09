@@ -7,6 +7,8 @@ import { createMovieMentorProviderOperationMongoStore } from "../ai/MovieMentorP
 import { describeCurrentMovieMentorProviderTarget } from "../ai/MovieMentorProviderTargetAuthority.js";
 import { createMovieMentorProviderOutcomeRecoveryAuthority } from "../ai/MovieMentorProviderOutcomeRecoveryAuthority.js";
 import { recoverPreviouslyAdmittedProviderResult } from "../ai/MovieMentorRecoveredProviderResultAuthority.js";
+import { createMovieMentorCreatorRequestAuthority } from "../ai/MovieMentorCreatorRequestAuthority.js";
+import { createMovieMentorProjectOwnershipAuthority } from "../ai/MovieMentorProjectOwnershipRegistry.js";
 import { createMovieMentorProductionInferenceSpendComposition, isMovieMentorProductionInferenceSpendOwnerProof } from "../ai/MovieMentorProductionInferenceSpendComposition.js";
 import { createMovieMentorInferenceExecutionMongoStore } from "../ai/MovieMentorInferenceExecutionMongoStore.js";
 import { createMovieMentorProviderEffectMongoStore } from "../ai/MovieMentorProviderEffectMongoStore.js";
@@ -32,7 +34,8 @@ const names = {
   effect: "movie_mentor_provider_effect_reality",
   reservation: "movie_mentor_inference_spend_reservation",
   operation: "movie_mentor_provider_operation_reality",
-  entitlement: "movie_mentor_inference_entitlement"
+  entitlement: "movie_mentor_inference_entitlement",
+  ownership: "movie_mentor_project_ownership"
 };
 await mongoose.connect(uri, { serverSelectionTimeoutMS: 10000 });
 if (isRecovery) {
@@ -87,8 +90,47 @@ try {
   const spendComposition = createMovieMentorProductionInferenceSpendComposition();
   assert.equal(spendComposition.ready, true, "production spend composition must be ready");
   assert.equal(isMovieMentorProductionInferenceSpendOwnerProof(spendComposition, spendComposition.status), true);
+  // A physical durable owner-match is required before spend can be authorized.
+  await db.collection(names.ownership).createIndex({ projectId: 1 }, { unique: true });
+  await db.collection(names.ownership).createIndex({ establishmentAuthorityId: 1 }, { unique: true });
+  const ownershipAuthority = createMovieMentorProjectOwnershipAuthority();
+  const established = await ownershipAuthority.establishNativeOwnership({
+    principal: { authenticated: true, principalId }, projectId,
+    establishmentAuthority: { verified: true, type: "native-project-creation",
+      authorityId: `${suffix}-establishment`, principalId, projectId }
+  });
+  assert.equal(established.status, "established");
+  const creatorAuthority = createMovieMentorCreatorRequestAuthority({
+    verifyCredential: async () => { throw Error("No external credential verifier is used in this ownership-only court"); },
+    derivePrincipal: async ({ request }) => {
+      if (request?.headers?.authorization !== "isolated-owner-proof") {
+        const error = new Error("isolated credential missing");
+        error.code = "MOVIE_MENTOR_AUTH_CREDENTIAL_REQUIRED";
+        throw error;
+      }
+      return Object.freeze({ authenticated: true, principalId: request.principalId, authenticationSource: "isolated-synthetic-principal" });
+    },
+    ownershipAuthority
+  });
+  const entitlementBeforeDenial = await db.collection(names.entitlement).findOne({ principalId });
+  await assert.rejects(() => creatorAuthority.authorize({
+    request: { headers: {}, principalId }, projectId
+  }), error => error?.code === "MOVIE_MENTOR_AUTH_CREDENTIAL_REQUIRED");
+  await assert.rejects(() => creatorAuthority.authorize({
+    request: { headers: { authorization: "isolated-owner-proof" }, principalId: `${suffix}-intruder` }, projectId
+  }), error => error?.code === "MOVIE_MENTOR_CREATOR_PROJECT_NOT_AUTHORIZED");
+  assert.deepEqual(await db.collection(names.entitlement).findOne({ principalId }), entitlementBeforeDenial,
+    "unauthenticated and non-owner denials must not spend entitlement");
+  const creatorDecision = await creatorAuthority.authorize({
+    request: { headers: { authorization: "isolated-owner-proof" }, principalId }, projectId
+  });
+  assert.equal(creatorDecision.authorized, true);
+  assert.equal(creatorDecision.principalId, principalId);
+  assert.equal(creatorDecision.projectId, projectId);
+  assert.ok(creatorDecision.ownershipRef);
+  assert.equal(creatorDecision.ownershipRevision, 1);
   const spend = await spendComposition.authority.reserveTurn({
-    serverAuthority: { authenticated: true, projectAuthorized: true, principalId, projectId },
+    serverAuthority: { authenticated: creatorDecision.principal.authenticated, projectAuthorized: creatorDecision.authorized, principalId: creatorDecision.principalId, projectId: creatorDecision.projectId },
     projectId, units: 1
   });
   assert.equal(spend.authorized, true);
@@ -164,8 +206,9 @@ try {
   }
   console.log(child.stdout.trim());
   console.log("GREEN combined physical chain: production-store UNKNOWN -> one accepted socket with lost response -> fresh worker durable denial -> immutable ledgers");
+  console.log("GREEN physical durable ownership: owner admitted, unauthenticated/non-owner denied before spend");
   console.log("GREEN production-composed durable spend reservation: physical entitlement debit and reservation transaction");
-  console.log("LIMITATION: isolated seeded entitlement and simulated server-authority binding; full authenticated ownership and HTTP journey not certified.");
+  console.log("LIMITATION: isolated synthetic principal adapter and trusted project-creation proof; real Clerk JWT and HTTP ingress not certified.");
 } finally {
   await mongoose.disconnect();
 }
