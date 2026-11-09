@@ -7,6 +7,8 @@ import { createMovieMentorCreatorRequestAuthority } from "../ai/MovieMentorCreat
 import { createMovieMentorProjectOwnershipAuthority } from "../ai/MovieMentorProjectOwnershipRegistry.js";
 import { createMovieMentorProductionInferenceSpendComposition } from "../ai/MovieMentorProductionInferenceSpendComposition.js";
 import { createMovieMentorTurnRouter } from "../movieMentorTurn.js";
+import { createMovieMentorProductionInferenceExecutionComposition, isMovieMentorProductionInferenceExecutionOwnerProof } from "../ai/MovieMentorProductionInferenceExecutionComposition.js";
+import { buildRequestDigest } from "../ai/MovieMentorTurnRuntime.js";
 
 const uri=process.env.MOVIE_MENTOR_ISOLATED_MONGO_URI||"";
 assert.match(uri,/^mongodb:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?\//);
@@ -54,6 +56,13 @@ try{
   expectedAudience:authentication.expectedAudience,
   ownershipAuthority
  });
+ const executionCollection=db.collection("movie_mentor_inference_execution");
+ await executionCollection.createIndex({executionId:1},{unique:true});
+ await executionCollection.createIndex({principalId:1,projectId:1,creatorTurnId:1},{unique:true});
+ await executionCollection.createIndex({reservationId:1},{unique:true});
+ const productionExecution=createMovieMentorProductionInferenceExecutionComposition();
+ assert.equal(productionExecution.ready,true,`production execution composition: ${productionExecution.reason}`);
+ assert.equal(isMovieMentorProductionInferenceExecutionOwnerProof(productionExecution,productionExecution.status),true);
  let exposureAttempt=false;
  let runCalls=0;
  const executionMethods=["findExecutionByCreatorTurn","openExecution","acquireExecution","assertFence","claimProviderCall","beginProviderDispatch","assertProviderDispatch","contributeProviderEffectEvidence","stageResultCandidate","readResultCandidate","beginExecutionClosing","reconcileExecutionClosure","assertCurrentExecutionClosure","commitCanonicalResult","readCanonicalResult"];
@@ -61,13 +70,23 @@ try{
  const settlement={reconcile:async()=>{throw Error("unexpected settlement");},releaseUnclaimed:async()=>{throw Error("unexpected release");},releaseUnbound:async()=>{throw Error("unexpected release");}};
  const router=createMovieMentorTurnRouter({requestAuthority,inferenceSpendAuthority:spend.authority,
   inferenceExecutionAuthority:execution,inferenceSettlementAuthority:settlement,
-  runTurn:async(_body,{serverAuthority})=>{
+  runTurn:async(_body,{serverAuthority,forwardExecutionAuthority})=>{
    runCalls++;
    if(exposureAttempt)return {message:"forged completion",metadata:{canonicalResult:{
     creatorResponseAuthorityVerified:true,executionId:`${suffix}-fabricated-execution`,resultDigest:"fabricated-digest"
    }}};
    const reserved=await spend.authority.reserveTurn({serverAuthority,projectId:serverAuthority.projectId});
    assert.equal(reserved.authorized,true);
+   const opened=await productionExecution.authority.openExecution({
+    creatorTurnId:_body.creatorTurnId,principalId:serverAuthority.principalId,
+    projectId:serverAuthority.projectId,reservationId:reserved.reservationId,
+    requestDigest:buildRequestDigest({creatorMessage:_body.message,projectId:serverAuthority.projectId,options:_body.options||{}}),
+    ownerId:`${suffix}-http-creator-owner`,
+    assertCurrentCreationAuthority:forwardExecutionAuthority.assertCurrentCreation
+   });
+   assert.equal(opened.authorized,true);
+   assert.equal(opened.phase,"active");
+   assert.equal(opened.created,true);
    const error=new Error("Isolated post-reservation stop: never dispatch provider");
    error.code="MOVIE_MENTOR_INFERENCE_EXECUTION_UNRESOLVED";
    throw error;
@@ -92,6 +111,10 @@ try{
  const owner=await post(token(principalId));
  assert.equal(owner.status,503,"authorized request stops safely after isolated reservation");
  assert.equal(runCalls,1);
+ assert.equal(await executionCollection.countDocuments({principalId,projectId}),1);
+ const createdExecution=await executionCollection.findOne({principalId,projectId});
+ assert.equal(createdExecution.phase,"active");
+ assert.equal(createdExecution.schema,6);
  exposureAttempt=true;
  const forged=await post(token(principalId));
  assert.notEqual(forged.status,200,"HTTP gateway must refuse forged runtime completion");
@@ -105,7 +128,8 @@ try{
  console.log("GREEN real signed RS256 Clerk-verifier JWT over HTTP + durable owner authorization");
  console.log("GREEN missing, tampered and non-owner HTTP credentials denied before spend");
  console.log("GREEN owner HTTP ingress -> production-composed durable spend reservation");
- console.log("LIMITATION: locally generated isolated RSA test keys and native ownership fixture; full production turn/settlement HTTP journey not certified.");
+ console.log("GREEN fresh authenticated HTTP turn -> real current-ownership execution-creation proof -> production-composed schema-6 Mongo execution");
+ console.log("LIMITATION: locally generated isolated RSA test keys and native ownership fixture; injected runtime halts after real execution creation, provider/settlement HTTP journey not certified.");
 }finally{
  if(server)await new Promise(resolve=>server.close(resolve));
  await mongoose.disconnect();
