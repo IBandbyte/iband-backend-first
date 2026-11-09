@@ -409,6 +409,10 @@ try{
  assert.notEqual(httpOwnedDenial[1],"MOVIE_MENTOR_INFERENCE_EXECUTION_LEASE_NOT_AUTHORIZED","HTTP-owned takeover must not borrow lease denial");
  assert.notEqual(httpOwnedDenial[1],"ISOLATED_UNEXPECTED_RETRY_OPERATION","fixture guard cannot certify UNKNOWN recovery");
  assert.notEqual(httpOwnedDenial[1],"MOVIE_MENTOR_TURN_FAILED","generic gateway failure cannot certify UNKNOWN recovery");
+ assert.ok(httpOwnedOriginal,"HTTP-owned recovery certification requires original failure provenance");
+ assert.ok(httpOwnedCause,"HTTP-owned recovery certification requires release failure provenance");
+ assert.doesNotMatch(httpOwnedOriginal[1],/ISOLATED_UNEXPECTED_RETRY_OPERATION/,"fixture orchestration guard cannot certify UNKNOWN recovery");
+ assert.doesNotMatch(httpOwnedCause[1],/ISOLATED_UNEXPECTED_RETRY_OPERATION/,"fixture release guard cannot certify UNKNOWN recovery");
  assert.equal(acceptedSockets.length,1,"HTTP-owned takeover must not open another provider socket");
  const takeover=spawnSync(process.execPath,[new URL(import.meta.url).pathname,"--verify-unknown-http-retry",
   createdExecution.executionId,principalId,projectId,`${suffix}-turn`,"--expired-lease"],{
