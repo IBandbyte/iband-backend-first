@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import mongoose from "mongoose";
 import { createMovieMentorProductionInferenceSpendComposition } from "../ai/MovieMentorProductionInferenceSpendComposition.js";
 import { createMovieMentorInferenceExecutionMongoStore } from "../ai/MovieMentorInferenceExecutionMongoStore.js";
+import { createMovieMentorCreatorStateConsumptionAuthority } from "../ai/MovieMentorCreatorStateConsumptionAuthority.js";
 import { createMovieMentorResultCandidateMongoStore } from "../ai/MovieMentorResultCandidateMongoStore.js";
 import { createMovieMentorInferenceExecutionClosureAuthority } from "../ai/MovieMentorInferenceExecutionClosureAuthority.js";
 import { createMovieMentorProviderEffectMongoStore } from "../ai/MovieMentorProviderEffectMongoStore.js";
@@ -75,6 +76,32 @@ try{
  assert.equal(await candidates.countDocuments({executionId}),0);
  assert.deepEqual(await reservationCollection.findOne({principalId}),boundReservation);
  console.log("GREEN physical candidate mint denies missing creator-state consumption proof without ledger mutation");
+ const stateRevision=0,stateGeneration=1,stateFingerprint=`${suffix}-state-fingerprint`;
+ await creatorState.insertOne({projectId,revision:stateRevision,creatorStateGeneration:stateGeneration,creatorStateFingerprint:stateFingerprint});
+ const ownershipRef=`${suffix}-ownership-ref`;
+ const authorization={authorized:true,principalId,projectId,ownershipRef,ownershipRevision:1};
+ const consumption=createMovieMentorCreatorStateConsumptionAuthority({
+  request:{headers:{authorization:"isolated-fixture"}},
+  authorization,
+  requestAuthority:{authorize:async()=>authorization}
+ });
+ const stateProof=await consumption.assertCurrentConsumption({
+  projectId,stage:"result-candidate",revision:stateRevision,
+  creatorStateGeneration:stateGeneration,creatorStateFingerprint:stateFingerprint,executionId
+ });
+ const staged=await candidateStore.stageCandidate({
+  execution:liveExecution,resultPayload:{status:"complete"},
+  creatorStateConsumptionProof:stateProof
+ });
+ assert.equal(staged.executionId,executionId);
+ assert.equal(await candidates.countDocuments({executionId}),1);
+ const stateAfter=await creatorState.findOne({projectId});
+ assert.equal(stateAfter.resultCandidateBarrierRevision,1);
+ const executionAfter=await executionCollection.findOne({executionId});
+ assert.equal(executionAfter.resultCandidateBarrierRevision,1);
+ assert.deepEqual(await reservationCollection.findOne({principalId}),boundReservation);
+ console.log("GREEN physical candidate mint with creator-state proof: atomic creator-state and execution write barriers");
+ console.log("LIMITATION: isolated seeded creator-state ledger and synthetic current-ownership adapter; full authenticated state provenance not certified.");
  const closure=createMovieMentorInferenceExecutionClosureAuthority({
   store:createMovieMentorInferenceExecutionMongoStore(),
   effectStore:createMovieMentorProviderEffectMongoStore()
