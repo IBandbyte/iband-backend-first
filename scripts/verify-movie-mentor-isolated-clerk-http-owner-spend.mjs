@@ -123,6 +123,20 @@ if(process.argv[2]==="--verify-unknown-http-retry"){
   let earlyExecutionLookups=0;
   const observedExecutionAuthority={
    ...composed.authority,
+   claimProviderCall:async(input)=>{
+    const decision=await composed.authority.claimProviderCall(input);
+    if(httpTakeoverMode)console.log("ISOLATED REAL ORCHESTRATOR CLAIM DECISION: "+JSON.stringify({
+     reason:decision?.reason||null,dispatchAuthorized:decision?.dispatchAuthorized===true,
+     existingProviderCallId:decision?.existingProviderCallId||null,
+     existingProviderCall:decision?.existingProviderCall?{
+      providerCallId:decision.existingProviderCall.providerCallId||null,
+      executionId:decision.existingProviderCall.executionId||null,
+      slotId:decision.existingProviderCall.slotId||null,
+      task:decision.existingProviderCall.task||null
+     }:null
+    }));
+    return decision;
+   },
    findExecutionByCreatorTurn:async(input)=>{
     await entitlementRevisionAt("before-findExecution");
     const found=await composed.authority.findExecutionByCreatorTurn(input);
@@ -178,6 +192,7 @@ if(process.argv[2]==="--verify-unknown-http-retry"){
   assert.ok(earlyExecutionLookups>=1,"retry must consult durable execution before creator-state read");
   assert.deepEqual(await reservationCollection.findOne({principalId}),beforeReservation);
   const afterEntitlement=await entitlementCollection.findOne({principalId});
+  if(httpTakeoverMode)console.log(`ISOLATED HTTP-OWNED ENTITLEMENT REVISION: before=${beforeEntitlement.entitlementRevision} after=${afterEntitlement?.entitlementRevision} expectedDelta=1`);
   assert.equal(afterEntitlement?.entitlementRevision,beforeEntitlement.entitlementRevision+1,"reserved execution rehydration must advance current entitlement authority exactly once");
   assert.ok(new Date(afterEntitlement.updatedAt).getTime()>=new Date(beforeEntitlement.updatedAt).getTime(),"rehydration revision timestamp must not move backwards");
   const {entitlementRevision:oldRevision,updatedAt:oldUpdatedAt,...beforeEntitlementImmutable}=beforeEntitlement;
