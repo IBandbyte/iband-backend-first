@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import mongoose from "mongoose";
 import { createMovieMentorProductionInferenceSpendComposition } from "../ai/MovieMentorProductionInferenceSpendComposition.js";
 import { createMovieMentorInferenceExecutionMongoStore } from "../ai/MovieMentorInferenceExecutionMongoStore.js";
+import { createMovieMentorCanonicalResultMongoStore } from "../ai/MovieMentorCanonicalResultMongoStore.js";
+import { createMovieMentorCanonicalResultAuthority } from "../ai/MovieMentorCanonicalResultAuthority.js";
 import { createMovieMentorCreatorStateConsumptionAuthority } from "../ai/MovieMentorCreatorStateConsumptionAuthority.js";
 import { createMovieMentorResultCandidateMongoStore } from "../ai/MovieMentorResultCandidateMongoStore.js";
 import { createMovieMentorInferenceExecutionClosureAuthority } from "../ai/MovieMentorInferenceExecutionClosureAuthority.js";
@@ -125,6 +127,37 @@ try{
  assert.equal(premature.reason,"execution-not-finalized");
  assert.deepEqual(await reservationCollection.findOne({principalId}),afterClosureReservation);
  assert.deepEqual(await entitlements.findOne({principalId}),afterClosureEntitlement);
+ const results=db.collection("movie_mentor_canonical_result");
+ await results.createIndex({executionId:1},{unique:true});
+ await results.createIndex({resultReference:1},{unique:true});
+ await results.createIndex({creatorTurnId:1,principalId:1,projectId:1},{unique:true});
+ const canonical=createMovieMentorCanonicalResultAuthority({
+  store:createMovieMentorCanonicalResultMongoStore(),
+  assertCurrentClosure:closure.assertCurrentClosure,
+  readResultCandidate:candidateStore.readByExecution
+ });
+ const payload={status:"complete"};
+ const committed=await canonical.commitResult({closure:closed,result:payload});
+ assert.equal(committed.authorized,true);
+ assert.equal(committed.committed,true);
+ assert.equal(committed.executionPhase,"finalized");
+ assert.equal(await results.countDocuments({executionId}),1);
+ const finalized=await settlement.settleCanonicalResult({executionId});
+ assert.equal(finalized.authorized,true);
+ assert.equal(finalized.settled,true);
+ const settledReservation=await reservationCollection.findOne({principalId});
+ const settledEntitlement=await entitlements.findOne({principalId});
+ assert.equal(settledReservation.status,"consumed");
+ assert.equal(settledEntitlement.reservedUnits,0);
+ assert.equal(settledEntitlement.consumedUnits,1);
+ const repeated=await settlement.settleCanonicalResult({executionId});
+ assert.equal(repeated.authorized,true);
+ assert.equal(repeated.settled,true);
+ assert.deepEqual(await reservationCollection.findOne({principalId}),settledReservation);
+ assert.deepEqual(await entitlements.findOne({principalId}),settledEntitlement);
+ assert.equal(await results.countDocuments({executionId}),1);
+ console.log("GREEN physical canonical finalization and exactly-once Mongo spend settlement with repeated replay");
+ console.log("LIMITATION: isolated creator-state and synthetic ownership fixtures; authenticated complete HTTP turn/restart replay not certified.");
  console.log("GREEN real closure authority closes zero-call execution; settlement refuses absent canonical finalization");
  console.log("GREEN production Mongo settlement refuses real schema-6 active execution before finalization");
  console.log("GREEN production Mongo settlement rejects nonexistent execution without consuming reserved spend");
