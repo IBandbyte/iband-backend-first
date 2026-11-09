@@ -193,12 +193,12 @@ if(process.argv[2]==="--verify-unknown-http-retry"){
   assert.deepEqual(await reservationCollection.findOne({principalId}),beforeReservation);
   const afterEntitlement=await entitlementCollection.findOne({principalId});
   if(httpTakeoverMode)console.log(`ISOLATED HTTP-OWNED ENTITLEMENT REVISION: before=${beforeEntitlement.entitlementRevision} after=${afterEntitlement?.entitlementRevision} expectedDelta=1`);
-  assert.equal(afterEntitlement?.entitlementRevision,beforeEntitlement.entitlementRevision+1,"reserved execution rehydration must advance current entitlement authority exactly once");
+  assert.equal(afterEntitlement?.entitlementRevision,beforeEntitlement.entitlementRevision+(httpTakeoverMode?2:1),"entitlement revision must equal the exact physical reservation-read count (runtime rehydration plus forward provider-admission spend fence on HTTP takeover)");
   assert.ok(new Date(afterEntitlement.updatedAt).getTime()>=new Date(beforeEntitlement.updatedAt).getTime(),"rehydration revision timestamp must not move backwards");
   const {entitlementRevision:oldRevision,updatedAt:oldUpdatedAt,...beforeEntitlementImmutable}=beforeEntitlement;
   const {entitlementRevision:newRevision,updatedAt:newUpdatedAt,...afterEntitlementImmutable}=afterEntitlement;
   assert.deepEqual(afterEntitlementImmutable,beforeEntitlementImmutable,"rehydration must preserve all financial balances and entitlement identity");
-  console.log(`GREEN isolated reserved entitlement rehydration: revision ${oldRevision} -> ${newRevision}, no balance or identity mutation`);
+  console.log(`GREEN isolated reserved entitlement authority: revision ${oldRevision} -> ${newRevision}, expectedReads=${httpTakeoverMode?2:1}, no balance or identity mutation`);
   assert.deepEqual(await effectCollection.findOne({executionId}),beforeEffect);
   if(httpTakeoverMode){
    const operationStore=createMovieMentorProviderOperationMongoStore();
