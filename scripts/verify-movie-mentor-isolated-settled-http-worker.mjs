@@ -90,9 +90,9 @@ try{
  const app=express();app.use(express.json());app.use("/api/movie-mentor",router);
  server=await new Promise(resolve=>{const s=app.listen(0,"127.0.0.1",()=>resolve(s));});
  const url=`http://127.0.0.1:${server.address().port}/api/movie-mentor/turn`;
- async function post(subject){
+ async function post(subject,overrides={}){
   const response=await fetch(url,{method:"POST",headers:{"content-type":"application/json",authorization:`Bearer ${jwt(subject)}`},
-   body:JSON.stringify({projectId,creatorTurnId,message:creatorMessage,options:{}})});
+   body:JSON.stringify({projectId,creatorTurnId,message:creatorMessage,options:{},...overrides})});
   return {status:response.status,body:await response.json()};
  }
  const intruder=await post("isolated-intruder");
@@ -103,13 +103,18 @@ try{
  assert.equal(owner.body.status,"complete");
  assert.equal(owner.body.metadata.canonicalResult.replayedFromDurableResult,true);
  assert.equal(replayCalls,1);
+ const mismatchedMessage=await post(principalId,{message:"tampered creator request"});
+ assert.notEqual(mismatchedMessage.status,200,"canonical result must not be exposed for a different request digest");
+ const mismatchedTurn=await post(principalId,{creatorTurnId:`${creatorTurnId}-forged`});
+ assert.notEqual(mismatchedTurn.status,200,"canonical result must not be exposed for another creator turn");
  const again=await post(principalId);
  assert.equal(again.status,200);
- assert.equal(replayCalls,2);
+ assert.equal(replayCalls,4,"all authenticated request variants must enter the runtime");
  assert.deepEqual(await reservations.findOne({principalId}),beforeReservation);
  assert.deepEqual(await entitlements.findOne({principalId}),beforeEntitlement);
  assert.equal(await db.collection("movie_mentor_canonical_result").countDocuments({executionId}),1);
  console.log("GREEN fresh-process signed-JWT HTTP replay through production-composed execution authority and actual forward runtime, no new spend or provider dispatch");
+ console.log("GREEN signed-JWT canonical HTTP replay rejects mismatched creator message and turn identity without mutating settled ledgers");
  console.log("LIMITATION: isolated durable ownership and synthetic local JWT keys; live provider and full initial HTTP turn journey remain uncertified.");
 }finally{
  if(server)await new Promise((resolve,reject)=>server.close(error=>error?reject(error):resolve()));
