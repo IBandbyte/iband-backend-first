@@ -160,6 +160,7 @@ if(process.argv[2]==="--verify-unknown-http-retry"){
   assert.notEqual(retryFailure.code,"MOVIE_MENTOR_CREATOR_STATE_CONSUMPTION_AUTHORITY_REQUIRED","retry must not pass merely because a test fixture omits consumption authority");
   assert.notEqual(retryFailure.code,"MOVIE_MENTOR_TURN_FAILED","generic gateway failure cannot certify UNKNOWN recovery denial");
   assert.notEqual(retryFailure.code,"ISOLATED_UNEXPECTED_RETRY_OPERATION","fixture guard cannot certify durable UNKNOWN recovery denial");
+  assert.equal(retryFailure.code,"MOVIE_MENTOR_INFERENCE_EXECUTION_LEASE_NOT_AUTHORIZED","current physical retry court must demonstrate the specific durable lease fence, not an unrelated denial");
   console.log(`PHYSICAL UNKNOWN RETRY DENIAL CODE: ${retryFailure.code}`);
   assert.equal(calls,1,"authenticated retry must enter actual forward runtime");
   assert.ok(earlyExecutionLookups>=1,"retry must consult durable execution before creator-state read");
