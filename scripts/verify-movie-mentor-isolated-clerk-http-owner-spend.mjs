@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process";
 import { createMovieMentorProviderOperationMongoStore } from "../ai/MovieMentorProviderOperationMongoStore.js";
 import { createMovieMentorProviderOutcomeRecoveryAuthority } from "../ai/MovieMentorProviderOutcomeRecoveryAuthority.js";
 import { executeStructuredAI } from "../ai/StructuredAIProviderClient.js";
+import { runMovieMentorTurnWithForwardExecutionAuthority } from "../ai/MovieMentorForwardExecutionRuntime.js";
 import express from "express";
 import mongoose from "mongoose";
 import { createMovieMentorProductionAuthenticationComposition } from "../ai/MovieMentorProductionAuthenticationComposition.js";
@@ -22,6 +23,77 @@ process.env.MONGO_URI=uri;
 process.env.IBAND_AI_PROVIDER="openai";
 process.env.IBAND_AI_MODEL="gpt-isolated";
 process.env.IBAND_AI_API_KEY="isolated-only";
+if(process.argv[2]==="--verify-unknown-http-retry"){
+ const [executionId,principalId,projectId,creatorTurnId]=process.argv.slice(3);
+ assert.ok(executionId&&principalId&&projectId&&creatorTurnId);
+ const {publicKey,privateKey}=crypto.generateKeyPairSync("rsa",{modulusLength:2048});
+ const issuer="https://isolated-clerk.example.test",audience="isolated-movie-mentor",party="https://isolated-app.example.test";
+ const authentication=createMovieMentorProductionAuthenticationComposition({env:{
+  MOVIE_MENTOR_CLERK_JWT_KEY:publicKey.export({type:"spki",format:"pem"}),
+  MOVIE_MENTOR_CLERK_AUTHORIZED_PARTIES_JSON:JSON.stringify([party]),
+  MOVIE_MENTOR_CLERK_ISSUER:issuer,MOVIE_MENTOR_AUDIENCE:audience
+ }});
+ function jwt(subject){
+  const now=Math.floor(Date.now()/1000);
+  const header=Buffer.from(JSON.stringify({alg:"RS256",typ:"JWT",kid:"isolated-key"})).toString("base64url");
+  const payload=Buffer.from(JSON.stringify({sub:subject,iss:issuer,aud:audience,azp:party,sid:"isolated-retry",iat:now-10,nbf:now-10,exp:now+300})).toString("base64url");
+  const input=`${header}.${payload}`;
+  return `${input}.${crypto.sign("RSA-SHA256",Buffer.from(input),privateKey).toString("base64url")}`;
+ }
+ await mongoose.connect(uri,{serverSelectionTimeoutMS:10000});
+ let retryServer;
+ try{
+  const db=mongoose.connection.db;
+  const reservationCollection=db.collection("movie_mentor_inference_spend_reservation");
+  const entitlementCollection=db.collection("movie_mentor_inference_entitlement");
+  const effectCollection=db.collection("movie_mentor_provider_effect_reality");
+  const beforeReservation=await reservationCollection.findOne({principalId});
+  const beforeEntitlement=await entitlementCollection.findOne({principalId});
+  const beforeEffect=await effectCollection.findOne({executionId});
+  assert.equal(beforeEffect?.state,"unknown");
+  const ownershipAuthority=createMovieMentorProjectOwnershipAuthority();
+  const requestAuthority=createMovieMentorCreatorRequestAuthority({
+   verifyCredential:authentication.verifyCredential,
+   expectedIssuer:authentication.expectedIssuer,expectedAudience:authentication.expectedAudience,
+   ownershipAuthority
+  });
+  const spend=createMovieMentorProductionInferenceSpendComposition();
+  const composed=createMovieMentorProductionInferenceExecutionComposition();
+  assert.equal(composed.ready,true);
+  const forbidden=()=>{throw Error("UNKNOWN HTTP retry must not reserve, dispatch or read mutable creator state");};
+  const guardedSpend={...spend.authority,reserveTurn:forbidden};
+  const settlement={reconcile:forbidden,releaseUnclaimed:forbidden,releaseUnbound:forbidden};
+  let calls=0;
+  const router=createMovieMentorTurnRouter({
+   requestAuthority,inferenceSpendAuthority:guardedSpend,
+   inferenceExecutionAuthority:composed.authority,inferenceSettlementAuthority:settlement,
+   runTurn:async(body,deps)=>{
+    calls++;
+    return runMovieMentorTurnWithForwardExecutionAuthority(body,{
+     ...deps,readAuthoritativeTurnSource:forbidden,orchestrateTurn:forbidden,
+     createExecutionOwnerId:()=>`isolated-restarted-owner-${process.pid}`
+    });
+   }
+  });
+  const app=express();app.use(express.json());app.use("/api/movie-mentor",router);
+  retryServer=await new Promise(resolve=>{const s=app.listen(0,"127.0.0.1",()=>resolve(s));});
+  const url=`http://127.0.0.1:${retryServer.address().port}/api/movie-mentor/turn`;
+  const response=await fetch(url,{method:"POST",headers:{"content-type":"application/json",authorization:`Bearer ${jwt(principalId)}`},
+   body:JSON.stringify({projectId,creatorTurnId,message:"isolated",options:{}})});
+  assert.notEqual(response.status,200,"UNKNOWN HTTP retry must not expose completion");
+  assert.equal(calls,1,"authenticated retry must enter actual forward runtime");
+  assert.deepEqual(await reservationCollection.findOne({principalId}),beforeReservation);
+  assert.deepEqual(await entitlementCollection.findOne({principalId}),beforeEntitlement);
+  assert.deepEqual(await effectCollection.findOne({executionId}),beforeEffect);
+  assert.equal(await reservationCollection.countDocuments({principalId}),1);
+  assert.equal(await effectCollection.countDocuments({executionId}),1);
+  console.log("GREEN fresh-process authenticated HTTP UNKNOWN retry -> real forward runtime denies completion without new spend or provider effect");
+ }finally{
+  if(retryServer)await new Promise(resolve=>retryServer.close(resolve));
+  await mongoose.disconnect();
+ }
+ process.exit(0);
+}
 if(process.argv[2]==="--verify-unknown-restart"){
  const callId=process.argv[3];
  assert.match(callId||"",/^provider-call-[a-zA-Z0-9-]+$/);
@@ -204,6 +276,13 @@ try{
  assert.equal((await executionCollection.findOne({executionId:createdExecution.executionId})).providerCallsClaimed,1);
 
  assert.equal(acceptedSockets.length,1);
+ const retry=spawnSync(process.execPath,[new URL(import.meta.url).pathname,"--verify-unknown-http-retry",
+  createdExecution.executionId,principalId,projectId,`${suffix}-turn`],{
+  encoding:"utf8",timeout:30000,env:{...process.env,MOVIE_MENTOR_ISOLATED_MONGO_URI:uri}
+ });
+ assert.equal(retry.status,0,`HTTP retry worker failed: ${retry.stderr} ${retry.stdout}`);
+ assert.match(retry.stdout,/GREEN fresh-process authenticated HTTP UNKNOWN retry/);
+ assert.equal(acceptedSockets.length,1,"HTTP retry must not dispatch another provider socket");
  exposureAttempt=true;
  const forged=await post(token(principalId));
  assert.notEqual(forged.status,200,"HTTP gateway must refuse forged runtime completion");
@@ -222,7 +301,8 @@ try{
  console.log("GREEN authenticated HTTP current-owner UNKNOWN transition -> immutable provider operation and one durable UNKNOWN effect before socket dispatch");
  console.log("GREEN authenticated HTTP chain -> exactly one provider socket accepted then response lost, durable UNKNOWN retained");
  console.log("GREEN fresh worker independently reads HTTP-origin durable UNKNOWN and denies redispatch, refund and speculative recovery");
- console.log("LIMITATION: locally generated isolated RSA test keys and native ownership fixture; injected runtime simulates socket loss after durable UNKNOWN; fresh-worker durable UNKNOWN recovery tested, but fresh authenticated HTTP restart and positive settlement journey not certified.");
+ console.log("GREEN fresh-process authenticated HTTP UNKNOWN retry uses actual forward runtime, denies completion and leaves spend/effect immutable");
+ console.log("LIMITATION: locally generated isolated RSA test keys and native ownership fixture; injected runtime simulates socket loss after durable UNKNOWN; fresh-worker HTTP UNKNOWN retry tested while original lease is live; expired-lease takeover and positive settlement journey not certified.");
 }finally{
  if(server)await new Promise(resolve=>server.close(resolve));
  if(socketServer)await new Promise(resolve=>socketServer.close(resolve));
