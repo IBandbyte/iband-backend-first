@@ -189,7 +189,7 @@ try{
   console.log(`PHYSICAL POSITIVE LOOPBACK PROVIDER REQUESTS: count=${providerRequests.length}`);
   assert.equal(response.status,200,JSON.stringify(responseBody));
   assert.equal(responseBody.success,true);
-  assert.equal(responseBody.status,"complete");
+  assert.equal(responseBody.status,"mentor-response-ready","initial HTTP contract must return the real mentor response state");
   assert.equal(actualExecution?.phase,"settled");
   assert.equal(actualExecution?.providerCallsClaimed,5);
   assert.equal(actualReservation?.status,"consumed");
