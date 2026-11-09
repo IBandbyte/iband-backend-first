@@ -15,6 +15,7 @@ import { createMovieMentorResultCandidateMongoStore } from "../ai/MovieMentorRes
 import { createMovieMentorInferenceSettlementMongoStore } from "../ai/MovieMentorInferenceSettlementMongoStore.js";
 import { createMovieMentorInferenceSettlementReconciliationAuthority } from "../ai/MovieMentorInferenceSettlementReconciliationAuthority.js";
 import { createMovieMentorTurnRouter } from "../movieMentorTurn.js";
+import { runMovieMentorTurnWithForwardExecutionAuthority } from "../ai/MovieMentorForwardExecutionRuntime.js";
 
 const uri=process.env.MOVIE_MENTOR_ISOLATED_MONGO_URI||"";
 assert.match(uri,/^mongodb:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?\//);
@@ -68,22 +69,28 @@ try{
  const methods=["findExecutionByCreatorTurn","openExecution","acquireExecution","assertFence","claimProviderCall","beginProviderDispatch","assertProviderDispatch","contributeProviderEffectEvidence","stageResultCandidate","readResultCandidate","beginExecutionClosing","reconcileExecutionClosure","assertCurrentExecutionClosure","commitCanonicalResult","readCanonicalResult"];
  const execution=Object.fromEntries(methods.map(key=>[key,async()=>{throw Error(`unexpected execution operation: ${key}`)}]));
  execution.readCanonicalResult=canonical.readResult;
+ execution.findExecutionByCreatorTurn=async ({principalId:requestedPrincipal,projectId:requestedProject,creatorTurnId:requestedTurn,requestDigest})=>{
+  const record=await db.collection("movie_mentor_inference_execution").findOne({
+   principalId:requestedPrincipal,projectId:requestedProject,creatorTurnId:requestedTurn,requestDigest
+  });
+  assert.ok(record,"production runtime must find the exact persisted settled execution");
+  assert.equal(record.phase,"settled");
+  return {...record,found:true};
+ };
+ const forbidden=()=>{throw Error("settled replay must not reserve, reacquire, dispatch or mutate execution");};
+ const guardedSpend={...spend.authority,reserveTurn:forbidden};
+ const forwardExecutionAuthority={assertCurrentReacquisition:forbidden};
+
  const router=createMovieMentorTurnRouter({
-  requestAuthority,inferenceSpendAuthority:spend.authority,
+  requestAuthority,inferenceSpendAuthority:guardedSpend,
   inferenceExecutionAuthority:execution,inferenceSettlementAuthority:settlement,
-  runTurn:async()=>{
+  runTurn:async(body,deps)=>{
    replayCalls++;
-   const current=await canonical.readResult({executionId});
-   assert.equal(current.authorized,true);
-   const reconciled=await settlement.reconcile({executionId});
-   assert.equal(reconciled.authorized,true);
-   assert.equal(reconciled.settled,true);
-   return {...current.resultPayload,metadata:{...current.resultPayload.metadata,canonicalResult:{
-    creatorResponseAuthorityVerified:true,executionId,
-    resultReference:current.resultReference,candidateReference:current.candidateReference,
-    resultDigest:current.resultDigest,reservationId:current.reservationId,
-    closureCertificateDigest:current.closureCertificateDigest
-   }}};
+   return runMovieMentorTurnWithForwardExecutionAuthority(body,{
+    ...deps,forwardExecutionAuthority,
+    readAuthoritativeTurnSource:forbidden,
+    orchestrateTurn:forbidden
+   });
   }
  });
  const app=express();app.use(express.json());app.use("/api/movie-mentor",router);
@@ -100,7 +107,7 @@ try{
  const owner=await post(principalId);
  assert.equal(owner.status,200,JSON.stringify(owner.body));
  assert.equal(owner.body.status,"complete");
- assert.equal(owner.body.metadata.canonicalResult.replayedFromDurableResult,undefined);
+ assert.equal(owner.body.metadata.canonicalResult.replayedFromDurableResult,true);
  assert.equal(replayCalls,1);
  const again=await post(principalId);
  assert.equal(again.status,200);
@@ -108,8 +115,8 @@ try{
  assert.deepEqual(await reservations.findOne({principalId}),beforeReservation);
  assert.deepEqual(await entitlements.findOne({principalId}),beforeEntitlement);
  assert.equal(await db.collection("movie_mentor_canonical_result").countDocuments({executionId}),1);
- console.log("GREEN fresh-process real signed-JWT HTTP owner replay and non-owner denial, canonical exposure gate and immutable financial ledgers");
- console.log("LIMITATION: injected read-only replay adapter; production forward execution runtime and provider dispatch path not certified by this HTTP court.");
+ console.log("GREEN fresh-process signed-JWT HTTP replay through actual forward-execution runtime with no reservation, reacquisition or provider dispatch");
+ console.log("LIMITATION: isolated execution lookup adapter and synthetic local JWT signing keys; full production execution composition and live provider journey remain uncertified.");
 }finally{
  if(server)await new Promise((resolve,reject)=>server.close(error=>error?reject(error):resolve()));
  await mongoose.disconnect();
