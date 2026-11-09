@@ -100,7 +100,7 @@ try{
  assert.equal(replayCalls,0);
  const owner=await post(principalId);
  assert.equal(owner.status,200,JSON.stringify(owner.body));
- assert.equal(owner.body.status,"complete");
+ assert.equal(owner.body.status,"mentor-response-ready","replayed canonical HTTP result preserves original response status");
  assert.equal(owner.body.metadata.canonicalResult.replayedFromDurableResult,true);
  assert.equal(replayCalls,1);
  const mismatchedMessage=await post(principalId,{message:"tampered creator request"});
