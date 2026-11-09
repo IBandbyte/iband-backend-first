@@ -50,6 +50,19 @@ if(process.argv[2]==="--verify-unknown-http-retry"){
   const beforeReservation=await reservationCollection.findOne({principalId});
   const beforeEntitlement=await entitlementCollection.findOne({principalId});
   const beforeEffect=await effectCollection.findOne({executionId});
+  const executionCollection=db.collection("movie_mentor_inference_execution");
+  const beforeExecution=await executionCollection.findOne({executionId});
+  assert.equal(beforeExecution?.phase,"active");
+  const takeoverMode=process.argv[7]==="--expired-lease";
+  if(takeoverMode){
+   const expired=new Date(Date.now()-120000).toISOString();
+   const result=await executionCollection.updateOne({
+    executionId,leaseGeneration:beforeExecution.leaseGeneration,
+    leaseReference:beforeExecution.leaseReference
+   },{$set:{leaseExpiresAt:expired}});
+   assert.equal(result.modifiedCount,1,"isolated test must expire exactly the target lease");
+  }
+
   assert.equal(beforeEffect?.state,"unknown");
   const ownershipAuthority=createMovieMentorProjectOwnershipAuthority();
   const requestAuthority=createMovieMentorCreatorRequestAuthority({
@@ -60,6 +73,15 @@ if(process.argv[2]==="--verify-unknown-http-retry"){
   const spend=createMovieMentorProductionInferenceSpendComposition();
   const composed=createMovieMentorProductionInferenceExecutionComposition();
   assert.equal(composed.ready,true);
+  if(takeoverMode){
+   const taken=await composed.authority.acquireExecution({executionId,ownerId:`isolated-takeover-${process.pid}`});
+   assert.equal(taken.authorized,true,"expired lease must permit genuine owner takeover");
+   assert.equal(taken.acquired,true,"takeover must advance lease, not reuse old owner");
+   assert.equal(taken.leaseGeneration,beforeExecution.leaseGeneration+1);
+   assert.equal((await executionCollection.findOne({executionId})).providerCallsClaimed,1);
+   assert.deepEqual(await effectCollection.findOne({executionId}),beforeEffect);
+   console.log("GREEN physical expired-lease takeover advances owner generation while durable provider UNKNOWN remains immutable");
+  }
   const forbidden=()=>{throw Error("UNKNOWN HTTP retry must not reserve, dispatch or read mutable creator state");};
   const guardedSpend={...spend.authority,reserveTurn:forbidden};
   const settlement={reconcile:forbidden,releaseUnclaimed:forbidden,releaseUnbound:forbidden};
@@ -87,7 +109,7 @@ if(process.argv[2]==="--verify-unknown-http-retry"){
   assert.deepEqual(await effectCollection.findOne({executionId}),beforeEffect);
   assert.equal(await reservationCollection.countDocuments({principalId}),1);
   assert.equal(await effectCollection.countDocuments({executionId}),1);
-  console.log("GREEN fresh-process authenticated HTTP UNKNOWN retry -> real forward runtime denies completion without new spend or provider effect");
+  console.log(takeoverMode?"GREEN authenticated HTTP retry after isolated expired-lease takeover denies completion without second spend or effect":"GREEN fresh-process authenticated HTTP UNKNOWN retry -> real forward runtime denies completion without new spend or provider effect");
  }finally{
   if(retryServer)await new Promise(resolve=>retryServer.close(resolve));
   await mongoose.disconnect();
@@ -283,6 +305,16 @@ try{
  assert.equal(retry.status,0,`HTTP retry worker failed: ${retry.stderr} ${retry.stdout}`);
  assert.match(retry.stdout,/GREEN fresh-process authenticated HTTP UNKNOWN retry/);
  assert.equal(acceptedSockets.length,1,"HTTP retry must not dispatch another provider socket");
+ const takeover=spawnSync(process.execPath,[new URL(import.meta.url).pathname,"--verify-unknown-http-retry",
+  createdExecution.executionId,principalId,projectId,`${suffix}-turn`,"--expired-lease"],{
+  encoding:"utf8",timeout:30000,env:{...process.env,MOVIE_MENTOR_ISOLATED_MONGO_URI:uri}
+ });
+ assert.equal(takeover.status,0,`expired-lease takeover worker failed: ${takeover.stderr} ${takeover.stdout}`);
+ assert.match(takeover.stdout,/GREEN physical expired-lease takeover/);
+ assert.match(takeover.stdout,/GREEN authenticated HTTP retry after isolated expired-lease takeover/);
+ assert.equal(acceptedSockets.length,1,"expired-lease takeover must not redispatch provider socket");
+ assert.equal(await effects.countDocuments({executionId:createdExecution.executionId}),1);
+
  exposureAttempt=true;
  const forged=await post(token(principalId));
  assert.notEqual(forged.status,200,"HTTP gateway must refuse forged runtime completion");
@@ -302,7 +334,8 @@ try{
  console.log("GREEN authenticated HTTP chain -> exactly one provider socket accepted then response lost, durable UNKNOWN retained");
  console.log("GREEN fresh worker independently reads HTTP-origin durable UNKNOWN and denies redispatch, refund and speculative recovery");
  console.log("GREEN fresh-process authenticated HTTP UNKNOWN retry uses actual forward runtime, denies completion and leaves spend/effect immutable");
- console.log("LIMITATION: locally generated isolated RSA test keys and native ownership fixture; injected runtime simulates socket loss after durable UNKNOWN; fresh-worker HTTP UNKNOWN retry tested while original lease is live; expired-lease takeover and positive settlement journey not certified.");
+ console.log("GREEN physical expired-lease takeover + authenticated HTTP retry preserve one UNKNOWN provider effect and one accepted socket");
+ console.log("LIMITATION: locally generated isolated RSA test keys and native ownership fixture; injected runtime simulates socket loss after durable UNKNOWN; expired-lease takeover tested with a separate fresh worker; full resumed orchestration and positive settlement journey not certified.");
 }finally{
  if(server)await new Promise(resolve=>server.close(resolve));
  if(socketServer)await new Promise(resolve=>socketServer.close(resolve));
