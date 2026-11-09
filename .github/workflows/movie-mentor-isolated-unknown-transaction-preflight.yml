@@ -27,8 +27,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
-      - run: npm ci
+      - run: npm install --no-package-lock --ignore-scripts
       - name: Initialize isolated Mongo replica set
         run: |
           docker exec "${{ job.services.mongo.id }}" mongosh --quiet --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"localhost:27017"}]})'
