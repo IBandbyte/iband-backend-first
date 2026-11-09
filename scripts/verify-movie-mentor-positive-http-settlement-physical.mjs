@@ -74,10 +74,20 @@ try{
   inferenceSpendAuthority:spend.authority,
   inferenceExecutionAuthority:execution.authority,
   inferenceSettlementAuthority:settlement,
-  runTurn:async(body,deps)=>runMovieMentorTurnWithForwardExecutionAuthority(body,{
-   ...deps,readAuthoritativeTurnSource,orchestrateTurn:orchestrateMovieMentorTurn,
-   createExecutionOwnerId:()=>`${prefix}-http-owner`
-  })
+  runTurn:async(body,deps)=>{
+   try{return await runMovieMentorTurnWithForwardExecutionAuthority(body,{
+    ...deps,readAuthoritativeTurnSource,orchestrateTurn:orchestrateMovieMentorTurn,
+    createExecutionOwnerId:()=>`${prefix}-http-owner`
+   });}catch(error){
+    const chain=[];const seen=new Set();let current=error;
+    for(let depth=0;depth<6&&current&&!seen.has(current);depth++){
+     seen.add(current);chain.push({code:current.code||null,message:String(current.message||current).slice(0,300)});
+     current=current.originalCause||current.cause||null;
+    }
+    console.log(`PHYSICAL POSITIVE ORCHESTRATION CAUSE CHAIN: ${JSON.stringify(chain)}`);
+    throw error;
+   }
+  }
  });
  const app=express();app.use(express.json());app.use("/api/movie-mentor",router);
  const server=await new Promise(resolve=>{const s=app.listen(0,"127.0.0.1",()=>resolve(s));});
@@ -95,7 +105,9 @@ try{
   console.log(`PHYSICAL POSITIVE HTTP RUNTIME: status=${response.status} code=${responseBody?.code||"none"} success=${responseBody?.success===true}`);
   const actualExecution=await mongoose.connection.db.collection("movie_mentor_inference_execution").findOne({creatorTurnId});
   const actualReservation=await mongoose.connection.db.collection("movie_mentor_inference_spend_reservation").findOne({principalId});
-  console.log(`PHYSICAL POSITIVE DURABLE CHECKPOINT: execution=${actualExecution?.executionId||"none"} phase=${actualExecution?.phase||"none"} reservation=${actualReservation?.status||"none"}`);
+  console.log(`PHYSICAL POSITIVE DURABLE CHECKPOINT: execution=${actualExecution?.executionId||"none"} phase=${actualExecution?.phase||"none"} reservation=${actualReservation?.status||"none"} providerCalls=${actualExecution?.providerCallsClaimed??"unknown"}`);
+  const effects=await mongoose.connection.db.collection("movie_mentor_provider_effect").find({executionId:actualExecution?.executionId||"none"}).project({providerCallId:1,status:1,effectStatus:1,slotId:1,task:1}).toArray();
+  console.log(`PHYSICAL POSITIVE PROVIDER EFFECT CHECKPOINT: ${JSON.stringify(effects)}`);
   assert.notEqual(response.status,200,"positive HTTP cannot claim completion without proven canonical finalization, settlement and replay");
  }finally{
   await new Promise((resolve,reject)=>server.close(error=>error?reject(error):resolve()));
