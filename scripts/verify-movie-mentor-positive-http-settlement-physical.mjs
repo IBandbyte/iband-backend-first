@@ -5,6 +5,10 @@ import { createMovieMentorProductionAuthenticationComposition } from "../ai/Movi
 import { createMovieMentorCreatorRequestAuthority } from "../ai/MovieMentorCreatorRequestAuthority.js";
 import { createMovieMentorProjectOwnershipAuthority } from "../ai/MovieMentorProjectOwnershipRegistry.js";
 import { createMovieMentorTurnRouter } from "../movieMentorTurn.js";
+import { createMovieMentorProductionInferenceSpendComposition } from "../ai/MovieMentorProductionInferenceSpendComposition.js";
+import { createMovieMentorProductionInferenceExecutionComposition } from "../ai/MovieMentorProductionInferenceExecutionComposition.js";
+import { createMovieMentorInferenceSettlementMongoStore } from "../ai/MovieMentorInferenceSettlementMongoStore.js";
+import { createMovieMentorInferenceSettlementReconciliationAuthority } from "../ai/MovieMentorInferenceSettlementReconciliationAuthority.js";
 import mongoose from "mongoose";
 
 // Fail-closed registration of the missing positive HTTP-origin settlement court.
@@ -52,7 +56,18 @@ try{
   expectedIssuer:authentication.expectedIssuer,expectedAudience:authentication.expectedAudience,
   ownershipAuthority
  });
- const router=createMovieMentorTurnRouter({requestAuthority,runTurn:async()=>{throw Object.assign(new Error("positive HTTP runtime not yet composed"),{code:"POSITIVE_HTTP_RUNTIME_NOT_COMPOSED"});}});
+ const spend=createMovieMentorProductionInferenceSpendComposition();
+ assert.equal(spend.ready,true,"physical spend composition required");
+ const execution=createMovieMentorProductionInferenceExecutionComposition();
+ assert.equal(execution.ready,true,"physical execution composition required");
+ const settlement=createMovieMentorInferenceSettlementReconciliationAuthority({store:createMovieMentorInferenceSettlementMongoStore()});
+ const router=createMovieMentorTurnRouter({
+  requestAuthority,
+  inferenceSpendAuthority:spend.authority,
+  inferenceExecutionAuthority:execution.authority,
+  inferenceSettlementAuthority:settlement,
+  runTurn:async()=>{throw Object.assign(new Error("positive HTTP runtime not yet composed"),{code:"POSITIVE_HTTP_RUNTIME_NOT_COMPOSED"});}
+ });
  const app=express();app.use(express.json());app.use("/api/movie-mentor",router);
  const server=await new Promise(resolve=>{const s=app.listen(0,"127.0.0.1",()=>resolve(s));});
  try{
