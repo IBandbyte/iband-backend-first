@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import mongoose from "mongoose";
 import { createMovieMentorProductionInferenceSpendComposition } from "../ai/MovieMentorProductionInferenceSpendComposition.js";
+import { createMovieMentorInferenceExecutionMongoStore } from "../ai/MovieMentorInferenceExecutionMongoStore.js";
 import { createMovieMentorInferenceSettlementMongoStore } from "../ai/MovieMentorInferenceSettlementMongoStore.js";
 
 const uri=process.env.MOVIE_MENTOR_ISOLATED_MONGO_URI||"";
@@ -32,6 +33,24 @@ try{
  assert.equal(missing.reason,"execution-not-found");
  assert.deepEqual(await entitlements.findOne({principalId}),beforeEntitlement);
  assert.deepEqual(await reservationCollection.findOne({principalId}),beforeReservation);
+ const executionId=`${suffix}-real-active-execution`;
+ const now=new Date();
+ const created=await createMovieMentorInferenceExecutionMongoStore().createExecution({
+  executionId,creatorTurnId:`${suffix}-turn`,principalId,projectId,
+  reservationId:beforeReservation.reservationId,requestDigest:`${suffix}-digest`,
+  phase:"active",ownerId:`${suffix}-worker`,leaseGeneration:1,
+  leaseReference:`${suffix}-lease`,fencingToken:`${suffix}-fence`,
+  leaseAcquiredAt:now,leaseExpiresAt:new Date(now.getTime()+120000),
+  maxProviderCalls:1,providerCallsClaimed:0,providerCalls:[]
+ });
+ assert.equal(created.schema,6);
+ const active=await settlement.settleCanonicalResult({executionId});
+ assert.equal(active.authorized,false);
+ assert.equal(active.settled,false);
+ assert.equal(active.reason,"execution-not-finalized");
+ assert.deepEqual(await entitlements.findOne({principalId}),beforeEntitlement);
+ assert.deepEqual(await reservationCollection.findOne({principalId}),beforeReservation);
+ console.log("GREEN production Mongo settlement refuses real schema-6 active execution before finalization");
  console.log("GREEN production Mongo settlement rejects nonexistent execution without consuming reserved spend");
  console.log("LIMITATION: negative settlement gate only; real finalized execution/canonical result/settled replay remains uncertified.");
 }finally{await mongoose.disconnect();}
