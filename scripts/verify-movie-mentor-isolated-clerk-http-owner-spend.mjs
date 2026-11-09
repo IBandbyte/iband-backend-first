@@ -83,9 +83,9 @@ if(process.argv[2]==="--verify-unknown-http-retry"){
    assert.deepEqual(await effectCollection.findOne({executionId}),beforeEffect);
    console.log("GREEN physical expired-lease takeover advances owner generation while durable provider UNKNOWN remains immutable");
   }
-  const forbidden=()=>{throw Error("UNKNOWN HTTP retry must not reserve, dispatch or read mutable creator state");};
-  const guardedSpend={...spend.authority,reserveTurn:forbidden};
-  const settlement={reconcile:forbidden,releaseUnclaimed:forbidden,releaseUnbound:forbidden};
+  const forbidden=(operation)=>()=>{const error=new Error(`UNKNOWN HTTP retry unexpectedly reached ${operation}`);error.code="ISOLATED_UNEXPECTED_RETRY_OPERATION";throw error;};
+  const guardedSpend={...spend.authority,reserveTurn:forbidden("spend.reserveTurn")};
+  const settlement={reconcile:forbidden("settlement.reconcile"),releaseUnclaimed:forbidden("settlement.releaseUnclaimed"),releaseUnbound:forbidden("settlement.releaseUnbound")};
   let calls=0;
   const router=createMovieMentorTurnRouter({
    requestAuthority,inferenceSpendAuthority:guardedSpend,
@@ -94,7 +94,7 @@ if(process.argv[2]==="--verify-unknown-http-retry"){
     calls++;
     try{
      return await runMovieMentorTurnWithForwardExecutionAuthority(body,{
-      ...deps,readAuthoritativeTurnSource:forbidden,orchestrateTurn:forbidden,
+      ...deps,readAuthoritativeTurnSource:forbidden("readAuthoritativeTurnSource"),orchestrateTurn:forbidden("orchestrateTurn"),
       createExecutionOwnerId:()=>`isolated-restarted-owner-${process.pid}`
      });
     }catch(error){
