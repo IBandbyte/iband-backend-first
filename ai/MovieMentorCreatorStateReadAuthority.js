@@ -33,6 +33,16 @@ function createMovieMentorCreatorStateReadAuthority({ ownershipAuthority, readCr
         !Number.isSafeInteger(state.creatorStateGeneration) || state.creatorStateGeneration < 1) {
       fail("MOVIE_MENTOR_CREATOR_READ_INVALID_STATE", "Authoritative creator state has invalid project or revision identity.");
     }
+    // A durable read can outlive its initial ownership decision. Revalidate
+    // immediately before returning sensitive state, and reject any ownership
+    // revision/reference change (including a transfer away and back).
+    const currentOwnership = await ownershipAuthority.authorizeProject({ principal, projectId: pid });
+    if (currentOwnership?.authorized !== true ||
+        s(currentOwnership.projectId) !== pid ||
+        s(currentOwnership.ownershipRef) !== s(ownership.ownershipRef) ||
+        currentOwnership.ownershipRevision !== ownership.ownershipRevision) {
+      return Object.freeze({ authorized: false, reason: "project-ownership-changed" });
+    }
     return Object.freeze({ authorized: true, state: Object.freeze({ ...state }) });
   }
   return Object.freeze({ version: VERSION, read });
