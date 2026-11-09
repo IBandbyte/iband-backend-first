@@ -74,6 +74,19 @@ try{
  const providerServer=http.createServer(async(req,res)=>{
   let body="";for await(const chunk of req)body+=chunk;
   providerRequests.push({path:req.url,method:req.method,idempotencyKey:req.headers["idempotency-key"]||null});
+  let requestBody;
+  try{requestBody=JSON.parse(body);}catch{
+   res.writeHead(400,{"content-type":"application/json"});
+   res.end(JSON.stringify({error:{message:"Invalid isolated provider JSON"}}));
+   return;
+  }
+  const schema=requestBody?.text?.format?.schema;
+  console.log("PHYSICAL POSITIVE PROVIDER SCHEMA: "+JSON.stringify({
+   schemaName:requestBody?.text?.format?.name||null,
+   topLevelRequired:Array.isArray(schema?.required)?schema.required:[],
+   topLevelProperties:Object.keys(schema?.properties||{}),
+   model:requestBody?.model||null
+  }));
   res.writeHead(503,{"content-type":"application/json"});
   res.end(JSON.stringify({error:{message:"Isolated positive provider response fixture not yet implemented",type:"isolated_fixture_pending"}}));
  });
