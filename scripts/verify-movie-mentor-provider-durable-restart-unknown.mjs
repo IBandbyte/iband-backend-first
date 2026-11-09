@@ -25,12 +25,15 @@ async function main(){
   await store.bindOperation({...identity,providerTarget:target,providerModel:"gpt-test",boundAt:new Date().toISOString()});
   await db.collection(collectionNames.effect).insertOne({...identity,state:"unknown",evidence:[],dispatchUnknownAt:new Date(),revision:1});
   const before=await Promise.all(Object.values(collectionNames).map(async name=>[name,await db.collection(name).countDocuments({})]));
+  const durableBefore=await Promise.all([collectionNames.execution,collectionNames.operation,collectionNames.effect].map(async name=>[name,await db.collection(name).findOne(name===collectionNames.execution?{executionId:identity.executionId}:{providerCallId:id},{projection:{_id:0}})]));
   await mongoose.disconnect();
   const child=spawnSync(process.execPath,[new URL(import.meta.url).pathname,"--recovered-worker",id],{env:{...process.env,MOVIE_MENTOR_ISOLATED_MONGO_URI:uri},encoding:"utf8",timeout:30000});
   assert.equal(child.status,0,`fresh worker failed: ${child.stderr} ${child.stdout}`);
   await connect();
   const after=await Promise.all(Object.values(collectionNames).map(async name=>[name,await mongoose.connection.db.collection(name).countDocuments({})]));
   assert.deepEqual(after,before,"restart must not create any additional provider, spend, or settlement records");
+  const durableAfter=await Promise.all([collectionNames.execution,collectionNames.operation,collectionNames.effect].map(async name=>[name,await mongoose.connection.db.collection(name).findOne(name===collectionNames.execution?{executionId:identity.executionId}:{providerCallId:id},{projection:{_id:0}})]));
+  assert.deepEqual(durableAfter,durableBefore,"restart recovery must not silently mutate admitted execution, operation, or effect documents");
   const persisted=await mongoose.connection.db.collection(collectionNames.effect).findOne({providerCallId:id});
   assert.equal(persisted.state,"unknown");assert.deepEqual(persisted.evidence,[]);
   console.log(child.stdout.trim());
