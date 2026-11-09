@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import http from "node:http";
+import { recoverPreviouslyAdmittedProviderResult } from "../ai/MovieMentorRecoveredProviderResultAuthority.js";
 import { executeStructuredAI } from "../ai/StructuredAIProviderClient.js";
 import { interpretMovieMentorSemantics } from "../ai/MovieMentorSemanticInterpreter.js";
 import { executeMovieMentorSpecialistWorkOrder } from "../ai/MovieMentorSpecialistExecutor.js";
@@ -42,6 +44,36 @@ try{
  await fenced.interpretSemantics({proof:true});
  assert.deepEqual(runtimeOperation,{providerOperationId:providerCall.providerCallId,executionId:providerCall.executionId,slotId:providerCall.slotId,task:providerCall.task});
  assert.equal(inputBoundBeforeUnknown,true);
+ // Physical post-acceptance socket loss: the server receives the complete provider request,
+ // then destroys the socket before responding. No external provider credentials are used.
+ const localServer=http.createServer(async(req,res)=>{
+   let body="";for await(const chunk of req)body+=chunk;
+   socketRequests.push({header:req.headers["idempotency-key"],body:JSON.parse(body)});
+   res.destroy();
+ });
+ const socketRequests=[];
+ await new Promise(resolve=>localServer.listen(0,"127.0.0.1",resolve));
+ const localPort=localServer.address().port;
+ try{
+   process.env.IBAND_AI_BASE_URL=`http://127.0.0.1:${localPort}/v1/responses`;
+   globalThis.fetch=originalFetch;
+   const lostOperation={providerOperationId:"provider-call-socket-loss",executionId:"execution-socket-loss",slotId:"semantic",task:"movie-mentor-semantic"};
+   await assert.rejects(()=>executeStructuredAI({task:"movie-mentor-network-proof",systemInstructions:"Return JSON.",input:{proof:true},schema:{type:"object",additionalProperties:false,properties:{value:{type:"string"}},required:["value"]},schemaName:"movie_mentor_socket_loss",providerOperation:lostOperation}));
+   assert.equal(socketRequests.length,1,"the local provider must accept exactly one request");
+   assert.equal(socketRequests[0].header,lostOperation.providerOperationId);
+   const historicalDecision={dispatchAuthorized:false,reason:"provider-call-slot-already-admitted",existingProviderCall:{providerCallId:lostOperation.providerOperationId,executionId:lostOperation.executionId,slotId:lostOperation.slotId,task:lostOperation.task}};
+   let recoveryCalls=0;
+   await assert.rejects(()=>recoverPreviouslyAdmittedProviderResult({
+     decision:historicalDecision,execution:{executionId:lostOperation.executionId,ownerId:"owner-socket-loss",leaseGeneration:1},
+     slotId:lostOperation.slotId,task:lostOperation.task,input:{proof:true},
+     recoverProviderOutcome:async()=>{recoveryCalls++;return{outcome:"STILL_UNKNOWN",recovered:false,recoveryAuthorized:false,redispatchAuthorized:false,refundAuthorized:false};},
+     readProviderOperation:async()=>{throw Error("UNKNOWN must fail before reconstruction");},
+     reconstructRecoveredResult:async()=>{throw Error("UNKNOWN must not reconstruct");},
+   }),error=>error?.code==="MOVIE_MENTOR_PROVIDER_RECOVERY_STILL_UNKNOWN");
+   assert.equal(recoveryCalls,1);
+   assert.equal(socketRequests.length,1,"historical UNKNOWN recovery must not re-dispatch");
+ }finally{await new Promise(resolve=>localServer.close(resolve));}
+ console.log("✓ real loopback socket accepted one provider operation then dropped response; historical STILL_UNKNOWN recovery denied without redispatch");
  console.log("✓ incomplete provider operation identity fails closed before the network boundary");
  console.log("✓ shared, semantic, specialist, continuity and synthesis OpenAI sockets carry exact durable Movie Mentor operation identity");
  console.log("✓ fenced runtime binds exact task input before UNKNOWN and transports exact provider-call identity into the provider adapter boundary");
