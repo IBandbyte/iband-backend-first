@@ -1,0 +1,32 @@
+import assert from "node:assert/strict";
+import mongoose from "mongoose";
+import { createMovieMentorInferenceSettlementMongoStore } from "../ai/MovieMentorInferenceSettlementMongoStore.js";
+import { createMovieMentorCanonicalResultMongoStore } from "../ai/MovieMentorCanonicalResultMongoStore.js";
+const uri=process.env.MOVIE_MENTOR_ISOLATED_MONGO_URI||"";
+assert.match(uri,/^mongodb:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?\//);
+assert.match(uri,/replicaSet=/);
+const executionId=process.argv[2],principalId=process.argv[3];
+assert.ok(executionId&&principalId);
+process.env.MONGO_URI=uri;
+await mongoose.connect(uri,{serverSelectionTimeoutMS:10000});
+try{
+ const db=mongoose.connection.db;
+ const reservations=db.collection("movie_mentor_inference_spend_reservation");
+ const entitlements=db.collection("movie_mentor_inference_entitlement");
+ const beforeReservation=await reservations.findOne({principalId});
+ const beforeEntitlement=await entitlements.findOne({principalId});
+ assert.equal(beforeReservation.status,"consumed");
+ assert.equal(beforeEntitlement.reservedUnits,0);
+ assert.equal(beforeEntitlement.consumedUnits,1);
+ const result=await createMovieMentorCanonicalResultMongoStore().readByExecution(executionId);
+ assert.equal(result.executionId,executionId);
+ assert.equal(result.schema,2);
+ const settled=await createMovieMentorInferenceSettlementMongoStore().settleCanonicalResult({executionId});
+ assert.equal(settled.authorized,true);
+ assert.equal(settled.settled,true);
+ assert.deepEqual(await reservations.findOne({principalId}),beforeReservation);
+ assert.deepEqual(await entitlements.findOne({principalId}),beforeEntitlement);
+ assert.equal(await db.collection("movie_mentor_canonical_result").countDocuments({executionId}),1);
+ console.log("GREEN fresh-process canonical result read and idempotent settlement replay with immutable financial ledgers");
+ console.log("LIMITATION: direct durable-store replay, not full authenticated HTTP turn replay.");
+}finally{await mongoose.disconnect();}
