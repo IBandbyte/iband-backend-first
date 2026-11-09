@@ -144,6 +144,8 @@ if(process.argv[2]==="--verify-unknown-http-retry"){
      });
     }catch(error){
      console.log(`ISOLATED UNKNOWN RETRY ROOT EXCEPTION: ${error?.code||"UNCLASSIFIED"} ${error?.message||String(error)}`);
+     if(error?.cause)console.log(`ISOLATED UNKNOWN RETRY CAUSE: ${error.cause.code||"UNCLASSIFIED"} ${error.cause.message||String(error.cause)}`);
+     if(error?.originalCause)console.log(`ISOLATED UNKNOWN RETRY ORIGINAL CAUSE: ${error.originalCause.code||"UNCLASSIFIED"} ${error.originalCause.message||String(error.originalCause)}`);
      throw error;
     }
    }
@@ -400,6 +402,10 @@ try{
  console.log(`PHYSICAL HTTP-OWNED TAKEOVER DENIAL CODE: ${httpOwnedDenial[1]}`);
  const httpOwnedRoot=httpTakeover.stdout.match(/ISOLATED UNKNOWN RETRY ROOT EXCEPTION: ([^\\r\\n]+)/);
  if(httpOwnedRoot)console.log(`PHYSICAL HTTP-OWNED TAKEOVER ROOT EXCEPTION: ${httpOwnedRoot[1]}`);
+ const httpOwnedOriginal=httpTakeover.stdout.match(/ISOLATED UNKNOWN RETRY ORIGINAL CAUSE: ([^\\r\\n]+)/);
+ if(httpOwnedOriginal)console.log(`PHYSICAL HTTP-OWNED TAKEOVER ORIGINAL CAUSE: ${httpOwnedOriginal[1]}`);
+ const httpOwnedCause=httpTakeover.stdout.match(/ISOLATED UNKNOWN RETRY CAUSE: ([^\\r\\n]+)/);
+ if(httpOwnedCause)console.log(`PHYSICAL HTTP-OWNED TAKEOVER RELEASE CAUSE: ${httpOwnedCause[1]}`);
  assert.notEqual(httpOwnedDenial[1],"MOVIE_MENTOR_INFERENCE_EXECUTION_LEASE_NOT_AUTHORIZED","HTTP-owned takeover must not borrow lease denial");
  assert.notEqual(httpOwnedDenial[1],"ISOLATED_UNEXPECTED_RETRY_OPERATION","fixture guard cannot certify UNKNOWN recovery");
  assert.notEqual(httpOwnedDenial[1],"MOVIE_MENTOR_TURN_FAILED","generic gateway failure cannot certify UNKNOWN recovery");
