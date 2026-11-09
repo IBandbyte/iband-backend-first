@@ -63,7 +63,7 @@ try{
  await entitlements.insertOne({domain:"iband.movie-mentor.inference-spend",schema:1,principalId,status:"active",remainingUnits:1,reservedUnits:0,consumedUnits:0,entitlementRevision:1});
  const creatorState=mongoose.connection.db.collection("movie_mentor_creator_state");
  await creatorState.createIndex({projectId:1},{unique:true,partialFilterExpression:{projectId:{$type:"string"}}});
- await creatorState.insertOne({projectId,revision:0,revisionAuthorityReference:`${prefix}-revision`,creatorStateGeneration:1,creatorStateFingerprint:`${prefix}-fingerprint`,creatorAuthorityReference:`${prefix}-authority`});
+ await creatorState.insertOne({projectId,revision:0,revisionAuthorityReference:`${prefix}-revision`,creatorStateGeneration:1,creatorStateFingerprint:`${prefix}-fingerprint`,creatorAuthorityReference:`${prefix}-authority`,snapshotReference:`${prefix}-snapshot`,capturedAt:new Date()});
  const spend=createMovieMentorProductionInferenceSpendComposition();
  assert.equal(spend.ready,true,"physical spend composition required");
  const execution=createMovieMentorProductionInferenceExecutionComposition();
