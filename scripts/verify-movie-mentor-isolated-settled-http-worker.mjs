@@ -79,7 +79,7 @@ try{
  };
  const forbidden=()=>{throw Error("settled replay must not reserve, reacquire, dispatch or mutate execution");};
  const guardedSpend={...spend.authority,reserveTurn:forbidden};
- const forwardExecutionAuthority={assertCurrentReacquisition:forbidden};
+ const forwardExecutionAuthority={assertCurrentReacquisition:forbidden,assertCurrentCreation:forbidden,assertCurrentProviderCallAdmission:forbidden,assertCurrentProviderEffectUnknown:forbidden};
 
  const router=createMovieMentorTurnRouter({
   requestAuthority,inferenceSpendAuthority:guardedSpend,
