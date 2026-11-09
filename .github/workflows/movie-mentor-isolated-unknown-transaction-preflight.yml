@@ -39,3 +39,6 @@ jobs:
 
       - name: Physical settlement missing-execution denial
         run: node scripts/verify-movie-mentor-isolated-settlement-missing-execution.mjs
+
+      - name: Physical positive HTTP settlement and fresh-process replay court
+        run: node scripts/verify-movie-mentor-positive-http-settlement-physical.mjs
