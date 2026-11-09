@@ -108,6 +108,7 @@ if(process.argv[2]==="--verify-unknown-http-retry"){
   assert.equal(typeof retryFailure.code,"string","retry denial must carry a machine-readable error code");
   assert.notEqual(retryFailure.code,"MOVIE_MENTOR_CREATOR_STATE_CONSUMPTION_STATE_PROOF_REQUIRED","retry must not pass merely because a test fixture omits creator-state provenance");
   assert.notEqual(retryFailure.code,"MOVIE_MENTOR_CREATOR_STATE_CONSUMPTION_AUTHORITY_REQUIRED","retry must not pass merely because a test fixture omits consumption authority");
+  assert.notEqual(retryFailure.code,"MOVIE_MENTOR_TURN_FAILED","generic gateway failure cannot certify UNKNOWN recovery denial");
   console.log(`PHYSICAL UNKNOWN RETRY DENIAL CODE: ${retryFailure.code}`);
   assert.equal(calls,1,"authenticated retry must enter actual forward runtime");
   assert.deepEqual(await reservationCollection.findOne({principalId}),beforeReservation);
