@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
+import http from "node:http";
 import express from "express";
 import { createMovieMentorProductionAuthenticationComposition } from "../ai/MovieMentorProductionAuthenticationComposition.js";
 import { createMovieMentorCreatorRequestAuthority } from "../ai/MovieMentorCreatorRequestAuthority.js";
@@ -69,6 +70,16 @@ try{
  const creatorState=mongoose.connection.db.collection("movie_mentor_creator_state");
  await creatorState.createIndex({projectId:1},{unique:true,partialFilterExpression:{projectId:{$type:"string"}}});
  await creatorState.insertOne({projectId,revision:0,revisionAuthorityReference:`${prefix}-revision`,creatorStateGeneration:1,creatorStateFingerprint:`${prefix}-fingerprint`,creatorAuthorityReference:`${prefix}-authority`,snapshotReference:`${prefix}-snapshot`,capturedAt:new Date()});
+ const providerRequests=[];
+ const providerServer=http.createServer(async(req,res)=>{
+  let body="";for await(const chunk of req)body+=chunk;
+  providerRequests.push({path:req.url,method:req.method,idempotencyKey:req.headers["idempotency-key"]||null});
+  res.writeHead(503,{"content-type":"application/json"});
+  res.end(JSON.stringify({error:{message:"Isolated positive provider response fixture not yet implemented",type:"isolated_fixture_pending"}}));
+ });
+ await new Promise(resolve=>providerServer.listen(0,"127.0.0.1",resolve));
+ process.env.IBAND_AI_BASE_URL="http://127.0.0.1:"+providerServer.address().port+"/v1/responses";
+ try{
  const spend=createMovieMentorProductionInferenceSpendComposition();
  assert.equal(spend.ready,true,"physical spend composition required");
  const execution=createMovieMentorProductionInferenceExecutionComposition();
@@ -113,11 +124,13 @@ try{
   console.log(`PHYSICAL POSITIVE DURABLE CHECKPOINT: execution=${actualExecution?.executionId||"none"} phase=${actualExecution?.phase||"none"} reservation=${actualReservation?.status||"none"} providerCalls=${actualExecution?.providerCallsClaimed??"unknown"}`);
   const effects=await mongoose.connection.db.collection("movie_mentor_provider_effect").find({executionId:actualExecution?.executionId||"none"}).project({providerCallId:1,status:1,effectStatus:1,slotId:1,task:1}).toArray();
   console.log(`PHYSICAL POSITIVE PROVIDER EFFECT CHECKPOINT: ${JSON.stringify(effects)}`);
+  console.log(`PHYSICAL POSITIVE LOOPBACK PROVIDER REQUESTS: count=${providerRequests.length}`);
   assert.notEqual(response.status,200,"positive HTTP cannot claim completion without proven canonical finalization, settlement and replay");
  }finally{
   await new Promise((resolve,reject)=>server.close(error=>error?reject(error):resolve()));
  }
 
+ }finally{await new Promise((resolve,reject)=>providerServer.close(error=>error?reject(error):resolve()));}
  console.error("RED POSITIVE_HTTP_SETTLEMENT_JOURNEY_NOT_IMPLEMENTED: genuine HTTP runtime attempted; full positive provider response, canonical settlement and fresh-process replay remain uncertified.");
  process.exitCode=1;
 }finally{
