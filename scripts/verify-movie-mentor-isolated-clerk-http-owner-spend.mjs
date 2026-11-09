@@ -310,6 +310,9 @@ try{
  });
  assert.equal(retry.status,0,`HTTP retry worker failed: ${retry.stderr} ${retry.stdout}`);
  assert.match(retry.stdout,/GREEN fresh-process authenticated HTTP UNKNOWN retry/);
+ const liveDenial=retry.stdout.match(/PHYSICAL UNKNOWN RETRY DENIAL CODE: ([A-Z0-9_]+)/);
+ assert.ok(liveDenial,"fresh-process retry must report its actual denial code");
+ console.log(`PHYSICAL LIVE-LEASE HTTP DENIAL CODE: ${liveDenial[1]}`);
  assert.equal(acceptedSockets.length,1,"HTTP retry must not dispatch another provider socket");
  const takeover=spawnSync(process.execPath,[new URL(import.meta.url).pathname,"--verify-unknown-http-retry",
   createdExecution.executionId,principalId,projectId,`${suffix}-turn`,"--expired-lease"],{
@@ -318,6 +321,9 @@ try{
  assert.equal(takeover.status,0,`expired-lease takeover worker failed: ${takeover.stderr} ${takeover.stdout}`);
  assert.match(takeover.stdout,/GREEN physical expired-lease takeover/);
  assert.match(takeover.stdout,/GREEN authenticated HTTP retry after isolated expired-lease takeover/);
+ const expiredDenial=takeover.stdout.match(/PHYSICAL UNKNOWN RETRY DENIAL CODE: ([A-Z0-9_]+)/);
+ assert.ok(expiredDenial,"expired-lease retry must report its actual denial code");
+ console.log(`PHYSICAL EXPIRED-LEASE HTTP DENIAL CODE: ${expiredDenial[1]}`);
  assert.equal(acceptedSockets.length,1,"expired-lease takeover must not redispatch provider socket");
  assert.equal(await effects.countDocuments({executionId:createdExecution.executionId}),1);
 
