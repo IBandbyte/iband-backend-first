@@ -203,7 +203,7 @@ try{
   assert.equal(entitlement?.reservedUnits,0);
   console.log("GREEN positive signed-JWT HTTP turn: five real loopback provider calls, settled execution, consumed reservation and single durable canonical result");
   console.log("GREEN positive settlement ledger: exactly one consumed unit, zero remaining or reserved units");
-  const replay=execFileSync(process.execPath,["scripts/verify-movie-mentor-isolated-settled-http-worker.mjs",actualExecution.executionId,principalId,projectId,creatorTurnId,"isolated positive creator turn"],{encoding:"utf8",env:{...process.env,MOVIE_MENTOR_ISOLATED_MONGO_URI:uri},timeout:30000});
+  const replay=execFileSync(process.execPath,["scripts/verify-movie-mentor-isolated-settled-http-worker.mjs",actualExecution.executionId,principalId,projectId,creatorTurnId,"isolated positive creator turn","mentor-response-ready"],{encoding:"utf8",env:{...process.env,MOVIE_MENTOR_ISOLATED_MONGO_URI:uri},timeout:30000});
   console.log(replay);
  }finally{
   await new Promise((resolve,reject)=>server.close(error=>error?reject(error):resolve()));
