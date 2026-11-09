@@ -1,0 +1,17 @@
+name: Verify Movie Mentor Isolated Creator State Read Ownership
+on:
+  push:
+    branches:
+      - verify/creator-state-read-ownership-d5f82a98
+  workflow_dispatch:
+jobs:
+  read-ownership:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Authenticated ownership-bound read-only contract
+        run: node scripts/verify-movie-mentor-creator-state-read-ownership.mjs
