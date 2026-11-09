@@ -54,6 +54,7 @@ try{
   expectedAudience:authentication.expectedAudience,
   ownershipAuthority
  });
+ let exposureAttempt=false;
  let runCalls=0;
  const executionMethods=["findExecutionByCreatorTurn","openExecution","acquireExecution","assertFence","claimProviderCall","beginProviderDispatch","assertProviderDispatch","contributeProviderEffectEvidence","stageResultCandidate","readResultCandidate","beginExecutionClosing","reconcileExecutionClosure","assertCurrentExecutionClosure","commitCanonicalResult","readCanonicalResult"];
  const execution=Object.fromEntries(executionMethods.map(key=>[key,async()=>{throw Error(`unexpected execution: ${key}`)}]));
@@ -62,6 +63,9 @@ try{
   inferenceExecutionAuthority:execution,inferenceSettlementAuthority:settlement,
   runTurn:async(_body,{serverAuthority})=>{
    runCalls++;
+   if(exposureAttempt)return {message:"forged completion",metadata:{canonicalResult:{
+    creatorResponseAuthorityVerified:true,executionId:`${suffix}-fabricated-execution`,resultDigest:"fabricated-digest"
+   }}};
    const reserved=await spend.authority.reserveTurn({serverAuthority,projectId:serverAuthority.projectId});
    assert.equal(reserved.authorized,true);
    const error=new Error("Isolated post-reservation stop: never dispatch provider");
@@ -88,6 +92,13 @@ try{
  const owner=await post(token(principalId));
  assert.equal(owner.status,503,"authorized request stops safely after isolated reservation");
  assert.equal(runCalls,1);
+ exposureAttempt=true;
+ const forged=await post(token(principalId));
+ assert.notEqual(forged.status,200,"HTTP gateway must refuse forged runtime completion");
+ assert.equal(runCalls,2);
+ assert.equal(await db.collection("movie_mentor_inference_spend_reservation").countDocuments({principalId}),1);
+ console.log("GREEN authenticated HTTP gateway denies forged completed response before exposure without a second reservation");
+ exposureAttempt=false;
  const after=await entitlement.findOne({principalId});
  assert.equal(after.remainingUnits,0);assert.equal(after.reservedUnits,1);
  assert.equal(await db.collection("movie_mentor_inference_spend_reservation").countDocuments({principalId}),1);
