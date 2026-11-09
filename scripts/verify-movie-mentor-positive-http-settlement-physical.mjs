@@ -20,6 +20,11 @@ const uri=process.env.MOVIE_MENTOR_ISOLATED_MONGO_URI||"";
 assert.match(uri,/^mongodb:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?\//,"positive HTTP court requires loopback Mongo");
 assert.match(uri,/replicaSet=/,"positive HTTP court requires an isolated replica set");
 process.env.MONGO_URI=uri;
+// Mirror the isolated provider identity configuration already used by the physical UNKNOWN court.
+// These are non-production test credentials; no external provider request is authorized here.
+process.env.IBAND_AI_PROVIDER="openai";
+process.env.IBAND_AI_MODEL="gpt-isolated";
+process.env.IBAND_AI_API_KEY="isolated-only";
 const dbOwnership=db=>db.collection("movie_mentor_project_ownership");
 await mongoose.connect(uri,{serverSelectionTimeoutMS:10000});
 try{
