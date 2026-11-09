@@ -21,7 +21,8 @@ import { runMovieMentorTurnWithForwardExecutionAuthority } from "../ai/MovieMent
 const uri=process.env.MOVIE_MENTOR_ISOLATED_MONGO_URI||"";
 assert.match(uri,/^mongodb:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?\//);
 assert.match(uri,/replicaSet=/);
-const [executionId,principalId,projectId,creatorTurnId,creatorMessage]=process.argv.slice(2);
+const [executionId,principalId,projectId,creatorTurnId,creatorMessage,expectedResponseStatus="complete"]=process.argv.slice(2);
+assert.ok(["complete","mentor-response-ready"].includes(expectedResponseStatus),"explicit known canonical response contract required");
 assert.ok(executionId&&principalId&&projectId&&creatorTurnId&&creatorMessage);
 process.env.MONGO_URI=uri;
 const issuer="https://isolated-clerk.example.test",audience="isolated-movie-mentor",party="https://isolated-app.example.test";
@@ -100,7 +101,7 @@ try{
  assert.equal(replayCalls,0);
  const owner=await post(principalId);
  assert.equal(owner.status,200,JSON.stringify(owner.body));
- assert.equal(owner.body.status,"mentor-response-ready","replayed canonical HTTP result preserves original response status");
+ assert.equal(owner.body.status,expectedResponseStatus,"replayed canonical HTTP result preserves the original fixture response status");
  assert.equal(owner.body.metadata.canonicalResult.replayedFromDurableResult,true);
  assert.equal(replayCalls,1);
  const mismatchedMessage=await post(principalId,{message:"tampered creator request"});
