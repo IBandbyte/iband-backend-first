@@ -410,6 +410,9 @@ try{
  });
  assert.equal(httpTakeover.status,0,`HTTP-owned takeover worker failed: ${httpTakeover.stderr} ${httpTakeover.stdout}`);
  assert.match(httpTakeover.stdout,/PHYSICAL HTTP-OWNED TAKEOVER:/);
+ const durableRecovery=httpTakeover.stdout.match(/PHYSICAL HTTP-OWNED DURABLE RECOVERY: ([^\\r\\n]+)/);
+ assert.ok(durableRecovery,"HTTP-owned takeover must physically examine durable provider recovery");
+ console.log(`PHYSICAL HTTP-OWNED DURABLE RECOVERY: ${durableRecovery[1]}`);
  const httpOwnedDenial=httpTakeover.stdout.match(/PHYSICAL UNKNOWN RETRY DENIAL CODE: ([A-Z0-9_]+)/);
  assert.ok(httpOwnedDenial,"HTTP-owned takeover must expose its actual machine-readable denial");
  console.log(`PHYSICAL HTTP-OWNED TAKEOVER DENIAL CODE: ${httpOwnedDenial[1]}`);
