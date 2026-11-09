@@ -7,6 +7,7 @@ import { createMovieMentorProviderOutcomeRecoveryAuthority } from "../ai/MovieMe
 import { createMovieMentorProductionInferenceSettlementComposition } from "../ai/MovieMentorProductionInferenceSettlementComposition.js";
 import { executeStructuredAI } from "../ai/StructuredAIProviderClient.js";
 import { runMovieMentorTurnWithForwardExecutionAuthority } from "../ai/MovieMentorForwardExecutionRuntime.js";
+import { orchestrateMovieMentorTurn } from "../ai/MovieMentorTurnOrchestrator.js";
 import express from "express";
 import mongoose from "mongoose";
 import { createMovieMentorProductionAuthenticationComposition } from "../ai/MovieMentorProductionAuthenticationComposition.js";
@@ -146,7 +147,7 @@ if(process.argv[2]==="--verify-unknown-http-retry"){
     calls++;
     try{
      return await runMovieMentorTurnWithForwardExecutionAuthority(body,{
-      ...deps,readAuthoritativeTurnSource:observedStateRead,orchestrateTurn:forbidden("orchestrateTurn"),
+      ...deps,readAuthoritativeTurnSource:observedStateRead,orchestrateTurn:httpTakeoverMode?orchestrateMovieMentorTurn:forbidden("orchestrateTurn"),
       createExecutionOwnerId:()=>`isolated-restarted-owner-${process.pid}`
      });
     }catch(error){
@@ -455,6 +456,9 @@ try{
  }
  if(httpOwnedOriginal)assert.doesNotMatch(httpOwnedOriginal[1],/ISOLATED_UNEXPECTED_RETRY_OPERATION/,"fixture orchestration guard cannot certify UNKNOWN recovery");
  if(httpOwnedCause)assert.doesNotMatch(httpOwnedCause[1],/ISOLATED_UNEXPECTED_RETRY_OPERATION/,"fixture orchestration or release guard cannot certify UNKNOWN recovery");
+ assert.equal(httpOwnedDenial[1],"MOVIE_MENTOR_INFERENCE_EXECUTION_UNRESOLVED","claimed UNKNOWN provider effect must preserve spend under real settlement");
+ assert.ok(httpOwnedCause,"real orchestration failure must preserve original error");
+ assert.match(httpOwnedCause[1],/MOVIE_MENTOR_PROVIDER_RECOVERY_STILL_UNKNOWN/,"real semantic orchestration must reach historical provider recovery and deny UNKNOWN, not an earlier unrelated context or fixture failure");
  assert.equal(acceptedSockets.length,1,"HTTP-owned takeover must not open another provider socket");
  const takeover=spawnSync(process.execPath,[new URL(import.meta.url).pathname,"--verify-unknown-http-retry",
   createdExecution.executionId,principalId,projectId,`${suffix}-turn`,"--expired-lease"],{
