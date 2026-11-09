@@ -87,6 +87,13 @@ try{
    assert.equal(opened.authorized,true);
    assert.equal(opened.phase,"active");
    assert.equal(opened.created,true);
+   const admitted=await productionExecution.authority.claimProviderCall({
+    execution:opened,slotId:"isolated-pre-dispatch-slot",task:"isolated-pre-dispatch-task",
+    assertCurrentProviderCallAdmissionAuthority:forwardExecutionAuthority.assertCurrentProviderCallAdmission
+   });
+   assert.equal(admitted.authorized,true);
+   assert.equal(admitted.dispatchAuthorized,true);
+   assert.equal(admitted.providerCallsClaimed,1);
    const error=new Error("Isolated post-reservation stop: never dispatch provider");
    error.code="MOVIE_MENTOR_INFERENCE_EXECUTION_UNRESOLVED";
    throw error;
@@ -115,6 +122,9 @@ try{
  const createdExecution=await executionCollection.findOne({principalId,projectId});
  assert.equal(createdExecution.phase,"active");
  assert.equal(createdExecution.schema,6);
+ assert.equal(createdExecution.providerCallsClaimed,1);
+ assert.equal(createdExecution.providerCalls.length,1);
+ assert.equal(await db.collection("movie_mentor_provider_effect").countDocuments({executionId:createdExecution.executionId}),0);
  exposureAttempt=true;
  const forged=await post(token(principalId));
  assert.notEqual(forged.status,200,"HTTP gateway must refuse forged runtime completion");
@@ -129,7 +139,8 @@ try{
  console.log("GREEN missing, tampered and non-owner HTTP credentials denied before spend");
  console.log("GREEN owner HTTP ingress -> production-composed durable spend reservation");
  console.log("GREEN fresh authenticated HTTP turn -> real current-ownership execution-creation proof -> production-composed schema-6 Mongo execution");
- console.log("LIMITATION: locally generated isolated RSA test keys and native ownership fixture; injected runtime halts after real execution creation, provider/settlement HTTP journey not certified.");
+ console.log("GREEN authenticated HTTP current-owner provider-call admission -> exactly one durable claim before any provider-effect UNKNOWN or socket dispatch");
+ console.log("LIMITATION: locally generated isolated RSA test keys and native ownership fixture; injected runtime halts after real provider-call admission; provider UNKNOWN/socket/settlement HTTP journey not certified.");
 }finally{
  if(server)await new Promise(resolve=>server.close(resolve));
  await mongoose.disconnect();
