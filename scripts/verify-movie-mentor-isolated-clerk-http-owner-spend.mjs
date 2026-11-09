@@ -181,6 +181,9 @@ if(process.argv[2]==="--verify-unknown-http-retry"){
    const operationStore=createMovieMentorProviderOperationMongoStore();
    const historicalOperation=await db.collection("movie_mentor_provider_operation_reality").findOne({executionId});
    assert.ok(historicalOperation?.providerCallId,"HTTP-owned takeover must retain exactly one historical provider operation");
+   assert.equal(historicalOperation.slotId,"semantic","historical UNKNOWN must bind the actual first orchestrator provider slot");
+   assert.equal(historicalOperation.task,"movie-mentor-semantic","historical UNKNOWN must bind the actual first orchestrator task");
+   console.log("PHYSICAL HTTP-OWNED HISTORICAL SLOT: semantic / movie-mentor-semantic");
    const recovery=createMovieMentorProviderOutcomeRecoveryAuthority({
     readProviderOperation:key=>operationStore.readOperation(key),
     readProviderEffectReality:key=>effectCollection.findOne({providerCallId:key}),
@@ -316,7 +319,7 @@ try{
    assert.equal(opened.phase,"active");
    assert.equal(opened.created,true);
    const admitted=await productionExecution.authority.claimProviderCall({
-    execution:opened,slotId:"isolated-pre-dispatch-slot",task:"isolated-pre-dispatch-task",
+    execution:opened,slotId:"semantic",task:"movie-mentor-semantic",
     assertCurrentProviderCallAdmissionAuthority:forwardExecutionAuthority.assertCurrentProviderCallAdmission
    });
    assert.equal(admitted.authorized,true);
@@ -331,7 +334,7 @@ try{
    const durableEffect=await db.collection("movie_mentor_provider_effect_reality").findOne({providerCallId:admitted.providerCallId});
    assert.equal(durableEffect.state,"unknown","durable UNKNOWN must precede socket");
    await assert.rejects(()=>executeStructuredAI({
-    task:"isolated-pre-dispatch-task",systemInstructions:"Return JSON.",
+    task:"movie-mentor-semantic",systemInstructions:"Return JSON.",
     input:{isolated:true},
     schema:{type:"object",additionalProperties:false,properties:{value:{type:"string"}},required:["value"]},
     schemaName:"isolated_authenticated_http_socket_loss",
