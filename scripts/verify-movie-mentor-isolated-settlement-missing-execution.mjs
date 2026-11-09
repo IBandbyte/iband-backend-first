@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import mongoose from "mongoose";
 import { assertCreatorHttpExposureAuthority } from "../movieMentorTurn.js";
+import { createMovieMentorProjectOwnershipAuthority } from "../ai/MovieMentorProjectOwnershipRegistry.js";
 import { buildRequestDigest } from "../ai/MovieMentorTurnRuntime.js";
 import { createMovieMentorInferenceSettlementReconciliationAuthority } from "../ai/MovieMentorInferenceSettlementReconciliationAuthority.js";
 import { createMovieMentorProductionInferenceSpendComposition } from "../ai/MovieMentorProductionInferenceSpendComposition.js";
@@ -187,6 +188,20 @@ try{
  assert.deepEqual(await entitlements.findOne({principalId}),settledEntitlement);
  console.log("GREEN real durable canonical and settled reconciliation pass independent creator HTTP exposure authority checks");
  console.log("LIMITATION: exposure function examined directly; authenticated Express HTTP delivery and restart remain outstanding.");
+  const ownership=db.collection("movie_mentor_project_ownership");
+ await ownership.createIndex({projectId:1},{unique:true});
+ await ownership.createIndex({establishmentAuthorityId:1},{unique:true});
+ const established=await createMovieMentorProjectOwnershipAuthority().establishNativeOwnership({
+  principal:{authenticated:true,principalId},projectId,
+  establishmentAuthority:{verified:true,type:"native-project-creation",authorityId:`${suffix}-http-replay-mint`,principalId,projectId}
+ });
+ assert.equal(established.status,"established");
+ execFileSync(process.execPath,["scripts/verify-movie-mentor-isolated-settled-http-worker.mjs",
+  executionId,principalId,projectId,`${suffix}-turn`,creatorMessage],{
+  cwd:process.cwd(),env:process.env,stdio:"inherit",timeout:30000
+ });
+ assert.deepEqual(await reservationCollection.findOne({principalId}),settledReservation);
+ assert.deepEqual(await entitlements.findOne({principalId}),settledEntitlement);
   execFileSync(process.execPath,["scripts/verify-movie-mentor-isolated-settled-fresh-worker.mjs",executionId,principalId],{
   cwd:process.cwd(),env:process.env,stdio:"inherit",timeout:30000
  });
