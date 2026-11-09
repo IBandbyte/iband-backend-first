@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import http from "node:http";
+import {execFileSync} from "node:child_process";
 import express from "express";
 import { createMovieMentorProductionAuthenticationComposition } from "../ai/MovieMentorProductionAuthenticationComposition.js";
 import { createMovieMentorCreatorRequestAuthority } from "../ai/MovieMentorCreatorRequestAuthority.js";
@@ -186,14 +187,30 @@ try{
   const effects=await mongoose.connection.db.collection("movie_mentor_provider_effect").find({executionId:actualExecution?.executionId||"none"}).project({providerCallId:1,status:1,effectStatus:1,slotId:1,task:1}).toArray();
   console.log(`PHYSICAL POSITIVE PROVIDER EFFECT CHECKPOINT: ${JSON.stringify(effects)}`);
   console.log(`PHYSICAL POSITIVE LOOPBACK PROVIDER REQUESTS: count=${providerRequests.length}`);
-  assert.notEqual(response.status,200,"positive HTTP cannot claim completion without proven canonical finalization, settlement and replay");
+  assert.equal(response.status,200,JSON.stringify(responseBody));
+  assert.equal(responseBody.success,true);
+  assert.equal(responseBody.status,"complete");
+  assert.equal(actualExecution?.phase,"settled");
+  assert.equal(actualExecution?.providerCallsClaimed,5);
+  assert.equal(actualReservation?.status,"consumed");
+  assert.equal(providerRequests.length,5,"exactly five isolated provider requests expected");
+  const canonical=await mongoose.connection.db.collection("movie_mentor_canonical_result").findOne({executionId:actualExecution.executionId});
+  assert.ok(canonical,"HTTP-origin execution must have a durable canonical result");
+  assert.equal(await mongoose.connection.db.collection("movie_mentor_canonical_result").countDocuments({executionId:actualExecution.executionId}),1);
+  const entitlement=await entitlements.findOne({principalId});
+  assert.equal(entitlement?.consumedUnits,1);
+  assert.equal(entitlement?.remainingUnits,0);
+  assert.equal(entitlement?.reservedUnits,0);
+  console.log("GREEN positive signed-JWT HTTP turn: five real loopback provider calls, settled execution, consumed reservation and single durable canonical result");
+  console.log("GREEN positive settlement ledger: exactly one consumed unit, zero remaining or reserved units");
+  const replay=execFileSync(process.execPath,["scripts/verify-movie-mentor-isolated-settled-http-worker.mjs",actualExecution.executionId,principalId,projectId,creatorTurnId,"isolated positive creator turn"],{encoding:"utf8",env:{...process.env,MOVIE_MENTOR_ISOLATED_MONGO_URI:uri},timeout:30000});
+  console.log(replay);
  }finally{
   await new Promise((resolve,reject)=>server.close(error=>error?reject(error):resolve()));
  }
 
  }finally{await new Promise((resolve,reject)=>providerServer.close(error=>error?reject(error):resolve()));}
- console.error("RED POSITIVE_HTTP_SETTLEMENT_JOURNEY_NOT_IMPLEMENTED: genuine HTTP runtime attempted; full positive provider response, canonical settlement and fresh-process replay remain uncertified.");
- process.exitCode=1;
+ console.log("GREEN POSITIVE_HTTP_SETTLEMENT_JOURNEY: real signed-JWT HTTP creation, loopback orchestration, durable canonical settlement and fresh-process signed-JWT replay verified.");
 }finally{
  await mongoose.disconnect();
 }
