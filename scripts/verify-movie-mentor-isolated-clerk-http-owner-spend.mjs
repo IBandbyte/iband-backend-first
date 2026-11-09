@@ -114,6 +114,7 @@ if(process.argv[2]==="--verify-unknown-http-retry"){
   assert.notEqual(retryFailure.code,"MOVIE_MENTOR_CREATOR_STATE_CONSUMPTION_STATE_PROOF_REQUIRED","retry must not pass merely because a test fixture omits creator-state provenance");
   assert.notEqual(retryFailure.code,"MOVIE_MENTOR_CREATOR_STATE_CONSUMPTION_AUTHORITY_REQUIRED","retry must not pass merely because a test fixture omits consumption authority");
   assert.notEqual(retryFailure.code,"MOVIE_MENTOR_TURN_FAILED","generic gateway failure cannot certify UNKNOWN recovery denial");
+  assert.notEqual(retryFailure.code,"ISOLATED_UNEXPECTED_RETRY_OPERATION","fixture guard cannot certify durable UNKNOWN recovery denial");
   console.log(`PHYSICAL UNKNOWN RETRY DENIAL CODE: ${retryFailure.code}`);
   assert.equal(calls,1,"authenticated retry must enter actual forward runtime");
   assert.deepEqual(await reservationCollection.findOne({principalId}),beforeReservation);
@@ -319,6 +320,8 @@ try{
  const liveDenial=retry.stdout.match(/PHYSICAL UNKNOWN RETRY DENIAL CODE: ([A-Z0-9_]+)/);
  assert.ok(liveDenial,"fresh-process retry must report its actual denial code");
  console.log(`PHYSICAL LIVE-LEASE HTTP DENIAL CODE: ${liveDenial[1]}`);
+ const liveRoot=retry.stdout.match(/ISOLATED UNKNOWN RETRY ROOT EXCEPTION: ([^\r\n]+)/);
+ if(liveRoot)console.log(`PHYSICAL LIVE-LEASE ROOT EXCEPTION: ${liveRoot[1]}`);
  assert.equal(acceptedSockets.length,1,"HTTP retry must not dispatch another provider socket");
  const takeover=spawnSync(process.execPath,[new URL(import.meta.url).pathname,"--verify-unknown-http-retry",
   createdExecution.executionId,principalId,projectId,`${suffix}-turn`,"--expired-lease"],{
@@ -330,6 +333,8 @@ try{
  const expiredDenial=takeover.stdout.match(/PHYSICAL UNKNOWN RETRY DENIAL CODE: ([A-Z0-9_]+)/);
  assert.ok(expiredDenial,"expired-lease retry must report its actual denial code");
  console.log(`PHYSICAL EXPIRED-LEASE HTTP DENIAL CODE: ${expiredDenial[1]}`);
+ const expiredRoot=takeover.stdout.match(/ISOLATED UNKNOWN RETRY ROOT EXCEPTION: ([^\r\n]+)/);
+ if(expiredRoot)console.log(`PHYSICAL EXPIRED-LEASE ROOT EXCEPTION: ${expiredRoot[1]}`);
  assert.equal(acceptedSockets.length,1,"expired-lease takeover must not redispatch provider socket");
  assert.equal(await effects.countDocuments({executionId:createdExecution.executionId}),1);
 
