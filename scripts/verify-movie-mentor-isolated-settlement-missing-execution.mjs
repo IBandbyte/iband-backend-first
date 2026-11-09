@@ -78,7 +78,7 @@ try{
   ownerId:created.ownerId,leaseGeneration:created.leaseGeneration,leaseReference:created.leaseReference,
   fencingToken:created.fencingToken};
  await assert.rejects(
-  ()=>candidateStore.stageCandidate({execution:liveExecution,resultPayload:{status:"complete"}}),
+  ()=>candidateStore.stageCandidate({execution:liveExecution,resultPayload:{status:"complete",metadata:{}}}),
   error=>error?.code==="MOVIE_MENTOR_RESULT_CANDIDATE_CREATOR_STATE_PROOF_REQUIRED"
  );
  assert.equal(await candidates.countDocuments({executionId}),0);
@@ -98,7 +98,7 @@ try{
   creatorStateGeneration:stateGeneration,creatorStateFingerprint:stateFingerprint,executionId
  });
  const staged=await candidateStore.stageCandidate({
-  execution:liveExecution,resultPayload:{status:"complete"},
+  execution:liveExecution,resultPayload:{status:"complete",metadata:{}},
   creatorStateConsumptionProof:stateProof
  });
  assert.equal(staged.executionId,executionId);
@@ -144,7 +144,7 @@ try{
   assertCurrentClosure:closure.assertCurrentClosure,
   readResultCandidate:candidateStore.readByExecution
  });
- const payload={status:"complete"};
+ const payload={status:"complete",metadata:{}};
  const committed=await canonical.commitResult({closure:closed,result:payload});
  assert.equal(committed.authorized,true);
  assert.equal(committed.committed,true);
