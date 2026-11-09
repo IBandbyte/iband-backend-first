@@ -88,8 +88,18 @@ try{
    propertyContracts:Object.fromEntries(Object.entries(schema?.properties||{}).map(([key,value])=>[key,{type:value?.type||null,required:value?.required||[],properties:Object.keys(value?.properties||{}),itemsType:value?.items?.type||null,itemRequired:value?.items?.required||[],itemProperties:Object.fromEntries(Object.entries(value?.items?.properties||{}).map(([k,v])=>[k,{type:v?.type||null,enum:v?.enum||null}])),nextActionRequired:value?.properties?.required||[],nextActionProperties:Object.fromEntries(Object.entries(value?.properties||{}).map(([k,v])=>[k,{type:v?.type||null,enum:v?.enum||null}])),enum:value?.enum||null}])),
    model:requestBody?.model||null
   }));
+  if(requestBody?.text?.format?.name==="movie_journey_intelligence"){
+   const semantic={
+    understoodContext:[{key:"creator.intent",value:"isolated positive creator turn",evidence:"isolated positive creator turn",confidenceSource:"creator-explicit"}],
+    provisionalContext:[],unresolvedContext:[],clarificationNeeded:[],readyToAdvance:true,
+    recommendedStageId:null,recommendedTaskId:null,nextAction:null,resumeNote:null
+   };
+   res.writeHead(200,{"content-type":"application/json"});
+   res.end(JSON.stringify({id:"isolated-semantic-response-1",model:"gpt-isolated",output:[{type:"message",content:[{type:"output_text",text:JSON.stringify(semantic)}]}]}));
+   return;
+  }
   res.writeHead(503,{"content-type":"application/json"});
-  res.end(JSON.stringify({error:{message:"Isolated positive provider response fixture not yet implemented",type:"isolated_fixture_pending"}}));
+  res.end(JSON.stringify({error:{message:"Unimplemented isolated provider stage: "+String(requestBody?.text?.format?.name||"unknown"),type:"isolated_fixture_pending"}}));
  });
  await new Promise(resolve=>providerServer.listen(0,"127.0.0.1",resolve));
  process.env.IBAND_AI_BASE_URL="http://127.0.0.1:"+providerServer.address().port+"/v1/responses";
