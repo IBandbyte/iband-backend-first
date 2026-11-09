@@ -44,12 +44,15 @@ try{
   maxProviderCalls:1,providerCallsClaimed:0,providerCalls:[]
  });
  assert.equal(created.schema,6);
+ const boundReservation=await reservationCollection.findOne({principalId});
+ assert.equal(boundReservation.executionBindingBarrierRevision,1,"real execution creation must advance the durable reservation binding barrier");
+ assert.equal(boundReservation.status,"reserved");
  const active=await settlement.settleCanonicalResult({executionId});
  assert.equal(active.authorized,false);
  assert.equal(active.settled,false);
  assert.equal(active.reason,"execution-not-finalized");
  assert.deepEqual(await entitlements.findOne({principalId}),beforeEntitlement);
- assert.deepEqual(await reservationCollection.findOne({principalId}),beforeReservation);
+ assert.deepEqual(await reservationCollection.findOne({principalId}),boundReservation);
  console.log("GREEN production Mongo settlement refuses real schema-6 active execution before finalization");
  console.log("GREEN production Mongo settlement rejects nonexistent execution without consuming reserved spend");
  console.log("LIMITATION: negative settlement gate only; real finalized execution/canonical result/settled replay remains uncertified.");
