@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import mongoose from "mongoose";
 import { createMovieMentorProductionInferenceSpendComposition } from "../ai/MovieMentorProductionInferenceSpendComposition.js";
 import { createMovieMentorInferenceExecutionMongoStore } from "../ai/MovieMentorInferenceExecutionMongoStore.js";
+import { createMovieMentorResultCandidateMongoStore } from "../ai/MovieMentorResultCandidateMongoStore.js";
 import { createMovieMentorInferenceExecutionClosureAuthority } from "../ai/MovieMentorInferenceExecutionClosureAuthority.js";
 import { createMovieMentorProviderEffectMongoStore } from "../ai/MovieMentorProviderEffectMongoStore.js";
 import { createMovieMentorInferenceSettlementMongoStore } from "../ai/MovieMentorInferenceSettlementMongoStore.js";
@@ -55,6 +56,25 @@ try{
  assert.equal(active.reason,"execution-not-finalized");
  assert.deepEqual(await entitlements.findOne({principalId}),beforeEntitlement);
  assert.deepEqual(await reservationCollection.findOne({principalId}),boundReservation);
+ const candidates=db.collection("movie_mentor_result_candidate");
+ await candidates.createIndex({executionId:1},{unique:true});
+ await candidates.createIndex({candidateReference:1},{unique:true});
+ const creatorState=db.collection("movie_mentor_creator_state");
+ await creatorState.createIndex({projectId:1},{unique:true,partialFilterExpression:{projectId:{$type:"string"}}});
+ const executionCollection=db.collection("movie_mentor_inference_execution");
+ await executionCollection.createIndex({executionId:1},{unique:true});
+ const candidateStore=createMovieMentorResultCandidateMongoStore();
+ const liveExecution={authorized:true,executionAuthorized:true,executionId,creatorTurnId:created.creatorTurnId,
+  principalId,projectId,reservationId:beforeReservation.reservationId,requestDigest:created.requestDigest,
+  ownerId:created.ownerId,leaseGeneration:created.leaseGeneration,leaseReference:created.leaseReference,
+  fencingToken:created.fencingToken};
+ await assert.rejects(
+  ()=>candidateStore.stageCandidate({execution:liveExecution,resultPayload:{status:"complete"}}),
+  error=>error?.code==="MOVIE_MENTOR_RESULT_CANDIDATE_CREATOR_STATE_PROOF_REQUIRED"
+ );
+ assert.equal(await candidates.countDocuments({executionId}),0);
+ assert.deepEqual(await reservationCollection.findOne({principalId}),boundReservation);
+ console.log("GREEN physical candidate mint denies missing creator-state consumption proof without ledger mutation");
  const closure=createMovieMentorInferenceExecutionClosureAuthority({
   store:createMovieMentorInferenceExecutionMongoStore(),
   effectStore:createMovieMentorProviderEffectMongoStore()
