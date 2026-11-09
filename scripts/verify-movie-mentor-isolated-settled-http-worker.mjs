@@ -15,6 +15,7 @@ import { createMovieMentorResultCandidateMongoStore } from "../ai/MovieMentorRes
 import { createMovieMentorInferenceSettlementMongoStore } from "../ai/MovieMentorInferenceSettlementMongoStore.js";
 import { createMovieMentorInferenceSettlementReconciliationAuthority } from "../ai/MovieMentorInferenceSettlementReconciliationAuthority.js";
 import { createMovieMentorTurnRouter } from "../movieMentorTurn.js";
+import { createMovieMentorProductionInferenceExecutionComposition, isMovieMentorProductionInferenceExecutionOwnerProof } from "../ai/MovieMentorProductionInferenceExecutionComposition.js";
 import { runMovieMentorTurnWithForwardExecutionAuthority } from "../ai/MovieMentorForwardExecutionRuntime.js";
 
 const uri=process.env.MOVIE_MENTOR_ISOLATED_MONGO_URI||"";
@@ -66,17 +67,10 @@ try{
  });
  const settlement=createMovieMentorInferenceSettlementReconciliationAuthority({store:createMovieMentorInferenceSettlementMongoStore()});
  let replayCalls=0;
- const methods=["findExecutionByCreatorTurn","openExecution","acquireExecution","assertFence","claimProviderCall","beginProviderDispatch","assertProviderDispatch","contributeProviderEffectEvidence","stageResultCandidate","readResultCandidate","beginExecutionClosing","reconcileExecutionClosure","assertCurrentExecutionClosure","commitCanonicalResult","readCanonicalResult"];
- const execution=Object.fromEntries(methods.map(key=>[key,async()=>{throw Error(`unexpected execution operation: ${key}`)}]));
- execution.readCanonicalResult=canonical.readResult;
- execution.findExecutionByCreatorTurn=async ({principalId:requestedPrincipal,projectId:requestedProject,creatorTurnId:requestedTurn,requestDigest})=>{
-  const record=await db.collection("movie_mentor_inference_execution").findOne({
-   principalId:requestedPrincipal,projectId:requestedProject,creatorTurnId:requestedTurn,requestDigest
-  });
-  assert.ok(record,"production runtime must find the exact persisted settled execution");
-  assert.equal(record.phase,"settled");
-  return {...record,found:true};
- };
+ const composed=createMovieMentorProductionInferenceExecutionComposition();
+ assert.equal(composed.ready,true,`production execution composition rejected: ${composed.reason}`);
+ assert.equal(isMovieMentorProductionInferenceExecutionOwnerProof(composed,composed.status),true);
+ const execution=composed.authority;
  const forbidden=()=>{throw Error("settled replay must not reserve, reacquire, dispatch or mutate execution");};
  const guardedSpend={...spend.authority,reserveTurn:forbidden};
  const forwardExecutionAuthority={assertCurrentReacquisition:forbidden,assertCurrentCreation:forbidden,assertCurrentProviderCallAdmission:forbidden,assertCurrentProviderEffectUnknown:forbidden};
@@ -115,8 +109,8 @@ try{
  assert.deepEqual(await reservations.findOne({principalId}),beforeReservation);
  assert.deepEqual(await entitlements.findOne({principalId}),beforeEntitlement);
  assert.equal(await db.collection("movie_mentor_canonical_result").countDocuments({executionId}),1);
- console.log("GREEN fresh-process signed-JWT HTTP replay through actual forward-execution runtime with no reservation, reacquisition or provider dispatch");
- console.log("LIMITATION: isolated execution lookup adapter and synthetic local JWT signing keys; full production execution composition and live provider journey remain uncertified.");
+ console.log("GREEN fresh-process signed-JWT HTTP replay through production-composed execution authority and actual forward runtime, no new spend or provider dispatch");
+ console.log("LIMITATION: isolated durable ownership and synthetic local JWT keys; live provider and full initial HTTP turn journey remain uncertified.");
 }finally{
  if(server)await new Promise((resolve,reject)=>server.close(error=>error?reject(error):resolve()));
  await mongoose.disconnect();
