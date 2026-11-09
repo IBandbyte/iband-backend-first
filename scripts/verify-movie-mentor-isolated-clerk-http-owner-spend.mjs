@@ -56,10 +56,11 @@ if(process.argv[2]==="--verify-unknown-http-retry"){
   const takeoverMode=process.argv[7]==="--expired-lease";
   if(takeoverMode){
    const expired=new Date(Date.now()-120000).toISOString();
+   const acquired=new Date(Date.now()-240000).toISOString();
    const result=await executionCollection.updateOne({
     executionId,leaseGeneration:beforeExecution.leaseGeneration,
     leaseReference:beforeExecution.leaseReference
-   },{$set:{leaseExpiresAt:expired}});
+   },{$set:{leaseAcquiredAt:acquired,leaseExpiresAt:expired}});
    assert.equal(result.modifiedCount,1,"isolated test must expire exactly the target lease");
   }
 
