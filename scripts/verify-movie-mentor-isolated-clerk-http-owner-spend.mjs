@@ -85,11 +85,21 @@ if(process.argv[2]==="--verify-unknown-http-retry"){
   }
   const forbidden=(operation)=>()=>{const error=new Error(`UNKNOWN HTTP retry unexpectedly reached ${operation}`);error.code="ISOLATED_UNEXPECTED_RETRY_OPERATION";throw error;};
   const guardedSpend={...spend.authority,reserveTurn:forbidden("spend.reserveTurn")};
+  let earlyExecutionLookups=0;
+  const observedExecutionAuthority={
+   ...composed.authority,
+   findExecutionByCreatorTurn:async(input)=>{
+    const found=await composed.authority.findExecutionByCreatorTurn(input);
+    earlyExecutionLookups++;
+    console.log(`ISOLATED UNKNOWN EARLY EXECUTION LOOKUP: found=${found?.found===true} phase=${found?.phase||"none"} executionMatch=${found?.executionId===executionId}`);
+    return found;
+   }
+  };
   const settlement={reconcile:forbidden("settlement.reconcile"),releaseUnclaimed:forbidden("settlement.releaseUnclaimed"),releaseUnbound:forbidden("settlement.releaseUnbound")};
   let calls=0;
   const router=createMovieMentorTurnRouter({
    requestAuthority,inferenceSpendAuthority:guardedSpend,
-   inferenceExecutionAuthority:composed.authority,inferenceSettlementAuthority:settlement,
+   inferenceExecutionAuthority:observedExecutionAuthority,inferenceSettlementAuthority:settlement,
    runTurn:async(body,deps)=>{
     calls++;
     try{
@@ -117,6 +127,7 @@ if(process.argv[2]==="--verify-unknown-http-retry"){
   assert.notEqual(retryFailure.code,"ISOLATED_UNEXPECTED_RETRY_OPERATION","fixture guard cannot certify durable UNKNOWN recovery denial");
   console.log(`PHYSICAL UNKNOWN RETRY DENIAL CODE: ${retryFailure.code}`);
   assert.equal(calls,1,"authenticated retry must enter actual forward runtime");
+  assert.ok(earlyExecutionLookups>=1,"retry must consult durable execution before creator-state read");
   assert.deepEqual(await reservationCollection.findOne({principalId}),beforeReservation);
   assert.deepEqual(await entitlementCollection.findOne({principalId}),beforeEntitlement);
   assert.deepEqual(await effectCollection.findOne({executionId}),beforeEffect);
@@ -320,6 +331,8 @@ try{
  const liveDenial=retry.stdout.match(/PHYSICAL UNKNOWN RETRY DENIAL CODE: ([A-Z0-9_]+)/);
  assert.ok(liveDenial,"fresh-process retry must report its actual denial code");
  console.log(`PHYSICAL LIVE-LEASE HTTP DENIAL CODE: ${liveDenial[1]}`);
+ const liveLookup=retry.stdout.match(/ISOLATED UNKNOWN EARLY EXECUTION LOOKUP: ([^\r\n]+)/);
+ if(liveLookup)console.log(`PHYSICAL LIVE-LEASE EARLY LOOKUP: ${liveLookup[1]}`);
  const liveRoot=retry.stdout.match(/ISOLATED UNKNOWN RETRY ROOT EXCEPTION: ([^\r\n]+)/);
  if(liveRoot)console.log(`PHYSICAL LIVE-LEASE ROOT EXCEPTION: ${liveRoot[1]}`);
  assert.equal(acceptedSockets.length,1,"HTTP retry must not dispatch another provider socket");
