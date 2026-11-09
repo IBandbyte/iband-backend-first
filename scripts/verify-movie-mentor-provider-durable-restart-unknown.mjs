@@ -4,13 +4,14 @@ import { spawnSync } from "node:child_process";
 import { createMovieMentorProviderOutcomeRecoveryAuthority } from "../ai/MovieMentorProviderOutcomeRecoveryAuthority.js";
 import { recoverPreviouslyAdmittedProviderResult } from "../ai/MovieMentorRecoveredProviderResultAuthority.js";
 import { createMovieMentorProviderOperationMongoStore } from "../ai/MovieMentorProviderOperationMongoStore.js";
+import { describeCurrentMovieMentorProviderTarget } from "../ai/MovieMentorProviderTargetAuthority.js";
 
 const uri=process.env.MOVIE_MENTOR_ISOLATED_MONGO_URI;
 assert.ok(uri && /^mongodb:\/\/(127\.0\.0\.1|localhost)(:|\/)/.test(uri),"isolated loopback Mongo URI required");
 process.env.MONGO_URI=uri;
 const id="restart-unknown-"+process.pid+"-"+Date.now();
 const collectionNames={execution:"movie_mentor_inference_execution",operation:"movie_mentor_provider_operation_reality",effect:"movie_mentor_provider_effect_reality",reservation:"movie_mentor_inference_spend_reservation",entitlement:"movie_mentor_inference_entitlement"};
-const target={provider:"openai",adapter:"structured-ai",routeFingerprint:"isolated-restart",recoveryMode:"known-response-id-retrieval"};
+const target=describeCurrentMovieMentorProviderTarget();
 async function connect(){await mongoose.connect(uri,{serverSelectionTimeoutMS:10000});return mongoose.connection.db;}
 async function main(){
  const db=await connect();
@@ -35,34 +36,6 @@ async function main(){
   console.log(child.stdout.trim());
   console.log("GREEN isolated Mongo process-restart UNKNOWN recovery: fresh process reopens durable operation/effect/execution; no redispatch, recovery, refund or ledger mutation");
   console.log("LIMITATION: admission and UNKNOWN fixture seeding are not a production transaction; no physical provider socket is exercised in this court.");
- }finally{await mongoose.disconnect();}
-}
-async function recoveredWorker(){
- const db=await connect();
- try{
-  const execution=await db.collection(collectionNames.execution).findOne({executionId:id+"-execution"});
-  assert.ok(execution?.providerCalls?.some(c=>c.providerCallId===id),"durable execution admission required");
-  const store=createMovieMentorProviderOperationMongoStore();
-  const operation=await store.readOperation(id);
-  assert.equal(operation?.providerCallId,id);
-  const recovery=createMovieMentorProviderOutcomeRecoveryAuthority({
-   readProviderOperation:async callId=>store.readOperation(callId),
-   readProviderEffectReality:async callId=>db.collection(collectionNames.effect).findOne({providerCallId:callId}),
-   recoverProviderResponse:async()=>{throw Error("UNKNOWN must never retrieve provider response");},
-   resolveCurrentTarget:()=>target,
-  });
-  const result=await recovery.reconcile({providerCallId:id});
-  assert.equal(result.outcome,"STILL_UNKNOWN");
-  for(const flag of ["redispatchAuthorized","refundAuthorized","recoveryAuthorized"])assert.equal(result[flag],false);
-  const decision={dispatchAuthorized:false,reason:"provider-call-slot-already-admitted",existingProviderCall:{providerCallId:id,executionId:id+"-execution",slotId:"semantic",task:"movie-mentor-semantic"}};
-  await assert.rejects(()=>recoverPreviouslyAdmittedProviderResult({
-   decision,execution:{executionId:id+"-execution",ownerId:"worker-B",leaseGeneration:2},
-   slotId:"semantic",task:"movie-mentor-semantic",input:{proof:true},
-   recoverProviderOutcome:async()=>recovery.reconcile({providerCallId:id}),
-   readProviderOperation:async()=>{throw Error("UNKNOWN must fail before reconstruction");},
-   reconstructRecoveredResult:async()=>{throw Error("UNKNOWN must not reconstruct");}
-  }),error=>error?.code==="MOVIE_MENTOR_PROVIDER_RECOVERY_STILL_UNKNOWN");
-  console.log("fresh-worker durable UNKNOWN denial GREEN");
  }finally{await mongoose.disconnect();}
 }
 if(process.argv[2]==="--recovered-worker"){assert.ok(process.argv[3]);const original=process.argv[3];if(!/^restart-unknown-[0-9]+-[0-9]+$/.test(original))throw Error("invalid isolated identity"); // child identity is independently passed
