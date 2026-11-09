@@ -28,6 +28,6 @@ assert.equal(owned.authorized, true);
 assert.equal(owned.state.projectId, "project-a");
 assert.equal(owned.state.revision, 4);
 assert.equal(owned.state.creatorStateGeneration, 7);
-assert.deepEqual(calls, ["ownership:project-a", "ownership:project-a", "read:project-a"]);
+assert.deepEqual(calls, ["ownership:project-a", "ownership:project-a", "read:project-a", "ownership:project-a"], "RED: successful read must revalidate durable ownership after reading state");
 console.log("GREEN: authentication, ownership and durable creator-state read occur in order; unauthorized reads denied.");
 console.log("LIMITATION: isolated mock authority; no HTTP route, real Clerk credential, physical Mongo read or production exposure certified.");
