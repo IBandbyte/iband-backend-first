@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import mongoose from "mongoose";
+import { assertCreatorHttpExposureAuthority } from "../movieMentorTurn.js";
+import { buildRequestDigest } from "../ai/MovieMentorTurnRuntime.js";
+import { createMovieMentorInferenceSettlementReconciliationAuthority } from "../ai/MovieMentorInferenceSettlementReconciliationAuthority.js";
 import { createMovieMentorProductionInferenceSpendComposition } from "../ai/MovieMentorProductionInferenceSpendComposition.js";
 import { createMovieMentorInferenceExecutionMongoStore } from "../ai/MovieMentorInferenceExecutionMongoStore.js";
 import { createMovieMentorCanonicalResultMongoStore } from "../ai/MovieMentorCanonicalResultMongoStore.js";
@@ -40,11 +43,13 @@ try{
  assert.equal(missing.reason,"execution-not-found");
  assert.deepEqual(await entitlements.findOne({principalId}),beforeEntitlement);
  assert.deepEqual(await reservationCollection.findOne({principalId}),beforeReservation);
+ const creatorMessage="isolated canonical delivery";
+ const requestDigest=buildRequestDigest({creatorMessage,projectId,options:{}});
  const executionId=`${suffix}-real-active-execution`;
  const now=new Date();
  const created=await createMovieMentorInferenceExecutionMongoStore().createExecution({
   executionId,creatorTurnId:`${suffix}-turn`,principalId,projectId,
-  reservationId:beforeReservation.reservationId,requestDigest:`${suffix}-digest`,
+  reservationId:beforeReservation.reservationId,requestDigest,
   phase:"active",ownerId:`${suffix}-worker`,leaseGeneration:1,
   leaseReference:`${suffix}-lease`,fencingToken:`${suffix}-fence`,
   leaseAcquiredAt:now,leaseExpiresAt:new Date(now.getTime()+120000),
@@ -159,7 +164,30 @@ try{
  assert.deepEqual(await reservationCollection.findOne({principalId}),settledReservation);
  assert.deepEqual(await entitlements.findOne({principalId}),settledEntitlement);
  assert.equal(await results.countDocuments({executionId}),1);
- execFileSync(process.execPath,["scripts/verify-movie-mentor-isolated-settled-fresh-worker.mjs",executionId,principalId],{
+ const currentCanonical=await canonical.readResult({executionId});
+ assert.equal(currentCanonical.authorized,true);
+ const reconciliation=createMovieMentorInferenceSettlementReconciliationAuthority({store:settlement});
+ const reconciled=await reconciliation.reconcile({executionId});
+ assert.equal(reconciled.settled,true);
+ const creatorResult={...payload,metadata:{canonicalResult:{
+  creatorResponseAuthorityVerified:true,executionId,
+  resultReference:currentCanonical.resultReference,
+  candidateReference:currentCanonical.candidateReference,
+  resultDigest:currentCanonical.resultDigest,
+  reservationId:currentCanonical.reservationId,
+  closureCertificateDigest:currentCanonical.closureCertificateDigest
+ }}};
+ const authorizedRequest={authority:{principalId,projectId},body:{projectId,creatorTurnId:`${suffix}-turn`,message:creatorMessage,options:{}}};
+ assert.equal(await assertCreatorHttpExposureAuthority({
+  result:creatorResult,authorized:authorizedRequest,
+  inferenceExecutionAuthority:{readCanonicalResult:canonical.readResult},
+  inferenceSettlementAuthority:reconciliation
+ }),true);
+ assert.deepEqual(await reservationCollection.findOne({principalId}),settledReservation);
+ assert.deepEqual(await entitlements.findOne({principalId}),settledEntitlement);
+ console.log("GREEN real durable canonical and settled reconciliation pass independent creator HTTP exposure authority checks");
+ console.log("LIMITATION: exposure function examined directly; authenticated Express HTTP delivery and restart remain outstanding.");
+  execFileSync(process.execPath,["scripts/verify-movie-mentor-isolated-settled-fresh-worker.mjs",executionId,principalId],{
   cwd:process.cwd(),env:process.env,stdio:"inherit",timeout:30000
  });
  assert.deepEqual(await reservationCollection.findOne({principalId}),settledReservation);
