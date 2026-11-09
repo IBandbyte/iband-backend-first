@@ -15,6 +15,7 @@ import { createMovieMentorProductionInferenceSpendComposition } from "../ai/Movi
 import { createMovieMentorTurnRouter } from "../movieMentorTurn.js";
 import { createMovieMentorProductionInferenceExecutionComposition, isMovieMentorProductionInferenceExecutionOwnerProof } from "../ai/MovieMentorProductionInferenceExecutionComposition.js";
 import { buildRequestDigest } from "../ai/MovieMentorTurnRuntime.js";
+import { readAuthoritativeTurnSource } from "../ai/MovieMentorCreatorStateStore.js";
 
 const uri=process.env.MOVIE_MENTOR_ISOLATED_MONGO_URI||"";
 assert.match(uri,/^mongodb:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?\//);
@@ -83,6 +84,23 @@ if(process.argv[2]==="--verify-unknown-http-retry"){
    assert.deepEqual(await effectCollection.findOne({executionId}),beforeEffect);
    console.log("GREEN physical expired-lease takeover advances owner generation while durable provider UNKNOWN remains immutable");
   }
+  const creatorStateCollection=db.collection("movie_mentor_creator_state");
+  await creatorStateCollection.createIndex({projectId:1},{unique:true,partialFilterExpression:{projectId:{$type:"string"}}});
+  const existingCreatorState=await creatorStateCollection.findOne({projectId});
+  if(!existingCreatorState){
+   await creatorStateCollection.insertOne({
+    projectId,revision:0,revisionAuthorityReference:`isolated-retry-${projectId}-revision`,
+    creatorStateGeneration:1,creatorStateFingerprint:`isolated-retry-${projectId}-fingerprint`,
+    creatorAuthorityReference:`isolated-retry-${projectId}-authority`,
+    snapshotReference:`isolated-retry-${projectId}-snapshot`,
+    creatorConfirmedContext:[],capturedAt:new Date()
+   });
+  }
+  const observedStateRead=async(identity)=>{
+   const state=await readAuthoritativeTurnSource(identity);
+   console.log(`ISOLATED UNKNOWN DURABLE CREATOR STATE READ: projectMatch=${state?.projectId===projectId} revision=${state?.revision} generation=${state?.creatorStateGeneration}`);
+   return state;
+  };
   const forbidden=(operation)=>()=>{const error=new Error(`UNKNOWN HTTP retry unexpectedly reached ${operation}`);error.code="ISOLATED_UNEXPECTED_RETRY_OPERATION";throw error;};
   const guardedSpend={...spend.authority,reserveTurn:forbidden("spend.reserveTurn")};
   let earlyExecutionLookups=0;
@@ -104,7 +122,7 @@ if(process.argv[2]==="--verify-unknown-http-retry"){
     calls++;
     try{
      return await runMovieMentorTurnWithForwardExecutionAuthority(body,{
-      ...deps,readAuthoritativeTurnSource:forbidden("readAuthoritativeTurnSource"),orchestrateTurn:forbidden("orchestrateTurn"),
+      ...deps,readAuthoritativeTurnSource:observedStateRead,orchestrateTurn:forbidden("orchestrateTurn"),
       createExecutionOwnerId:()=>`isolated-restarted-owner-${process.pid}`
      });
     }catch(error){
@@ -333,6 +351,8 @@ try{
  console.log(`PHYSICAL LIVE-LEASE HTTP DENIAL CODE: ${liveDenial[1]}`);
  const liveLookup=retry.stdout.match(/ISOLATED UNKNOWN EARLY EXECUTION LOOKUP: ([^\r\n]+)/);
  if(liveLookup)console.log(`PHYSICAL LIVE-LEASE EARLY LOOKUP: ${liveLookup[1]}`);
+ const liveState=retry.stdout.match(/ISOLATED UNKNOWN DURABLE CREATOR STATE READ: ([^\r\n]+)/);
+ if(liveState)console.log(`PHYSICAL LIVE-LEASE DURABLE STATE: ${liveState[1]}`);
  const liveRoot=retry.stdout.match(/ISOLATED UNKNOWN RETRY ROOT EXCEPTION: ([^\r\n]+)/);
  if(liveRoot)console.log(`PHYSICAL LIVE-LEASE ROOT EXCEPTION: ${liveRoot[1]}`);
  assert.equal(acceptedSockets.length,1,"HTTP retry must not dispatch another provider socket");
