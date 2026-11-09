@@ -98,6 +98,29 @@ try{
    res.end(JSON.stringify({id:"isolated-semantic-response-1",model:"gpt-isolated",output:[{type:"message",content:[{type:"output_text",text:JSON.stringify(semantic)}]}]}));
    return;
   }
+  const schemaName=requestBody?.text?.format?.name||"";
+  if(["movie_mentor_story_contribution","movie_mentor_character_contribution","movie_mentor_continuity_contribution"].includes(schemaName)){
+   const requiredAgent=schema?.properties?.agentId?.enum?.[0];
+   const fixture={
+    agentId:requiredAgent,
+    confidence:0.9,
+    provenance:{source:"isolated-local-provider",model:"gpt-isolated",contractVersion:"1"},
+   };
+   for(const field of schema?.required||[]){
+    if(field in fixture)continue;
+    const property=schema?.properties?.[field];
+    if(property?.type==="array")fixture[field]=[];
+    else if(property?.type==="boolean")fixture[field]=false;
+    else if(property?.type==="number")fixture[field]=0.9;
+    else if(property?.type==="string")fixture[field]=property?.enum?.[0]||"isolated";
+    else if(property?.type==="object")fixture[field]={};
+    else fixture[field]=null;
+   }
+   const responseId="isolated-"+schemaName+"-"+providerRequests.length;
+   res.writeHead(200,{"content-type":"application/json"});
+   res.end(JSON.stringify({id:responseId,model:"gpt-isolated",output:[{type:"message",content:[{type:"output_text",text:JSON.stringify(fixture)}]}]}));
+   return;
+  }
   res.writeHead(503,{"content-type":"application/json"});
   res.end(JSON.stringify({error:{message:"Unimplemented isolated provider stage: "+String(requestBody?.text?.format?.name||"unknown"),type:"isolated_fixture_pending"}}));
  });
