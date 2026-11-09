@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import mongoose from "mongoose";
 import { createMovieMentorProductionInferenceSpendComposition } from "../ai/MovieMentorProductionInferenceSpendComposition.js";
 import { createMovieMentorInferenceExecutionMongoStore } from "../ai/MovieMentorInferenceExecutionMongoStore.js";
+import { createMovieMentorInferenceExecutionClosureAuthority } from "../ai/MovieMentorInferenceExecutionClosureAuthority.js";
+import { createMovieMentorProviderEffectMongoStore } from "../ai/MovieMentorProviderEffectMongoStore.js";
 import { createMovieMentorInferenceSettlementMongoStore } from "../ai/MovieMentorInferenceSettlementMongoStore.js";
 
 const uri=process.env.MOVIE_MENTOR_ISOLATED_MONGO_URI||"";
@@ -53,6 +55,30 @@ try{
  assert.equal(active.reason,"execution-not-finalized");
  assert.deepEqual(await entitlements.findOne({principalId}),beforeEntitlement);
  assert.deepEqual(await reservationCollection.findOne({principalId}),boundReservation);
+ const closure=createMovieMentorInferenceExecutionClosureAuthority({
+  store:createMovieMentorInferenceExecutionMongoStore(),
+  effectStore:createMovieMentorProviderEffectMongoStore()
+ });
+ const closing=await closure.beginClosing({execution:{
+  authorized:true,executionId,ownerId:created.ownerId,
+  leaseGeneration:created.leaseGeneration,leaseReference:created.leaseReference,
+  fencingToken:created.fencingToken
+ }});
+ assert.equal(closing.authorized,true);
+ assert.equal(closing.phase,"closing");
+ const closed=await closure.reconcile({executionId});
+ assert.equal(closed.authorized,true);
+ assert.equal(closed.closed,true);
+ assert.equal(closed.phase,"closed");
+ const afterClosureReservation=await reservationCollection.findOne({principalId});
+ const afterClosureEntitlement=await entitlements.findOne({principalId});
+ const premature=await settlement.settleCanonicalResult({executionId});
+ assert.equal(premature.authorized,false);
+ assert.equal(premature.settled,false);
+ assert.equal(premature.reason,"execution-not-finalized");
+ assert.deepEqual(await reservationCollection.findOne({principalId}),afterClosureReservation);
+ assert.deepEqual(await entitlements.findOne({principalId}),afterClosureEntitlement);
+ console.log("GREEN real closure authority closes zero-call execution; settlement refuses absent canonical finalization");
  console.log("GREEN production Mongo settlement refuses real schema-6 active execution before finalization");
  console.log("GREEN production Mongo settlement rejects nonexistent execution without consuming reserved spend");
  console.log("LIMITATION: negative settlement gate only; real finalized execution/canonical result/settled replay remains uncertified.");
