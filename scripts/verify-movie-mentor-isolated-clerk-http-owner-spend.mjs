@@ -395,6 +395,14 @@ try{
  });
  assert.equal(httpTakeover.status,0,`HTTP-owned takeover worker failed: ${httpTakeover.stderr} ${httpTakeover.stdout}`);
  assert.match(httpTakeover.stdout,/PHYSICAL HTTP-OWNED TAKEOVER:/);
+ const httpOwnedDenial=httpTakeover.stdout.match(/PHYSICAL UNKNOWN RETRY DENIAL CODE: ([A-Z0-9_]+)/);
+ assert.ok(httpOwnedDenial,"HTTP-owned takeover must expose its actual machine-readable denial");
+ console.log(`PHYSICAL HTTP-OWNED TAKEOVER DENIAL CODE: ${httpOwnedDenial[1]}`);
+ const httpOwnedRoot=httpTakeover.stdout.match(/ISOLATED UNKNOWN RETRY ROOT EXCEPTION: ([^\\r\\n]+)/);
+ if(httpOwnedRoot)console.log(`PHYSICAL HTTP-OWNED TAKEOVER ROOT EXCEPTION: ${httpOwnedRoot[1]}`);
+ assert.notEqual(httpOwnedDenial[1],"MOVIE_MENTOR_INFERENCE_EXECUTION_LEASE_NOT_AUTHORIZED","HTTP-owned takeover must not borrow lease denial");
+ assert.notEqual(httpOwnedDenial[1],"ISOLATED_UNEXPECTED_RETRY_OPERATION","fixture guard cannot certify UNKNOWN recovery");
+ assert.notEqual(httpOwnedDenial[1],"MOVIE_MENTOR_TURN_FAILED","generic gateway failure cannot certify UNKNOWN recovery");
  assert.equal(acceptedSockets.length,1,"HTTP-owned takeover must not open another provider socket");
  const takeover=spawnSync(process.execPath,[new URL(import.meta.url).pathname,"--verify-unknown-http-retry",
   createdExecution.executionId,principalId,projectId,`${suffix}-turn`,"--expired-lease"],{
