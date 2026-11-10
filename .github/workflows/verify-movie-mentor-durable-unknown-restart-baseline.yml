@@ -32,6 +32,47 @@ jobs:
           done
           echo "Isolated Mongo replica set did not become PRIMARY" >&2
           exit 1
+      - name: Bootstrap required physical execution and settlement indexes in disposable Mongo
+        run: |
+          node --input-type=module <<'EOF'
+          import mongoose from "mongoose";
+          import {MOVIE_MENTOR_INFERENCE_EXECUTION_REQUIRED_UNIQUE_INDEXES as execution} from "./ai/MovieMentorInferenceExecutionPhysicalAuthority.js";
+          import {MOVIE_MENTOR_INFERENCE_SETTLEMENT_REQUIRED_UNIQUE_INDEXES as settlement} from "./ai/MovieMentorInferenceSettlementPhysicalAuthority.js";
+          const uri=process.env.MOVIE_MENTOR_ISOLATED_MONGO_URI;
+          if(!/^mongodb:\/\/127\.0\.0\.1:27017\/movie_mentor_interruption_recovery\?/.test(uri||""))throw new Error("Refusing non-disposable Mongo target");
+          await mongoose.connect(uri,{autoIndex:false});
+          try {
+            const requirements=new Map([...execution,...settlement].map(r=>[r.collection+":"+JSON.stringify(r.key),r]));
+            for(const r of requirements.values())await mongoose.connection.db.collection(r.collection).createIndex(r.key,{unique:true});
+            for(const r of requirements.values()){
+              const indexes=await mongoose.connection.db.collection(r.collection).indexes();
+              if(!indexes.some(i=>i.unique===true&&JSON.stringify(i.key)===JSON.stringify(r.key)))throw new Error("Missing physical unique index "+r.collection+" "+JSON.stringify(r.key));
+            }
+            const providerOperation=mongoose.connection.db.collection("movie_mentor_provider_operation_reality");
+            await providerOperation.createIndex({providerCallId:1},{unique:true});
+            const operationIndexes=await providerOperation.indexes();
+            if(!operationIndexes.some(i=>i.unique===true&&JSON.stringify(i.key)===JSON.stringify({providerCallId:1})))throw new Error("Missing provider-operation physical unique index");
+            const candidate=mongoose.connection.db.collection("movie_mentor_result_candidate");
+            await candidate.createIndex({candidateReference:1},{unique:true});
+            const candidateIndexes=await candidate.indexes();
+            for(const key of [{executionId:1},{candidateReference:1}]){
+              if(!candidateIndexes.some(i=>i.unique===true&&JSON.stringify(i.key)===JSON.stringify(key)))throw new Error("Missing result-candidate physical unique index "+JSON.stringify(key));
+            }
+            const canonical=mongoose.connection.db.collection("movie_mentor_canonical_result");
+            const canonicalRequired=[{resultReference:1},{candidateReference:1},{executionId:1},{principalId:1,projectId:1,creatorTurnId:1},{reservationId:1}];
+            for(const key of canonicalRequired)await canonical.createIndex(key,{unique:true});
+            const canonicalIndexes=await canonical.indexes();
+            for(const key of canonicalRequired){
+              if(!canonicalIndexes.some(i=>i.unique===true&&JSON.stringify(i.key)===JSON.stringify(key)))throw new Error("Missing canonical-result physical unique index "+JSON.stringify(key));
+            }
+            console.log("GREEN isolated canonical-result physical unique indexes verified");
+            console.log("GREEN isolated result-candidate physical unique indexes verified");
+            console.log("GREEN isolated provider-operation physical unique index verified");
+            console.log("GREEN isolated physical index bootstrap: "+requirements.size+" required unique indexes verified");
+          }finally{await mongoose.disconnect();}
+          EOF
+      - name: Verify signed HTTP-origin provider SIGKILL and fresh-process UNKNOWN denial
+        run: node scripts/verify-movie-mentor-http-origin-interruption-physical.mjs
       - name: Verify fresh-worker durable UNKNOWN fail-closed baseline
         run: node scripts/verify-movie-mentor-provider-durable-restart-unknown.mjs
       - name: Verify real provider socket SIGKILL and fresh-worker UNKNOWN denial
