@@ -9,7 +9,23 @@ import mongoose from "mongoose";
 const uri=process.env.MOVIE_MENTOR_ISOLATED_MONGO_URI||"";
 assert.ok(uri.startsWith("mongodb://127.0.0.1:27017/movie_mentor_positive_http_settlement?"),"refuse non-disposable Mongo target");
 const providerRequests=[];
+const historicalResponses=new Map();
  const providerServer=http.createServer(async(req,res)=>{
+  if(req.method==="GET"&&req.url?.startsWith("/v1/responses/")){
+   const id=decodeURIComponent(req.url.slice("/v1/responses/".length));
+   const historical=historicalResponses.get(id);
+   res.writeHead(historical?200:404,{"content-type":"application/json"});
+   res.end(JSON.stringify(historical||{error:{message:"Unknown historical response"}}));
+   providerRequests.push({path:req.url,method:req.method});
+   return;
+  }
+  const originalEnd=res.end.bind(res);
+  res.end=(chunk,...args)=>{
+   if(req.method==="POST"&&req.url==="/v1/responses"&&res.statusCode===200){
+    try{const payload=JSON.parse(String(chunk));if(payload?.id)historicalResponses.set(payload.id,payload);}catch{}
+   }
+   return originalEnd(chunk,...args);
+  };
   let body="";for await(const chunk of req)body+=chunk;
   providerRequests.push({path:req.url,method:req.method,idempotencyKey:req.headers["idempotency-key"]||null});
   // Hold the second provider response while the first confirmed effect is
@@ -170,6 +186,16 @@ try{
  assert.match(inspectorOut,/GREEN FRESH_PROCESS_DURABLE_RECOVERY_INPUTS/);
  assert.match(inspectorOut,/GREEN FRESH_PROCESS_PRODUCTION_LEASE_TAKEOVER/);
  assert.equal(providerRequests.filter(r=>r.method==="POST"&&r.path==="/v1/responses").length,postsBefore,"fresh inspector must not redispatch provider");
+ const knownId=persisted.evidence?.[0]?.externalEffectId;
+ assert.ok(typeof knownId==="string"&&knownId.length>0,"confirmed effect must bind a known historical response ID");
+ const historicalReply=await fetch(base+"/v1/responses/"+encodeURIComponent(knownId));
+ assert.equal(historicalReply.status,200,"independent provider must retain exact confirmed response after worker SIGKILL");
+ const historicalBody=await historicalReply.json();
+ assert.equal(historicalBody.id,knownId,"historical provider GET must return exact durable effect identity");
+ const unknownReply=await fetch(base+"/v1/responses/"+encodeURIComponent(knownId+"-fabricated"));
+ assert.equal(unknownReply.status,404,"fabricated historical provider response must be denied");
+ assert.equal(providerRequests.filter(r=>r.method==="POST"&&r.path==="/v1/responses").length,postsBefore,"historical GET must not redispatch provider");
+ console.log("GREEN INDEPENDENT_PROVIDER_HISTORICAL_GET_AFTER_SIGKILL: exact confirmed response retrievable, fabricated response denied, no redispatch");
  console.log("GREEN SIGNED_HTTP_DURABLE_EFFECT_SIGKILL_GATE: HTTP-origin active execution and durable provider effect observed in Mongo before SIGKILL; independent provider and durable evidence survived");
  console.log("LIMITATION: production-issued fresh-process lease takeover certified separately; historical response recovery, canonical finalization and exactly-once settlement remain unverified.");
 }finally{
