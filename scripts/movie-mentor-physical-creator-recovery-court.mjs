@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { generateKeyPairSync, createSign } from "node:crypto";
 import { createServer } from "node:http";
 import mongoose from "mongoose";
+import express from "express";
+import { createMovieMentorCreatorStateReadExpressRouter } from "../ai/MovieMentorCreatorStateReadExpressRouter.js";
 import { readAuthoritativeTurnSource } from "../ai/MovieMentorCreatorStateStore.js";
 import { createMovieMentorProjectOwnershipAuthority, MOVIE_MENTOR_PROJECT_OWNERSHIP_DOMAIN, MOVIE_MENTOR_PROJECT_OWNERSHIP_SCHEMA } from "../ai/MovieMentorProjectOwnershipRegistry.js";
 import { createMovieMentorCreatorStateReadAuthority } from "../ai/MovieMentorCreatorStateReadAuthority.js";
@@ -140,6 +142,57 @@ export async function runMovieMentorPhysicalCreatorRecoveryCourt() {
       console.log("GREEN PHYSICAL HTTP: signed RS256 owner GET, foreign/forged denial, POST denial and immutable Mongo");
     } finally {
       await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    }
+    // Physical discovery examination: real Mongo owner filtering and overflow through Express.
+    const extra = Array.from({length:100},(_,i)=>({
+      domain:MOVIE_MENTOR_PROJECT_OWNERSHIP_DOMAIN,
+      schema:MOVIE_MENTOR_PROJECT_OWNERSHIP_SCHEMA,
+      projectId:"physical-discovery-"+String(i).padStart(3,"0"),
+      ownerPrincipalId:"physical-owner",
+      ownershipRevision:1,
+      ownershipReference:"physical-discovery-reference-"+i,
+      establishmentAuthorityId:"physical-discovery-establishment-"+i,
+      establishmentSource:"native-project-creation",
+      status:"active",
+      establishedAt:new Date(),
+    }));
+    const app=express();
+    app.use("/api/movie-mentor",createMovieMentorCreatorStateReadExpressRouter({
+      authentication,ownershipAuthority:createMovieMentorProjectOwnershipAuthority(),
+      readCreatorState:readAuthoritativeTurnSource,
+    }));
+    const expressServer=createServer(app);
+    await new Promise(resolve=>expressServer.listen(0,"127.0.0.1",resolve));
+    try {
+      const base="http://127.0.0.1:"+expressServer.address().port+"/api/movie-mentor/projects/owned";
+      const get=async token=>{
+        const response=await fetch(base,{headers:token?{authorization:"Bearer "+token}:{}});
+        return {status:response.status,body:await response.json()};
+      };
+      const original=await get(signJwt("physical-owner"));
+      assert.equal(original.status,200,"RED: actual Express Mongo owner discovery must succeed");
+      assert.deepEqual(original.body.projects,[{projectId}],"RED: actual discovery must return only durable owner records");
+      const foreignDiscovery=await get(signJwt("physical-foreigner"));
+      assert.equal(foreignDiscovery.status,200);
+      assert.deepEqual(foreignDiscovery.body.projects,[],"RED: foreign principal must not see owner project");
+      const {privateKey:discoveryForgery}=generateKeyPairSync("rsa",{modulusLength:2048});
+      assert.equal((await get(signJwt("physical-owner",discoveryForgery))).status,401,"RED: forged JWT must not enumerate projects");
+      await ownership.insertMany(extra.slice(0,99));
+      const hundred=await get(signJwt("physical-owner"));
+      assert.equal(hundred.status,200,"RED: 100 projects must remain discoverable");
+      assert.equal(hundred.body.projects.length,100);
+      await ownership.insertOne(extra[99]);
+      const overflow=await get(signJwt("physical-owner"));
+      assert.equal(overflow.status,503,"RED: 101st project must fail closed, never silently truncate");
+      const foreignAfter=await get(signJwt("physical-foreigner"));
+      assert.equal(foreignAfter.status,200);
+      assert.deepEqual(foreignAfter.body.projects,[]);
+      assert.equal(await ownership.countDocuments({ownerPrincipalId:"physical-owner"}),101);
+      assert.deepEqual(await ownership.findOne({projectId}),ownershipBefore,"RED: discovery changed durable ownership");
+      assert.deepEqual(await states.findOne({projectId}),before,"RED: discovery changed creator state");
+      console.log("GREEN PHYSICAL EXPRESS MONGO DISCOVERY: signed owner/foreign/forged JWT, 100 identities, 101 overflow denial, immutable records");
+    } finally {
+      await new Promise((resolve,reject)=>expressServer.close(error=>error?reject(error):resolve()));
     }
     return Object.freeze({
       realRs256: true, loopbackHttp: true, isolatedMongo: true,
