@@ -8,6 +8,7 @@ import {createMovieMentorProviderEffectMongoStore} from "../ai/MovieMentorProvid
 import {createMovieMentorProviderEffectAuthority} from "../ai/MovieMentorProviderEffectAuthority.js";
 import {createMovieMentorProviderOutcomeRecoveryAuthority} from "../ai/MovieMentorProviderOutcomeRecoveryAuthority.js";
 import {createMovieMentorInferenceExecutionLeaseAuthority} from "../ai/MovieMentorInferenceExecutionLeaseAuthority.js";
+import {createMovieMentorInferenceExecutionMongoStore} from "../ai/MovieMentorInferenceExecutionMongoStore.js";
 
 const uri=process.env.MOVIE_MENTOR_ISOLATED_MONGO_URI;
 assert.equal(uri,"mongodb://127.0.0.1:27017/movie_mentor_confirmed_settlement_baseline?replicaSet=rs0&directConnection=true","disposable Mongo only");
@@ -50,7 +51,7 @@ if(process.argv[2]==="--admit"||process.argv[2]==="--recover"){
    // Production lease authority issues opaque in-process evidence. A copied
    // set of Mongo lease fields is not equivalent to an authority-issued proof.
    const leaseAuthority=createMovieMentorInferenceExecutionLeaseAuthority({
-    store:{readExecution:id=>db.collection("movie_mentor_inference_execution").findOne({executionId:id})}
+    store:createMovieMentorInferenceExecutionMongoStore()
    });
    const issuedProof=await leaseAuthority.acquireExecution({executionId,ownerId:proofInput.ownerId});
    assert.equal(issuedProof.authorized,true);
