@@ -127,6 +127,8 @@ try{
  // inherit the supervisor's Mongoose connection or any in-memory authority.
  const inspectorSource=[
   'import mongoose from "mongoose";',
+  'import {createMovieMentorInferenceExecutionLeaseAuthority} from "./ai/MovieMentorInferenceExecutionLeaseAuthority.js";',
+  'import {createMovieMentorInferenceExecutionMongoStore} from "./ai/MovieMentorInferenceExecutionMongoStore.js";',
   'const uri=process.env.MOVIE_MENTOR_ISOLATED_MONGO_URI;',
   'if(!uri?.startsWith("mongodb://127.0.0.1:27017/movie_mentor_positive_http_settlement?"))process.exit(31);',
   'await mongoose.connect(uri,{serverSelectionTimeoutMS:10000});',
@@ -136,7 +138,23 @@ try{
   'const effect=await db.collection("movie_mentor_provider_effect_reality").findOne({providerCallId:process.env.MOVIE_MENTOR_INSPECT_CALL_ID});',
   'const operation=await db.collection("movie_mentor_provider_operation_reality").findOne({providerCallId:process.env.MOVIE_MENTOR_INSPECT_CALL_ID});',
   'if(!execution||execution.phase!=="active"||!effect||effect.state!=="confirmed"||effect.executionId!==execution.executionId||!operation||operation.executionId!==execution.executionId)process.exitCode=32;',
-  'else console.log("GREEN FRESH_PROCESS_DURABLE_RECOVERY_INPUTS: execution active; confirmed effect and bound provider operation independently readable");',
+  'else {',
+  'console.log("GREEN FRESH_PROCESS_DURABLE_RECOVERY_INPUTS: execution active; confirmed effect and bound provider operation independently readable");',
+  'const oldOwner=execution.ownerId;',
+  'const oldLease=execution.leaseGeneration;',
+  'const oldExpires=new Date(execution.leaseExpiresAt);',
+  'if(!Number.isFinite(oldExpires.getTime()))throw Error("invalid persisted lease expiry");',
+  'const leaseAuthority=createMovieMentorInferenceExecutionLeaseAuthority({store:createMovieMentorInferenceExecutionMongoStore(),now:()=>new Date(oldExpires.getTime()+1000)});',
+  'const intruder=await leaseAuthority.acquireExecution({executionId:execution.executionId,ownerId:"physical-recovery-successor"});',
+  'if(intruder?.authorized!==true||intruder?.acquired!==true||intruder.ownerId===oldOwner||intruder.leaseGeneration!==oldLease+1)throw Error("production-issued successor takeover not proven");',
+  'const issued=await leaseAuthority.assertFence(intruder);',
+  'if(issued?.authorized!==true||issued?.executionAuthorized!==true)throw Error("production lease fence did not authorize successor");',
+  'const forged=await leaseAuthority.assertFence({...intruder});',
+  'if(forged?.authorized!==false||forged?.reason!=="execution-owner-proof-required")throw Error("copied lease proof was not denied");',
+  'const persisted=await db.collection("movie_mentor_inference_execution").findOne({executionId:execution.executionId});',
+  'if(persisted?.ownerId!==intruder.ownerId||persisted?.leaseGeneration!==intruder.leaseGeneration||persisted?.fencingToken!==intruder.fencingToken||persisted?.phase!=="active")throw Error("successor takeover was not durable");',
+  'console.log("GREEN FRESH_PROCESS_PRODUCTION_LEASE_TAKEOVER: fresh process acquired production-issued successor proof; stale generation fenced, copied proof denied, Mongo takeover durable");',
+  '}',
   '}finally{await mongoose.disconnect();}'
  ].join("\n");
  const inspector=spawn(process.execPath,["--input-type=module","-e",inspectorSource],{
@@ -149,9 +167,10 @@ try{
  const inspectorExit=await new Promise(resolve=>inspector.on("exit",(code,signal)=>resolve({code,signal})));
  assert.equal(inspectorExit.code,0,"fresh process failed durable recovery-input inspection: "+inspectorErr+" "+inspectorOut);
  assert.match(inspectorOut,/GREEN FRESH_PROCESS_DURABLE_RECOVERY_INPUTS/);
+ assert.match(inspectorOut,/GREEN FRESH_PROCESS_PRODUCTION_LEASE_TAKEOVER/);
  assert.equal(providerRequests.filter(r=>r.method==="POST"&&r.path==="/v1/responses").length,postsBefore,"fresh inspector must not redispatch provider");
  console.log("GREEN SIGNED_HTTP_DURABLE_EFFECT_SIGKILL_GATE: HTTP-origin active execution and durable provider effect observed in Mongo before SIGKILL; independent provider and durable evidence survived");
- console.log("LIMITATION: no fresh-worker recovery, canonical finalization or exactly-once settlement certified.");
+ console.log("LIMITATION: production-issued fresh-process lease takeover certified separately; historical response recovery, canonical finalization and exactly-once settlement remain unverified.");
 }finally{
  clearTimeout(watchdog);
  if(child.exitCode===null)child.kill("SIGKILL");
