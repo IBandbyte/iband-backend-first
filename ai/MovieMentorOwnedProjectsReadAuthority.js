@@ -16,6 +16,8 @@ async function readMovieMentorOwnedProjects({ principal } = {}) {
   const records = await mongoose.connection
     .collection(MOVIE_MENTOR_PROJECT_OWNERSHIP_COLLECTION)
     .find({ ownerPrincipalId, status: "active" }, { projection: { _id: 0, projectId: 1, ownerPrincipalId: 1, ownershipRevision: 1, ownershipReference: 1, domain: 1, schema: 1, establishmentAuthorityId: 1, establishmentSource: 1, establishedAt: 1, status: 1 } })
+    .sort({ projectId: 1 })
+    .limit(100)
     .toArray();
   const projects = [];
   const seen = new Set();
