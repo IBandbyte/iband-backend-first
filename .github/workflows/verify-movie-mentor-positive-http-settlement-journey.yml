@@ -73,3 +73,5 @@ jobs:
           EOF
       - name: Physical signed HTTP execution settlement and fresh-process replay
         run: node scripts/verify-movie-mentor-positive-http-settlement-physical.mjs
+      - name: Physical signed HTTP execution against independent supervisor provider
+        run: node scripts/verify-movie-mentor-independent-provider-signed-http-positive.mjs
