@@ -15,7 +15,7 @@ try{
  const db=mongoose.connection.db;
  if(process.argv[2]==="--fresh-recovery"){
   const id=process.argv[3];
-  assert.ok(id&&id.startsWith("positive-http-"));
+  assert.match(id||"",/^provider-call-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,"fresh worker requires production-generated provider-call UUID");
   const store=createMovieMentorProviderOperationMongoStore();
   const operation=await store.readOperation(id);
   assert.equal(operation?.providerCallId,id);
