@@ -202,6 +202,17 @@ export async function runMovieMentorPhysicalCreatorRecoveryCourt() {
       assert.equal(missingIndexForeign.status,503,"RED: missing index must fail closed even for a foreign signed principal");
       assert.deepEqual(await ownership.findOne({projectId}),ownershipBefore,"RED: missing-index denial mutated durable ownership");
       assert.deepEqual(await states.findOne({projectId}),before,"RED: missing-index denial mutated creator state");
+      // Recovery control: restoring the index must not bypass the 101-record overflow gate.
+      await ownership.createIndex({projectId:1},{unique:true});
+      const restoredOverflow=await get(signJwt("physical-owner"));
+      assert.equal(restoredOverflow.status,503,"RED: restored unique index must not bypass 101-record overflow denial");
+      await ownership.deleteOne({projectId:extra[99].projectId});
+      const restoredHundred=await get(signJwt("physical-owner"));
+      assert.equal(restoredHundred.status,200,"RED: restoring physical unique index and 100-record boundary must recover");
+      assert.equal(restoredHundred.body.projects.length,100);
+      assert.deepEqual(await ownership.findOne({projectId}),ownershipBefore);
+      assert.deepEqual(await states.findOne({projectId}),before);
+      console.log("GREEN PHYSICAL INDEX RESTORATION: restored unique index preserves 101 overflow denial and permits 100 owner records");
       console.log("GREEN PHYSICAL NEGATIVE INDEX: actual Mongo unique index removed; signed Express discovery denied without leaking records");
       console.log("GREEN PHYSICAL EXPRESS MONGO DISCOVERY: signed owner/foreign/forged JWT, 100 identities, 101 overflow denial, immutable records");
     } finally {
