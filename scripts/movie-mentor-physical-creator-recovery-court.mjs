@@ -164,7 +164,7 @@ export async function runMovieMentorPhysicalCreatorRecoveryCourt() {
       createMovieMentorCreatorStateReadExpressRouter,
       readAuthoritativeTurnSource,
     };
-    runInNewContext(serverSource.slice(mountStart,mountEnd)+"\\nthis.mountRead=mountMovieMentorReadOnlyRecoveryIngress;",remountContext);
+    runInNewContext(serverSource.slice(mountStart,mountEnd)+"\nthis.mountRead=mountMovieMentorReadOnlyRecoveryIngress;",remountContext);
     const remountServer=createServer(remountApp);
     await new Promise(resolve=>remountServer.listen(0,"127.0.0.1",resolve));
     try{
