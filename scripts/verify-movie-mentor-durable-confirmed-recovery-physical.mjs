@@ -7,6 +7,7 @@ import {createMovieMentorProviderOperationMongoStore} from "../ai/MovieMentorPro
 import {createMovieMentorProviderEffectMongoStore} from "../ai/MovieMentorProviderEffectMongoStore.js";
 import {createMovieMentorProviderEffectAuthority} from "../ai/MovieMentorProviderEffectAuthority.js";
 import {createMovieMentorProviderOutcomeRecoveryAuthority} from "../ai/MovieMentorProviderOutcomeRecoveryAuthority.js";
+import {createMovieMentorInferenceExecutionLeaseAuthority} from "../ai/MovieMentorInferenceExecutionLeaseAuthority.js";
 
 const uri=process.env.MOVIE_MENTOR_ISOLATED_MONGO_URI;
 assert.equal(uri,"mongodb://127.0.0.1:27017/movie_mentor_confirmed_settlement_baseline?replicaSet=rs0&directConnection=true","disposable Mongo only");
@@ -46,6 +47,20 @@ if(process.argv[2]==="--admit"||process.argv[2]==="--recover"){
    const durableExecution=await db.collection("movie_mentor_inference_execution").findOne({executionId});
    assert.equal(durableExecution?.providerEffectRealityRevision,2);
    const proofInput={ownerId:"physical-owner",leaseGeneration:1,leaseReference:"physical-lease",fencingToken:"physical-fence"};
+   // Production lease authority issues opaque in-process evidence. A copied
+   // set of Mongo lease fields is not equivalent to an authority-issued proof.
+   const leaseAuthority=createMovieMentorInferenceExecutionLeaseAuthority({
+    store:{readExecution:id=>db.collection("movie_mentor_inference_execution").findOne({executionId:id})}
+   });
+   const issuedProof=await leaseAuthority.acquireExecution({executionId,ownerId:proofInput.ownerId});
+   assert.equal(issuedProof.authorized,true);
+   assert.equal((await leaseAuthority.assertFence(issuedProof)).authorized,true);
+   const forgedProof={...issuedProof};
+   const forgedFence=await leaseAuthority.assertFence(forgedProof);
+   assert.equal(forgedFence.authorized,false);
+   assert.equal(forgedFence.reason,"execution-owner-proof-required");
+   console.log("GREEN PRODUCTION_LEASE_PROOF_ORIGIN: actual lease authority accepts issued evidence and rejects copied fields");
+
    let ownershipChecks=0;
    const verifyCurrentOwnership=async({operation,recoveryAuthority})=>{
     ownershipChecks++;
