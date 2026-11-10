@@ -27,3 +27,5 @@ jobs:
         run: node scripts/verify-movie-mentor-creator-state-recovery-production-composition.mjs
       - name: Production Express recovery and owned-projects path wiring
         run: node scripts/verify-movie-mentor-server-read-recovery-wiring.mjs
+      - name: Durable owner-filtered project discovery authority
+        run: node scripts/verify-movie-mentor-owned-projects-read-authority.mjs
