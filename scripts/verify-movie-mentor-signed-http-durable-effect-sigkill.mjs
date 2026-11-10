@@ -131,6 +131,7 @@ try{
   'import {createMovieMentorInferenceExecutionMongoStore} from "./ai/MovieMentorInferenceExecutionMongoStore.js";',
   'const uri=process.env.MOVIE_MENTOR_ISOLATED_MONGO_URI;',
   'if(!uri?.startsWith("mongodb://127.0.0.1:27017/movie_mentor_positive_http_settlement?"))process.exit(31);',
+  'process.env.MONGO_URI=uri;process.env.MONGODB_URI=uri;',
   'await mongoose.connect(uri,{serverSelectionTimeoutMS:10000});',
   'try{',
   'const db=mongoose.connection.db;',
