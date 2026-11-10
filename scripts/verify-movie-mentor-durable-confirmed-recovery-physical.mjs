@@ -128,6 +128,40 @@ if(process.argv[2]==="--admit"||process.argv[2]==="--recover"){
    assert.equal(recoveryGets,2,"successor must retrieve the same historical response");
    assert.equal((await db.collection("movie_mentor_inference_execution").findOne({executionId})).ownerId,successorProof.ownerId);
    console.log("GREEN DURABLE_POST_IO_OWNERSHIP_REVOKED: old owner fenced; exact successor owner recovers same operation");
+   // Provider-effect reality can change while GET is in flight. A second
+   // independently bound response ID must produce a durable conflict, never
+   // authorize either historical response as the canonical result.
+   const conflictingAuthority=createMovieMentorProviderOutcomeRecoveryAuthority({
+    readProviderOperation:id=>operationStore.readOperation(id),
+    readProviderEffectReality:id=>effectAuthority.readReality(id),
+    resolveCurrentTarget:()=>target,
+    requireRecoveryAuthority:true,
+    assertCurrentRecoveryAuthority:verifyCurrentOwnership,
+    recoverProviderResponse:async request=>{
+     const reply=await fetch(base+"/v1/responses/"+encodeURIComponent(request.externalEffectId));
+     assert.equal(reply.status,200);
+     const historical=await reply.json();
+     const operation=await operationStore.readOperation(callId);
+     const conflict=await effectAuthority.contributeEvidence({
+      providerCallId:callId,externalEffectId:"second-distinct-provider-response-id",
+      provider:"openai",source:"provider-response",providerOperation:operation
+     });
+     assert.equal(conflict.state,"conflict");
+     return {provider:"openai",externalEffectId:historical.id,providerOperationId:callId,response:{id:historical.id,status:"completed",output_text:historical.output}};
+    }
+   });
+   const conflicting=await conflictingAuthority.reconcile({providerCallId:callId,recoveryAuthority:successorProof});
+   assert.equal(conflicting.recovered,false);
+   assert.equal(conflicting.redispatchAuthorized,false);
+   assert.equal(conflicting.outcome,"CONFLICTING_EFFECT");
+   assert.equal(conflicting.reason,"provider-effect-reality-changed-during-recovery");
+   assert.equal((await effectAuthority.readReality(callId)).state,"conflict");
+   const afterConflict=await authority.reconcile({providerCallId:callId,recoveryAuthority:successorProof});
+   assert.equal(afterConflict.recovered,false);
+   assert.equal(afterConflict.redispatchAuthorized,false);
+   assert.equal(afterConflict.outcome,"CONFLICTING_EFFECT");
+   console.log("GREEN DURABLE_POST_IO_EFFECT_CONFLICT: second bound response ID during GET blocks recovered bytes and later retry");
+
 
    console.log("GREEN FRESH_PROCESS_DURABLE_CONFIRMED_EFFECT_RECOVERY");
   }
@@ -178,8 +212,8 @@ if(process.argv[2]==="--admit"||process.argv[2]==="--recover"){
   await Promise.race([done,new Promise((_,reject)=>setTimeout(()=>reject(Error("fresh recovery timeout "+out+" "+err)),30000))]);
   assert.match(out,/GREEN FRESH_PROCESS_DURABLE_CONFIRMED_EFFECT_RECOVERY/);
   assert.equal(posts,1,"recovery must not redispatch");
-  assert.equal(gets,3,"original retrieval, takeover-fenced retrieval and successor retrieval; no redispatch");
-  console.log("GREEN DURABLE_CONFIRMED_EFFECT_RECOVERY_PHYSICAL: real provider POST, transactional Mongo confirmation, SIGKILL, fresh-process GET and post-I/O Mongo takeover denial; one POST");
+  assert.equal(gets,4,"original retrieval, takeover-fenced retrieval, successor retrieval and conflict retrieval; no redispatch");
+  console.log("GREEN DURABLE_CONFIRMED_EFFECT_RECOVERY_PHYSICAL: real provider POST, transactional Mongo confirmation, SIGKILL, fresh-process GET and post-I/O Mongo takeover and effect-conflict denial; one POST");
   console.log("LIMITATION: execution admission is fixture-seeded, ownership proof uses test-owned Mongo execution reader, and no canonical settlement performed.");
  }finally{if(worker.exitCode===null)worker.kill("SIGKILL");await new Promise(resolve=>server.close(resolve));}
 }
