@@ -17,8 +17,11 @@ async function readMovieMentorOwnedProjects({ principal } = {}) {
     .collection(MOVIE_MENTOR_PROJECT_OWNERSHIP_COLLECTION)
     .find({ ownerPrincipalId, status: "active" }, { projection: { _id: 0, projectId: 1, ownerPrincipalId: 1, ownershipRevision: 1, ownershipReference: 1, domain: 1, schema: 1, establishmentAuthorityId: 1, establishmentSource: 1, establishedAt: 1, status: 1 } })
     .sort({ projectId: 1 })
-    .limit(100)
+    .limit(101)
     .toArray();
+  if (records.length > 100) {
+    throw new Error("Owned-project discovery exceeds the bounded page; refusing incomplete results.");
+  }
   const projects = [];
   const seen = new Set();
   for (const record of records) {
