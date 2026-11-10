@@ -8,10 +8,10 @@ import { generateKeyPairSync, createSign } from "node:crypto";
 const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const issuer="https://issuer.example.test", audience="movie-mentor-read", authorizedParty="https://studio.example.test";
 const authentication=createMovieMentorProductionAuthenticationComposition({env:{
- MOVIE_MENTOR_CLERK_JWT_PUBLIC_KEY:publicKey.export({type:"spki",format:"pem"}),
- MOVIE_MENTOR_CLERK_JWT_ISSUER:issuer,
- MOVIE_MENTOR_CLERK_JWT_AUDIENCE:audience,
- MOVIE_MENTOR_CLERK_JWT_AUTHORIZED_PARTIES:authorizedParty,
+ MOVIE_MENTOR_CLERK_JWT_KEY:publicKey.export({type:"spki",format:"pem"}),
+ MOVIE_MENTOR_CLERK_ISSUER:issuer,
+ MOVIE_MENTOR_AUDIENCE:audience,
+ MOVIE_MENTOR_CLERK_AUTHORIZED_PARTIES_JSON:JSON.stringify([authorizedParty]),
 }});
 assert.equal(authentication.ready,true,"RED: genuine pinned-key authentication unavailable");
 function token(subject) {
