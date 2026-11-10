@@ -92,7 +92,7 @@ try{
  const deadline=Date.now()+45000;
  let effect=null,execution=null;
  while(Date.now()<deadline){
-  effect=await db.collection("movie_mentor_provider_effect").findOne({$or:[{state:"confirmed"},{effectStatus:"confirmed"},{status:"confirmed"}]});
+  effect=await db.collection("movie_mentor_provider_effect_reality").findOne({$or:[{state:"confirmed"},{effectStatus:"confirmed"},{status:"confirmed"}]});
   if(effect){
    execution=await db.collection("movie_mentor_inference_execution").findOne({executionId:effect.executionId});
    if(execution)break;
@@ -109,7 +109,7 @@ try{
  const {code,signal}=await new Promise(resolve=>child.on("exit",(code,signal)=>resolve({code,signal})));
  assert.equal(code,null);assert.equal(signal,"SIGKILL");
  assert.equal(providerServer.listening,true,"provider must survive worker SIGKILL");
- const persisted=await db.collection("movie_mentor_provider_effect").findOne({_id:effect._id});
+ const persisted=await db.collection("movie_mentor_provider_effect_reality").findOne({_id:effect._id});
  assert.ok(persisted,"durable effect must survive worker SIGKILL");
  const after=await db.collection("movie_mentor_inference_execution").findOne({executionId:execution.executionId});
  assert.ok(after,"HTTP-origin execution must survive worker SIGKILL");
