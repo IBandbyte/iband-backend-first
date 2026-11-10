@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 const source=readFileSync(new URL("../server.js",import.meta.url),"utf8");
-const mount=source.slice(source.search(/(?:async\\s+)?function\\s+mountMovieMentorReadOnlyRecoveryIngress\\(\\)/),source.indexOf("await mountMovieMentorNativeProjectCreationIngress()"));
+const mount=source.slice(source.search(/(?:async\s+)?function\s+mountMovieMentorReadOnlyRecoveryIngress\(\)/),source.indexOf("await mountMovieMentorNativeProjectCreationIngress()"));
 const startup=source.slice(source.indexOf("const initialCreatorGatewayMount="),source.indexOf("const recoveryMount="));
 assert.match(mount,/movieMentorReadOnlyRecoveryIngressMounted/,"RED: read-only ingress must track successful mount");
 assert.match(mount,/mongoose\.connection\.readyState\s*!==\s*1/,"RED: unavailable Mongo must deny initial mount");
