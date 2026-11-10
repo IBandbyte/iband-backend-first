@@ -42,11 +42,26 @@ if(process.argv[2]==="--admit"||process.argv[2]==="--recover"){
    const effect=await effectAuthority.readReality(callId);
    assert.equal(effect.state,"confirmed");
    assert.deepEqual(effect.evidence.map(e=>e.externalEffectId),[responseId]);
+   const db=mongoose.connection.db;
+   const durableExecution=await db.collection("movie_mentor_inference_execution").findOne({executionId});
+   assert.equal(durableExecution?.providerEffectRealityRevision,2);
+   const proofInput={ownerId:"physical-owner",leaseGeneration:1,leaseReference:"physical-lease",fencingToken:"physical-fence"};
+   let ownershipChecks=0;
+   const verifyCurrentOwnership=async({operation,recoveryAuthority})=>{
+    ownershipChecks++;
+    const execution=await db.collection("movie_mentor_inference_execution").findOne({executionId:operation.executionId});
+    const matched=execution?.phase==="active"&&execution?.ownerId===recoveryAuthority?.ownerId&&execution?.leaseGeneration===recoveryAuthority?.leaseGeneration&&execution?.leaseReference===recoveryAuthority?.leaseReference&&execution?.fencingToken===recoveryAuthority?.fencingToken&&execution?.providerCalls?.some(call=>call.providerCallId===operation.providerCallId);
+    return matched?{authorized:true,currentRecoveryAuthorityVerified:true,transition:"provider-outcome-recovery",executionId:operation.executionId,providerCallId:operation.providerCallId,...proofInput}:{authorized:false,reason:"durable-execution-ownership-mismatch"};
+   };
+   let recoveryGets=0;
    const authority=createMovieMentorProviderOutcomeRecoveryAuthority({
     readProviderOperation:id=>operationStore.readOperation(id),
     readProviderEffectReality:id=>effectAuthority.readReality(id),
     resolveCurrentTarget:()=>target,
+    requireRecoveryAuthority:true,
+    assertCurrentRecoveryAuthority:verifyCurrentOwnership,
     recoverProviderResponse:async request=>{
+     recoveryGets++;
      assert.equal(request.externalEffectId,responseId);
      assert.equal(request.providerCallId,callId);
      const result=await fetch(base+"/v1/responses/"+encodeURIComponent(request.externalEffectId));
@@ -56,11 +71,18 @@ if(process.argv[2]==="--admit"||process.argv[2]==="--recover"){
      return {provider:"openai",externalEffectId:payload.id,providerOperationId:callId,response:{id:payload.id,status:"completed",output_text:payload.output}};
     }
    });
-   const result=await authority.reconcile({providerCallId:callId});
+   const denied=await authority.reconcile({providerCallId:callId,recoveryAuthority:{...proofInput,ownerId:"intruder"}});
+   assert.equal(denied.recovered,false);
+   assert.equal(denied.recoveryAuthorized,false);
+   assert.equal(denied.reason,"provider-recovery-execution-fenced");
+   assert.equal(recoveryGets,0,"intruder must not reach provider GET");
+   const result=await authority.reconcile({providerCallId:callId,recoveryAuthority:proofInput});
    assert.equal(result.outcome,"CONFIRMED_EFFECT");
    assert.equal(result.recovered,true);
    assert.equal(result.redispatchAuthorized,false);
    assert.equal(result.externalEffectId,responseId);
+   assert.equal(recoveryGets,1);
+   assert.ok(ownershipChecks>=3,"ownership must be checked before and after provider I/O");
    console.log("GREEN FRESH_PROCESS_DURABLE_CONFIRMED_EFFECT_RECOVERY");
   }
  }finally{await mongoose.disconnect();}
@@ -112,6 +134,6 @@ if(process.argv[2]==="--admit"||process.argv[2]==="--recover"){
   assert.equal(posts,1,"recovery must not redispatch");
   assert.equal(gets,1,"recovery must retrieve historical response exactly once");
   console.log("GREEN DURABLE_CONFIRMED_EFFECT_RECOVERY_PHYSICAL: real provider POST, transactional Mongo confirmation, SIGKILL, fresh-process GET; one POST");
-  console.log("LIMITATION: execution admission is fixture-seeded, recovery ownership proof not required, and no canonical settlement performed.");
+  console.log("LIMITATION: execution admission is fixture-seeded, ownership proof uses test-owned Mongo execution reader, and no canonical settlement performed.");
  }finally{if(worker.exitCode===null)worker.kill("SIGKILL");await new Promise(resolve=>server.close(resolve));}
 }
