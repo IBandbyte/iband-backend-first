@@ -51,3 +51,6 @@ jobs:
       - name: Runtime concurrent read-only recovery single-flight
         if: always()
         run: node scripts/verify-movie-mentor-read-remount-runtime.mjs
+      - name: Runtime gateway recovery callback and failed startup
+        if: always()
+        run: node scripts/verify-movie-mentor-read-recovery-callback-runtime.mjs
