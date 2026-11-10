@@ -65,6 +65,11 @@ if(process.argv[2]==="--worker"){
   const retrieved=await fetch(url+"/v1/responses/isolated-response-1");
   assert.equal(retrieved.status,200);
   assert.deepEqual(await retrieved.json(),{id:"isolated-response-1",operationId:"isolated-operation-1",output:"original-provider-result"});
+  // A caller cannot replace the confirmed response ID with an invented one.
+  const fabricated=await fetch(url+"/v1/responses/fabricated-response-id");
+  assert.equal(fabricated.status,404,"unrecognized response ID must fail closed");
+  assert.deepEqual(await fabricated.json(),{error:"unsupported"});
+  assert.equal(posts,1,"fabricated historical retrieval must not redispatch");
   assert.equal(posts,1,"recovery GET must not create another provider POST");
   assert.equal(gets,1);
   console.log("GREEN INDEPENDENT_PROVIDER_SURVIVES_SIGKILL: original response ID retrieved after worker termination; provider POST count remains one");
