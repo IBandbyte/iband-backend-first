@@ -51,7 +51,7 @@ if(process.argv[2]==="--admit"||process.argv[2]==="--recover"){
     ownershipChecks++;
     const execution=await db.collection("movie_mentor_inference_execution").findOne({executionId:operation.executionId});
     const matched=execution?.phase==="active"&&execution?.ownerId===recoveryAuthority?.ownerId&&execution?.leaseGeneration===recoveryAuthority?.leaseGeneration&&execution?.leaseReference===recoveryAuthority?.leaseReference&&execution?.fencingToken===recoveryAuthority?.fencingToken&&execution?.providerCalls?.some(call=>call.providerCallId===operation.providerCallId);
-    return matched?{authorized:true,currentRecoveryAuthorityVerified:true,transition:"provider-outcome-recovery",executionId:operation.executionId,providerCallId:operation.providerCallId,...proofInput}:{authorized:false,reason:"durable-execution-ownership-mismatch"};
+    return matched?{authorized:true,currentRecoveryAuthorityVerified:true,transition:"provider-outcome-recovery",executionId:operation.executionId,providerCallId:operation.providerCallId,ownerId:execution.ownerId,leaseGeneration:execution.leaseGeneration,leaseReference:execution.leaseReference,fencingToken:execution.fencingToken}:{authorized:false,reason:"durable-execution-ownership-mismatch"};
    };
    let recoveryGets=0;
    const authority=createMovieMentorProviderOutcomeRecoveryAuthority({
@@ -112,7 +112,22 @@ if(process.argv[2]==="--admit"||process.argv[2]==="--recover"){
    const takenOver=await db.collection("movie_mentor_inference_execution").findOne({executionId});
    assert.equal(takenOver.ownerId,"physical-takeover-owner");
    assert.equal((await effectAuthority.readReality(callId)).state,"confirmed");
-   console.log("GREEN DURABLE_POST_IO_OWNERSHIP_REVOKED: Mongo takeover fenced returned historical response bytes");
+   // A superseded worker cannot simply retry after the takeover.
+   const staleRetry=await authority.reconcile({providerCallId:callId,recoveryAuthority:proofInput});
+   assert.equal(staleRetry.recovered,false);
+   assert.equal(staleRetry.recoveryAuthorized,false);
+   assert.equal(staleRetry.reason,"provider-recovery-execution-fenced");
+   assert.equal(recoveryGets,1,"stale retry must not enter historical provider I/O");
+   // Only the new durable owner, with its exact lease generation and fencing
+   // token, may recover the same historical operation after the takeover.
+   const successorProof={ownerId:"physical-takeover-owner",leaseGeneration:2,leaseReference:"physical-takeover-lease",fencingToken:"physical-takeover-fence"};
+   const successor=await authority.reconcile({providerCallId:callId,recoveryAuthority:successorProof});
+   assert.equal(successor.recovered,true);
+   assert.equal(successor.redispatchAuthorized,false);
+   assert.equal(successor.externalEffectId,responseId);
+   assert.equal(recoveryGets,2,"successor must retrieve the same historical response");
+   assert.equal((await db.collection("movie_mentor_inference_execution").findOne({executionId})).ownerId,successorProof.ownerId);
+   console.log("GREEN DURABLE_POST_IO_OWNERSHIP_REVOKED: old owner fenced; exact successor owner recovers same operation");
 
    console.log("GREEN FRESH_PROCESS_DURABLE_CONFIRMED_EFFECT_RECOVERY");
   }
@@ -163,7 +178,7 @@ if(process.argv[2]==="--admit"||process.argv[2]==="--recover"){
   await Promise.race([done,new Promise((_,reject)=>setTimeout(()=>reject(Error("fresh recovery timeout "+out+" "+err)),30000))]);
   assert.match(out,/GREEN FRESH_PROCESS_DURABLE_CONFIRMED_EFFECT_RECOVERY/);
   assert.equal(posts,1,"recovery must not redispatch");
-  assert.equal(gets,2,"one successful retrieval and one takeover-fenced retrieval; no redispatch");
+  assert.equal(gets,3,"original retrieval, takeover-fenced retrieval and successor retrieval; no redispatch");
   console.log("GREEN DURABLE_CONFIRMED_EFFECT_RECOVERY_PHYSICAL: real provider POST, transactional Mongo confirmation, SIGKILL, fresh-process GET and post-I/O Mongo takeover denial; one POST");
   console.log("LIMITATION: execution admission is fixture-seeded, ownership proof uses test-owned Mongo execution reader, and no canonical settlement performed.");
  }finally{if(worker.exitCode===null)worker.kill("SIGKILL");await new Promise(resolve=>server.close(resolve));}
