@@ -25,3 +25,5 @@ jobs:
         run: node scripts/verify-movie-mentor-creator-state-recovery-http-contract.mjs
       - name: Signed credential and durable read composition contract
         run: node scripts/verify-movie-mentor-creator-state-recovery-production-composition.mjs
+      - name: Production Express recovery and owned-projects path wiring
+        run: node scripts/verify-movie-mentor-server-read-recovery-wiring.mjs
