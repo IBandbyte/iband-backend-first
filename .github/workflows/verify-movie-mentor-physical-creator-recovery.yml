@@ -44,3 +44,6 @@ jobs:
           exit 1
       - name: Physical signed HTTP and durable Mongo creator recovery court
         run: node scripts/verify-movie-mentor-physical-creator-recovery.mjs
+      - name: Physical signed Mongo remount integration contract
+        if: always()
+        run: node scripts/verify-movie-mentor-physical-remount-integration-contract.mjs
