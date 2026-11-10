@@ -74,6 +74,10 @@ jobs:
       - name: Verify signed HTTP-origin provider SIGKILL and fresh-process UNKNOWN denial
         run: node scripts/verify-movie-mentor-http-origin-interruption-physical.mjs
       - name: Verify fresh-worker durable UNKNOWN fail-closed baseline
+        env:
+          MOVIE_MENTOR_ISOLATED_MONGO_URI: mongodb://127.0.0.1:27017/movie_mentor_interruption_baseline?replicaSet=rs0&directConnection=true
         run: node scripts/verify-movie-mentor-provider-durable-restart-unknown.mjs
       - name: Verify real provider socket SIGKILL and fresh-worker UNKNOWN denial
+        env:
+          MOVIE_MENTOR_ISOLATED_MONGO_URI: mongodb://127.0.0.1:27017/movie_mentor_socket_baseline?replicaSet=rs0&directConnection=true
         run: node scripts/verify-movie-mentor-physical-socket-interruption-baseline.mjs
