@@ -103,7 +103,7 @@ export async function runMovieMentorPhysicalCreatorRecoveryCourt() {
     }
     const server = createServer(async (req, res) => {
       try {
-        const match = /^\\/api\\/movie-mentor\\/state\\/recovery\\/([^/]+)$/.exec(req.url || "");
+        const match = /^\/api\/movie-mentor\/state\/recovery\/([^/]+)$/.exec(req.url || "");
         const result = await composition.handle({
           method: req.method,
           params: { projectId: match ? decodeURIComponent(match[1]) : "" },
