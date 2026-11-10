@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { runInNewContext } from "node:vm";
 import { generateKeyPairSync, createSign } from "node:crypto";
 import { createServer } from "node:http";
 import mongoose from "mongoose";
@@ -142,6 +144,57 @@ export async function runMovieMentorPhysicalCreatorRecoveryCourt() {
       console.log("GREEN PHYSICAL HTTP: signed RS256 owner GET, foreign/forged denial, POST denial and immutable Mongo");
     } finally {
       await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    }
+    // Physical remount: actual server mount function + genuine RS256 authentication,
+    // durable ownership and Mongo state, isolated Express loopback only.
+    const serverSource=readFileSync(new URL("../server.js",import.meta.url),"utf8");
+    const mountStart=serverSource.indexOf("let movieMentorReadOnlyRecoveryIngressMounted=false;");
+    const mountEnd=serverSource.indexOf("await mountMovieMentorNativeProjectCreationIngress();",mountStart);
+    assert.ok(mountStart>=0&&mountEnd>mountStart,"RED: actual server mount source required");
+    const remountApp=express();
+    const remountContext={
+      mongoose,app:remountApp,console:{log:()=>{}},
+      createMovieMentorProductionAuthenticationComposition:()=>authentication,
+      authenticationCompositionProven:()=>true,
+      movieMentorProjectOwnershipAuthority:createMovieMentorProjectOwnershipAuthority(),
+      ownershipAuthorityProven:()=>true,
+      createMovieMentorCreatorStateAtomicCompositionFromMongoose:()=>({atomicCreatorStateReadiness:{}}),
+      assertMovieMentorCreatorGatewayAtomicMountReadiness:async()=>{},
+      createMovieMentorCreatorStateRecoveryProductionComposition,
+      createMovieMentorCreatorStateReadExpressRouter,
+      readAuthoritativeTurnSource,
+    };
+    runInNewContext(serverSource.slice(mountStart,mountEnd)+"\\nthis.mountRead=mountMovieMentorReadOnlyRecoveryIngress;",remountContext);
+    const remountServer=createServer(remountApp);
+    await new Promise(resolve=>remountServer.listen(0,"127.0.0.1",resolve));
+    try{
+      const remountBase="http://127.0.0.1:"+remountServer.address().port+"/api/movie-mentor";
+      const remountGet=async(path,token)=>{
+        const response=await fetch(remountBase+path,{headers:token?{authorization:"Bearer "+token}:{}});
+        return {status:response.status,body:await response.json()};
+      };
+      const beforeMount=await remountGet("/state/recovery/"+projectId,signJwt("physical-owner"));
+      assert.equal(beforeMount.status,404,"RED: physical HTTP route must not exist before server mount");
+      const [mountedA,mountedB]=await Promise.all([remountContext.mountRead(),remountContext.mountRead()]);
+      assert.equal(mountedA.mounted,true);
+      assert.equal(mountedB.mounted,true);
+      const ownerAfter=await remountGet("/state/recovery/"+projectId,signJwt("physical-owner"));
+      assert.equal(ownerAfter.status,200,"RED: actual server remount must recover signed owner over HTTP");
+      assert.equal(ownerAfter.body.state.projectId,projectId);
+      const foreignAfter=await remountGet("/state/recovery/"+projectId,signJwt("physical-foreigner"));
+      assert.equal(foreignAfter.status,403,"RED: actual server remount must deny foreign owner");
+      const {privateKey:remountForgedKey}=generateKeyPairSync("rsa",{modulusLength:2048});
+      const forgedAfter=await remountGet("/state/recovery/"+projectId,signJwt("physical-owner",remountForgedKey));
+      assert.equal(forgedAfter.status,401,"RED: actual server remount must deny forged signature");
+      const discoveryAfter=await remountGet("/projects/owned",signJwt("physical-owner"));
+      assert.equal(discoveryAfter.status,200,"RED: actual server remount must recover Mongo owner discovery");
+      assert.deepEqual(discoveryAfter.body.projects,[{projectId}]);
+      await remountContext.mountRead();
+      assert.deepEqual(await ownership.findOne({projectId}),ownershipBefore);
+      assert.deepEqual(await states.findOne({projectId}),before);
+      console.log("GREEN PHYSICAL SERVER REMOUNT: actual mount function, signed RS256 Express GET, real Mongo ownership, foreign/forged denial, immutable records");
+    }finally{
+      await new Promise((resolve,reject)=>remountServer.close(error=>error?reject(error):resolve()));
     }
     // Physical discovery examination: real Mongo owner filtering and overflow through Express.
     const extra = Array.from({length:100},(_,i)=>({
