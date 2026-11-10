@@ -69,6 +69,43 @@ if(process.argv[2]==="--admit"||process.argv[2]==="--recover"){
     const matched=execution?.phase==="active"&&execution?.ownerId===recoveryAuthority?.ownerId&&execution?.leaseGeneration===recoveryAuthority?.leaseGeneration&&execution?.leaseReference===recoveryAuthority?.leaseReference&&execution?.fencingToken===recoveryAuthority?.fencingToken&&execution?.providerCalls?.some(call=>call.providerCallId===operation.providerCallId);
     return matched?{authorized:true,currentRecoveryAuthorityVerified:true,transition:"provider-outcome-recovery",executionId:operation.executionId,providerCallId:operation.providerCallId,ownerId:execution.ownerId,leaseGeneration:execution.leaseGeneration,leaseReference:execution.leaseReference,fencingToken:execution.fencingToken}:{authorized:false,reason:"durable-execution-ownership-mismatch"};
    };
+   // Exercise the production composition's recovery-fence shape with real
+   // opaque lease evidence, not merely a test-owned field comparison.
+   let productionFenceGets=0;
+   const productionFenceAuthority=createMovieMentorProviderOutcomeRecoveryAuthority({
+    readProviderOperation:id=>operationStore.readOperation(id),
+    readProviderEffectReality:id=>effectAuthority.readReality(id),
+    resolveCurrentTarget:()=>target,
+    requireRecoveryAuthority:true,
+    assertCurrentRecoveryAuthority:async({operation,recoveryAuthority})=>{
+     const current=await leaseAuthority.assertFence(recoveryAuthority);
+     if(current?.authorized!==true||current?.executionAuthorized!==true)
+      return {authorized:false,currentRecoveryAuthorityVerified:false,reason:current?.reason||"execution-recovery-fenced"};
+     if(current.executionId!==operation?.executionId)
+      return {authorized:false,currentRecoveryAuthorityVerified:false,reason:"execution-recovery-binding-conflict"};
+     return {authorized:true,currentRecoveryAuthorityVerified:true,transition:"provider-outcome-recovery",
+      executionId:current.executionId,providerCallId:operation.providerCallId,ownerId:current.ownerId,
+      leaseGeneration:current.leaseGeneration,leaseReference:current.leaseReference,fencingToken:current.fencingToken};
+    },
+    recoverProviderResponse:async request=>{
+     productionFenceGets++;
+     const reply=await fetch(base+"/v1/responses/"+encodeURIComponent(request.externalEffectId));
+     assert.equal(reply.status,200);
+     const payload=await reply.json();
+     return {provider:"openai",externalEffectId:payload.id,providerOperationId:callId,
+      response:{id:payload.id,status:"completed",output_text:payload.output}};
+    }
+   });
+   const copiedRecovery=await productionFenceAuthority.reconcile({providerCallId:callId,recoveryAuthority:forgedProof});
+   assert.equal(copiedRecovery.recovered,false);
+   assert.equal(copiedRecovery.recoveryAuthorized,false);
+   assert.equal(productionFenceGets,0,"copied proof must not reach historical provider GET");
+   const issuedRecovery=await productionFenceAuthority.reconcile({providerCallId:callId,recoveryAuthority:issuedProof});
+   assert.equal(issuedRecovery.recovered,true);
+   assert.equal(issuedRecovery.redispatchAuthorized,false);
+   assert.equal(issuedRecovery.externalEffectId,responseId);
+   assert.equal(productionFenceGets,1);
+   console.log("GREEN PRODUCTION_ISSUED_RECOVERY_FENCE: copied proof denied, issued proof recovered historical response without POST");
    let recoveryGets=0;
    const authority=createMovieMentorProviderOutcomeRecoveryAuthority({
     readProviderOperation:id=>operationStore.readOperation(id),
@@ -270,7 +307,7 @@ if(process.argv[2]==="--admit"||process.argv[2]==="--recover"){
   await Promise.race([done,new Promise((_,reject)=>setTimeout(()=>reject(Error("fresh recovery timeout "+out+" "+err)),30000))]);
   assert.match(out,/GREEN FRESH_PROCESS_DURABLE_CONFIRMED_EFFECT_RECOVERY/);
   assert.equal(posts,1,"recovery must not redispatch");
-  assert.equal(gets,6,"original, takeover-fenced, successor, wrong-operation, wrong-response and conflict retrievals; no redispatch");
+  assert.equal(gets,7,"issued-proof, original, takeover-fenced, successor, wrong-operation, wrong-response and conflict retrievals; no redispatch");
   console.log("GREEN DURABLE_CONFIRMED_EFFECT_RECOVERY_PHYSICAL: real provider POST, transactional Mongo confirmation, SIGKILL, fresh-process GET and post-I/O Mongo takeover and effect-conflict denial; one POST");
   console.log("LIMITATION: execution admission is fixture-seeded, ownership proof uses test-owned Mongo execution reader, and no canonical settlement performed.");
  }finally{if(worker.exitCode===null)worker.kill("SIGKILL");await new Promise(resolve=>server.close(resolve));}
