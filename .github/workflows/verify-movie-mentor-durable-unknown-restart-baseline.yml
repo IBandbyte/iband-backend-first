@@ -34,3 +34,5 @@ jobs:
           exit 1
       - name: Verify fresh-worker durable UNKNOWN fail-closed baseline
         run: node scripts/verify-movie-mentor-provider-durable-restart-unknown.mjs
+      - name: Verify real provider socket SIGKILL and fresh-worker UNKNOWN denial
+        run: node scripts/verify-movie-mentor-physical-socket-interruption-baseline.mjs
