@@ -32,5 +32,24 @@ jobs:
           done
           echo "Isolated Mongo replica set did not become PRIMARY" >&2
           exit 1
+      - name: Bootstrap required physical execution and settlement indexes in disposable Mongo
+        run: |
+          node --input-type=module <<'EOF'
+          import mongoose from "mongoose";
+          import {MOVIE_MENTOR_INFERENCE_EXECUTION_REQUIRED_UNIQUE_INDEXES as execution} from "./ai/MovieMentorInferenceExecutionPhysicalAuthority.js";
+          import {MOVIE_MENTOR_INFERENCE_SETTLEMENT_REQUIRED_UNIQUE_INDEXES as settlement} from "./ai/MovieMentorInferenceSettlementPhysicalAuthority.js";
+          const uri=process.env.MOVIE_MENTOR_ISOLATED_MONGO_URI;
+          if(!/^mongodb:\/\/127\.0\.0\.1:27017\/movie_mentor_positive_http_settlement\?/.test(uri||""))throw new Error("Refusing non-disposable Mongo target");
+          await mongoose.connect(uri,{autoIndex:false});
+          try {
+            const requirements=new Map([...execution,...settlement].map(r=>[r.collection+":"+JSON.stringify(r.key),r]));
+            for(const r of requirements.values())await mongoose.connection.db.collection(r.collection).createIndex(r.key,{unique:true});
+            for(const r of requirements.values()){
+              const indexes=await mongoose.connection.db.collection(r.collection).indexes();
+              if(!indexes.some(i=>i.unique===true&&JSON.stringify(i.key)===JSON.stringify(r.key)))throw new Error("Missing physical unique index "+r.collection+" "+JSON.stringify(r.key));
+            }
+            console.log("GREEN isolated physical index bootstrap: "+requirements.size+" required unique indexes verified");
+          }finally{await mongoose.disconnect();}
+          EOF
       - name: Physical signed HTTP execution settlement and fresh-process replay
         run: node scripts/verify-movie-mentor-positive-http-settlement-physical.mjs
