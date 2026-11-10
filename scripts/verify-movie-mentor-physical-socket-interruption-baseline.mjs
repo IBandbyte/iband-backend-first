@@ -7,7 +7,7 @@ import {createMovieMentorProviderOperationMongoStore} from "../ai/MovieMentorPro
 import {describeCurrentMovieMentorProviderTarget} from "../ai/MovieMentorProviderTargetAuthority.js";
 
 const uri=process.env.MOVIE_MENTOR_ISOLATED_MONGO_URI||"";
-assert.match(uri,/^mongodb:\/\/127\.0\.0\.1:27017\/movie_mentor_interruption_recovery\?replicaSet=rs0&directConnection=true$/,"refuse non-disposable Mongo");
+assert.match(uri,/^mongodb:\/\/127\.0\.0\.1:27017\/movie_mentor_socket_baseline\?replicaSet=rs0&directConnection=true$/,"refuse non-disposable Mongo");
 process.env.MONGO_URI=uri;
 const id="restart-unknown-"+process.pid+"-"+Date.now();
 const executionId=id+"-execution";
