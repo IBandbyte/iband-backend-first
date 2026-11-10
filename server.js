@@ -79,7 +79,10 @@ function mountMovieMentorReadOnlyRecoveryIngress(){
   }
   })();
   const pending=movieMentorReadOnlyRecoveryIngressMountPromise;
-  void pending.finally(()=>{if(movieMentorReadOnlyRecoveryIngressMountPromise===pending)movieMentorReadOnlyRecoveryIngressMountPromise=null;});
+  void pending.then(
+    ()=>{if(movieMentorReadOnlyRecoveryIngressMountPromise===pending)movieMentorReadOnlyRecoveryIngressMountPromise=null;},
+    ()=>{if(movieMentorReadOnlyRecoveryIngressMountPromise===pending)movieMentorReadOnlyRecoveryIngressMountPromise=null;}
+  );
   return pending;
 }
 await mountMovieMentorNativeProjectCreationIngress();const creatorMongoStartup=await prepareMovieMentorCreatorMongoConnection();if(!creatorMongoStartup.ready)console.log(`[mount:closed] /api/movie-mentor (${creatorMongoStartup.reason})`);const initialCreatorGatewayMount=await mountMovieMentorCreatorGateway();await mountMovieMentorReadOnlyRecoveryIngress();registerMovieMentorCreatorGatewayRecovery({initialMount:initialCreatorGatewayMount,prepare:prepareMovieMentorCreatorMongoConnection,mount:mountMovieMentorCreatorGateway,onResult:async result=>{console.log(`[mount:${result.mounted?"ok":"closed"}] /api/movie-mentor (recovery: ${result.reason}; attempt ${result.attempts})`);if(result.mounted===true)await mountMovieMentorReadOnlyRecoveryIngress();}});const recoveryMount=await assembleMovieMentorJourneyRecoveryProductionBoot({app});console.log(`[mount:${recoveryMount.mounted?"ok":"closed"}] ${recoveryMount.basePath} (${recoveryMount.reason})`);const PORT=process.env.PORT||3000;app.listen(PORT,()=>console.log(`iBand backend listening on ${PORT}`));
