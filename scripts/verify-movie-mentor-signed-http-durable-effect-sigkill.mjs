@@ -123,6 +123,33 @@ try{
  assert.ok(after,"HTTP-origin execution must survive worker SIGKILL");
  assert.equal(after.phase,"active","worker crash must not be mistaken for canonical settlement");
  assert.equal(providerRequests.filter(r=>r.method==="POST"&&r.path==="/v1/responses").length,postsBefore,"SIGKILL must not redispatch provider");
+ // A second Node process must independently recover the persisted facts, not
+ // inherit the supervisor's Mongoose connection or any in-memory authority.
+ const inspectorSource=[
+  'import mongoose from "mongoose";',
+  'const uri=process.env.MOVIE_MENTOR_ISOLATED_MONGO_URI;',
+  'if(!uri?.startsWith("mongodb://127.0.0.1:27017/movie_mentor_positive_http_settlement?"))process.exit(31);',
+  'await mongoose.connect(uri,{serverSelectionTimeoutMS:10000});',
+  'try{',
+  'const db=mongoose.connection.db;',
+  'const execution=await db.collection("movie_mentor_inference_execution").findOne({executionId:process.env.MOVIE_MENTOR_INSPECT_EXECUTION_ID});',
+  'const effect=await db.collection("movie_mentor_provider_effect_reality").findOne({providerCallId:process.env.MOVIE_MENTOR_INSPECT_CALL_ID});',
+  'const operation=await db.collection("movie_mentor_provider_operation").findOne({providerCallId:process.env.MOVIE_MENTOR_INSPECT_CALL_ID});',
+  'if(!execution||execution.phase!=="active"||!effect||effect.state!=="confirmed"||effect.executionId!==execution.executionId||!operation||operation.executionId!==execution.executionId)process.exitCode=32;',
+  'else console.log("GREEN FRESH_PROCESS_DURABLE_RECOVERY_INPUTS: execution active; confirmed effect and bound provider operation independently readable");',
+  '}finally{await mongoose.disconnect();}'
+ ].join("\\n");
+ const inspector=spawn(process.execPath,["--input-type=module","-e",inspectorSource],{
+  env:{...process.env,MOVIE_MENTOR_INSPECT_EXECUTION_ID:execution.executionId,MOVIE_MENTOR_INSPECT_CALL_ID:effect.providerCallId},
+  stdio:["ignore","pipe","pipe"]
+ });
+ let inspectorOut="",inspectorErr="";
+ inspector.stdout.on("data",chunk=>{inspectorOut+=chunk.toString();process.stdout.write(chunk);});
+ inspector.stderr.on("data",chunk=>{inspectorErr+=chunk.toString();process.stderr.write(chunk);});
+ const inspectorExit=await new Promise(resolve=>inspector.on("exit",(code,signal)=>resolve({code,signal})));
+ assert.equal(inspectorExit.code,0,"fresh process failed durable recovery-input inspection: "+inspectorErr+" "+inspectorOut);
+ assert.match(inspectorOut,/GREEN FRESH_PROCESS_DURABLE_RECOVERY_INPUTS/);
+ assert.equal(providerRequests.filter(r=>r.method==="POST"&&r.path==="/v1/responses").length,postsBefore,"fresh inspector must not redispatch provider");
  console.log("GREEN SIGNED_HTTP_DURABLE_EFFECT_SIGKILL_GATE: HTTP-origin active execution and durable provider effect observed in Mongo before SIGKILL; independent provider and durable evidence survived");
  console.log("LIMITATION: no fresh-worker recovery, canonical finalization or exactly-once settlement certified.");
 }finally{
