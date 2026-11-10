@@ -5,6 +5,8 @@ import mongoose from "mongoose";
 import {createMovieMentorProviderOperationMongoStore} from "../ai/MovieMentorProviderOperationMongoStore.js";
 import {createMovieMentorProviderOutcomeRecoveryAuthority} from "../ai/MovieMentorProviderOutcomeRecoveryAuthority.js";
 import {describeCurrentMovieMentorProviderTarget} from "../ai/MovieMentorProviderTargetAuthority.js";
+import {createMovieMentorInferenceSettlementMongoStore} from "../ai/MovieMentorInferenceSettlementMongoStore.js";
+import {createMovieMentorInferenceSettlementPhysicalAuthority} from "../ai/MovieMentorInferenceSettlementPhysicalAuthority.js";
 
 const uri=process.env.MOVIE_MENTOR_ISOLATED_MONGO_URI||"";
 assert.equal(uri,"mongodb://127.0.0.1:27017/movie_mentor_interruption_recovery?replicaSet=rs0&directConnection=true","refuse non-disposable Mongo");
@@ -68,6 +70,26 @@ try{
    assert.match(fresh.stdout,/GREEN fresh-process production-origin provider UNKNOWN denial/);
    const after=await Promise.all(names.map(async name=>[name,await db.collection(name).find({}).project({_id:0}).toArray()]));
    assert.deepEqual(after,before,"fresh recovery must not mutate execution, provider, spend or canonical ledgers");
+   // A physically interrupted execution is not finalized and has no canonical result.
+   // Direct settlement must fail closed even if a caller tries to skip provider recovery.
+   const settlement=createMovieMentorInferenceSettlementPhysicalAuthority({
+    store:createMovieMentorInferenceSettlementMongoStore(),
+    readIndexes:collection=>db.collection(collection).indexes()
+   });
+   let denied=false;
+   try{
+    const premature=await settlement.settleCanonicalResult({executionId:execution.executionId});
+    assert.notEqual(premature?.settled,true,"interrupted execution must not be settled");
+    denied=true;
+   }catch(error){
+    assert.ok(error?.code||error?.message,"denial must have an observable reason");
+    denied=true;
+   }
+   assert.equal(denied,true);
+   const afterDenied=await Promise.all(names.map(async name=>[name,await db.collection(name).find({}).project({_id:0}).toArray()]));
+   assert.deepEqual(afterDenied,before,"premature settlement denial must not mutate durable ledgers");
+   console.log("GREEN production-origin interrupted execution: premature canonical settlement denied; durable ledgers unchanged");
+
    console.log("GREEN physical HTTP-origin interruption: real signed ingress, production-composed admission, provider POST, SIGKILL, fresh-process UNKNOWN denial, unchanged durable ledgers");
    console.log("LIMITATION: local synthetic JWT signing and local provider; full resumed settlement after interrupted UNKNOWN is not certified.");
   }finally{if(child.exitCode===null)child.kill("SIGKILL");}
