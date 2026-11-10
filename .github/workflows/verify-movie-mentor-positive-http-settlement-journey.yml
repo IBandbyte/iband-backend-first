@@ -75,3 +75,5 @@ jobs:
         run: node scripts/verify-movie-mentor-positive-http-settlement-physical.mjs
       - name: Physical signed HTTP execution against independent supervisor provider
         run: node scripts/verify-movie-mentor-independent-provider-signed-http-positive.mjs
+      - name: Physical signed HTTP durable effect SIGKILL gate
+        run: node scripts/verify-movie-mentor-signed-http-durable-effect-sigkill.mjs
