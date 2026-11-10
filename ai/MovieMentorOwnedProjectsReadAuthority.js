@@ -13,8 +13,19 @@ async function readMovieMentorOwnedProjects({ principal } = {}) {
   if (mongoose.connection.readyState !== 1) {
     throw new Error("Durable project ownership database is unavailable.");
   }
-  const records = await mongoose.connection
-    .collection(MOVIE_MENTOR_PROJECT_OWNERSHIP_COLLECTION)
+  const collection = mongoose.connection.collection(MOVIE_MENTOR_PROJECT_OWNERSHIP_COLLECTION);
+  const indexes = await collection.indexes();
+  const uniqueProjectIndex = indexes.some(index =>
+    index.unique === true &&
+    index.partialFilterExpression == null &&
+    index.sparse !== true &&
+    Object.keys(index.key || {}).length === 1 &&
+    index.key.projectId === 1
+  );
+  if (!uniqueProjectIndex) {
+    throw new Error("Durable ownership project identity unique index is unavailable.");
+  }
+  const records = await collection
     .find({ ownerPrincipalId, status: "active" }, { projection: { _id: 0, projectId: 1, ownerPrincipalId: 1, ownershipRevision: 1, ownershipReference: 1, domain: 1, schema: 1, establishmentAuthorityId: 1, establishmentSource: 1, establishedAt: 1, status: 1 } })
     .sort({ projectId: 1 })
     .limit(101)
