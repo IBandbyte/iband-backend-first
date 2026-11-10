@@ -3,6 +3,8 @@ import {spawn,spawnSync} from "node:child_process";
 import {once} from "node:events";
 import mongoose from "mongoose";
 import {createMovieMentorProviderOperationMongoStore} from "../ai/MovieMentorProviderOperationMongoStore.js";
+import {createMovieMentorProviderEffectMongoStore} from "../ai/MovieMentorProviderEffectMongoStore.js";
+import {createMovieMentorProviderEffectAuthority} from "../ai/MovieMentorProviderEffectAuthority.js";
 import {createMovieMentorProviderOutcomeRecoveryAuthority} from "../ai/MovieMentorProviderOutcomeRecoveryAuthority.js";
 import {describeCurrentMovieMentorProviderTarget} from "../ai/MovieMentorProviderTargetAuthority.js";
 import {createMovieMentorInferenceSettlementMongoStore} from "../ai/MovieMentorInferenceSettlementMongoStore.js";
@@ -21,6 +23,23 @@ try{
   const store=createMovieMentorProviderOperationMongoStore();
   const operation=await store.readOperation(id);
   assert.equal(operation?.providerCallId,id);
+  const effectAuthority=createMovieMentorProviderEffectAuthority({
+   store:createMovieMentorProviderEffectMongoStore(),
+   requireEvidenceOperationBinding:true
+  });
+  const beforeEffect=await effectAuthority.readReality(id);
+  assert.equal(beforeEffect?.state,"unknown","interrupted provider effect must still be UNKNOWN");
+  await assert.rejects(
+   effectAuthority.contributeEvidence({
+    providerCallId:id,externalEffectId:"fabricated-post-crash-response-id",
+    provider:"openai",source:"provider-response"
+   }),
+   error=>error?.code==="MOVIE_MENTOR_PROVIDER_EFFECT_OPERATION_BINDING_REQUIRED",
+   "unbound fabricated evidence must be rejected by production effect authority"
+  );
+  const afterEffect=await effectAuthority.readReality(id);
+  assert.deepEqual(afterEffect,beforeEffect,"rejected evidence must not alter durable effect reality");
+  console.log("GREEN fresh-process unbound fabricated effect evidence denied; Mongo effect unchanged");
   let providerRecoveryCalls=0;
   const authority=createMovieMentorProviderOutcomeRecoveryAuthority({
    readProviderOperation:key=>store.readOperation(key),
