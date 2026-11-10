@@ -1,3 +1,4 @@
+import { isMovieMentorProductionAuthenticationOwnerProof } from "./MovieMentorProductionAuthenticationComposition.js";
 import { createMovieMentorCreatorStateReadAuthority } from "./MovieMentorCreatorStateReadAuthority.js";
 import { createMovieMentorCreatorStateRecoveryHttpHandler } from "./MovieMentorCreatorStateRecoveryHttpHandler.js";
 
@@ -6,7 +7,8 @@ function s(value) { return typeof value === "string" ? value.trim() : ""; }
 function createMovieMentorCreatorStateRecoveryProductionComposition({
   authentication, ownershipAuthority, readCreatorState,
 } = {}) {
-  if (authentication?.ready !== true ||
+  if (!isMovieMentorProductionAuthenticationOwnerProof(authentication, authentication?.status) ||
+      authentication?.ready !== true ||
       authentication?.provider !== "clerk" ||
       authentication?.verifierAlgorithm !== "RS256" ||
       authentication?.verifierNetworkMode !== "pinned-public-key" ||
