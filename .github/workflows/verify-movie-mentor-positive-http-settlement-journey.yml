@@ -52,6 +52,13 @@ jobs:
             await providerOperation.createIndex({providerCallId:1},{unique:true});
             const operationIndexes=await providerOperation.indexes();
             if(!operationIndexes.some(i=>i.unique===true&&JSON.stringify(i.key)===JSON.stringify({providerCallId:1})))throw new Error("Missing provider-operation physical unique index");
+            const candidate=mongoose.connection.db.collection("movie_mentor_result_candidate");
+            await candidate.createIndex({candidateReference:1},{unique:true});
+            const candidateIndexes=await candidate.indexes();
+            for(const key of [{executionId:1},{candidateReference:1}]){
+              if(!candidateIndexes.some(i=>i.unique===true&&JSON.stringify(i.key)===JSON.stringify(key)))throw new Error("Missing result-candidate physical unique index "+JSON.stringify(key));
+            }
+            console.log("GREEN isolated result-candidate physical unique indexes verified");
             console.log("GREEN isolated provider-operation physical unique index verified");
             console.log("GREEN isolated physical index bootstrap: "+requirements.size+" required unique indexes verified");
           }finally{await mongoose.disconnect();}
