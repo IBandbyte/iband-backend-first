@@ -58,6 +58,14 @@ jobs:
             for(const key of [{executionId:1},{candidateReference:1}]){
               if(!candidateIndexes.some(i=>i.unique===true&&JSON.stringify(i.key)===JSON.stringify(key)))throw new Error("Missing result-candidate physical unique index "+JSON.stringify(key));
             }
+            const canonical=mongoose.connection.db.collection("movie_mentor_canonical_result");
+            const canonicalRequired=[{resultReference:1},{candidateReference:1},{executionId:1},{principalId:1,projectId:1,creatorTurnId:1},{reservationId:1}];
+            for(const key of canonicalRequired)await canonical.createIndex(key,{unique:true});
+            const canonicalIndexes=await canonical.indexes();
+            for(const key of canonicalRequired){
+              if(!canonicalIndexes.some(i=>i.unique===true&&JSON.stringify(i.key)===JSON.stringify(key)))throw new Error("Missing canonical-result physical unique index "+JSON.stringify(key));
+            }
+            console.log("GREEN isolated canonical-result physical unique indexes verified");
             console.log("GREEN isolated result-candidate physical unique indexes verified");
             console.log("GREEN isolated provider-operation physical unique index verified");
             console.log("GREEN isolated physical index bootstrap: "+requirements.size+" required unique indexes verified");
