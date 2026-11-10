@@ -190,6 +190,19 @@ export async function runMovieMentorPhysicalCreatorRecoveryCourt() {
       assert.equal(await ownership.countDocuments({ownerPrincipalId:"physical-owner"}),101);
       assert.deepEqual(await ownership.findOne({projectId}),ownershipBefore,"RED: discovery changed durable ownership");
       assert.deepEqual(await states.findOne({projectId}),before,"RED: discovery changed creator state");
+      // Negative physical index court: remove unique index on isolated replica-set only.
+      const projectIndex=(await ownership.indexes()).find(index=>
+        index.unique===true && index.key?.projectId===1 && Object.keys(index.key).length===1);
+      assert.ok(projectIndex,"RED: positive discovery must have physical unique projectId index");
+      await ownership.dropIndex(projectIndex.name);
+      const missingIndex=await get(signJwt("physical-owner"));
+      assert.equal(missingIndex.status,503,"RED: signed owner discovery must fail closed without physical unique projectId index");
+      assert.equal(missingIndex.body.code,"PROJECT_DISCOVERY_UNAVAILABLE","RED: missing index must not disclose owner records");
+      const missingIndexForeign=await get(signJwt("physical-foreigner"));
+      assert.equal(missingIndexForeign.status,503,"RED: missing index must fail closed even for a foreign signed principal");
+      assert.deepEqual(await ownership.findOne({projectId}),ownershipBefore,"RED: missing-index denial mutated durable ownership");
+      assert.deepEqual(await states.findOne({projectId}),before,"RED: missing-index denial mutated creator state");
+      console.log("GREEN PHYSICAL NEGATIVE INDEX: actual Mongo unique index removed; signed Express discovery denied without leaking records");
       console.log("GREEN PHYSICAL EXPRESS MONGO DISCOVERY: signed owner/foreign/forged JWT, 100 identities, 101 overflow denial, immutable records");
     } finally {
       await new Promise((resolve,reject)=>expressServer.close(error=>error?reject(error):resolve()));
