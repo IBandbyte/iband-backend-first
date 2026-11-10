@@ -149,6 +149,27 @@ if(process.argv[2]==="--admit"||process.argv[2]==="--recover"){
    assert.equal(wrongOperation.reason,"provider-recovery-operation-binding-conflict");
    assert.equal((await effectAuthority.readReality(callId)).state,"confirmed","rejected provider response must not change durable effect evidence");
    console.log("GREEN DURABLE_WRONG_OPERATION_RESPONSE_DENIED: HTTP 200 historical response cannot cross operation identity");
+   // A successful HTTP retrieval with a substituted response ID cannot be
+   // accepted merely because its operation identity matches.
+   const wrongResponseIdAuthority=createMovieMentorProviderOutcomeRecoveryAuthority({
+    readProviderOperation:id=>operationStore.readOperation(id),
+    readProviderEffectReality:id=>effectAuthority.readReality(id),
+    resolveCurrentTarget:()=>target,
+    requireRecoveryAuthority:true,
+    assertCurrentRecoveryAuthority:verifyCurrentOwnership,
+    recoverProviderResponse:async request=>{
+     const reply=await fetch(base+"/v1/responses/"+encodeURIComponent(request.externalEffectId));
+     assert.equal(reply.status,200);
+     const historical=await reply.json();
+     return {provider:"openai",externalEffectId:historical.id,providerOperationId:callId,response:{id:"forged-different-response-id",status:"completed",output_text:historical.output}};
+    }
+   });
+   const wrongResponse=await wrongResponseIdAuthority.reconcile({providerCallId:callId,recoveryAuthority:successorProof});
+   assert.equal(wrongResponse.recovered,false);
+   assert.equal(wrongResponse.redispatchAuthorized,false);
+   assert.equal(wrongResponse.reason,"provider-recovery-response-id-conflict");
+   assert.equal((await effectAuthority.readReality(callId)).state,"confirmed");
+   console.log("GREEN DURABLE_WRONG_RESPONSE_ID_DENIED: historical HTTP 200 cannot substitute another response identity");
    // Provider-effect reality can change while GET is in flight. A second
    // independently bound response ID must produce a durable conflict, never
    // authorize either historical response as the canonical result.
@@ -233,7 +254,7 @@ if(process.argv[2]==="--admit"||process.argv[2]==="--recover"){
   await Promise.race([done,new Promise((_,reject)=>setTimeout(()=>reject(Error("fresh recovery timeout "+out+" "+err)),30000))]);
   assert.match(out,/GREEN FRESH_PROCESS_DURABLE_CONFIRMED_EFFECT_RECOVERY/);
   assert.equal(posts,1,"recovery must not redispatch");
-  assert.equal(gets,5,"original, takeover-fenced, successor, wrong-operation and conflict retrievals; no redispatch");
+  assert.equal(gets,6,"original, takeover-fenced, successor, wrong-operation, wrong-response and conflict retrievals; no redispatch");
   console.log("GREEN DURABLE_CONFIRMED_EFFECT_RECOVERY_PHYSICAL: real provider POST, transactional Mongo confirmation, SIGKILL, fresh-process GET and post-I/O Mongo takeover and effect-conflict denial; one POST");
   console.log("LIMITATION: execution admission is fixture-seeded, ownership proof uses test-owned Mongo execution reader, and no canonical settlement performed.");
  }finally{if(worker.exitCode===null)worker.kill("SIGKILL");await new Promise(resolve=>server.close(resolve));}
