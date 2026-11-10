@@ -37,6 +37,8 @@ jobs:
           exit 1
       - name: Verify independent provider survives worker SIGKILL and supports historical GET without redispatch
         run: node scripts/verify-movie-mentor-independent-provider-survival.mjs
+      - name: Verify physical durable confirmed-effect recovery after worker SIGKILL
+        run: node scripts/verify-movie-mentor-durable-confirmed-recovery-physical.mjs
       - name: Verify confirmed-effect recovery authority and UNKNOWN denial contracts
         run: node scripts/verify-movie-mentor-provider-outcome-recovery-authority.mjs
       - name: Verify historical recovered-result reconstruction without redispatch
@@ -45,5 +47,5 @@ jobs:
         run: node scripts/verify-movie-mentor-real-mongo-settlement-positive-replay.mjs
       - name: Preserve certification boundary
         run: |
-          echo 'These are independent provider transport survival, confirmed-effect recovery, historical-result reconstruction and Mongo settlement baseline courts.'
-          echo 'No combined post-SIGKILL confirmed-effect retrieval or resumed HTTP settlement is certified by this workflow.'
+          echo 'These include a fixture-admitted physical durable confirmed-effect recovery court, independent provider transport, historical reconstruction and Mongo settlement baselines.'
+          echo 'The physical confirmed-effect court does not certify production HTTP admission, recovery ownership proof, or resumed HTTP settlement.'
