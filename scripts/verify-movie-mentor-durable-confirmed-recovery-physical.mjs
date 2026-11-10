@@ -83,6 +83,37 @@ if(process.argv[2]==="--admit"||process.argv[2]==="--recover"){
    assert.equal(result.externalEffectId,responseId);
    assert.equal(recoveryGets,1);
    assert.ok(ownershipChecks>=3,"ownership must be checked before and after provider I/O");
+   // A real Mongo ownership change during historical provider I/O must fence
+   // returned bytes, even when the provider GET itself succeeds.
+   const revokedAuthority=createMovieMentorProviderOutcomeRecoveryAuthority({
+    readProviderOperation:id=>operationStore.readOperation(id),
+    readProviderEffectReality:id=>effectAuthority.readReality(id),
+    resolveCurrentTarget:()=>target,
+    requireRecoveryAuthority:true,
+    assertCurrentRecoveryAuthority:verifyCurrentOwnership,
+    recoverProviderResponse:async request=>{
+     const reply=await fetch(base+"/v1/responses/"+encodeURIComponent(request.externalEffectId));
+     assert.equal(reply.status,200);
+     const historical=await reply.json();
+     assert.equal(historical.id,responseId);
+     const changed=await db.collection("movie_mentor_inference_execution").updateOne(
+      {executionId,ownerId:proofInput.ownerId,leaseReference:proofInput.leaseReference,fencingToken:proofInput.fencingToken},
+      {$set:{ownerId:"physical-takeover-owner",leaseGeneration:2,leaseReference:"physical-takeover-lease",fencingToken:"physical-takeover-fence"}}
+     );
+     assert.equal(changed.modifiedCount,1,"physical ownership takeover must persist before post-I/O fence");
+     return {provider:"openai",externalEffectId:historical.id,providerOperationId:callId,response:{id:historical.id,status:"completed",output_text:historical.output}};
+    }
+   });
+   await assert.rejects(
+    revokedAuthority.reconcile({providerCallId:callId,recoveryAuthority:proofInput}),
+    error=>error?.code==="MOVIE_MENTOR_PROVIDER_RECOVERY_POST_IO_AUTHORITY_REVOKED",
+    "a real Mongo ownership takeover during provider GET must fence recovered bytes"
+   );
+   const takenOver=await db.collection("movie_mentor_inference_execution").findOne({executionId});
+   assert.equal(takenOver.ownerId,"physical-takeover-owner");
+   assert.equal((await effectAuthority.readReality(callId)).state,"confirmed");
+   console.log("GREEN DURABLE_POST_IO_OWNERSHIP_REVOKED: Mongo takeover fenced returned historical response bytes");
+
    console.log("GREEN FRESH_PROCESS_DURABLE_CONFIRMED_EFFECT_RECOVERY");
   }
  }finally{await mongoose.disconnect();}
@@ -132,8 +163,8 @@ if(process.argv[2]==="--admit"||process.argv[2]==="--recover"){
   await Promise.race([done,new Promise((_,reject)=>setTimeout(()=>reject(Error("fresh recovery timeout "+out+" "+err)),30000))]);
   assert.match(out,/GREEN FRESH_PROCESS_DURABLE_CONFIRMED_EFFECT_RECOVERY/);
   assert.equal(posts,1,"recovery must not redispatch");
-  assert.equal(gets,1,"recovery must retrieve historical response exactly once");
-  console.log("GREEN DURABLE_CONFIRMED_EFFECT_RECOVERY_PHYSICAL: real provider POST, transactional Mongo confirmation, SIGKILL, fresh-process GET; one POST");
+  assert.equal(gets,2,"one successful retrieval and one takeover-fenced retrieval; no redispatch");
+  console.log("GREEN DURABLE_CONFIRMED_EFFECT_RECOVERY_PHYSICAL: real provider POST, transactional Mongo confirmation, SIGKILL, fresh-process GET and post-I/O Mongo takeover denial; one POST");
   console.log("LIMITATION: execution admission is fixture-seeded, ownership proof uses test-owned Mongo execution reader, and no canonical settlement performed.");
  }finally{if(worker.exitCode===null)worker.kill("SIGKILL");await new Promise(resolve=>server.close(resolve));}
 }
