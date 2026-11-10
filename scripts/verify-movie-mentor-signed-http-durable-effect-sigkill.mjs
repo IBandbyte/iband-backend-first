@@ -134,11 +134,11 @@ try{
   'const db=mongoose.connection.db;',
   'const execution=await db.collection("movie_mentor_inference_execution").findOne({executionId:process.env.MOVIE_MENTOR_INSPECT_EXECUTION_ID});',
   'const effect=await db.collection("movie_mentor_provider_effect_reality").findOne({providerCallId:process.env.MOVIE_MENTOR_INSPECT_CALL_ID});',
-  'const operation=await db.collection("movie_mentor_provider_operation").findOne({providerCallId:process.env.MOVIE_MENTOR_INSPECT_CALL_ID});',
+  'const operation=await db.collection("movie_mentor_provider_operation_reality").findOne({providerCallId:process.env.MOVIE_MENTOR_INSPECT_CALL_ID});',
   'if(!execution||execution.phase!=="active"||!effect||effect.state!=="confirmed"||effect.executionId!==execution.executionId||!operation||operation.executionId!==execution.executionId)process.exitCode=32;',
   'else console.log("GREEN FRESH_PROCESS_DURABLE_RECOVERY_INPUTS: execution active; confirmed effect and bound provider operation independently readable");',
   '}finally{await mongoose.disconnect();}'
- ].join("\\n");
+ ].join("\n");
  const inspector=spawn(process.execPath,["--input-type=module","-e",inspectorSource],{
   env:{...process.env,MOVIE_MENTOR_INSPECT_EXECUTION_ID:execution.executionId,MOVIE_MENTOR_INSPECT_CALL_ID:effect.providerCallId},
   stdio:["ignore","pipe","pipe"]
