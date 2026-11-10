@@ -85,28 +85,31 @@ const providerRequests=[];
 await new Promise(resolve=>providerServer.listen(0,"127.0.0.1",resolve));
 const base="http://127.0.0.1:"+providerServer.address().port;
 let stdout="",stderr="";
+await mongoose.connect(uri,{serverSelectionTimeoutMS:10000});
+const db=mongoose.connection.db;
+const previousEffectIds=(await db.collection("movie_mentor_provider_effect_reality").find({}).project({_id:1}).toArray()).map(x=>x._id);
 const child=spawn(process.execPath,["scripts/verify-movie-mentor-positive-http-settlement-physical.mjs"],{
  env:{...process.env,MOVIE_MENTOR_INDEPENDENT_PROVIDER_BASE_URL:base},stdio:["ignore","pipe","pipe"]
 });
 child.stdout.on("data",chunk=>{stdout+=chunk.toString();process.stdout.write(chunk);});
 child.stderr.on("data",chunk=>{stderr+=chunk.toString();process.stderr.write(chunk);});
 const watchdog=setTimeout(()=>child.kill("SIGKILL"),90000);
-await mongoose.connect(uri,{serverSelectionTimeoutMS:10000});
 try{
- const db=mongoose.connection.db;
  const deadline=Date.now()+45000;
  let effect=null,execution=null;
  while(Date.now()<deadline){
-  effect=await db.collection("movie_mentor_provider_effect_reality").findOne({$or:[{state:"confirmed"},{effectStatus:"confirmed"},{status:"confirmed"}]});
+  effect=await db.collection("movie_mentor_provider_effect_reality").findOne({_id:{$nin:previousEffectIds},state:"confirmed"});
   if(effect){
    execution=await db.collection("movie_mentor_inference_execution").findOne({executionId:effect.executionId});
-   if(execution)break;
+   if(execution?.phase==="active")break;
+   effect=null;execution=null;
   }
   if(child.exitCode!==null)throw Error("signed HTTP worker exited before durable effect confirmation: "+stdout.slice(-1500)+" "+stderr.slice(-1500));
   await new Promise(resolve=>setTimeout(resolve,20));
  }
  assert.ok(effect,"physical Mongo provider effect must be durably confirmed before SIGKILL");
- assert.ok(execution,"confirmed effect must bind to a durable HTTP-origin execution");
+ assert.ok(execution,"fresh confirmed effect must bind to the current active HTTP-origin execution");
+ assert.ok(Array.isArray(effect.evidence)&&effect.evidence.length>0,"confirmed effect requires durable response evidence");
  assert.equal(execution.phase,"active","kill must occur before finalization");
  const postsBefore=providerRequests.filter(r=>r.method==="POST"&&r.path==="/v1/responses").length;
  assert.ok(postsBefore>=1,"provider must have received a real HTTP POST");
