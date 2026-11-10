@@ -37,6 +37,18 @@ try{
    error=>error?.code==="MOVIE_MENTOR_PROVIDER_EFFECT_OPERATION_BINDING_REQUIRED",
    "unbound fabricated evidence must be rejected by production effect authority"
   );
+  // A real operation object with a forged provider-call identity must also fail.
+  // This guards against accepting an unrelated operation merely because an
+  // evidence submission includes a syntactically valid external response ID.
+  await assert.rejects(
+   effectAuthority.contributeEvidence({
+    providerCallId:id,externalEffectId:"fabricated-cross-operation-response-id",
+    provider:"openai",source:"provider-response",
+    providerOperation:{...operation,providerCallId:"provider-call-forged-other-operation",providerOperationId:"provider-call-forged-other-operation"}
+   }),
+   error=>error?.code==="MOVIE_MENTOR_PROVIDER_EFFECT_OPERATION_BINDING_INVALID",
+   "mismatched provider operation must not authorize evidence"
+  );
   const afterEffect=await effectAuthority.readReality(id);
   assert.deepEqual(afterEffect,beforeEffect,"rejected evidence must not alter durable effect reality");
   console.log("GREEN fresh-process unbound fabricated effect evidence denied; Mongo effect unchanged");
