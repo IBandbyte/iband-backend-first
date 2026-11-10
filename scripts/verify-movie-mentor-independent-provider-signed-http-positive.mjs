@@ -6,7 +6,7 @@ import {spawn} from "node:child_process";
 // executes in a separate process. This is a positive topology court only;
 // SIGKILL/recovery-to-settlement is NOT certified by this verifier.
 const uri=process.env.MOVIE_MENTOR_ISOLATED_MONGO_URI||"";
-assert.match(uri,/^mongodb:\\/\\/127\\.0\\.0\\.1:27017\\/movie_mentor_positive_http_settlement\\?/);
+assert.ok(uri.startsWith("mongodb://127.0.0.1:27017/movie_mentor_positive_http_settlement?"),"refuse non-disposable Mongo target");
 const providerRequests=[];
  const providerServer=http.createServer(async(req,res)=>{
   let body="";for await(const chunk of req)body+=chunk;
