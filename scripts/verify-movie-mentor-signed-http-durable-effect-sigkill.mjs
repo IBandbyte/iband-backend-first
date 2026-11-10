@@ -12,6 +12,11 @@ const providerRequests=[];
  const providerServer=http.createServer(async(req,res)=>{
   let body="";for await(const chunk of req)body+=chunk;
   providerRequests.push({path:req.url,method:req.method,idempotencyKey:req.headers["idempotency-key"]||null});
+  // Hold the second provider response while the first confirmed effect is
+  // inspected in Mongo; this makes the pre-finalization crash window physical.
+  if(req.method==="POST"&&req.url==="/v1/responses"&&providerRequests.filter(r=>r.method==="POST"&&r.path==="/v1/responses").length===2){
+   await new Promise(resolve=>setTimeout(resolve,12000));
+  }
   let requestBody;
   try{requestBody=JSON.parse(body);}catch{
    res.writeHead(400,{"content-type":"application/json"});
