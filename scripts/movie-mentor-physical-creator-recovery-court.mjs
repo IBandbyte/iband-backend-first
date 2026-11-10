@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import mongoose from "mongoose";
 import { readAuthoritativeTurnSource } from "../ai/MovieMentorCreatorStateStore.js";
+import { createMovieMentorProjectOwnershipAuthority, MOVIE_MENTOR_PROJECT_OWNERSHIP_DOMAIN, MOVIE_MENTOR_PROJECT_OWNERSHIP_SCHEMA } from "../ai/MovieMentorProjectOwnershipRegistry.js";
+import { createMovieMentorCreatorStateReadAuthority } from "../ai/MovieMentorCreatorStateReadAuthority.js";
 
 // Physical Mongo stage only. Test fixtures are isolated, never production.
 // This stage must not claim signed HTTP or owner-bound recovery certification.
@@ -38,7 +40,32 @@ export async function runMovieMentorPhysicalCreatorRecoveryCourt() {
     const after = await states.findOne({ projectId });
     assert.deepEqual(after, before, "RED: authoritative read mutated durable state");
     console.log("GREEN PHYSICAL MONGO: real indexed authoritative creator-state read and immutability");
-    throw new Error("RED PHYSICAL RECOVERY UNIMPLEMENTED: actual RS256, HTTP and durable owner-bound recovery still required");
+    const ownership = db.collection("movie_mentor_project_ownership");
+    await ownership.createIndex({ projectId: 1 }, { unique: true });
+    await ownership.createIndex({ establishmentAuthorityId: 1 }, { unique: true });
+    await ownership.insertOne({
+      domain: MOVIE_MENTOR_PROJECT_OWNERSHIP_DOMAIN,
+      schema: MOVIE_MENTOR_PROJECT_OWNERSHIP_SCHEMA,
+      projectId, ownerPrincipalId: "physical-owner",
+      ownershipRevision: 1, ownershipReference: "physical-owner-reference",
+      establishmentAuthorityId: "physical-establishment",
+      establishmentSource: "native-project-creation", status: "active",
+      establishedAt: new Date(),
+    });
+    const ownershipBefore = await ownership.findOne({ projectId });
+    const authority = createMovieMentorCreatorStateReadAuthority({
+      ownershipAuthority: createMovieMentorProjectOwnershipAuthority(),
+      readCreatorState: readAuthoritativeTurnSource,
+    });
+    const owner = await authority.read({ principal: { authenticated: true, principalId: "physical-owner" }, projectId });
+    assert.equal(owner.authorized, true, "RED: durable owner must recover");
+    assert.equal(owner.state.revision, 1);
+    const foreign = await authority.read({ principal: { authenticated: true, principalId: "physical-foreigner" }, projectId });
+    assert.equal(foreign.authorized, false, "RED: foreign principal must not recover");
+    assert.deepEqual(await ownership.findOne({ projectId }), ownershipBefore, "RED: ownership mutated during read");
+    assert.deepEqual(await states.findOne({ projectId }), before, "RED: creator state mutated during owner-bound read");
+    console.log("GREEN PHYSICAL MONGO: actual durable ownership allows owner, denies foreign principal, leaves both records immutable");
+    throw new Error("RED PHYSICAL RECOVERY UNIMPLEMENTED: actual RS256 and loopback HTTP still required");
   } finally {
     await mongoose.disconnect();
   }
