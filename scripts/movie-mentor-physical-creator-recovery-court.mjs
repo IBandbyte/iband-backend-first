@@ -152,8 +152,15 @@ export async function runMovieMentorPhysicalCreatorRecoveryCourt() {
     const mountEnd=serverSource.indexOf("await mountMovieMentorNativeProjectCreationIngress();",mountStart);
     assert.ok(mountStart>=0&&mountEnd>mountStart,"RED: actual server mount source required");
     const remountApp=express();
+    let physicalReadMountMongoReady=false;
+    const physicalReadMountConnection=new Proxy(mongoose.connection,{
+      get(target,key){
+        if(key==="readyState")return physicalReadMountMongoReady?target.readyState:0;
+        return Reflect.get(target,key,target);
+      },
+    });
     const remountContext={
-      mongoose,app:remountApp,console:{log:()=>{}},
+      mongoose:{connection:physicalReadMountConnection},app:remountApp,console:{log:()=>{}},
       createMovieMentorProductionAuthenticationComposition:()=>authentication,
       authenticationCompositionProven:()=>true,
       movieMentorProjectOwnershipAuthority:createMovieMentorProjectOwnershipAuthority(),
@@ -171,10 +178,18 @@ export async function runMovieMentorPhysicalCreatorRecoveryCourt() {
       const remountBase="http://127.0.0.1:"+remountServer.address().port+"/api/movie-mentor";
       const remountGet=async(path,token)=>{
         const response=await fetch(remountBase+path,{headers:token?{authorization:"Bearer "+token}:{}});
-        return {status:response.status,body:await response.json()};
+        const raw=await response.text();
+        let body=null;
+        try{body=JSON.parse(raw);}catch{}
+        return {status:response.status,body};
       };
       const beforeMount=await remountGet("/state/recovery/"+projectId,signJwt("physical-owner"));
       assert.equal(beforeMount.status,404,"RED: physical HTTP route must not exist before server mount");
+      assert.equal(remountContext.mongoose.connection.readyState,0,"RED: injected read-mount Mongo readiness must begin unavailable");
+      const deniedMount=await remountContext.mountRead();
+      assert.equal(deniedMount.mounted,false,"RED: unavailable Mongo must deny actual physical server read mount");
+      physicalReadMountMongoReady=true;
+      assert.equal(remountContext.mongoose.connection.readyState,1,"RED: actual Mongo connection must be ready before recovered mount");
       const [mountedA,mountedB]=await Promise.all([remountContext.mountRead(),remountContext.mountRead()]);
       assert.equal(mountedA.mounted,true);
       assert.equal(mountedB.mounted,true);
