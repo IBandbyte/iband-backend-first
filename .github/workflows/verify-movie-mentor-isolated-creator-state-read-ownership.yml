@@ -36,3 +36,6 @@ jobs:
       - name: Bounded deterministic durable owner discovery
         if: always()
         run: node scripts/verify-movie-mentor-owned-projects-bounded-discovery.mjs
+      - name: Project 101 overflow denial without silent truncation
+        if: always()
+        run: node scripts/verify-movie-mentor-owned-projects-overflow-denial.mjs
