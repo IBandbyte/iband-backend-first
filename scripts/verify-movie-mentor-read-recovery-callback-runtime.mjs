@@ -36,6 +36,9 @@ await runInNewContext("(async()=>{"+startupScript+"})()",ctx);
 assert.equal(registered.length,0,"RED: startup Mongo failure must not expose read routes");
 assert.equal(typeof recoveryCallback,"function","RED: recovery callback must be registered");
 mongo.connection.readyState=1;
+await recoveryCallback({mounted:false,reason:"gateway-not-ready",attempts:1});
+assert.equal(registered.length,0,"RED: failed gateway recovery must not expose read-only routes even when Mongo is connected");
+assert.equal(readinessCalls,0,"RED: failed gateway recovery must not start read-only mount readiness");
 await Promise.all([
   recoveryCallback({mounted:true,reason:"recovered",attempts:1}),
   recoveryCallback({mounted:true,reason:"recovered",attempts:2}),
@@ -44,4 +47,4 @@ assert.equal(registered.length,1,"RED: concurrent successful gateway recovery mu
 assert.equal(readinessCalls,1,"RED: gateway recovery callbacks must share single-flight readiness");
 await recoveryCallback({mounted:true,reason:"recovered",attempts:3});
 assert.equal(registered.length,1,"RED: later gateway callback must not duplicate read-only routes");
-console.log("GREEN RUNTIME CALLBACK: failed startup, registered recovery callback, simultaneous gateway success, exactly one read-only mount");
+console.log("GREEN RUNTIME CALLBACK: failed startup, denied failed-gateway notification, simultaneous successful gateway callbacks, exactly one read-only mount");
