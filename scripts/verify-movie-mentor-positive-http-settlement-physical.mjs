@@ -139,8 +139,10 @@ try{
   res.writeHead(503,{"content-type":"application/json"});
   res.end(JSON.stringify({error:{message:"Unimplemented isolated provider stage: "+String(requestBody?.text?.format?.name||"unknown"),type:"isolated_fixture_pending"}}));
  });
- await new Promise(resolve=>providerServer.listen(0,"127.0.0.1",resolve));
- process.env.IBAND_AI_BASE_URL="http://127.0.0.1:"+providerServer.address().port+"/v1/responses";
+ const externalProvider=process.env.MOVIE_MENTOR_INDEPENDENT_PROVIDER_BASE_URL||"";
+ if(externalProvider)assert.match(externalProvider,/^http:\/\/127\.0\.0\.1:\d+$/,"independent provider must be loopback");
+ if(!externalProvider)await new Promise(resolve=>providerServer.listen(0,"127.0.0.1",resolve));
+ process.env.IBAND_AI_BASE_URL=(externalProvider||"http://127.0.0.1:"+providerServer.address().port)+"/v1/responses";
  try{
  const spend=createMovieMentorProductionInferenceSpendComposition();
  assert.equal(spend.ready,true,"physical spend composition required");
@@ -186,14 +188,14 @@ try{
   console.log(`PHYSICAL POSITIVE DURABLE CHECKPOINT: execution=${actualExecution?.executionId||"none"} phase=${actualExecution?.phase||"none"} reservation=${actualReservation?.status||"none"} providerCalls=${actualExecution?.providerCallsClaimed??"unknown"}`);
   const effects=await mongoose.connection.db.collection("movie_mentor_provider_effect").find({executionId:actualExecution?.executionId||"none"}).project({providerCallId:1,status:1,effectStatus:1,slotId:1,task:1}).toArray();
   console.log(`PHYSICAL POSITIVE PROVIDER EFFECT CHECKPOINT: ${JSON.stringify(effects)}`);
-  console.log(`PHYSICAL POSITIVE LOOPBACK PROVIDER REQUESTS: count=${providerRequests.length}`);
+  console.log(`PHYSICAL POSITIVE LOOPBACK PROVIDER REQUESTS: count=${providerRequests.length} external=${Boolean(externalProvider)}`);
   assert.equal(response.status,200,JSON.stringify(responseBody));
   assert.equal(responseBody.success,true);
   assert.equal(responseBody.status,"mentor-response-ready","initial HTTP contract must return the real mentor response state");
   assert.equal(actualExecution?.phase,"settled");
   assert.equal(actualExecution?.providerCallsClaimed,5);
   assert.equal(actualReservation?.status,"consumed");
-  assert.equal(providerRequests.length,5,"exactly five isolated provider requests expected");
+  if(!externalProvider)assert.equal(providerRequests.length,5,"exactly five isolated provider requests expected");
   const canonical=await mongoose.connection.db.collection("movie_mentor_canonical_result").findOne({executionId:actualExecution.executionId});
   assert.ok(canonical,"HTTP-origin execution must have a durable canonical result");
   assert.equal(await mongoose.connection.db.collection("movie_mentor_canonical_result").countDocuments({executionId:actualExecution.executionId}),1);
@@ -209,7 +211,7 @@ try{
   await new Promise((resolve,reject)=>server.close(error=>error?reject(error):resolve()));
  }
 
- }finally{await new Promise((resolve,reject)=>providerServer.close(error=>error?reject(error):resolve()));}
+ }finally{if(!externalProvider)await new Promise((resolve,reject)=>providerServer.close(error=>error?reject(error):resolve()));}
  console.log("GREEN POSITIVE_HTTP_SETTLEMENT_JOURNEY: real signed-JWT HTTP creation, loopback orchestration, durable canonical settlement and fresh-process signed-JWT replay verified.");
 }finally{
  await mongoose.disconnect();
