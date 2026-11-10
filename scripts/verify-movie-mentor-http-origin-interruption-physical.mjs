@@ -76,16 +76,14 @@ try{
     store:createMovieMentorInferenceSettlementMongoStore(),
     readIndexes:collection=>db.collection(collection).indexes()
    });
-   let denied=false;
-   try{
-    const premature=await settlement.settleCanonicalResult({executionId:execution.executionId});
-    assert.notEqual(premature?.settled,true,"interrupted execution must not be settled");
-    denied=true;
-   }catch(error){
-    assert.ok(error?.code||error?.message,"denial must have an observable reason");
-    denied=true;
-   }
-   assert.equal(denied,true);
+   // Prove that the settlement authority itself is physically ready. A missing
+   // index or harness exception is NOT evidence of correct financial denial.
+   assert.equal(await settlement.ensurePhysicalAuthority(),true);
+   const premature=await settlement.settleCanonicalResult({executionId:execution.executionId});
+   assert.equal(premature?.settled,false,"interrupted execution must not settle");
+   assert.equal(premature?.authorized,false,"interrupted execution must not gain settlement authority");
+   assert.equal(premature?.reason,"execution-not-finalized","denial must come from the durable execution phase, not a harness/index error");
+   assert.equal(premature?.executionId,execution.executionId);
    const afterDenied=await Promise.all(names.map(async name=>[name,await db.collection(name).find({}).project({_id:0}).toArray()]));
    assert.deepEqual(afterDenied,before,"premature settlement denial must not mutate durable ledgers");
    console.log("GREEN production-origin interrupted execution: premature canonical settlement denied; durable ledgers unchanged");
