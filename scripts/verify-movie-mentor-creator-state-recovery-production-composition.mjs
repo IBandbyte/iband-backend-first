@@ -1,5 +1,34 @@
+import { generateKeyPairSync } from "node:crypto";
+import { createMovieMentorProductionAuthenticationComposition } from "../ai/MovieMentorProductionAuthenticationComposition.js";
 import assert from "node:assert/strict";
 import { createMovieMentorCreatorStateRecoveryProductionComposition } from "../ai/MovieMentorCreatorStateRecoveryProductionComposition.js";
+
+// VERIFIER FIRST: metadata alone must never confer authentication ownership.
+assert.throws(() => createMovieMentorCreatorStateRecoveryProductionComposition({
+  authentication: {
+    ready: true, provider: "clerk", verifierAlgorithm: "RS256",
+    verifierNetworkMode: "pinned-public-key", expectedIssuer: "https://issuer.example",
+    expectedAudience: "movie-mentor", async verifyCredential() { return { verified: true, subject: "forger", active: true, revoked: false }; },
+  },
+  ownershipAuthority: { async authorizeProject() { return { authorized: true }; } },
+  readCreatorState: async () => ({ projectId: "project-a", revision: 1, creatorStateGeneration: 1 }),
+}), /owner|provenance|authentication/i, "RED: self-asserted verifier must not authorize creator recovery");
+const { publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+const genuineAuthentication = createMovieMentorProductionAuthenticationComposition({
+  env: {
+    MOVIE_MENTOR_CLERK_JWT_KEY: publicKey.export({ type: "spki", format: "pem" }),
+    MOVIE_MENTOR_CLERK_AUTHORIZED_PARTIES_JSON: JSON.stringify(["http://127.0.0.1:7777"]),
+    MOVIE_MENTOR_CLERK_ISSUER: "https://issuer.example",
+    MOVIE_MENTOR_AUDIENCE: "movie-mentor",
+  },
+});
+assert.equal(genuineAuthentication.ready, true);
+const proven = createMovieMentorCreatorStateRecoveryProductionComposition({
+  authentication: genuineAuthentication,
+  ownershipAuthority: { async authorizeProject() { return { authorized: false }; } },
+  readCreatorState: async () => ({ projectId: "project-a", revision: 1, creatorStateGeneration: 1 }),
+});
+assert.equal(typeof proven.handle, "function");
 
 // VERIFIER FIRST: production wiring must require pinned-key authentication,
 // durable ownership and authoritative creator-state read. No real DB writes.
