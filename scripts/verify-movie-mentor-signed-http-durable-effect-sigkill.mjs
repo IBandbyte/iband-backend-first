@@ -147,6 +147,11 @@ try{
   'import {createMovieMentorInferenceExecutionMongoStore} from "./ai/MovieMentorInferenceExecutionMongoStore.js";',
   'import {createMovieMentorProductionInferenceExecutionComposition} from "./ai/MovieMentorProductionInferenceExecutionComposition.js";',
   'import {createMovieMentorProductionInferenceSettlementComposition} from "./ai/MovieMentorProductionInferenceSettlementComposition.js";',
+  'import crypto from "node:crypto";',
+  'import {createMovieMentorProductionAuthenticationComposition} from "./ai/MovieMentorProductionAuthenticationComposition.js";',
+  'import {createMovieMentorCreatorRequestAuthority} from "./ai/MovieMentorCreatorRequestAuthority.js";',
+  'import {createMovieMentorProjectOwnershipAuthority} from "./ai/MovieMentorProjectOwnershipRegistry.js";',
+  'import {createMovieMentorCreatorStateConsumptionAuthority,assertMovieMentorCreatorStateConsumptionAuthority} from "./ai/MovieMentorCreatorStateConsumptionAuthority.js";',
   'const uri=process.env.MOVIE_MENTOR_ISOLATED_MONGO_URI;',
   'if(!uri?.startsWith("mongodb://127.0.0.1:27017/movie_mentor_positive_http_settlement?"))process.exit(31);',
   'process.env.MONGO_URI=uri;process.env.MONGODB_URI=uri;',
@@ -202,6 +207,24 @@ try{
   'const stagedAfter=await db.collection("movie_mentor_result_candidate").countDocuments({executionId:execution.executionId});',
   'if(stagedBefore!==stagedAfter)throw Error("missing-proof candidate denial mutated durable result candidates");',
   'console.log("GREEN RECOVERED_HTTP_CANDIDATE_PROOF_BOUNDARY: production result candidate staging denied missing creator-state proof without durable mutation");',
+  'const state=await db.collection("movie_mentor_creator_state").findOne({projectId:execution.projectId});',
+  'if(!state||!Number.isSafeInteger(state.revision)||!Number.isSafeInteger(state.creatorStateGeneration)||!state.creatorStateFingerprint)throw Error("durable creator-state universe unavailable");',
+  'const {publicKey,privateKey}=crypto.generateKeyPairSync("rsa",{modulusLength:2048});',
+  'const issuer="https://isolated-clerk.example.test",audience="isolated-movie-mentor",party="https://isolated-app.example.test";',
+  'const authentication=createMovieMentorProductionAuthenticationComposition({env:{MOVIE_MENTOR_CLERK_JWT_KEY:publicKey.export({type:"spki",format:"pem"}),MOVIE_MENTOR_CLERK_AUTHORIZED_PARTIES_JSON:JSON.stringify([party]),MOVIE_MENTOR_CLERK_ISSUER:issuer,MOVIE_MENTOR_AUDIENCE:audience}});',
+  'const now=Math.floor(Date.now()/1000);',
+  'const header=Buffer.from(JSON.stringify({alg:"RS256",typ:"JWT",kid:"isolated-key"})).toString("base64url");',
+  'const payload=Buffer.from(JSON.stringify({sub:execution.principalId,iss:issuer,aud:audience,azp:party,sid:"isolated-recovery",iat:now-10,nbf:now-10,exp:now+300})).toString("base64url");',
+  'const input=header+"."+payload;',
+  'const jwt=input+"."+crypto.sign("RSA-SHA256",Buffer.from(input),privateKey).toString("base64url");',
+  'const request={headers:{authorization:"Bearer "+jwt}};',
+  'const requestAuthority=createMovieMentorCreatorRequestAuthority({verifyCredential:authentication.verifyCredential,expectedIssuer:authentication.expectedIssuer,expectedAudience:authentication.expectedAudience,ownershipAuthority:createMovieMentorProjectOwnershipAuthority()});',
+  'const authorization=await requestAuthority.authorize({request,projectId:execution.projectId});',
+  'if(authorization?.authorized!==true||authorization.principalId!==execution.principalId)throw Error("fresh signed credential did not prove original project owner");',
+  'const consumption=createMovieMentorCreatorStateConsumptionAuthority({request,authorization,requestAuthority});',
+  'const proof=await assertMovieMentorCreatorStateConsumptionAuthority({authority:consumption,projectId:execution.projectId,stage:"result-candidate",revision:state.revision,creatorStateGeneration:state.creatorStateGeneration,creatorStateFingerprint:state.creatorStateFingerprint,executionId:execution.executionId});',
+  'if(proof?.authorized!==true||proof?.currentOwnershipVerified!==true||proof?.executionId!==execution.executionId)throw Error("fresh creator-state consumption proof missing");',
+  'console.log("GREEN RECOVERED_HTTP_FRESH_AUTHENTICATED_CREATOR_PROOF: independent RS256 credential, durable project ownership and current creator-state consumption proof verified");',
   '}',
   '}finally{await mongoose.disconnect();}'
  ].join("\n");
@@ -219,6 +242,7 @@ try{
  assert.match(inspectorOut,/GREEN FRESH_PROCESS_PRODUCTION_COMPOSITION_RECOVERY/);
  assert.match(inspectorOut,/GREEN RECOVERED_HTTP_PRODUCTION_SETTLEMENT_PRECONDITION/);
  assert.match(inspectorOut,/GREEN RECOVERED_HTTP_CANDIDATE_PROOF_BOUNDARY/);
+ assert.match(inspectorOut,/GREEN RECOVERED_HTTP_FRESH_AUTHENTICATED_CREATOR_PROOF/);
  assert.equal(providerRequests.filter(r=>r.method==="POST"&&r.path==="/v1/responses").length,postsBefore,"fresh inspector must not redispatch provider");
  const knownId=persisted.evidence?.[0]?.externalEffectId;
  assert.ok(typeof knownId==="string"&&knownId.length>0,"confirmed effect must bind a known historical response ID");
