@@ -31,7 +31,7 @@ let server;
 try{
  const db=mongoose.connection.db;
  const states=db.collection("movie_mentor_creator_state"),operations=db.collection("movie_mentor_creator_state_operations"),ownerships=db.collection("movie_mentor_project_ownership");
- await states.createIndex({projectId:1},{unique:true});
+ await states.createIndex({projectId:1},{unique:true,partialFilterExpression:{projectId:{$type:"string"}},name:"creator_state_physical_project_unique"});
  await operations.createIndex({projectId:1,principalId:1,operationId:1},{unique:true});
  await ownerships.createIndex({projectId:1},{unique:true});
  await ownerships.createIndex({establishmentAuthorityId:1},{unique:true});
