@@ -225,6 +225,12 @@ try{
   'const proof=await assertMovieMentorCreatorStateConsumptionAuthority({authority:consumption,projectId:execution.projectId,stage:"result-candidate",revision:state.revision,creatorStateGeneration:state.creatorStateGeneration,creatorStateFingerprint:state.creatorStateFingerprint,executionId:execution.executionId});',
   'if(proof?.authorized!==true||proof?.currentOwnershipVerified!==true||proof?.executionId!==execution.executionId)throw Error("fresh creator-state consumption proof missing");',
   'console.log("GREEN RECOVERED_HTTP_FRESH_AUTHENTICATED_CREATOR_PROOF: independent RS256 credential, durable project ownership and current creator-state consumption proof verified");',
+  'const resultPayload={recoveredProviderEffectId:effect.evidence[0].externalEffectId,recoveryMode:"historical-provider-get",executionId:execution.executionId};',
+  'const candidate=await leaseAuthority.stageResultCandidate({execution:intruder,resultPayload,creatorStateConsumptionProof:proof});',
+  'if(!candidate?.candidateReference||candidate.executionId!==execution.executionId||!candidate.resultDigest)throw Error("genuine proof did not stage a durable candidate: "+JSON.stringify(candidate));',
+  'const durableCandidate=await leaseAuthority.readResultCandidate(execution.executionId);',
+  'if(durableCandidate?.candidateReference!==candidate.candidateReference||durableCandidate.resultDigest!==candidate.resultDigest)throw Error("durable candidate lineage did not survive readback");',
+  'console.log("GREEN RECOVERED_HTTP_POSITIVE_CANDIDATE_STAGING: fresh signed owner proof staged original recovered execution result candidate with durable lineage");',
   '}',
   '}finally{await mongoose.disconnect();}'
  ].join("\n");
@@ -243,6 +249,7 @@ try{
  assert.match(inspectorOut,/GREEN RECOVERED_HTTP_PRODUCTION_SETTLEMENT_PRECONDITION/);
  assert.match(inspectorOut,/GREEN RECOVERED_HTTP_CANDIDATE_PROOF_BOUNDARY/);
  assert.match(inspectorOut,/GREEN RECOVERED_HTTP_FRESH_AUTHENTICATED_CREATOR_PROOF/);
+ assert.match(inspectorOut,/GREEN RECOVERED_HTTP_POSITIVE_CANDIDATE_STAGING/);
  assert.equal(providerRequests.filter(r=>r.method==="POST"&&r.path==="/v1/responses").length,postsBefore,"fresh inspector must not redispatch provider");
  const knownId=persisted.evidence?.[0]?.externalEffectId;
  assert.ok(typeof knownId==="string"&&knownId.length>0,"confirmed effect must bind a known historical response ID");
@@ -255,7 +262,7 @@ try{
  assert.equal(providerRequests.filter(r=>r.method==="POST"&&r.path==="/v1/responses").length,postsBefore,"historical GET must not redispatch provider");
  console.log("GREEN INDEPENDENT_PROVIDER_HISTORICAL_GET_AFTER_SIGKILL: exact confirmed response retrievable, fabricated response denied, no redispatch");
  console.log("GREEN SIGNED_HTTP_DURABLE_EFFECT_SIGKILL_GATE: HTTP-origin active execution and durable provider effect observed in Mongo before SIGKILL; independent provider and durable evidence survived");
- console.log("LIMITATION: recovered HTTP settlement and candidate-proof denial tested; positive canonical finalization and exactly-once settlement remain unverified.");
+ console.log("LIMITATION: recovered HTTP settlement and candidate-proof denial tested; canonical closure, positive finalization and exactly-once settlement remain unverified.");
 }finally{
  clearTimeout(watchdog);
  if(child.exitCode===null)child.kill("SIGKILL");
