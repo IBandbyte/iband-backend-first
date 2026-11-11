@@ -307,7 +307,7 @@ try{
   'if(JSON.stringify(beforeReservation)!==JSON.stringify(afterReservation)||JSON.stringify(beforeEntitlement)!==JSON.stringify(afterEntitlement))throw Error("fresh replay mutated settled financial ledger");',
   'console.log("GREEN FRESH_PROCESS_RECOVERED_HTTP_FINANCIAL_REPLAY: independent process reopened original durable settlement; production reconciliation idempotent and ledgers immutable");',
   '}finally{await mongoose.disconnect();}'
- ].join("\\n");
+ ].join("\n");
  const financialReplay=spawn(process.execPath,["--input-type=module","-e",financialReplaySource],{
   env:{...process.env,MOVIE_MENTOR_INSPECT_EXECUTION_ID:execution.executionId,MOVIE_MENTOR_INSPECT_RESERVATION_ID:execution.reservationId,MOVIE_MENTOR_INSPECT_PRINCIPAL_ID:execution.principalId},
   stdio:["ignore","pipe","pipe"]
