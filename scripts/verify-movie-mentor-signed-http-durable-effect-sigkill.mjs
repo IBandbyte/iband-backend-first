@@ -231,6 +231,14 @@ try{
   'const durableCandidate=await leaseAuthority.readResultCandidate(execution.executionId);',
   'if(durableCandidate?.candidateReference!==candidate.candidateReference||durableCandidate.resultDigest!==candidate.resultDigest)throw Error("durable candidate lineage did not survive readback");',
   'console.log("GREEN RECOVERED_HTTP_POSITIVE_CANDIDATE_STAGING: fresh signed owner proof staged original recovered execution result candidate with durable lineage");',
+  'const closing=await leaseAuthority.beginExecutionClosing({execution:intruder});',
+  'if(closing?.authorized!==true||!closing.closureReference)throw Error("production closing did not freeze original execution: "+JSON.stringify(closing));',
+  'const closure=await leaseAuthority.reconcileExecutionClosure({executionId:execution.executionId});',
+  'if(closure?.closed===true)throw Error("incomplete interrupted provider universe unexpectedly closed");',
+  'if(closure?.authorized===true&&!closure?.pending)throw Error("incomplete provider reality unexpectedly authorized closure");',
+  'const candidateAfterClosure=await leaseAuthority.readResultCandidate(execution.executionId);',
+  'if(candidateAfterClosure?.candidateReference!==candidate.candidateReference)throw Error("pending closure altered immutable candidate");',
+  'console.log("GREEN RECOVERED_HTTP_CANONICAL_CLOSURE_GATE: production closure froze original provider universe; incomplete reality denied canonical closure without mutating staged candidate");',
   '}',
   '}finally{await mongoose.disconnect();}'
  ].join("\n");
@@ -250,6 +258,7 @@ try{
  assert.match(inspectorOut,/GREEN RECOVERED_HTTP_CANDIDATE_PROOF_BOUNDARY/);
  assert.match(inspectorOut,/GREEN RECOVERED_HTTP_FRESH_AUTHENTICATED_CREATOR_PROOF/);
  assert.match(inspectorOut,/GREEN RECOVERED_HTTP_POSITIVE_CANDIDATE_STAGING/);
+ assert.match(inspectorOut,/GREEN RECOVERED_HTTP_CANONICAL_CLOSURE_GATE/);
  assert.equal(providerRequests.filter(r=>r.method==="POST"&&r.path==="/v1/responses").length,postsBefore,"fresh inspector must not redispatch provider");
  const knownId=persisted.evidence?.[0]?.externalEffectId;
  assert.ok(typeof knownId==="string"&&knownId.length>0,"confirmed effect must bind a known historical response ID");
@@ -262,7 +271,7 @@ try{
  assert.equal(providerRequests.filter(r=>r.method==="POST"&&r.path==="/v1/responses").length,postsBefore,"historical GET must not redispatch provider");
  console.log("GREEN INDEPENDENT_PROVIDER_HISTORICAL_GET_AFTER_SIGKILL: exact confirmed response retrievable, fabricated response denied, no redispatch");
  console.log("GREEN SIGNED_HTTP_DURABLE_EFFECT_SIGKILL_GATE: HTTP-origin active execution and durable provider effect observed in Mongo before SIGKILL; independent provider and durable evidence survived");
- console.log("LIMITATION: recovered HTTP settlement and candidate-proof denial tested; canonical closure, positive finalization and exactly-once settlement remain unverified.");
+ console.log("LIMITATION: recovered HTTP settlement and candidate-proof denial tested; positive canonical closure, finalization and exactly-once settlement remain unverified.");
 }finally{
  clearTimeout(watchdog);
  if(child.exitCode===null)child.kill("SIGKILL");
