@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import {execFileSync} from "node:child_process";
 import {generateKeyPairSync,createSign} from "node:crypto";
 import {createMovieMentorProductionAuthenticationComposition} from "../ai/MovieMentorProductionAuthenticationComposition.js";
 import {createMovieMentorCreatorStateRecoveryExpressRouter} from "../ai/MovieMentorCreatorStateRecoveryExpressRouter.js";
@@ -119,7 +120,18 @@ try{
   assert.deepEqual(await states.findOne({projectId:saved.projectId}),saved,"Recovery must not mutate saved state");
   console.log("GREEN SAME_RECORD_HTTP_MONGO_RECOVERY: atomic HTTP write and signed owner recovery read the identical durable Mongo record; intruder and forged JWT denied");
  }finally{await new Promise((resolve,reject)=>recoveryServer.close(e=>e?reject(e):resolve()));}
- console.log("LIMITATION: write admission uses injected request authority; recovery uses synthetic isolated Clerk RS256 and a new HTTP server in the same Node process; full fresh-process browser journey uncertified.");
+ const {privateKey:forgedFresh}=generateKeyPairSync("rsa",{modulusLength:2048});
+ const output=execFileSync(process.execPath,["scripts/verify-movie-mentor-same-record-fresh-process-recovery.mjs"],{
+  cwd:process.cwd(),encoding:"utf8",timeout:45000,env:{...process.env,
+   MM_EXPECTED_STATE:JSON.stringify({projectId:saved.projectId,revision:saved.revision,creatorStateGeneration:saved.creatorStateGeneration,memoryContext:saved.memoryContext}),
+   MM_PUBLIC_KEY:publicKey.export({type:"spki",format:"pem"}),
+   MM_ORIGIN:origin,MM_ISSUER:issuer,MM_AUDIENCE:audience,
+   MM_OWNER_TOKEN:sign("owner"),MM_INTRUDER_TOKEN:sign("intruder"),MM_FORGED_TOKEN:sign("owner",forgedFresh)
+  }
+ });
+ assert.match(output,/GREEN FRESH_PROCESS_SAME_RECORD_RECOVERY/);
+ process.stdout.write(output);
+ console.log("LIMITATION: write admission uses injected authority and synthetic isolated JWT; independent Node recovery proven, but browser editable restoration and live Clerk unverified.");
 }finally{
  if(server)await new Promise((resolve,reject)=>server.close(e=>e?reject(e):resolve()));
  await mongoose.disconnect();
