@@ -1,0 +1,46 @@
+name: Verify Movie Mentor Same Record Creator Recovery
+on:
+  push:
+    branches:
+      - verify/creator-state-same-record-20261111
+  workflow_dispatch:
+jobs:
+  physical-recovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      MONGO_URI: mongodb://127.0.0.1:27017/movie_mentor_same_record_recovery?replicaSet=rs0
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install isolated test dependencies without writing a lockfile
+        run: npm install --no-package-lock --ignore-scripts --no-audit --no-fund
+      - name: Start isolated MongoDB with replica-set mode enabled
+        run: |
+          docker run -d --name movie-mentor-rs0 -p 127.0.0.1:27017:27017 mongo:7 --replSet rs0 --bind_ip_all
+          for i in $(seq 1 30); do
+            if docker exec movie-mentor-rs0 mongosh --quiet --eval 'db.adminCommand({ping:1})' >/dev/null 2>&1; then
+              echo "Mongo daemon ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Mongo daemon failed to start" >&2
+          exit 1
+      - name: Initialize isolated Mongo replica set
+        run: |
+          docker exec movie-mentor-rs0 mongosh --quiet --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"127.0.0.1:27017"}]})'
+          for i in $(seq 1 30); do
+            if docker exec movie-mentor-rs0 mongosh --quiet --eval 'if (!db.hello().isWritablePrimary) quit(1)' >/dev/null 2>&1; then
+              echo "Mongo replica-set PRIMARY ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Mongo replica-set PRIMARY did not become ready" >&2
+          exit 1
+      - name: Physical signed HTTP and durable Mongo creator recovery court
+        run: node scripts/verify-movie-mentor-same-record-http-mongo-recovery.mjs
