@@ -282,6 +282,43 @@ try{
  assert.match(inspectorOut,/GREEN RECOVERED_HTTP_CANONICAL_FINALIZATION/);
  assert.match(inspectorOut,/GREEN RECOVERED_HTTP_EXACTLY_ONCE_SETTLEMENT/);
  assert.equal(providerRequests.filter(r=>r.method==="POST"&&r.path==="/v1/responses").length,postsBefore,"fresh inspector must not redispatch provider");
+
+ const financialReplaySource=[
+  'import mongoose from "mongoose";',
+  'import {createMovieMentorProductionInferenceSettlementComposition} from "./ai/MovieMentorProductionInferenceSettlementComposition.js";',
+  'const uri=process.env.MOVIE_MENTOR_ISOLATED_MONGO_URI||"";',
+  'if(!uri.startsWith("mongodb://127.0.0.1:27017/movie_mentor_positive_http_settlement?"))throw Error("refuse non-disposable replay database");',
+  'process.env.MONGO_URI=uri;process.env.MONGODB_URI=uri;',
+  'const executionId=process.env.MOVIE_MENTOR_INSPECT_EXECUTION_ID;',
+  'const reservationId=process.env.MOVIE_MENTOR_INSPECT_RESERVATION_ID;',
+  'const principalId=process.env.MOVIE_MENTOR_INSPECT_PRINCIPAL_ID;',
+  'await mongoose.connect(uri);',
+  'try{',
+  'const db=mongoose.connection.db;',
+  'const beforeReservation=await db.collection("movie_mentor_inference_spend_reservation").findOne({reservationId});',
+  'const beforeEntitlement=await db.collection("movie_mentor_inference_entitlement").findOne({principalId});',
+  'if(beforeReservation?.status!=="consumed"||beforeEntitlement?.consumedUnits!==1||beforeEntitlement?.remainingUnits!==0||beforeEntitlement?.reservedUnits!==0)throw Error("fresh process found invalid settled ledger");',
+  'const composition=createMovieMentorProductionInferenceSettlementComposition();',
+  'if(composition?.ready!==true||!composition.authority)throw Error("fresh production settlement composition not ready");',
+  'const replay=await composition.authority.reconcile({executionId});',
+  'if(replay?.authorized!==true||replay?.settled!==true||replay?.idempotent!==true||replay?.reservationId!==reservationId||!replay?.resultFinalizationVerified)throw Error("fresh-process production replay did not prove idempotent settled lineage: "+JSON.stringify(replay));',
+  'const afterReservation=await db.collection("movie_mentor_inference_spend_reservation").findOne({reservationId});',
+  'const afterEntitlement=await db.collection("movie_mentor_inference_entitlement").findOne({principalId});',
+  'if(JSON.stringify(beforeReservation)!==JSON.stringify(afterReservation)||JSON.stringify(beforeEntitlement)!==JSON.stringify(afterEntitlement))throw Error("fresh replay mutated settled financial ledger");',
+  'console.log("GREEN FRESH_PROCESS_RECOVERED_HTTP_FINANCIAL_REPLAY: independent process reopened original durable settlement; production reconciliation idempotent and ledgers immutable");',
+  '}finally{await mongoose.disconnect();}'
+ ].join("\\n");
+ const financialReplay=spawn(process.execPath,["--input-type=module","-e",financialReplaySource],{
+  env:{...process.env,MOVIE_MENTOR_INSPECT_EXECUTION_ID:execution.executionId,MOVIE_MENTOR_INSPECT_RESERVATION_ID:execution.reservationId,MOVIE_MENTOR_INSPECT_PRINCIPAL_ID:execution.principalId},
+  stdio:["ignore","pipe","pipe"]
+ });
+ let financialOut="",financialErr="";
+ financialReplay.stdout.on("data",chunk=>{financialOut+=chunk.toString();process.stdout.write(chunk);});
+ financialReplay.stderr.on("data",chunk=>{financialErr+=chunk.toString();process.stderr.write(chunk);});
+ const financialExit=await new Promise(resolve=>financialReplay.on("exit",(code,signal)=>resolve({code,signal})));
+ assert.equal(financialExit.code,0,"fresh-process financial replay failed: "+financialErr+" "+financialOut);
+ assert.match(financialOut,/GREEN FRESH_PROCESS_RECOVERED_HTTP_FINANCIAL_REPLAY/);
+
  const knownId=persisted.evidence?.[0]?.externalEffectId;
  assert.ok(typeof knownId==="string"&&knownId.length>0,"confirmed effect must bind a known historical response ID");
  const historicalReply=await fetch(base+"/v1/responses/"+encodeURIComponent(knownId));
@@ -293,7 +330,7 @@ try{
  assert.equal(providerRequests.filter(r=>r.method==="POST"&&r.path==="/v1/responses").length,postsBefore,"historical GET must not redispatch provider");
  console.log("GREEN INDEPENDENT_PROVIDER_HISTORICAL_GET_AFTER_SIGKILL: exact confirmed response retrievable, fabricated response denied, no redispatch");
  console.log("GREEN SIGNED_HTTP_DURABLE_EFFECT_SIGKILL_GATE: HTTP-origin active execution and durable provider effect observed in Mongo before SIGKILL; independent provider and durable evidence survived");
- console.log("LIMITATION: recovered HTTP settlement and candidate-proof denial tested; fresh-process financial replay remains unverified.");
+ console.log("LIMITATION: recovered HTTP settlement and candidate-proof denial tested; isolated local JWT/provider and disposable Mongo only; no production deployment or live provider certified.");
 }finally{
  clearTimeout(watchdog);
  if(child.exitCode===null)child.kill("SIGKILL");
