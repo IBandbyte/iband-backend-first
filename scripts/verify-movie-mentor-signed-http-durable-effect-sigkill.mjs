@@ -163,7 +163,7 @@ try{
   'const oldExpires=new Date(execution.leaseExpiresAt);',
   'if(!Number.isFinite(oldExpires.getTime()))throw Error("invalid persisted lease expiry");',
   '// Disposable fixture only: expire the killed workers lease to exercise real production takeover without a 60-second wall-clock wait.',
-  'const expiry=await db.collection("movie_mentor_inference_execution").updateOne({executionId:execution.executionId,phase:"active",leaseGeneration:oldLease,ownerId:oldOwner},{$set:{leaseExpiresAt:new Date(Date.now()-1000)}});',
+  'const expiry=await db.collection("movie_mentor_inference_execution").updateOne({executionId:execution.executionId,phase:"active",leaseGeneration:oldLease,ownerId:oldOwner},{$set:{leaseAcquiredAt:new Date(Date.now()-120000),leaseExpiresAt:new Date(Date.now()-1000)}});',
   'if(expiry.modifiedCount!==1)throw Error("disposable fixture lease expiration failed");',
   'const composition=createMovieMentorProductionInferenceExecutionComposition();',
   'if(composition?.ready!==true||!composition.authority)throw Error("production composition not ready: "+composition?.reason);',
