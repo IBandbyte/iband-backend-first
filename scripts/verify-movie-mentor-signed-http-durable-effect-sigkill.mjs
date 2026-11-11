@@ -195,6 +195,13 @@ try{
   'const clean=row=>JSON.stringify(row);',
   'if(clean(beforeReservation)!==clean(afterReservation)||clean(beforeEntitlement)!==clean(afterEntitlement))throw Error("premature settlement mutated financial ledgers");',
   'console.log("GREEN RECOVERED_HTTP_PRODUCTION_SETTLEMENT_PRECONDITION: full production settlement composition denied unfinalized recovered execution; original financial ledgers immutable");',
+  'const stagedBefore=await db.collection("movie_mentor_result_candidate").countDocuments({executionId:execution.executionId});',
+  'let missingProofDenied=false;',
+  'try{await leaseAuthority.stageResultCandidate({execution:intruder,resultPayload:{text:"unproven recovered result"}});}catch(error){missingProofDenied=error?.code==="MOVIE_MENTOR_RESULT_CANDIDATE_CREATOR_STATE_PROOF_REQUIRED";if(!missingProofDenied)throw error;}',
+  'if(!missingProofDenied)throw Error("production result candidate staging accepted missing creator-state proof");',
+  'const stagedAfter=await db.collection("movie_mentor_result_candidate").countDocuments({executionId:execution.executionId});',
+  'if(stagedBefore!==stagedAfter)throw Error("missing-proof candidate denial mutated durable result candidates");',
+  'console.log("GREEN RECOVERED_HTTP_CANDIDATE_PROOF_BOUNDARY: production result candidate staging denied missing creator-state proof without durable mutation");',
   '}',
   '}finally{await mongoose.disconnect();}'
  ].join("\n");
@@ -211,6 +218,7 @@ try{
  assert.match(inspectorOut,/GREEN FRESH_PROCESS_PRODUCTION_LEASE_TAKEOVER/);
  assert.match(inspectorOut,/GREEN FRESH_PROCESS_PRODUCTION_COMPOSITION_RECOVERY/);
  assert.match(inspectorOut,/GREEN RECOVERED_HTTP_PRODUCTION_SETTLEMENT_PRECONDITION/);
+ assert.match(inspectorOut,/GREEN RECOVERED_HTTP_CANDIDATE_PROOF_BOUNDARY/);
  assert.equal(providerRequests.filter(r=>r.method==="POST"&&r.path==="/v1/responses").length,postsBefore,"fresh inspector must not redispatch provider");
  const knownId=persisted.evidence?.[0]?.externalEffectId;
  assert.ok(typeof knownId==="string"&&knownId.length>0,"confirmed effect must bind a known historical response ID");
@@ -223,7 +231,7 @@ try{
  assert.equal(providerRequests.filter(r=>r.method==="POST"&&r.path==="/v1/responses").length,postsBefore,"historical GET must not redispatch provider");
  console.log("GREEN INDEPENDENT_PROVIDER_HISTORICAL_GET_AFTER_SIGKILL: exact confirmed response retrievable, fabricated response denied, no redispatch");
  console.log("GREEN SIGNED_HTTP_DURABLE_EFFECT_SIGKILL_GATE: HTTP-origin active execution and durable provider effect observed in Mongo before SIGKILL; independent provider and durable evidence survived");
- console.log("LIMITATION: recovered HTTP production settlement precondition tested; positive canonical finalization and exactly-once settlement remain unverified.");
+ console.log("LIMITATION: recovered HTTP settlement and candidate-proof denial tested; positive canonical finalization and exactly-once settlement remain unverified.");
 }finally{
  clearTimeout(watchdog);
  if(child.exitCode===null)child.kill("SIGKILL");
