@@ -250,6 +250,14 @@ try{
   'const canonical=await leaseAuthority.readCanonicalResult({executionId:execution.executionId});',
   'if(canonical?.authorized!==true||canonical?.resultReference!==finalized.resultReference||canonical?.resultDigest!==candidate.resultDigest)throw Error("canonical finalization not durable/readable");',
   'console.log("GREEN RECOVERED_HTTP_CANONICAL_FINALIZATION: mismatched candidate denied; original signed-HTTP recovered execution finalized with immutable candidate lineage");',
+  'const firstSettlement=await settlement.authority.reconcile({executionId:execution.executionId});',
+  'if(firstSettlement?.authorized!==true||firstSettlement?.settled!==true||firstSettlement?.idempotent===true||firstSettlement?.resultReference!==finalized.resultReference||firstSettlement?.candidateReference!==candidate.candidateReference)throw Error("production financial settlement did not consume exact canonical result once: "+JSON.stringify(firstSettlement));',
+  'const secondSettlement=await settlement.authority.reconcile({executionId:execution.executionId});',
+  'if(secondSettlement?.settled!==true||secondSettlement?.idempotent!==true||secondSettlement?.resultReference!==firstSettlement.resultReference)throw Error("settlement replay did not prove idempotent canonical lineage");',
+  'const reservationAfter=await db.collection("movie_mentor_inference_spend_reservation").findOne({executionId:execution.executionId});',
+  'const entitlementAfter=await db.collection("movie_mentor_inference_entitlement").findOne({principalId:execution.principalId});',
+  'if(reservationAfter?.status!=="consumed"||entitlementAfter?.consumedUnits!==1||entitlementAfter?.remainingUnits!==0||entitlementAfter?.reservedUnits!==0)throw Error("financial ledger failed exact-once consume invariants: "+JSON.stringify({reservation:reservationAfter?.status,entitlement:entitlementAfter}));',
+  'console.log("GREEN RECOVERED_HTTP_EXACTLY_ONCE_SETTLEMENT: production canonical settlement consumed one reservation and one entitlement unit; replay idempotent");',
   '}',
   '}finally{await mongoose.disconnect();}'
  ].join("\n");
@@ -272,6 +280,7 @@ try{
  assert.match(inspectorOut,/GREEN RECOVERED_HTTP_CANONICAL_CLOSURE_GATE/);
  assert.match(inspectorOut,/GREEN RECOVERED_HTTP_PRODUCTION_CLOSURE_REALITY/);
  assert.match(inspectorOut,/GREEN RECOVERED_HTTP_CANONICAL_FINALIZATION/);
+ assert.match(inspectorOut,/GREEN RECOVERED_HTTP_EXACTLY_ONCE_SETTLEMENT/);
  assert.equal(providerRequests.filter(r=>r.method==="POST"&&r.path==="/v1/responses").length,postsBefore,"fresh inspector must not redispatch provider");
  const knownId=persisted.evidence?.[0]?.externalEffectId;
  assert.ok(typeof knownId==="string"&&knownId.length>0,"confirmed effect must bind a known historical response ID");
@@ -284,7 +293,7 @@ try{
  assert.equal(providerRequests.filter(r=>r.method==="POST"&&r.path==="/v1/responses").length,postsBefore,"historical GET must not redispatch provider");
  console.log("GREEN INDEPENDENT_PROVIDER_HISTORICAL_GET_AFTER_SIGKILL: exact confirmed response retrievable, fabricated response denied, no redispatch");
  console.log("GREEN SIGNED_HTTP_DURABLE_EFFECT_SIGKILL_GATE: HTTP-origin active execution and durable provider effect observed in Mongo before SIGKILL; independent provider and durable evidence survived");
- console.log("LIMITATION: recovered HTTP settlement and candidate-proof denial tested; exactly-once settlement and fresh-process financial replay remain unverified.");
+ console.log("LIMITATION: recovered HTTP settlement and candidate-proof denial tested; fresh-process financial replay remains unverified.");
 }finally{
  clearTimeout(watchdog);
  if(child.exitCode===null)child.kill("SIGKILL");
