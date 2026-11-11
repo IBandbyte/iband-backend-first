@@ -146,6 +146,7 @@ try{
   'import {createMovieMentorInferenceExecutionLeaseAuthority} from "./ai/MovieMentorInferenceExecutionLeaseAuthority.js";',
   'import {createMovieMentorInferenceExecutionMongoStore} from "./ai/MovieMentorInferenceExecutionMongoStore.js";',
   'import {createMovieMentorProductionInferenceExecutionComposition} from "./ai/MovieMentorProductionInferenceExecutionComposition.js";',
+  'import {createMovieMentorProductionInferenceSettlementComposition} from "./ai/MovieMentorProductionInferenceSettlementComposition.js";',
   'const uri=process.env.MOVIE_MENTOR_ISOLATED_MONGO_URI;',
   'if(!uri?.startsWith("mongodb://127.0.0.1:27017/movie_mentor_positive_http_settlement?"))process.exit(31);',
   'process.env.MONGO_URI=uri;process.env.MONGODB_URI=uri;',
@@ -182,6 +183,18 @@ try{
   'const recovered=await leaseAuthority.recoverProviderOutcome({providerCallId:operation.providerCallId,recoveryAuthority:intruder});',
   'if(recovered?.outcome!=="CONFIRMED_EFFECT"||recovered?.recovered!==true||recovered?.redispatchAuthorized!==false||recovered?.externalEffectId!==effect.evidence?.[0]?.externalEffectId)throw Error("production recovery authority failed: "+JSON.stringify(recovered));',
   'console.log("GREEN FRESH_PROCESS_PRODUCTION_COMPOSITION_RECOVERY: copied proof denied, actual production composition recovered exact historical response via real provider GET without redispatch");',
+  'const settlementComposition=createMovieMentorProductionInferenceSettlementComposition();',
+  'if(settlementComposition?.ready!==true||!settlementComposition.authority)throw Error("production settlement composition not ready: "+settlementComposition?.reason);',
+  'const beforeReservation=await db.collection("movie_mentor_inference_spend_reservation").findOne({reservationId:execution.reservationId});',
+  'const beforeEntitlement=await db.collection("movie_mentor_inference_entitlement").findOne({principalId:execution.principalId});',
+  'if(!beforeReservation||!beforeEntitlement)throw Error("HTTP-origin financial ledgers missing");',
+  'const premature=await settlementComposition.authority.reconcile({executionId:execution.executionId});',
+  'if(premature?.settled!==false||premature?.authorized!==false)throw Error("unfinalized recovered execution was incorrectly settled: "+JSON.stringify(premature));',
+  'const afterReservation=await db.collection("movie_mentor_inference_spend_reservation").findOne({reservationId:execution.reservationId});',
+  'const afterEntitlement=await db.collection("movie_mentor_inference_entitlement").findOne({principalId:execution.principalId});',
+  'const clean=row=>JSON.stringify(row);',
+  'if(clean(beforeReservation)!==clean(afterReservation)||clean(beforeEntitlement)!==clean(afterEntitlement))throw Error("premature settlement mutated financial ledgers");',
+  'console.log("GREEN RECOVERED_HTTP_PRODUCTION_SETTLEMENT_PRECONDITION: full production settlement composition denied unfinalized recovered execution; original financial ledgers immutable");',
   '}',
   '}finally{await mongoose.disconnect();}'
  ].join("\n");
@@ -197,6 +210,7 @@ try{
  assert.match(inspectorOut,/GREEN FRESH_PROCESS_DURABLE_RECOVERY_INPUTS/);
  assert.match(inspectorOut,/GREEN FRESH_PROCESS_PRODUCTION_LEASE_TAKEOVER/);
  assert.match(inspectorOut,/GREEN FRESH_PROCESS_PRODUCTION_COMPOSITION_RECOVERY/);
+ assert.match(inspectorOut,/GREEN RECOVERED_HTTP_PRODUCTION_SETTLEMENT_PRECONDITION/);
  assert.equal(providerRequests.filter(r=>r.method==="POST"&&r.path==="/v1/responses").length,postsBefore,"fresh inspector must not redispatch provider");
  const knownId=persisted.evidence?.[0]?.externalEffectId;
  assert.ok(typeof knownId==="string"&&knownId.length>0,"confirmed effect must bind a known historical response ID");
@@ -209,7 +223,7 @@ try{
  assert.equal(providerRequests.filter(r=>r.method==="POST"&&r.path==="/v1/responses").length,postsBefore,"historical GET must not redispatch provider");
  console.log("GREEN INDEPENDENT_PROVIDER_HISTORICAL_GET_AFTER_SIGKILL: exact confirmed response retrievable, fabricated response denied, no redispatch");
  console.log("GREEN SIGNED_HTTP_DURABLE_EFFECT_SIGKILL_GATE: HTTP-origin active execution and durable provider effect observed in Mongo before SIGKILL; independent provider and durable evidence survived");
- console.log("LIMITATION: production composition recovery exercised after disposable-fixture lease expiration; canonical finalization and exactly-once settlement remain unverified.");
+ console.log("LIMITATION: recovered HTTP production settlement precondition tested; positive canonical finalization and exactly-once settlement remain unverified.");
 }finally{
  clearTimeout(watchdog);
  if(child.exitCode===null)child.kill("SIGKILL");
