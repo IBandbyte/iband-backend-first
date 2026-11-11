@@ -145,6 +145,9 @@ try{
   'import mongoose from "mongoose";',
   'import {createMovieMentorInferenceExecutionLeaseAuthority} from "./ai/MovieMentorInferenceExecutionLeaseAuthority.js";',
   'import {createMovieMentorInferenceExecutionMongoStore} from "./ai/MovieMentorInferenceExecutionMongoStore.js";',
+  'import {createMovieMentorProviderOutcomeRecoveryAuthority} from "./ai/MovieMentorProviderOutcomeRecoveryAuthority.js";',
+  'import {retrieveMovieMentorProviderResponse} from "./ai/MovieMentorProviderRecoveryAdapter.js";',
+  'import {describeCurrentMovieMentorProviderTarget} from "./ai/MovieMentorProviderTargetAuthority.js";',
   'const uri=process.env.MOVIE_MENTOR_ISOLATED_MONGO_URI;',
   'if(!uri?.startsWith("mongodb://127.0.0.1:27017/movie_mentor_positive_http_settlement?"))process.exit(31);',
   'process.env.MONGO_URI=uri;process.env.MONGODB_URI=uri;',
@@ -171,11 +174,22 @@ try{
   'const persisted=await db.collection("movie_mentor_inference_execution").findOne({executionId:execution.executionId});',
   'if(persisted?.ownerId!==intruder.ownerId||persisted?.leaseGeneration!==intruder.leaseGeneration||persisted?.fencingToken!==intruder.fencingToken||persisted?.phase!=="active")throw Error("successor takeover was not durable");',
   'console.log("GREEN FRESH_PROCESS_PRODUCTION_LEASE_TAKEOVER: fresh process acquired production-issued successor proof; stale generation fenced, copied proof denied, Mongo takeover durable");',
+  'const recovery=createMovieMentorProviderOutcomeRecoveryAuthority({',
+  'readProviderOperation:async id=>db.collection("movie_mentor_provider_operation_reality").findOne({providerCallId:id}),',
+  'readProviderEffectReality:async id=>db.collection("movie_mentor_provider_effect_reality").findOne({providerCallId:id}),',
+  'recoverProviderResponse:retrieveMovieMentorProviderResponse,resolveCurrentTarget:()=>describeCurrentMovieMentorProviderTarget(),requireRecoveryAuthority:true,',
+  'assertCurrentRecoveryAuthority:async({operation,recoveryAuthority})=>{const current=await leaseAuthority.assertFence(recoveryAuthority);if(current?.authorized!==true||current?.executionAuthorized!==true)return {authorized:false,currentRecoveryAuthorityVerified:false,reason:current?.reason||"execution-recovery-fenced"};if(current.executionId!==operation.executionId)return {authorized:false,currentRecoveryAuthorityVerified:false,reason:"execution-recovery-binding-conflict"};return {authorized:true,currentRecoveryAuthorityVerified:true,transition:"provider-outcome-recovery",executionId:current.executionId,providerCallId:operation.providerCallId,ownerId:current.ownerId,leaseGeneration:current.leaseGeneration,leaseReference:current.leaseReference,fencingToken:current.fencingToken};}',
+  '});',
+  'const denied=await recovery.reconcile({providerCallId:operation.providerCallId,recoveryAuthority:{...intruder}});',
+  'if(denied?.recovered!==false||denied?.reason!=="provider-recovery-execution-fenced")throw Error("copied proof unexpectedly authorized provider recovery: "+JSON.stringify(denied));',
+  'const recovered=await recovery.reconcile({providerCallId:operation.providerCallId,recoveryAuthority:intruder});',
+  'if(recovered?.outcome!=="CONFIRMED_EFFECT"||recovered?.recovered!==true||recovered?.redispatchAuthorized!==false||recovered?.externalEffectId!==effect.evidence?.[0]?.externalEffectId)throw Error("production recovery authority failed: "+JSON.stringify(recovered));',
+  'console.log("GREEN FRESH_PROCESS_PRODUCTION_RECOVERY_AUTHORITY: copied proof denied, production recovery authority and real provider GET recovered exact historical response without redispatch");',
   '}',
   '}finally{await mongoose.disconnect();}'
  ].join("\n");
  const inspector=spawn(process.execPath,["--input-type=module","-e",inspectorSource],{
-  env:{...process.env,MOVIE_MENTOR_INSPECT_EXECUTION_ID:execution.executionId,MOVIE_MENTOR_INSPECT_CALL_ID:effect.providerCallId},
+  env:{...process.env,MOVIE_MENTOR_INSPECT_EXECUTION_ID:execution.executionId,MOVIE_MENTOR_INSPECT_CALL_ID:effect.providerCallId,IBAND_AI_PROVIDER:"openai",IBAND_AI_MODEL:"gpt-isolated",IBAND_AI_API_KEY:"isolated-only",IBAND_AI_BASE_URL:base+"/v1/responses"},
   stdio:["ignore","pipe","pipe"]
  });
  let inspectorOut="",inspectorErr="";
@@ -185,6 +199,7 @@ try{
  assert.equal(inspectorExit.code,0,"fresh process failed durable recovery-input inspection: "+inspectorErr+" "+inspectorOut);
  assert.match(inspectorOut,/GREEN FRESH_PROCESS_DURABLE_RECOVERY_INPUTS/);
  assert.match(inspectorOut,/GREEN FRESH_PROCESS_PRODUCTION_LEASE_TAKEOVER/);
+ assert.match(inspectorOut,/GREEN FRESH_PROCESS_PRODUCTION_RECOVERY_AUTHORITY/);
  assert.equal(providerRequests.filter(r=>r.method==="POST"&&r.path==="/v1/responses").length,postsBefore,"fresh inspector must not redispatch provider");
  const knownId=persisted.evidence?.[0]?.externalEffectId;
  assert.ok(typeof knownId==="string"&&knownId.length>0,"confirmed effect must bind a known historical response ID");
@@ -197,7 +212,7 @@ try{
  assert.equal(providerRequests.filter(r=>r.method==="POST"&&r.path==="/v1/responses").length,postsBefore,"historical GET must not redispatch provider");
  console.log("GREEN INDEPENDENT_PROVIDER_HISTORICAL_GET_AFTER_SIGKILL: exact confirmed response retrievable, fabricated response denied, no redispatch");
  console.log("GREEN SIGNED_HTTP_DURABLE_EFFECT_SIGKILL_GATE: HTTP-origin active execution and durable provider effect observed in Mongo before SIGKILL; independent provider and durable evidence survived");
- console.log("LIMITATION: production-issued fresh-process lease takeover certified separately; historical response recovery, canonical finalization and exactly-once settlement remain unverified.");
+ console.log("LIMITATION: production recovery authority exercised with production-equivalent test wiring; full production composition invocation, canonical finalization and exactly-once settlement remain unverified.");
 }finally{
  clearTimeout(watchdog);
  if(child.exitCode===null)child.kill("SIGKILL");
