@@ -254,7 +254,7 @@ try{
   'if(firstSettlement?.authorized!==true||firstSettlement?.settled!==true||firstSettlement?.idempotent===true||firstSettlement?.resultReference!==finalized.resultReference||firstSettlement?.candidateReference!==candidate.candidateReference)throw Error("production financial settlement did not consume exact canonical result once: "+JSON.stringify(firstSettlement));',
   'const secondSettlement=await settlementComposition.authority.reconcile({executionId:execution.executionId});',
   'if(secondSettlement?.settled!==true||secondSettlement?.idempotent!==true||secondSettlement?.resultReference!==firstSettlement.resultReference)throw Error("settlement replay did not prove idempotent canonical lineage");',
-  'const reservationAfter=await db.collection("movie_mentor_inference_spend_reservation").findOne({executionId:execution.executionId});',
+  'const reservationAfter=await db.collection("movie_mentor_inference_spend_reservation").findOne({reservationId:execution.reservationId});',
   'const entitlementAfter=await db.collection("movie_mentor_inference_entitlement").findOne({principalId:execution.principalId});',
   'if(reservationAfter?.status!=="consumed"||entitlementAfter?.consumedUnits!==1||entitlementAfter?.remainingUnits!==0||entitlementAfter?.reservedUnits!==0)throw Error("financial ledger failed exact-once consume invariants: "+JSON.stringify({reservation:reservationAfter?.status,entitlement:entitlementAfter}));',
   'console.log("GREEN RECOVERED_HTTP_EXACTLY_ONCE_SETTLEMENT: production canonical settlement consumed one reservation and one entitlement unit; replay idempotent");',
