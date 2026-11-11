@@ -10,6 +10,7 @@ jobs:
     timeout-minutes: 12
     env:
       MONGO_URI: mongodb://127.0.0.1:27017/movie_mentor_same_record_recovery?replicaSet=rs0
+      MOVIE_MENTOR_ISOLATED_MONGO_URI: mongodb://127.0.0.1:27017/movie_mentor_same_record_recovery?replicaSet=rs0
       NODE_ENV: test
     steps:
       - uses: actions/checkout@v4
