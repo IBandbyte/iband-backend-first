@@ -53,7 +53,7 @@ try{
  server=createServer(app);server.listen(0,"127.0.0.1");await once(server,"listening");
  const base="http://127.0.0.1:"+server.address().port+"/api/movie-mentor";
  const post=(path,id,token="Bearer isolated-valid")=>fetch(base+path,{method:"POST",headers:{"content-type":"application/json",authorization:token},body:JSON.stringify({projectId:project(id),operationId:"operation-"+id,source:"creator-memory",expectedRevision:0,state:{memoryContext:{note:"isolated real transition "+id}}})});
- const seed=async id=>ownerships.insertOne({projectId:project(id),ownerPrincipalId:"owner",ownershipReference:"ownership-"+project(id),ownershipRevision:1,status:"active",creatorStateFenceEpoch:0,establishmentAuthorityId:"establishment-"+id});
+ const seed=async id=>ownerships.insertOne({domain:"iband.movie-mentor.project-ownership",schema:1,projectId:project(id),ownerPrincipalId:"owner",ownershipReference:"ownership-"+project(id),ownershipRevision:1,status:"active",creatorStateFenceEpoch:0,establishmentAuthorityId:"establishment-"+id,establishmentSource:"native-project-creation",establishedAt:new Date()});
  const counts=async id=>({states:await states.countDocuments({projectId:project(id)}),operations:await operations.countDocuments({projectId:project(id)}),owner:await ownerships.findOne({projectId:project(id)})});
  // Negative ingress: real HTTP route must not write to disposable Mongo.
  await seed("invalid");
