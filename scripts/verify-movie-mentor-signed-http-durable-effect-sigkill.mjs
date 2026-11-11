@@ -242,6 +242,14 @@ try{
   'const candidateAfterClosure=await leaseAuthority.readResultCandidate(execution.executionId);',
   'if(candidateAfterClosure?.candidateReference!==candidate.candidateReference)throw Error("pending closure altered immutable candidate");',
   'console.log("GREEN RECOVERED_HTTP_CANONICAL_CLOSURE_GATE: production closure certified frozen provider reality without changing immutable staged candidate");',
+  'let mismatchDenied=false;',
+  'try{await leaseAuthority.commitCanonicalResult({closure,result:{...resultPayload,forged:true}});}catch(error){mismatchDenied=error?.code==="MOVIE_MENTOR_CANONICAL_RESULT_CANDIDATE_CONFLICT";if(!mismatchDenied)throw error;}',
+  'if(!mismatchDenied)throw Error("canonical result accepted a payload outside immutable candidate lineage");',
+  'const finalized=await leaseAuthority.commitCanonicalResult({closure,result:resultPayload});',
+  'if(finalized?.authorized!==true||finalized?.committed!==true||finalized?.resultFinalizationVerified!==true||finalized?.candidateReference!==candidate.candidateReference)throw Error("production canonical result did not finalize candidate lineage: "+JSON.stringify(finalized));',
+  'const canonical=await leaseAuthority.readCanonicalResult({executionId:execution.executionId});',
+  'if(canonical?.authorized!==true||canonical?.resultReference!==finalized.resultReference||canonical?.resultDigest!==candidate.resultDigest)throw Error("canonical finalization not durable/readable");',
+  'console.log("GREEN RECOVERED_HTTP_CANONICAL_FINALIZATION: mismatched candidate denied; original signed-HTTP recovered execution finalized with immutable candidate lineage");',
   '}',
   '}finally{await mongoose.disconnect();}'
  ].join("\n");
@@ -263,6 +271,7 @@ try{
  assert.match(inspectorOut,/GREEN RECOVERED_HTTP_POSITIVE_CANDIDATE_STAGING/);
  assert.match(inspectorOut,/GREEN RECOVERED_HTTP_CANONICAL_CLOSURE_GATE/);
  assert.match(inspectorOut,/GREEN RECOVERED_HTTP_PRODUCTION_CLOSURE_REALITY/);
+ assert.match(inspectorOut,/GREEN RECOVERED_HTTP_CANONICAL_FINALIZATION/);
  assert.equal(providerRequests.filter(r=>r.method==="POST"&&r.path==="/v1/responses").length,postsBefore,"fresh inspector must not redispatch provider");
  const knownId=persisted.evidence?.[0]?.externalEffectId;
  assert.ok(typeof knownId==="string"&&knownId.length>0,"confirmed effect must bind a known historical response ID");
@@ -275,7 +284,7 @@ try{
  assert.equal(providerRequests.filter(r=>r.method==="POST"&&r.path==="/v1/responses").length,postsBefore,"historical GET must not redispatch provider");
  console.log("GREEN INDEPENDENT_PROVIDER_HISTORICAL_GET_AFTER_SIGKILL: exact confirmed response retrievable, fabricated response denied, no redispatch");
  console.log("GREEN SIGNED_HTTP_DURABLE_EFFECT_SIGKILL_GATE: HTTP-origin active execution and durable provider effect observed in Mongo before SIGKILL; independent provider and durable evidence survived");
- console.log("LIMITATION: recovered HTTP settlement and candidate-proof denial tested; positive canonical finalization and exactly-once settlement remain unverified.");
+ console.log("LIMITATION: recovered HTTP settlement and candidate-proof denial tested; exactly-once settlement and fresh-process financial replay remain unverified.");
 }finally{
  clearTimeout(watchdog);
  if(child.exitCode===null)child.kill("SIGKILL");
